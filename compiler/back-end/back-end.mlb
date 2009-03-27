@@ -1,0 +1,16 @@
+(* The Intel P to C/Pillar Compiler *)
+(* Copyright (C) Intel Corporation, October 2006 *)
+
+local
+        $(SML_LIB)/mlton/sources.mlb
+        ../common/common.mlb
+        ../mil/mil.mlb
+        pil.sml
+        runtime.sml
+        mil-to-pil.sml
+        outputter.sml
+        back-end.sml
+in
+        structure Outputter
+        structure BackEnd
+end

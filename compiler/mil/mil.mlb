@@ -1,0 +1,79 @@
+(* The Intel P to C/Pillar Compiler *)
+(* Copyright (C) Intel Corporation, October 2006 *)
+
+local
+        $(SML_LIB)/mlton/sources.mlb
+        ../common/common.mlb
+        ../core-p/core-p.mlb
+        mil.sml
+        utils.sml
+        layout.sml
+        fmil.sml
+        cfg.sml
+        p-object-model.sml
+        type.sml
+        check.sml
+        analyse.sml
+        stats.sml
+        free-vars.sml
+        rewrite.sml
+        rename.sml      
+        stream.sml
+        transform.sml
+        loop.sml
+        name-small-values.sml
+        call-graph.sml
+        imil-types.sml
+        imil-enumerate.sml
+        imil-layout.sml
+        imil-common.sml
+        imil-use.sml
+        imil-def.sml
+        imil-var.sml
+        imil-instr.sml
+        imil-global.sml
+        imil-block.sml
+        imil-func.sml
+        imil-item.sml
+        imil-workset.sml
+        imil-t.sml
+        imil.sml
+        utils2.sml
+
+(*        profile.sml *)
+
+        dataflow-analysis.sml
+        dependence-analysis.sml
+(*
+        shape-analysis.sml
+*)
+in
+        functor MilAnalyseF
+        functor MilRewriterF
+        functor MilStreamF
+        functor MilTransformF
+
+        structure BothMil
+        structure FMil
+        structure IMil
+        structure Mil
+        structure MilCallGraph
+        structure MilCfg
+        structure MilCheck
+        structure MilFreeVars
+        structure MilLayout
+        structure MilLoop
+        structure MilNameSmallValues
+        structure MilRename
+        structure MilRewriterClient
+        structure MilStats
+        structure MilType
+        structure MilUtils
+        structure MilUtils2
+        structure PObjectModel
+
+(*        functor MilProfilerF
+        functor MilDataFlowAnalysisF
+        functor MilDependenceAnalysisF
+        functor MilShapeAnalysisF*)
+end

@@ -1,0 +1,42 @@
+(* The Intel P to C/Pillar Compiler *)
+(* Copyright (C) Intel Corporation, October 2006 *)
+
+local
+        $(SML_LIB)/mlton/sources.mlb
+        ../../common/common.mlb
+        ../mil.mlb
+        cse.sml
+        contify.sml
+(*        
+        cfg-simplify.sml
+        fun-known.sml
+        simple-escape.sml
+*)
+        simplify.sml
+(*
+        inline-rewrite.sml
+        annotated-cg-printer.sml
+        inline-aggressive.sml
+        inline-profile.sml
+        inline-leaves.sml
+        inline-small.sml  (* XXX EB: Deprecated. Remove it. *)
+        double-diamond.sml
+        licm.sml
+        rep-seq.sml
+        rep.sml
+        fusion.sml
+        vectorize.sml*)
+in
+        structure MilCse
+        structure MilContify
+        structure MilSimplify
+(*        structure MilInlineAggressive   
+        structure MilInlineProfile   
+        structure MilInlineLeaves
+        structure MilInlineSmall (* XXX EB: Deprecated. Remove it. *)
+        structure MilDblDiamond
+        structure MilLicm
+        structure MilRep
+        structure MilVectorize
+        structure VpFusion*)
+end

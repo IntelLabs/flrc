@@ -1,0 +1,100 @@
+(* The Intel P to C/Pillar Compiler *)
+(* Copyright (C) Intel Corporation, October 2006 *)
+
+local
+
+        (* Library stuff *)
+        $(SML_LIB)/mlton/sources.mlb
+        fail.sml
+        try.sml
+        lub.sml
+        compare.sml
+
+        local
+          local
+            $(SML_LIB)/smlnj-lib/Util/smlnj-lib.mlb
+          in
+            functor RedBlackSetFn
+            functor RedBlackMapFn
+            functor SplaySetFn
+            functor SplayMapFn
+            structure Queue
+            structure BitArray
+          end
+          local
+            $(SML_LIB)/basis/basis.mlb
+          in
+            structure PackWord32Little
+            structure PackReal32Little
+            structure PackReal64Little
+          end
+        in
+          utils.sml
+        end
+        graph.sml
+        dominance.sml
+        rat.sml
+        int-arb.sml
+
+        (* Compiler stuff *)
+        config.sml
+        chat.sml
+        identifier.sml
+        pass.sml
+        rename.sml
+        effect.sml
+        vector-instruction.sml
+        prims.sml
+in
+        signature CHAT
+        signature DICT
+        signature DICT_IMP
+        signature DOMINANCE
+        signature IMP_POLY_LABELED_GRAPH
+        signature ORD
+        signature SET
+
+        functor ChatF
+        functor DictF
+        functor DominanceF
+        functor FlatLatticeFn
+        functor FlatOptionLatticeFn 
+        functor LatticeFn
+        functor LatticeVectorLatticeFn
+        functor OptionLatticeFn        
+        functor RecLatticeFn
+        functor SetF
+
+        structure BackPatch
+        structure CharDict
+        structure Compare
+        structure Config
+        structure DList
+        structure Effect
+        structure EquivalenceClass
+        structure Fail
+        structure FunctionalUpdate
+        structure Identifier
+        structure ImpBitSet
+        structure ImpIntDict
+        structure ImpPolyLabeledGraph
+        structure ImpQueue
+        structure IntArb
+        structure IntDict
+        structure IntSet
+        structure LayoutUtils
+        structure Lub
+        structure Pass
+        structure PassData
+        structure PolyLabeledGraph
+        structure Prims
+        structure Rat
+        structure Rename
+        structure Stats
+        structure StringDict
+        structure StringSet
+        structure Try
+        structure Utils
+        structure VectorInstructions
+
+end
