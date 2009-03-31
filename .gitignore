@@ -1,0 +1,28 @@
+# ignore object files and other c/pillar build related things
+*.o
+*.obj
+*.exp
+*.lib
+*.pdb
+root_map.txt
+
+# ignore emacs save files
+*~
+
+# ignore executables
+*.exe
+
+# ignore core p files
+*.cp
+
+# ignore .c files unless they are in the runtime directory
+*.c
+!runtime/*.c
+
+# ignore the frontend build files
+build/vc60/frontend-old/Debug/
+build/vc60/frontend-old/frontend-old.plg
+
+# ignore the regression log and tmp directory
+regressions.log
+tests/tmp
