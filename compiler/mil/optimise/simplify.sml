@@ -309,10 +309,10 @@ struct
                           add (Try.<- dest, M.GTuple {vtDesc = vtDesc, inits = inits})
                         else
                           Try.fail ()
-                      | M.RhsThunkValue {typ, thunk, newVal} =>
-                        if const newVal then
+                      | M.RhsThunkValue {typ, thunk, ofVal} =>
+                        if const ofVal then
                           add (Try.<- (Utils.Option.atMostOneOf (thunk, dest)), 
-                               M.GThunkValue {typ = typ, ofVal = newVal})
+                               M.GThunkValue {typ = typ, ofVal = ofVal})
                         else
                           Try.fail ()
                       | M.RhsPFunctionInit {cls, code, fvs} =>
@@ -327,9 +327,9 @@ struct
                           add (Try.<- dest, M.GPSet op1)
                         else
                           Try.fail ()
-                      | M.RhsPSum {tag, ofVal=(typ, op1)} => 
-                        if const op1 then
-                          add (Try.<- dest, M.GPSum {tag = tag, typ = typ, ofVal = op1})
+                      | M.RhsPSum {tag, typ, ofVal} => 
+                        if const ofVal then
+                          add (Try.<- dest, M.GPSum {tag = tag, typ = typ, ofVal = ofVal})
                         else
                           Try.fail ()
                       | _ => Try.fail ())

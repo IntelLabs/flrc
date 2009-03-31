@@ -128,10 +128,10 @@ functor MilAnalyseF (
         | M.RhsPrim {prim, createThunks, args} => analyseOperands (s, e, args)
         | M.RhsTuple {vtDesc, inits} => analyseOperands (s, e, inits)
         | M.RhsTupleSub tf => analyseTupleField (s, e, tf)
-        | M.RhsTupleSet {tupField, newVal} =>
+        | M.RhsTupleSet {tupField, ofVal} =>
           let
             val () = analyseTupleField (s, e, tupField)
-            val () = analyseOperand (s, e, newVal)
+            val () = analyseOperand (s, e, ofVal)
           in ()
           end
         | M.RhsTupleInited {vtDesc, tup} =>
@@ -158,10 +158,10 @@ functor MilAnalyseF (
           end
         | M.RhsThunkGetFv {typ, fvs, thunk, idx} =>
           analyseVariable (s, e, thunk)
-        | M.RhsThunkValue {typ, thunk, newVal} =>
+        | M.RhsThunkValue {typ, thunk, ofVal} =>
           let
             val () = analyseVariableO (s, e, thunk)
-            val () = analyseOperand (s, e, newVal)
+            val () = analyseOperand (s, e, ofVal)
           in ()
           end
         | M.RhsThunkGetValue {typ, thunk} => analyseVariable (s, e, thunk)
@@ -185,7 +185,7 @@ functor MilAnalyseF (
           in ()
           end
         | M.RhsPSetQuery oper => analyseOperand (s, e, oper)
-        | M.RhsPSum {tag, ofVal = (fk, opnd)} => analyseOperand (s, e, opnd)
+        | M.RhsPSum {tag, typ, ofVal} => analyseOperand (s, e, ofVal)
         | M.RhsPSumProj {typ, sum, tag} => analyseVariable (s, e, sum)
 
   fun analyseInstruction (s, e, i as M.I {dest, rhs}) =

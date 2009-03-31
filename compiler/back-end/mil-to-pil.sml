@@ -1290,15 +1290,15 @@ struct
       in Pil.S.expr a
       end
 
-  fun genTupleSet (state, env, tf, newVal) =
+  fun genTupleSet (state, env, tf, ofVal) =
       let
         val M.TF {tup, ...} = tf
         val v = genVarE (state, env, tup)
-        val ft = MTT.operand (getConfig env, getSymbolInfo state, newVal)
+        val ft = MTT.operand (getConfig env, getSymbolInfo state, ofVal)
         val ft = Pil.E.hackTyp (Pil.T.ptr (genTyp (state, env, ft)))
         val (off, eo, ssk, M.FD {kind, ...}) = doTupleField (state, env, tf)
         val off = Pil.E.int off
-        val nv = genOperand (state, env, newVal)
+        val nv = genOperand (state, env, ofVal)
         fun doWB trg = writeBarrier (state, env, v, trg, nv, kind, false)
         val set =
             case (eo, ssk)
@@ -1504,8 +1504,8 @@ struct
             end
           | M.RhsTupleSub tf =>
             bind (fn v => genTupleSub (state, env, v, tf))
-          | M.RhsTupleSet {tupField, newVal} => 
-            assign (genTupleSet (state, env, tupField, newVal))
+          | M.RhsTupleSet {tupField, ofVal} => 
+            assign (genTupleSet (state, env, tupField, ofVal))
           | M.RhsTupleInited {vtDesc, tup} =>
             let
               val () = Fail.assert ("MilToPil",
@@ -1553,8 +1553,8 @@ struct
           | M.RhsThunkGetFv {typ, fvs, thunk, idx} =>
             bind (fn dest =>
                      genThunkGetFv (state, env, dest, typ, fvs, thunk, idx))
-          | M.RhsThunkValue {typ, thunk, newVal} =>
-            genThunkValue (state, env, dest, typ, thunk, newVal)
+          | M.RhsThunkValue {typ, thunk, ofVal} =>
+            genThunkValue (state, env, dest, typ, thunk, ofVal)
           | M.RhsThunkGetValue {typ, thunk} =>
             bind (fn dest => genThunkGetValue (state, env, dest, typ, thunk))
           | M.RhsThunkSpawn {typ, thunk, fx} =>

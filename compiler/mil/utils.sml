@@ -346,7 +346,7 @@ sig
         inits  : Mil.operand Vector.t   
       } option
       val rhsTupleSub : t -> Mil.tupleField option
-      val rhsTupleSet : t -> {tupField : Mil.tupleField, newVal: Mil.operand} option
+      val rhsTupleSet : t -> {tupField : Mil.tupleField, ofVal: Mil.operand} option
       val rhsTupleInited : t -> {vtDesc : Mil.vtableDescriptor, tup : Mil.variable} option
       val rhsIdxGet : t -> {idx : Mil.variable, ofVal : Mil.operand} option
       val rhsCont : t -> Mil.label option
@@ -368,7 +368,7 @@ sig
       val rhsThunkValue : t -> {
         typ    : Mil.fieldKind,
         thunk  : Mil.variable option, 
-        newVal : Mil.operand
+        ofVal : Mil.operand
       } option
       val rhsThunkGetValue : t -> {typ : Mil.fieldKind, thunk : Mil.variable} option
       val rhsThunkSpawn : t -> {typ : Mil.fieldKind, thunk : Mil.variable, fx : Mil.effects} option
@@ -383,7 +383,7 @@ sig
       val rhsPSetGet : t -> Mil.variable option
       val rhsPSetCond : t -> {bool : Mil.operand, ofVal: Mil.operand} option
       val rhsPSetQuery : t -> Mil.operand option
-      val rhsPSum : t -> {tag : Mil.name, ofVal : Mil.fieldKind * Mil.operand} option
+      val rhsPSum : t -> {tag : Mil.name, typ : Mil.fieldKind, ofVal : Mil.operand} option
       val rhsPSumProj : t -> {typ : Mil.fieldKind, sum : Mil.variable, tag : Mil.name} option
     end (* structure Dec *)
   end
@@ -1118,7 +1118,7 @@ struct
           val t    = C.rec2 (#vtDesc, vtableDescriptor,
                              #inits, operands)
           val tf   = tupleField
-          val ts   = C.rec2 (#tupField, tupleField, #newVal, operand)
+          val ts   = C.rec2 (#tupField, tupleField, #ofVal, operand)
           val ti   = C.rec2 (#vtDesc, vtableDescriptor,
                              #tup, variable)
           val ig   = C.rec2 (#idx, variable, #ofVal, operand)
@@ -1134,7 +1134,7 @@ struct
                              #idx, Int.compare)
           val thkv = C.rec3 (#typ, fieldKind,
                              #thunk, C.option variable,
-                             #newVal, operand)
+                             #ofVal, operand)
           val thkg = C.rec2 (#typ, fieldKind, #thunk, variable)
           val thks = C.rec2 (#typ, fieldKind, #thunk, variable)
           val pfmk = C.rec1 (#fvs, C.vector fieldKind)
@@ -1145,7 +1145,7 @@ struct
                              #cls, variable,
                              #idx, Int.compare)
           val psc  = C.rec2 (#bool, operand, #ofVal, operand)
-          val ps   = C.rec2 (#tag, name, #ofVal, C.pair (fieldKind, operand))
+          val ps   = C.rec3 (#tag, name, #typ, fieldKind, #ofVal, operand)
           val psp  = C.rec3 (#typ, fieldKind, #sum, variable, #tag, name)
         in
           case (rhs1, rhs2)
@@ -3156,11 +3156,11 @@ struct
                              tup = arr,
                              field = M.FiVariable idx})
 
-    fun update (c, pok, fk, arr, idx, newVal) =
+    fun update (c, pok, fk, arr, idx, ofVal) =
         M.RhsTupleSet {tupField = M.TF {tupDesc = tdVar (c, fk),
                                         tup = arr,
                                         field = M.FiVariable idx},
-                       newVal = newVal}
+                       ofVal = ofVal}
 
     fun inited (c, pok, fk, arr) =
         M.RhsTupleInited {vtDesc = vtdVar (c, pok, fk), tup = arr}
@@ -3273,7 +3273,7 @@ struct
        fn d => 
           (case d
             of DefGlobal (M.GThunkValue r) => SOME r
-             | DefRhs (M.RhsThunkValue {typ, thunk, newVal}) => SOME {typ = typ, ofVal = newVal}
+             | DefRhs (M.RhsThunkValue {typ, thunk, ofVal}) => SOME {typ = typ, ofVal = ofVal}
              | _ => NONE)
       val simple = 
        fn d => 
@@ -3291,7 +3291,7 @@ struct
        fn d =>
           (case d
             of DefGlobal (M.GPSum r) => SOME r
-             | DefRhs (M.RhsPSum {tag, ofVal = (typ, ofVal)}) => SOME {tag = tag, typ = typ, ofVal = ofVal}
+             | DefRhs (M.RhsPSum r) => SOME r
              | _ => NONE)
       val pSet =
        fn d =>

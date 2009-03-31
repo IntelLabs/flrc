@@ -548,9 +548,9 @@ struct
                   LU.parenSeq (layoutOperands (env, args))]
          | M.RhsTuple {vtDesc, inits} => layoutTuple (env, vtDesc, inits)
          | M.RhsTupleSub tf => layoutTupleField (env, tf)
-         | M.RhsTupleSet {tupField, newVal} =>
+         | M.RhsTupleSet {tupField, ofVal} =>
            L.mayAlign [L.seq [layoutTupleField (env, tupField), L.str " <-"],
-                       LU.indent (layoutOperand (env, newVal))]
+                       LU.indent (layoutOperand (env, ofVal))]
          | M.RhsTupleInited {vtDesc, tup} =>
            let
              val vtDesc = layoutVTableDescriptor (env, vtDesc)
@@ -613,11 +613,11 @@ struct
              val l = L.seq [thunk, L.str ("tfv" ^ Int.toString idx)]
            in l
            end
-         | M.RhsThunkValue {typ, thunk, newVal} =>
+         | M.RhsThunkValue {typ, thunk, ofVal} =>
            let
              val thunk = layoutThunkVarO (env, thunk, typ)
-             val newVal = layoutOperand (env, newVal)
-             val l = L.seq [L.str "ThunkMkVal", LU.parenSeq (thunk @ [newVal])]
+             val ofVal = layoutOperand (env, ofVal)
+             val l = L.seq [L.str "ThunkMkVal", LU.parenSeq (thunk @ [ofVal])]
            in l
            end
          | M.RhsThunkGetValue {typ, thunk} =>
@@ -659,10 +659,10 @@ struct
                   LU.brace (layoutOperand (env, ofVal)),
                   L.str " : {}"]
          | M.RhsPSetQuery oper => L.seq [layoutOperand (env, oper), L.str "?"]
-         | M.RhsPSum {tag, ofVal = (fk, opnd)} =>
+         | M.RhsPSum {tag, typ, ofVal} =>
            L.seq [layoutName (env, tag),
                   LU.angleBracket
-                    (layoutPSumTyp (env, layoutOperand (env, opnd), fk))]
+                    (layoutPSumTyp (env, layoutOperand (env, ofVal), typ))]
          | M.RhsPSumProj {typ, sum, tag} =>
            layoutPSumTyp (env,
                           L.seq [layoutVariable (env, sum),

@@ -142,7 +142,7 @@ struct
                                      *)
       }
     | RhsTupleSub of tupleField
-    | RhsTupleSet of {tupField : tupleField, newVal : operand}
+    | RhsTupleSet of {tupField : tupleField, ofVal : operand}
     | RhsTupleInited of {vtDesc : vtableDescriptor, tup : variable}
     | RhsIdxGet of {idx : variable, ofVal : operand}
     | RhsCont of label
@@ -164,7 +164,7 @@ struct
     | RhsThunkValue of {
         typ    : fieldKind,
         thunk  : variable option, (* if absent then create *)
-        newVal : operand
+        ofVal : operand
       }
     | RhsThunkGetValue of {typ : fieldKind, thunk : variable}
                           (* thunk must be evaled *)
@@ -185,7 +185,7 @@ struct
     | RhsPSetCond of {bool : operand, ofVal : operand}
                      (* if bool then {ofVal} else {} *)
     | RhsPSetQuery of operand (* {} => false | _ => true *)
-    | RhsPSum of {tag : name, ofVal : fieldKind * operand}
+    | RhsPSum of {tag : name, typ : fieldKind, ofVal : operand}
     | RhsPSumProj of {typ : fieldKind, sum : variable, tag : name}
 
   datatype instruction = I of {dest : variable option, rhs : rhs}

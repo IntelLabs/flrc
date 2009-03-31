@@ -237,11 +237,11 @@ struct
                   val s = Stream.seq (state, env, s1, s2)
                 in SOME s
                 end
-              | M.RhsTupleSet {tupField, newVal} =>
+              | M.RhsTupleSet {tupField, ofVal} =>
                 let
                   val (s1, tf) = tupleField (state, env, tupField)
-                  val (s2, newVal) = doOperand (state, env, newVal)
-                  val rhs = M.RhsTupleSet {tupField = tf, newVal = newVal}
+                  val (s2, ofVal) = doOperand (state, env, ofVal)
+                  val rhs = M.RhsTupleSet {tupField = tf, ofVal = ofVal}
                   val s3 = assignDest rhs
                   val s = Stream.seqn (state, env, [s1, s2, s3])
                 in SOME s
@@ -261,12 +261,12 @@ struct
                                              fvs = fkos}) 
                          fvs
               | M.RhsThunkGetFv _ => NONE
-              | M.RhsThunkValue {typ, thunk, newVal} =>
+              | M.RhsThunkValue {typ, thunk, ofVal} =>
                 unary (fn oper =>
                           M.RhsThunkValue {typ = typ,
                                            thunk = thunk,
-                                           newVal = oper})
-                      newVal
+                                           ofVal = oper})
+                      ofVal
               | M.RhsThunkGetValue _ => NONE
               | M.RhsThunkSpawn _ => NONE
               | M.RhsPFunctionMk _ => NONE
@@ -283,9 +283,9 @@ struct
                 pair (fn (o1, o2) => M.RhsPSetCond {bool = o1, ofVal = o2})
                      (bool, ofVal)
               | M.RhsPSetQuery _ => NONE
-              | M.RhsPSum {tag, ofVal = (fk, opnd)} =>
-                unary (fn opnd => M.RhsPSum {tag = tag, ofVal = (fk, opnd)})
-                      opnd
+              | M.RhsPSum {tag, typ, ofVal} =>
+                unary (fn ofVal => M.RhsPSum {tag = tag, typ = typ, ofVal = ofVal})
+                      ofVal
               | M.RhsPSumProj _ => NONE
       in (env, s)
       end

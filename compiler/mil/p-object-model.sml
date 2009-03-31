@@ -236,12 +236,12 @@ struct
           val td = td (c, fks)
           val codetf =
               M.TF {tupDesc = td, tup = cls, field = M.FiFixed codeIndex}
-          val coderhs = M.RhsTupleSet {tupField = codetf, newVal = code}
+          val coderhs = M.RhsTupleSet {tupField = codetf, ofVal = code}
           fun doOne (i, opnd) =
               let
                 val f = M.FiFixed (fvIndex i)
                 val tf = M.TF {tupDesc = td, tup = cls, field = f}
-                val rhs = M.RhsTupleSet {tupField = tf, newVal = opnd}
+                val rhs = M.RhsTupleSet {tupField = tf, ofVal = opnd}
               in rhs
               end
           val fvsrhs = List.mapi (Vector.toList os, doOne)

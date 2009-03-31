@@ -350,9 +350,9 @@ struct
                   SOME (doPSetQuery (state, env, dest, v))
                 else
                   NONE
-              | M.RhsPSum {tag, ofVal = (fk, opnd)} => 
+              | M.RhsPSum {tag, typ, ofVal} => 
                 lowerToRhs (state, env, lowerPTypes, doPSum, dest,
-                            (tag, fk, opnd))
+                            (tag, typ, ofVal))
               | M.RhsPSumProj {typ, sum, tag} =>
                 lowerToRhs (state, env, lowerPTypes, doPSumProj, dest,
                             (typ, sum, tag))

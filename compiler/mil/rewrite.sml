@@ -152,8 +152,8 @@ struct
           | M.RhsTuple {vtDesc, inits} =>
             M.RhsTuple {vtDesc = vtDesc, inits = doOps inits}
           | M.RhsTupleSub tf => M.RhsTupleSub (doTf tf)
-          | M.RhsTupleSet {tupField, newVal} =>
-            M.RhsTupleSet {tupField = doTf tupField, newVal = doOp newVal}
+          | M.RhsTupleSet {tupField, ofVal} =>
+            M.RhsTupleSet {tupField = doTf tupField, ofVal = doOp ofVal}
           | M.RhsTupleInited {vtDesc, tup} =>
             M.RhsTupleInited {vtDesc = vtDesc, tup = doVar tup}
           | M.RhsIdxGet {idx, ofVal} =>
@@ -170,9 +170,9 @@ struct
           | M.RhsThunkGetFv {typ, fvs, thunk, idx} =>
             M.RhsThunkGetFv {typ = typ, fvs = fvs, thunk = doVar thunk,
                              idx = idx}
-          | M.RhsThunkValue {typ, thunk, newVal} =>
+          | M.RhsThunkValue {typ, thunk, ofVal} =>
             M.RhsThunkValue {typ = typ, thunk = doVarO thunk,
-                             newVal = doOp newVal}
+                             ofVal = doOp ofVal}
           | M.RhsThunkGetValue {typ, thunk} =>
             M.RhsThunkGetValue {typ = typ, thunk = doVar thunk}
           | M.RhsThunkSpawn {typ, thunk, fx} =>
@@ -189,8 +189,8 @@ struct
           | M.RhsPSetCond {bool, ofVal} =>
             M.RhsPSetCond {bool = doOp bool, ofVal = doOp ofVal}
           | M.RhsPSetQuery oper => M.RhsPSetQuery (doOp oper)
-          | M.RhsPSum {tag, ofVal = (fk, opnd)} =>
-            M.RhsPSum {tag = tag, ofVal = (fk, doOp opnd)}
+          | M.RhsPSum {tag, typ, ofVal} =>
+            M.RhsPSum {tag = tag, typ = typ, ofVal = doOp ofVal}
           | M.RhsPSumProj {typ, sum, tag} =>
             M.RhsPSumProj {typ = typ, sum = doVar sum, tag = tag}
       end

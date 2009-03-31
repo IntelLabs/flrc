@@ -636,10 +636,10 @@ struct
           in M.TNone
           end
         | M.RhsTupleSub tf => tupleField (s, e, msg, tf)
-        | M.RhsTupleSet {tupField, newVal} =>
+        | M.RhsTupleSet {tupField, ofVal} =>
           let
             val ft = tupleField (s, e, msg, tupField)
-            val nvt = operand (s, e, msg, newVal)
+            val nvt = operand (s, e, msg, ofVal)
             fun msg' () = msg () ^ ": field/value type mismatch"
             val () = checkConsistentTyp (s, e, msg', ft, nvt)
           in nvt
@@ -700,7 +700,7 @@ struct
             val _ = variableUse (s, e, msg', thunk)
           in M.TNone
           end
-        | M.RhsThunkValue {typ, thunk, newVal} =>
+        | M.RhsThunkValue {typ, thunk, ofVal} =>
           let
             fun msg1 () = msg () ^ ": thunk"
             val () =
@@ -708,7 +708,7 @@ struct
                  of NONE => ()
                   | SOME v => ignore (variableUse (s, e, msg1, v))
             fun msg2 () = msg () ^ ": val"
-            val _ = operand (s, e, msg2, newVal)
+            val _ = operand (s, e, msg2, ofVal)
           in M.TNone
           end
         | M.RhsThunkGetValue {typ, thunk} =>
@@ -780,11 +780,11 @@ struct
             val _ = operand (s, e, msg', oper)
           in M.TNone
           end
-        | M.RhsPSum {tag, ofVal = (fk, opnd)} =>
+        | M.RhsPSum {tag, typ, ofVal} =>
           let
             val () = name (s, e, tag)
             fun msg2 () = msg () ^ ": of val"
-            val _ = operand (s, e, msg2, opnd)
+            val _ = operand (s, e, msg2, ofVal)
           in M.TNone
           end
         | M.RhsPSumProj {typ, sum, tag} =>
