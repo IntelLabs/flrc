@@ -516,6 +516,8 @@ struct
                  val fcode = <- code
                  val iFunc = IFunc.getIFuncByName (imil, fcode)
                  val () = Try.require (not (IFunc.getEscapes (imil, iFunc)))
+                 val uses = IMil.Use.getUses (imil, fcode)
+                 val () = Try.V.lenEq (uses, 1)
                  val rhs = M.RhsThunkInit {typ = typ, thunk = thunk, fx = fx, code = NONE, fvs = fvs}
                  val mi = M.I {dest = dest, rhs = rhs}
                  val () = IInstr.replaceInstruction (imil, i, mi)
@@ -615,6 +617,8 @@ struct
                  val fcode = <- code
                  val iFunc = IFunc.getIFuncByName (imil, fcode)
                  val () = Try.require (not (IFunc.getEscapes (imil, iFunc)))
+                 val uses = IMil.Use.getUses (imil, fcode)
+                 val () = Try.V.lenEq (uses, 1)
                  val rhs = M.RhsPFunctionInit {cls = cls, code = NONE, fvs = fvs}
                  val mi = M.I {dest = dest, rhs = rhs}
                  val () = IInstr.replaceInstruction (imil, i, mi)
