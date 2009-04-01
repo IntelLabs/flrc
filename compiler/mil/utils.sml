@@ -67,6 +67,7 @@ sig
   sig
     type 'a t = 'a Mil.callConv
     val compare : 'a Compare.t -> 'a t Compare.t
+    val eq : ('a * 'a -> bool) -> ('a t * 'a t -> bool)
     val map : 'a t * ('a -> 'b) -> 'b t
     val foreach : 'a t * ('a -> unit) -> unit
     structure Dec :
@@ -83,6 +84,7 @@ sig
     val toChar : t -> char
     val toString : t -> string
     val compare : t Compare.t
+    val eq : t * t -> bool
   end
 
   structure PObjKind :
@@ -91,6 +93,7 @@ sig
     val toChar : t -> char
     val toString : t -> string
     val compare : t Compare.t
+    val eq : t * t -> bool
   end
 
   structure ValueSize :
@@ -103,6 +106,7 @@ sig
     val ptrSize : Config.t -> t
     val vectorSize : Config.t -> t
     val compare : t Compare.t
+    val eq : t * t -> bool
   end
 
   structure FieldVariance :
@@ -113,6 +117,7 @@ sig
     val toString : t -> string
     val toChar : t -> char
     val compare : t Compare.t
+    val eq : t * t -> bool
   end
 
   structure Typ :
@@ -135,6 +140,7 @@ sig
     val traceability : Config.t * t -> traceability option
     val isCore : t -> bool
     val compare : t Compare.t
+    val eq : t * t -> bool
 
     structure Dec :
     sig
@@ -180,6 +186,7 @@ sig
     val intArb : IntArb.size -> t
     val ptrSize : Config.t -> t
     val compare : t Compare.t
+    val eq : t * t -> bool
     val fromValueSize : ValueSize.t -> t (* pre: valid conversion *)
   end
 
@@ -194,6 +201,7 @@ sig
     val isRef : t -> bool
     val toString : t -> string
     val compare : t Compare.t
+    val eq : t * t -> bool
     val nonRefPtr : Config.t -> t
     val fromTraceSize : Config.t * Typ.traceabilitySize -> t
       (* pre: result determined *)
@@ -214,6 +222,7 @@ sig
     val mutable : t -> bool
     val immutable : t -> bool
     val compare : t Compare.t
+    val eq : t * t -> bool
   end
 
   structure TupleDescriptor :
@@ -226,6 +235,7 @@ sig
     val hasArray : t -> bool
     val immutable : t -> bool
     val compare : t Compare.t
+    val eq : t * t -> bool
   end
 
   structure VTableDescriptor :
@@ -242,6 +252,7 @@ sig
     val immutable : t -> bool
     val toTupleDescriptor : t -> TupleDescriptor.t
     val compare : t Compare.t
+    val eq : t * t -> bool
   end
 
   structure Constant :
@@ -249,6 +260,7 @@ sig
     type t = Mil.constant
     val isCore : t -> bool
     val compare : t Compare.t
+    val eq : t * t -> bool
     structure Dec :
     sig
       val cRat : t -> IntInf.t option
@@ -269,6 +281,7 @@ sig
   sig
     type t = Mil.simple
     val compare : t Compare.t
+    val eq : t * t -> bool
     structure Dec :
     sig
       val sVariable : t -> Mil.variable option
@@ -280,6 +293,7 @@ sig
   sig
     type t = Mil.operand
     val compare : t Compare.t
+    val eq : t * t -> bool
     structure Dec :
     sig
       val sVariable : t -> Mil.variable option
@@ -300,6 +314,7 @@ sig
     val vectorElemType : t -> Mil.VI.elemType option
     val fieldDescriptor : TupleDescriptor.t * t -> FieldDescriptor.t
     val compare : t Compare.t
+    val eq : t * t -> bool
     structure Dec : 
     sig
       val fiFixed : t -> int option
@@ -326,6 +341,7 @@ sig
     val variable : t -> Operand.t option
     val vectorElemType : t -> Mil.VI.elemType option
     val compare : t Compare.t
+    val eq : t * t -> bool
   end
 
   structure Rhs :
@@ -333,6 +349,7 @@ sig
     type t = Mil.rhs
     val isCore : t -> bool
     val compare : t Compare.t
+    val eq : t * t -> bool
     structure Dict : DICT where type key = t
     val fx : Config.t * t -> Effect.set
     val isInit : t -> bool
@@ -395,6 +412,7 @@ sig
     val rhs : t -> Rhs.t
     val isCore : t -> bool
     val compare : t Compare.t
+    val eq : t * t -> bool
     val fx : Config.t * t -> Effect.set
     val isInit : t -> bool
     val isInitOf : t * Mil.variable -> bool
@@ -407,6 +425,7 @@ sig
     val arguments : t -> Operand.t Vector.t
     val argument : t * int -> Operand.t
     val compare : t Compare.t
+    val eq : t * t -> bool
     val fromVars : Mil.label * Mil.variable Vector.t -> t
   end
 
@@ -421,6 +440,7 @@ sig
     val default : 'a t -> Target.t option
     val hasDefault : 'a t -> bool
     val compare : 'a Compare.t -> 'a t Compare.t
+    val eq : ('a * 'a -> bool) -> ('a t * 'a t -> bool)
     val noDefault : Operand.t * ('a * Target.t) Vector.t -> 'a t
     val noArgs : Operand.t * ('a * Mil.label) Vector.t * Mil.label option
                  -> 'a t
@@ -433,6 +453,7 @@ sig
     val possible : t -> Mil.VS.t
     val exhaustive : t -> bool
     val compare : t Compare.t
+    val eq : t * t -> bool
     val all : t
   end
 
@@ -440,6 +461,7 @@ sig
   sig
     type t = Mil.call
     val compare : t Compare.t
+    val eq : t * t -> bool
     val cls : t -> Mil.variable option
     val code : t -> Mil.variable option
     structure Dec : 
@@ -454,6 +476,7 @@ sig
   sig
     type t = Mil.eval
     val compare : t Compare.t
+    val eq : t * t -> bool
     val thunk : t -> Mil.variable 
     structure Dict : DICT where type key = t
     structure Dec : 
@@ -467,6 +490,7 @@ sig
   sig
     type t = Mil.interProc
     val compare : t Compare.t
+    val eq : t * t -> bool
     structure Dec : 
     sig
       val ipCall : t -> {call : Mil.call, args : Mil.operand Vector.t} option
@@ -489,6 +513,7 @@ sig
      *)
     val inlineCall : t * t -> t
     val compare : t Compare.t
+    val eq : t * t -> bool
     val none : t
     val justExits : t
   end
@@ -497,6 +522,7 @@ sig
   sig
     type t = Mil.return
     val compare : t Compare.t
+    val eq : t * t -> bool
     val cuts : t -> Cuts.t
     structure Dec : 
     sig
@@ -535,6 +561,7 @@ sig
     type t = Mil.transfer
     val isCore : t -> bool
     val compare : t Compare.t
+    val eq : t * t -> bool
     val outEdges : t -> OutEdge.t Vector.t
     val targets : t -> {blocks : Mil.label Vector.t, exits : bool}
     val successors : t -> {blocks : Identifier.LabelSet.t, exits : bool}
@@ -564,6 +591,7 @@ sig
     val transfer : t -> Transfer.t
     val isCore : t -> bool
     val compare : t Compare.t
+    val eq : t * t -> bool
     val outEdges : t -> OutEdge.t Vector.t
     val targets : t -> {blocks : Mil.label Vector.t, exits : bool}
     val successors : t -> {blocks : Identifier.LabelSet.t, exits : bool}
@@ -580,6 +608,7 @@ sig
     val block : t * Mil.label -> Block.t
     val isCore : t -> bool
     val compare : t Compare.t
+    val eq : t * t -> bool
     val listAny : t -> (Mil.label * Block.t) list
     val listRPO : Config.t * t -> (Mil.label * Block.t) list
     val dfsTrees : t -> (Mil.label * Block.t) Tree.t Vector.t
@@ -607,6 +636,7 @@ sig
     val block : t * Mil.label -> Block.t
     val isCore : t -> bool
     val compare : t Compare.t
+    val eq : t * t -> bool
   end
 
   structure Global :
@@ -707,6 +737,7 @@ sig
     val T : Config.t -> Constant.t
     val F : Config.t -> Constant.t
     val fromBool : Config.t * bool -> Constant.t
+    val toBool : Config.t * Constant.t -> bool option
     (* XXX NG: mark which one is true and which false *)
     val ifS : Config.t * Operand.t * Target.t * Target.t -> Constant.t Switch.t
     val ifT : Config.t * Operand.t * Target.t * Target.t -> Transfer.t
@@ -1389,6 +1420,13 @@ struct
     type 'a t = 'a Mil.callConv
 
     val compare = Compare.callConv
+    val eq = 
+     fn eqA => 
+        let
+          val cmpA = fn (a, b) => 
+                       if eqA (a, b) then EQUAL else LESS
+        in Compare.C.equal (compare cmpA)
+        end
 
     fun map (cc, f) =
         case cc
@@ -1445,6 +1483,7 @@ struct
     fun toString tk = String.fromChar (toChar tk)
 
     val compare = Compare.typKind
+    val eq = Compare.C.equal compare
 
   end
 
@@ -1484,6 +1523,7 @@ struct
           | M.PokThunk     => "thunk"
 
     val compare = Compare.pObjKind
+    val eq = Compare.C.equal compare
 
   end
 
@@ -1522,6 +1562,7 @@ struct
           | Config.Vs512 => M.Vs512
 
     val compare = Compare.valueSize
+    val eq = Compare.C.equal compare
 
   end
 
@@ -1548,6 +1589,7 @@ struct
           | M.FvReadWrite => #"="
 
     val compare = Compare.fieldVariance
+    val eq = Compare.C.equal compare
 
   end
 
@@ -1689,6 +1731,7 @@ struct
           | M.TPRef t                    => false
 
     val compare = Compare.typ
+    val eq = Compare.C.equal compare
 
     structure Dec =
     struct
@@ -1771,6 +1814,7 @@ struct
     fun ptrSize config = intArb (Config.targetWordSize' config)
 
     val compare = Compare.fieldSize
+    val eq = Compare.C.equal compare
 
     fun fromValueSize vs =
         let
@@ -1816,6 +1860,7 @@ struct
           | M.FkBits fs => "bits" ^ (Int.toString (FieldSize.numBits fs))
 
     val compare = Compare.fieldKind
+    val eq = Compare.C.equal compare
 
     fun nonRefPtr c = M.FkBits (FieldSize.ptrSize c)
 
@@ -1860,6 +1905,7 @@ struct
     fun immutable fd = FieldVariance.immutable (var fd)
 
     val compare = Compare.fieldDescriptor
+    val eq = Compare.C.equal compare
 
   end
 
@@ -1881,6 +1927,7 @@ struct
         Option.forall (array td, FieldDescriptor.immutable)
 
     val compare = Compare.tupleDescriptor
+    val eq = Compare.C.equal compare
 
   end
 
@@ -1908,6 +1955,7 @@ struct
         M.TD {fixed = fixed, array = Option.map (array, #2)}
 
     val compare = Compare.vtableDescriptor
+    val eq = Compare.C.equal compare
 
   end
 
@@ -1931,6 +1979,7 @@ struct
           | M.CTypePH         => false
 
     val compare = Compare.constant
+    val eq = Compare.C.equal compare
 
     structure Dec =
     struct
@@ -1966,6 +2015,7 @@ struct
     type t = Mil.simple
 
     val compare = Compare.simple
+    val eq = Compare.C.equal compare
 
     structure Dec =
     struct
@@ -1983,6 +2033,7 @@ struct
     type t = Mil.operand
 
     val compare = Compare.operand
+    val eq = Compare.C.equal compare
 
     structure Dec = Simple.Dec
 
@@ -2061,6 +2112,7 @@ struct
         end
 
     val compare = Compare.fieldIdentifier
+    val eq = Compare.C.equal compare
 
     structure Dec =
     struct
@@ -2100,6 +2152,7 @@ struct
         FieldIdentifier.fieldDescriptor (tupDesc tf, field tf)
 
     val compare = Compare.tupleField
+    val eq = Compare.C.equal compare
 
   end
 
@@ -2136,6 +2189,7 @@ struct
           | M.RhsPSumProj _       => false
 
     val compare = Compare.rhs
+    val eq = Compare.C.equal compare
 
     structure O = struct type t = t val compare = compare end
     structure Dict = DictF(O)
@@ -2268,6 +2322,7 @@ struct
     fun isCore i = Rhs.isCore (rhs i)
 
     val compare = Compare.instruction
+    val eq = Compare.C.equal compare
 
     fun fx (config, i) = Rhs.fx (config, rhs i)
 
@@ -2288,6 +2343,7 @@ struct
     fun argument (t, idx) = Vector.sub (arguments t, idx)
 
     val compare = Compare.target
+    val eq = Compare.C.equal compare
 
     fun fromVars (b, vs) =
         M.T {block = b, arguments = Vector.map (vs, M.SVariable)}
@@ -2310,6 +2366,13 @@ struct
     fun hasDefault s = Option.isSome (default s)
 
     val compare = Compare.switch
+    val eq =
+     fn eqA => 
+        let
+          val cmpA = fn (a, b) => 
+                       if eqA (a, b) then EQUAL else LESS
+        in Compare.C.equal (compare cmpA)
+        end
 
     fun noDefault (opnd, cases) =
         {on = opnd, cases = cases, default = NONE}
@@ -2336,6 +2399,7 @@ struct
     fun exhaustive ({exhaustive, ...} : t) = exhaustive
 
     val compare = Compare.codes
+    val eq = Compare.C.equal compare
 
     val all = {possible = VS.empty, exhaustive = false}
 
@@ -2347,6 +2411,7 @@ struct
     type t = Mil.call
 
     val compare = Compare.call
+    val eq = Compare.C.equal compare
 
     val cls = 
      fn call =>
@@ -2380,6 +2445,7 @@ struct
     type t = Mil.eval
 
     val compare = Compare.eval
+    val eq = Compare.C.equal compare
 
     val thunk = 
      fn eval => 
@@ -2406,6 +2472,7 @@ struct
     type t = Mil.interProc
 
     val compare = Compare.interProc
+    val eq = Compare.C.equal compare
 
     structure Dec =
     struct
@@ -2437,6 +2504,7 @@ struct
         if not e1 then cuts1 else M.C {exits = e2, targets = LS.union (ts1, ts2)}
 
     val compare = Compare.cuts
+    val eq = Compare.C.equal compare
 
     val none = M.C {exits = false, targets = LS.empty}
 
@@ -2450,6 +2518,7 @@ struct
     type t = Mil.return
 
     val compare = Compare.return
+    val eq = Compare.C.equal compare
     fun cuts r =
         case r
          of M.RNormal {cuts, ...} => cuts
@@ -2524,6 +2593,7 @@ struct
           | M.TPSumCase s                  => false
 
     val compare = Compare.transfer
+    val eq = Compare.C.equal compare
 
     local 
 
@@ -2699,6 +2769,7 @@ struct
         Transfer.isCore (transfer b)
 
     val compare = Compare.block
+    val eq = Compare.C.equal compare
 
     fun outEdges b = Transfer.outEdges (transfer b)
     fun targets b = Transfer.targets (transfer b)
@@ -2729,6 +2800,7 @@ struct
     fun isCore cb = LD.forall (blocks cb, fn (_, b) => Block.isCore b)
 
     val compare = Compare.codeBody
+    val eq = Compare.C.equal compare
 
     fun listAny cb = LD.toList (blocks cb)
 
@@ -2836,6 +2908,7 @@ struct
     fun isCore f = CodeBody.isCore (body f)
 
     val compare = Compare.code
+    val eq = Compare.C.equal compare
 
   end
 
@@ -2858,6 +2931,7 @@ struct
           | M.GPSet _       => false
 
     val compare = Compare.global
+    val eq = Compare.C.equal compare
 
     structure O = struct type t = t val compare = compare end
     structure Dict = DictF(O)
@@ -3012,6 +3086,14 @@ struct
     fun F config = UIntp.zero config
 
     fun fromBool (config, b) = if b then T config else F config
+
+    fun toBool (config, c) = 
+        if Constant.eq (c, T config) then 
+          SOME true
+        else if Constant.eq (c, F config) then
+          SOME false
+        else
+          NONE
 
     fun ifS (c, opnd, tt, ft) =
         Switch.noDefault (opnd, Vector.new2 ((T c, tt), (F c, ft)))

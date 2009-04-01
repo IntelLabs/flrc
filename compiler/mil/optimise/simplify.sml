@@ -44,6 +44,14 @@ struct
                             val indent = 0
                           end)
 
+  val <- = Try.<-
+  val <@ = Try.<@
+  val <! = Try.<!
+  val << = Try.<<
+  val oo = Try.oo
+  val @@ = Utils.Function.@@
+  infix 3 << @@ oo <!
+
  (* Reports a fail message and exit the program.
   * param f: The function name.
   * param s: the messagse. *)
@@ -163,7 +171,7 @@ struct
          ("PhiReduce",       "Phi transfers reduced"          ),
          ("Prim",            "Primitives reduced"             ),
 
-         ("SetGet",          "SetGet ops reduced"             ),
+
          ("SwitchToSetCond", "Switches converted to SetCond"  ),
          ("SwitchETAReduce", "Case switches converted to Goto"),
          ("ThunkGetFv",      "Thunk fv projections reduced"   ),
@@ -175,11 +183,19 @@ struct
 
     val localNms = 
         [
-         ("DCE",             "Dead instrs/globals eliminated" ),
-         ("Globalized",      "Objects globalized"             ),
-         ("PSumProj",        "P Sum projections reduced"      ),
-         ("PSetQuery",       "SetQuery ops reduced"           ),
-         ("Unreachable",     "Unreachable objects killed"     )
+         ("DCE",              "Dead instrs/globals eliminated" ),
+         ("Globalized",       "Objects globalized"             ),
+         ("PFunctionGetFv",   "Free var projections reduced"   ),
+         ("PFunctionInitCode","Closure code ptrs killed"       ), 
+         ("PSetGet",          "SetGet ops reduced"             ),
+         ("PSetNewEta",       "SetNew ops eta reduced"         ),
+         ("PSumProj",         "Sum projections reduced"        ),
+         ("PSetQuery",        "SetQuery ops reduced"           ),
+         ("PSetCond",         "SetCond ops reduced"            ),
+         ("ThunkGetValue",    "ThunkGetValue ops reduced"      ),
+         ("ThunkSpawnFX",     "Spawn fx pruned"                ),
+         ("ThunkValueEta",    "ThunkValues eta reduced"        ),
+         ("Unreachable",      "Unreachable objects killed"     )
         ]
     val globalNm = 
      fn s => passname ^ ":" ^ s
@@ -213,6 +229,14 @@ struct
     val globalized = clicker "Globalized"
     val pSumProj = clicker  "PSumProj"
     val pSetQuery = clicker  "PSetQuery"
+    val pSetCond = clicker  "PSetCond"
+    val pSetGet = clicker  "PSetGet"
+    val pSetNewEta = clicker "PSetNewEta"
+    val thunkSpawnFx = clicker "ThunkSpawnFX"
+    val pFunctionInitCode = clicker "PFunctionInitCode"
+    val pFunctionGetFv = clicker "PFunctionGetFv"
+    val thunkValueEta = clicker "ThunkValueEta"
+    val thunkGetValue = clicker "ThunkGetValue"
 
     val wrap : (PD.t -> unit) * ((PD.t * I.t * WS.ws) * 'a -> 'b option) 
                -> ((PD.t * I.t * WS.ws) * 'a -> 'b option) =
@@ -298,7 +322,7 @@ struct
                    (case rhs
                      of M.RhsSimple op1 => 
                         if const op1 then 
-                          add (Try.<- dest, M.GSimple op1)
+                          add (<- dest, M.GSimple op1)
                         else 
                           Try.fail ()
                       | M.RhsTuple {vtDesc, inits} =>
@@ -306,12 +330,12 @@ struct
                            (not (MU.VTableDescriptor.hasArray vtDesc)) andalso
                            Vector.forall (inits, const) 
                         then
-                          add (Try.<- dest, M.GTuple {vtDesc = vtDesc, inits = inits})
+                          add (<- dest, M.GTuple {vtDesc = vtDesc, inits = inits})
                         else
                           Try.fail ()
                       | M.RhsThunkValue {typ, thunk, ofVal} =>
                         if const ofVal then
-                          add (Try.<- (Utils.Option.atMostOneOf (thunk, dest)), 
+                          add (<@ Utils.Option.atMostOneOf (thunk, dest), 
                                M.GThunkValue {typ = typ, ofVal = ofVal})
                         else
                           Try.fail ()
@@ -319,22 +343,69 @@ struct
                         if Option.forall (code, fn v => Var.isGlobal (imil, v)) andalso 
                            Vector.isEmpty fvs 
                         then
-                          add (Try.<- (Utils.Option.atMostOneOf (cls, dest)), M.GPFunction code)
+                          add (<@ Utils.Option.atMostOneOf (cls, dest), M.GPFunction code)
                         else
                           Try.fail ()
                       | M.RhsPSetNew op1 => 
                         if const op1 then
-                          add (Try.<- dest, M.GPSet op1)
+                          add (<- dest, M.GPSet op1)
                         else
                           Try.fail ()
                       | M.RhsPSum {tag, typ, ofVal} => 
                         if const ofVal then
-                          add (Try.<- dest, M.GPSum {tag = tag, typ = typ, ofVal = ofVal})
+                          add (<- dest, M.GPSum {tag = tag, typ = typ, ofVal = ofVal})
                         else
                           Try.fail ()
                       | _ => Try.fail ())
              in []
              end))
+
+   val getUniqueInit =
+       Try.lift
+       (fn (imil, v) =>
+           let
+             val {inits, others} = Use.splitUses (imil, v)
+             val init = <@ Use.toInstruction o Try.V.singleton @@ inits
+           in init
+           end)
+
+   val getClosureOrThunkParameters = 
+    Try.lift
+      (fn (imil, c) =>
+          let
+            val (v, vs) = 
+                case IMil.Def.get (imil, c)
+                 of IMil.DefParameter iFunc =>
+                    (case IFunc.getCallConv (imil, iFunc)
+                      of M.CcClosure {cls, fvs} => (cls, fvs)
+                       | M.CcThunk {thunk, fvs} => (thunk, fvs)
+                       | _ => Try.fail ())
+                  | _ => Try.fail ()
+            val () = Try.require (v = c)
+            val opers = Vector.map (vs, M.SVariable)
+          in opers
+          end)
+
+   val pruneEffects =
+       Try.lift
+         (fn (imil, codeptr, fx1) =>
+             let
+               val iFunc = IFunc.getIFuncByName (imil, codeptr)
+               val fx2 = IFunc.getEffects (imil, iFunc)
+               val () = Try.require (not (Effect.subset (fx1, fx2)))
+               val fx = Effect.intersection (fx1, fx2)
+             in fx
+             end)
+
+    val template = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dest, _)) =>
+              let
+              in []
+              end
+        in try (Click.pSetCond, f)
+        end
 
     val simple = fn (state, (i, dest, r)) => NONE
     val prim = fn (state, (i, dest, r)) => NONE
@@ -348,15 +419,161 @@ struct
     val thunkMk = fn (state, (i, dest, r)) => NONE
     val thunkInit = fn (state, (i, dest, r)) => NONE
     val thunkGetFv = fn (state, (i, dest, r)) => NONE
-    val thunkValue = fn (state, (i, dest, r)) => NONE
-    val thunkGetValue = fn (state, (i, dest, r)) => NONE
-    val thunkSpawn = fn (state, (i, dest, r)) => NONE
+    val thunkValue = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dest, {thunk, ofVal, ...})) =>
+              let
+                val dv = <@ Utils.Option.atMostOneOf (dest, thunk)
+                val vv = <@ MU.Simple.Dec.sVariable ofVal
+                val {callee, ret, ...} = <@ MU.Transfer.Dec.tInterProc <! Def.toTransfer o Def.get @@ (imil, vv)
+                val vv' = Try.V.singleton o #rets <! MU.Return.Dec.rNormal @@ ret
+                val () = assert ("thunkValue", "Strange def", vv = vv')
+                val thunk' = MU.Eval.thunk o #eval <! MU.InterProc.Dec.ipEval @@ callee
+                val () = Use.replaceUses (imil, dv, M.SVariable thunk')
+                val () = IInstr.delete (imil, i)
+              in []
+              end
+        in try (Click.thunkValueEta, f)
+        end
+
+    val thunkGetValue = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dest, {typ, thunk})) =>
+              let
+                val dv = <- dest
+                val ofVal = 
+                    (case <@ Def.toMilDef o Def.get @@ (imil, thunk)
+                      of MU.Def.DefRhs (M.RhsThunkValue {ofVal, ...})  => ofVal
+                       | MU.Def.DefGlobal (M.GThunkValue {ofVal, ...}) => ofVal
+                       | MU.Def.DefRhs (M.RhsThunkMk _) =>
+                         #ofVal <! MU.Rhs.Dec.rhsThunkValue o MU.Instruction.rhs <! getUniqueInit @@ (imil, thunk)
+                       | _ => Try.fail ())
+                val () = Use.replaceUses (imil, dv, ofVal)
+                val () = IInstr.delete (imil, i)
+              in []
+              end
+        in try (Click.thunkGetValue, f)
+        end
+
+    val thunkSpawn = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dest, {thunk, fx, typ})) =>
+              let
+                val code = <@ #code <! MU.Rhs.Dec.rhsThunkInit <! Def.toRhs o Def.get @@ (imil, thunk)
+                val fx = <@ pruneEffects (imil, code, fx)
+                val r = {thunk = thunk, fx = fx, typ = typ}
+                val rhs = M.RhsThunkSpawn r
+                val mi = M.I {dest = dest, rhs = rhs}
+                val () = IInstr.replaceInstruction (imil, i, mi)
+              in [I.ItemInstr i]
+              end
+        in try (Click.thunkSpawnFx, f)
+        end
+
     val pFunctionMk = fn (state, (i, dest, r)) => NONE
-    val pFunctionInit = fn (state, (i, dest, r)) => NONE
-    val pFunctionGetFv = fn (state, (i, dest, r)) => NONE
-    val pSetNew = fn (state, (i, dest, r)) => NONE
-    val pSetGet = fn (state, (i, dest, r)) => NONE
-    val pSetCond = fn (state, (i, dest, r)) => NONE
+
+    val pFunctionInit = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dest, {cls, code, fvs})) =>
+              let
+                 val fcode = <- code
+                 val iFunc = IFunc.getIFuncByName (imil, fcode)
+                 val () = Try.require (not (IFunc.getEscapes (imil, iFunc)))
+                 val rhs = M.RhsPFunctionInit {cls = cls, code = NONE, fvs = fvs}
+                 val mi = M.I {dest = dest, rhs = rhs}
+                 val () = IInstr.replaceInstruction (imil, i, mi)
+              in [I.ItemInstr i]
+              end
+        in try (Click.pFunctionInitCode, f)
+        end
+
+    val pFunctionGetFv = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dest, {cls, idx, ...})) =>
+              let
+                val v = <- dest
+                val fv =
+                    case getUniqueInit (imil, cls)
+                     of SOME init => 
+                        let
+                          val {fvs, ...} = <@ MU.Rhs.Dec.rhsPFunctionInit o MU.Instruction.rhs @@ init
+                          val (_, fv) = Try.V.sub (fvs, idx)
+                        in fv
+                        end
+                      | NONE => 
+                        let
+                          val fvs = <@ getClosureOrThunkParameters (imil, cls)
+                          val fv = Try.V.sub (fvs, idx)
+                        in fv
+                        end
+                val () = Use.replaceUses (imil, v, fv)
+                val () = IInstr.delete (imil, i)
+              in []
+              end
+        in try (Click.pFunctionGetFv, f)
+        end
+
+    val pSetNew = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dest, p)) =>
+              let
+                val dv = <- dest
+                val v = <@ MU.Simple.Dec.sVariable p
+                val setv =   
+                    (case <@ Def.toMilDef o Def.get @@ (imil, v)
+                      of MU.Def.DefRhs (M.RhsPSetGet setv) => setv
+                       | _ => Try.fail ())
+                val p = M.SVariable setv
+                val () = Use.replaceUses (imil, dv, p)
+                val () = IInstr.delete (imil, i)
+              in []
+              end
+        in try (Click.pSetNewEta, f)
+        end
+
+    val pSetGet = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dest, v)) =>
+              let
+                val dv = <- dest
+                val c = 
+                    (case <@ Def.toMilDef o Def.get @@ (imil, v)
+                      of MU.Def.DefRhs (M.RhsPSetNew c)             => c
+                       | MU.Def.DefRhs (M.RhsPSetCond {ofVal, ...}) => ofVal
+                       | MU.Def.DefGlobal (M.GPSet c)               => c
+                       | _ => Try.fail ())
+                val () = Use.replaceUses (imil, dv, c)
+                val () = IInstr.delete (imil, i)
+              in []
+              end 
+         in try (Click.pSetGet, f)
+         end
+
+    val pSetCond = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dest, {bool, ofVal})) =>
+              let
+                val c = <@ MU.Simple.Dec.sConstant ofVal
+                val rhs = 
+                    (case MU.Bool.toBool (PD.getConfig d, c)
+                      of SOME true => M.RhsPSetNew ofVal
+                       | SOME false => M.RhsSimple (M.SConstant (M.COptionSetEmpty))
+                       | NONE => Try.fail (Chat.warn0 (d, "Unexpected boolean constant")))
+                val mi = M.I {dest = dest,
+                              rhs = rhs}
+                val () = IInstr.replaceInstruction (imil, i, mi)
+              in [I.ItemInstr i]
+              end
+        in try (Click.pSetCond, f)
+        end
 
     val pSetQuery = 
         let
@@ -366,12 +583,12 @@ struct
                 val T = M.SConstant (MU.Bool.T (PD.getConfig d))
                 val F = M.SConstant (MU.Bool.F (PD.getConfig d))
 
-                val v = Try.<- dest
+                val v = <- dest
                 val b = 
                     case r
                      of M.SConstant (M.COptionSetEmpty) => F
                       | M.SVariable v => 
-                        (case Try.<- (Def.toMilDef (Def.get (imil, v)))
+                        (case <@ Def.toMilDef o Def.get @@ (imil, v)
                           of MU.Def.DefRhs (M.RhsPSetNew _)            => T
                            | MU.Def.DefRhs (M.RhsPSetCond {bool, ...}) => bool
                            | MU.Def.DefGlobal (M.GPSet op2)            => T
@@ -391,10 +608,8 @@ struct
           val f = 
            fn ((d, imil, ws), (i, dest, {typ, sum, tag})) => 
               let
-                val v = Try.<- dest
-                val d = Def.get (imil, v)
-                val md = Try.<- (Def.toMilDef d)
-                val {ofVal, ...} = Try.<- (MU.Def.Out.pSum md)
+                val v = <- dest
+                val {ofVal, ...} = <@ MU.Def.Out.pSum <! Def.toMilDef o Def.get @@ (imil, v)
                 val () = Use.replaceUses (imil, v, ofVal)
                 val () = IInstr.delete (imil, i)
               in []

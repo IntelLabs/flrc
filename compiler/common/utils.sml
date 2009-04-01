@@ -25,7 +25,10 @@ structure Utils = struct
       val conj : ('a -> bool) * ('a -> bool) -> ('a -> bool) =
        fn (f1, f2) => 
        fn a => (f1 a) andalso (f2 a)
-                              
+                   
+      (* infix 3 *)
+      val @@ : ('a -> 'b) * 'a -> 'b = 
+       fn (f, a) => f a
     end
 
     fun vcons (a, v) = Vector.concat [Vector.new1 a, v]

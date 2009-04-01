@@ -37,6 +37,8 @@ sig
                 * ('a -> 'h) * 'h t
                 -> 'a t
   val fromOrd : ('a -> int) -> 'a t
+
+  val equal : 'a t -> ('a * 'a) -> bool
 end;
 
 structure Compare :> COMPARE =
@@ -239,5 +241,9 @@ struct
         | ord => ord
 
   fun fromOrd ord (x1, x2) = Int.compare (ord x1, ord x2)
+
+  val equal = 
+   fn cmp =>
+   fn x => (cmp x) = EQUAL
 
 end;

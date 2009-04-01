@@ -5,11 +5,13 @@ signature TRY =
 sig
   type 'a t = 'a option
 
+  (* Constructors/combinators.  These create, but do not fail *)
   val try  : (unit -> 'a) -> 'a t
   val lift : ('a -> 'b) -> ('a -> 'b t)
   val exec : (unit -> unit) -> unit
   val ||   : (unit -> 'a t) List.t -> 'a t
   val or   : ('a -> 'b t) * ('a -> 'b t) -> ('a -> 'b t)
+  val oo : ('b -> 'c t) * ('a -> 'b t) -> ('a -> 'c t)  (* use infix 3 *)
   val success : 'a -> 'a t
   val failure : unit -> 'a t
   val ? : bool -> unit t 
@@ -18,8 +20,12 @@ sig
   val option : 'a t -> 'a option
 
 
+  (* Destructors.  These all might fail *)
   val fail : unit -> 'a
   val <- : 'a t -> 'a
+  val <@ : ('a -> 'b t) -> 'a -> 'b 
+  val << : ('b -> 'c t) * ('a -> 'b t) -> ('a -> 'c)  (* use infix 3 *)
+  val <! : ('b -> 'c) * ('a -> 'b t) -> ('a -> 'c)  (* use infix 3 *)
   val when : bool -> (unit -> 'a) -> 'a
   val require : bool -> unit
 
@@ -61,6 +67,13 @@ struct
         of NONE => f2 args
          | r => r)
 
+  val oo = 
+   fn (f, g) => 
+   fn x => 
+      (case g x
+        of SOME y => f y
+         | NONE => NONE)
+      
   fun success a = SOME a
   fun failure a = NONE
   fun fail () = raise Fail
@@ -68,6 +81,15 @@ struct
       (case t
         of SOME a => a
          | NONE => raise Fail)
+
+  val <@ = 
+   fn f => 
+   fn x => <- (f x)
+
+  val << = 
+   fn (f, g) => (<@ f) o (<@ g)
+
+  val <! = fn (f, g) => f o <@ g
 
   fun otherwise (at, a) = 
       (case at
