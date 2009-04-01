@@ -94,6 +94,7 @@ sig
     val toString : t -> string
     val compare : t Compare.t
     val eq : t * t -> bool
+    val fromTyp : Mil.typ -> t option
   end
 
   structure ValueSize :
@@ -261,6 +262,7 @@ sig
     val isCore : t -> bool
     val compare : t Compare.t
     val eq : t * t -> bool
+    val pObjKind : t -> Mil.pObjKind option
     structure Dec :
     sig
       val cRat : t -> IntInf.t option
@@ -282,6 +284,7 @@ sig
     type t = Mil.simple
     val compare : t Compare.t
     val eq : t * t -> bool
+    val pObjKind : t -> Mil.pObjKind option
     structure Dec :
     sig
       val sVariable : t -> Mil.variable option
@@ -354,6 +357,7 @@ sig
     val fx : Config.t * t -> Effect.set
     val isInit : t -> bool
     val isInitOf : t * Mil.variable -> bool
+    val pObjKind : t -> Mil.pObjKind option
     structure Dec :
     sig
       val rhsSimple : t -> Mil.simple option
@@ -416,6 +420,7 @@ sig
     val fx : Config.t * t -> Effect.set
     val isInit : t -> bool
     val isInitOf : t * Mil.variable -> bool
+    val pObjKind : t -> Mil.pObjKind option
   end
 
   structure Target :
@@ -644,7 +649,9 @@ sig
     type t = Mil.global
     val isCore : t -> bool
     structure Dict : DICT where type key = t
-
+    val compare : t Compare.t
+    val eq : t * t -> bool
+    val pObjKind : t -> Mil.pObjKind option
     structure Dec : 
     sig
       val gCode : t -> Mil.code option
@@ -1525,6 +1532,33 @@ struct
     val compare = Compare.pObjKind
     val eq = Compare.C.equal compare
 
+    val fromTyp = 
+     fn t =>
+        (case t
+          of M.TAny                       => NONE
+           | M.TAnyS vs                   => NONE
+           | M.TPtr                       => NONE
+           | M.TRef                       => NONE
+           | M.TBits vs                   => NONE
+           | M.TNone                      => NONE
+           | M.TRat                       => NONE
+           | M.TInteger                   => NONE
+           | M.TName                      => SOME M.PokName
+           | M.TIntegral sz               => NONE
+           | M.TFloat                     => NONE
+           | M.TDouble                    => NONE
+           | M.TViVector et               => NONE
+           | M.TViMask et                 => NONE
+           | M.TCode {cc, args, ress}     => NONE
+           | M.TTuple {pok, fixed, array} => SOME pok
+           | M.TIdx                       => NONE
+           | M.TContinuation ts           => NONE
+           | M.TThunk t                   => SOME M.PokThunk
+           | M.TPAny                      => NONE
+           | M.TPFunction {args, ress}    => SOME M.PokFunction
+           | M.TPSum nts                  => SOME M.PokSum
+           | M.TPType {kind, over}        => SOME M.PokType
+           | M.TPRef t                    => NONE)
   end
 
   structure ValueSize =
@@ -1979,7 +2013,23 @@ struct
           | M.CTypePH         => false
 
     val compare = Compare.constant
+
     val eq = Compare.C.equal compare
+
+    val pObjKind = 
+     fn c => 
+        (case c
+          of M.CRat _          => NONE
+           | M.CInteger _      => NONE
+           | M.CName _         => SOME M.PokName
+           | M.CIntegral _     => NONE
+           | M.CFloat _        => NONE
+           | M.CDouble _       => NONE
+           | M.CViVector _     => NONE
+           | M.CViMask _       => NONE
+           | M.CPok _          => NONE
+           | M.COptionSetEmpty => SOME M.PokOptionSet
+           | M.CTypePH         => SOME M.PokType)
 
     structure Dec =
     struct
@@ -2016,6 +2066,12 @@ struct
 
     val compare = Compare.simple
     val eq = Compare.C.equal compare
+
+    val pObjKind = 
+     fn s => 
+        (case s
+          of M.SConstant c => Constant.pObjKind c
+           | M.SVariable v => NONE)
 
     structure Dec =
     struct
@@ -2257,6 +2313,34 @@ struct
           of SOME v' => v = v'
            | NONE => false)
 
+    val pObjKind =
+     fn rhs => 
+        (case rhs 
+          of M.RhsSimple s             => Simple.pObjKind s
+           | M.RhsPrim _               => NONE (* XXX anything else here?  -leaf *)
+           | M.RhsTuple {vtDesc, ...}  => SOME (VTableDescriptor.pok vtDesc)
+           | M.RhsTupleSub _           => NONE
+           | M.RhsTupleSet _           => NONE
+           | M.RhsTupleInited _        => NONE
+           | M.RhsIdxGet _             => NONE
+           | M.RhsCont _               => NONE
+           | M.RhsObjectGetKind _      => NONE
+           | M.RhsThunkMk _            => SOME M.PokThunk
+           | M.RhsThunkInit _          => SOME M.PokThunk
+           | M.RhsThunkGetFv _         => NONE
+           | M.RhsThunkValue _         => SOME M.PokThunk
+           | M.RhsThunkGetValue _      => NONE
+           | M.RhsThunkSpawn _         => NONE
+           | M.RhsPFunctionMk _        => SOME M.PokFunction
+           | M.RhsPFunctionInit x      => SOME M.PokFunction
+           | M.RhsPFunctionGetFv _     => NONE
+           | M.RhsPSetNew _            => SOME M.PokOptionSet
+           | M.RhsPSetGet _            => NONE
+           | M.RhsPSetCond _           => SOME M.PokOptionSet
+           | M.RhsPSetQuery _          => NONE
+           | M.RhsPSum _               => SOME M.PokSum
+           | M.RhsPSumProj _           => NONE)
+
     structure Dec =
     struct
       val rhsSimple = 
@@ -2322,13 +2406,18 @@ struct
     fun isCore i = Rhs.isCore (rhs i)
 
     val compare = Compare.instruction
+
     val eq = Compare.C.equal compare
 
     fun fx (config, i) = Rhs.fx (config, rhs i)
 
     val isInit = Rhs.isInit o rhs
+
     val isInitOf = 
      fn (i, v) => Rhs.isInitOf (rhs i, v)
+
+    val pObjKind = Rhs.pObjKind o rhs
+
   end
 
   structure Target =
@@ -2931,7 +3020,23 @@ struct
           | M.GPSet _       => false
 
     val compare = Compare.global
+  
     val eq = Compare.C.equal compare
+             
+    val pObjKind =
+     fn g => 
+        (case g
+          of M.GCode f              => NONE
+           | M.GIdx _               => NONE
+           | M.GTuple {vtDesc, ...} => SOME (VTableDescriptor.pok vtDesc)
+           | M.GRat _               => NONE
+           | M.GInteger _           => NONE
+           | M.GThunkValue _        => SOME M.PokThunk
+           | M.GSimple s            => Simple.pObjKind s
+           | M.GPFunction _         => SOME M.PokFunction
+           | M.GPSum _              => SOME M.PokSum
+           | M.GPSet _              => SOME M.PokOptionSet)
+
 
     structure O = struct type t = t val compare = compare end
     structure Dict = DictF(O)

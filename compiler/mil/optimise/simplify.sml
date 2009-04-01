@@ -185,16 +185,22 @@ struct
         [
          ("DCE",              "Dead instrs/globals eliminated" ),
          ("Globalized",       "Objects globalized"             ),
-         ("PFunctionGetFv",   "Free var projections reduced"   ),
+         ("IdxGet",           "Index gets reduced"             ),
+         ("ObjectGetKind",    "ObjectGetKinds reduced"         ),
+         ("PFunctionGetFv",   "Closure fv projections reduced" ),
          ("PFunctionInitCode","Closure code ptrs killed"       ), 
          ("PSetGet",          "SetGet ops reduced"             ),
          ("PSetNewEta",       "SetNew ops eta reduced"         ),
          ("PSumProj",         "Sum projections reduced"        ),
          ("PSetQuery",        "SetQuery ops reduced"           ),
          ("PSetCond",         "SetCond ops reduced"            ),
+         ("Simple",           "Simple moves eliminated"        ),
+         ("ThunkGetFv",       "Thunk fv projections reduced"   ),
          ("ThunkGetValue",    "ThunkGetValue ops reduced"      ),
+         ("ThunkInitCode",    "Thunk code ptrs killed"         ), 
          ("ThunkSpawnFX",     "Spawn fx pruned"                ),
          ("ThunkValueEta",    "ThunkValues eta reduced"        ),
+         ("TupleSub",         "Tuple subscripts reduced"       ),
          ("Unreachable",      "Unreachable objects killed"     )
         ]
     val globalNm = 
@@ -227,16 +233,22 @@ struct
     val dce = clicker "DCE"
     val unreachable = clicker "Unreachable"
     val globalized = clicker "Globalized"
+    val idxGet = clicker "IdxGet"
     val pSumProj = clicker  "PSumProj"
     val pSetQuery = clicker  "PSetQuery"
     val pSetCond = clicker  "PSetCond"
     val pSetGet = clicker  "PSetGet"
     val pSetNewEta = clicker "PSetNewEta"
     val thunkSpawnFx = clicker "ThunkSpawnFX"
+    val objectGetKind = clicker "ObjectGetKind"
     val pFunctionInitCode = clicker "PFunctionInitCode"
     val pFunctionGetFv = clicker "PFunctionGetFv"
-    val thunkValueEta = clicker "ThunkValueEta"
+    val simple = clicker "Simple"
+    val thunkGetFv = clicker "ThunkGetFv"
     val thunkGetValue = clicker "ThunkGetValue"
+    val thunkInitCode = clicker "ThunkInitCode"
+    val thunkValueEta = clicker "ThunkValueEta"
+    val tupleSub = clicker "TupleSub"
 
     val wrap : (PD.t -> unit) * ((PD.t * I.t * WS.ws) * 'a -> 'b option) 
                -> ((PD.t * I.t * WS.ws) * 'a -> 'b option) =
@@ -396,7 +408,7 @@ struct
                val fx = Effect.intersection (fx1, fx2)
              in fx
              end)
-
+(*
     val template = 
         let
           val f = 
@@ -404,21 +416,141 @@ struct
               let
               in []
               end
-        in try (Click.pSetCond, f)
+        in try (Click., f)
+        end
+*)
+    val simple = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dest, s)) =>
+              let
+                val v = <- dest
+                val () = Use.replaceUses (imil, v, s)
+                val () = IInstr.delete (imil, i)
+              in []
+              end
+        in try (Click.simple, f)
         end
 
-    val simple = fn (state, (i, dest, r)) => NONE
     val prim = fn (state, (i, dest, r)) => NONE
+
     val tuple = fn (state, (i, dest, r)) => NONE
-    val tupleSub = fn (state, (i, dest, r)) => NONE
+
+    val tupleSub = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dest, tf)) =>
+              let
+                val dv = <- dest
+                val fi = MU.TupleField.field tf
+                val tup = MU.TupleField.tup tf
+                val idx = 
+                    (case fi
+                      of M.FiFixed i => i
+                       | M.FiVariable p => 
+                         <@ IntArb.toInt <! MU.Constant.Dec.cIntegral <! MU.Simple.Dec.sConstant @@ p
+                       | _ => Try.fail ())
+                val inits = #inits <! MU.Def.Out.tuple <! Def.toMilDef o Def.get @@ (imil, tup)
+                val p = Try.V.sub (inits, idx)
+                val () = Use.replaceUses (imil, dv, p)
+                val () = IInstr.delete (imil, i)
+              in []
+              end
+        in try (Click.tupleSub, f)
+        end
+
     val tupleSet = fn (state, (i, dest, r)) => NONE
+
     val tupleInited = fn (state, (i, dest, r)) => NONE
-    val idxGet = fn (state, (i, dest, r)) => NONE
+
+    val idxGet = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dest, {idx, ofVal})) =>
+              let
+                val dv = <- dest
+                val nm = <@ MU.Constant.Dec.cName <! MU.Simple.Dec.sConstant @@ ofVal
+                val idx = <@ MU.Global.Dec.gIdx o #2 <! Def.toGlobal o Def.get @@ (imil, idx)
+                val offset = <@ M.ND.lookup (idx, nm)
+                val p = M.SConstant (MU.UIntp.int (PD.getConfig d, offset))
+                val () = Use.replaceUses (imil, dv, p)
+                val () = IInstr.delete (imil, i)
+              in []
+              end
+        in try (Click.idxGet, f)
+        end
+
     val cont = fn (state, (i, dest, r)) => NONE
-    val objectGetKind = fn (state, (i, dest, r)) => NONE
+
+    val objectGetKind = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dest, v)) =>
+              let
+                val dv = <- dest
+                val pokO = 
+                    Try.try
+                      (fn () => 
+                          case <@ Def.toMilDef o Def.get @@ (imil, v)
+                           of MU.Def.DefRhs rhs  => <@ MU.Rhs.pObjKind rhs
+                            | MU.Def.DefGlobal g => <@ MU.Global.pObjKind g)
+                val pok = 
+                    case pokO
+                     of SOME pok => pok
+                      | NONE => <@ MU.PObjKind.fromTyp (Var.typ (imil, v))
+                val p = M.SConstant (M.CPok pok)
+                val () = Use.replaceUses (imil, dv, p)
+                val () = IInstr.delete (imil, i)
+              in []
+              end
+        in try (Click.objectGetKind, f)
+        end
+        
     val thunkMk = fn (state, (i, dest, r)) => NONE
-    val thunkInit = fn (state, (i, dest, r)) => NONE
-    val thunkGetFv = fn (state, (i, dest, r)) => NONE
+
+    val thunkInit = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dest, {typ, thunk, fx, code, fvs})) =>
+              let
+                 val fcode = <- code
+                 val iFunc = IFunc.getIFuncByName (imil, fcode)
+                 val () = Try.require (not (IFunc.getEscapes (imil, iFunc)))
+                 val rhs = M.RhsThunkInit {typ = typ, thunk = thunk, fx = fx, code = NONE, fvs = fvs}
+                 val mi = M.I {dest = dest, rhs = rhs}
+                 val () = IInstr.replaceInstruction (imil, i, mi)
+              in [I.ItemInstr i]
+              end
+        in try (Click.thunkInitCode, f)
+        end
+
+    val thunkGetFv = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dest, {thunk, idx, ...})) =>
+              let
+                val v = <- dest
+                val fv =
+                    case getUniqueInit (imil, thunk)
+                     of SOME init => 
+                        let
+                          val {fvs, ...} = <@ MU.Rhs.Dec.rhsThunkInit o MU.Instruction.rhs @@ init
+                          val (_, fv) = Try.V.sub (fvs, idx)
+                        in fv
+                        end
+                      | NONE => 
+                        let
+                          val fvs = <@ getClosureOrThunkParameters (imil, thunk)
+                          val fv = Try.V.sub (fvs, idx)
+                        in fv
+                        end
+                val () = Use.replaceUses (imil, v, fv)
+                val () = IInstr.delete (imil, i)
+              in []
+              end
+        in try (Click.thunkGetFv, f)
+        end
+
     val thunkValue = 
         let
           val f = 

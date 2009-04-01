@@ -26,6 +26,7 @@ sig
   val sameTyps : t * t -> bool
   val typOf : t -> typ
   val fromInt : typ * int -> t
+  val toInt : t -> int option
   val fits : typ * IntInf.t -> bool
   val fromIntInf : typ * IntInf.t -> t (* truncates arg to fit *)
   val toIntInf : t -> IntInf.t
@@ -178,6 +179,17 @@ struct
   fun fromIntInf (t, i) = truncResult (t, i)
 
   fun fromInt (t, i) = fromIntInf (t, IntInf.fromInt i)
+
+  val toInt = 
+   fn t => 
+      let
+        val ti = toIntInf t
+        val max = IntInf.fromInt Int.maxInt
+      in if IntInf.<= (ti, max) then
+           SOME (IntInf.toInt ti)
+         else
+           NONE
+      end
 
   fun convert (X (_, i), t) = truncResult (t, i)
 

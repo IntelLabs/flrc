@@ -84,11 +84,20 @@ structure Utils = struct
 
       (* If at most one are present, return it *)
       val atMostOneOf : ('a option) * ('a option) -> 'a option = 
-          fn p => 
-             (case p
-               of (NONE, snd) => snd
-                | (fst, NONE) => fst
-                | _ => NONE)
+       fn p => 
+          (case p
+            of (NONE, snd) => snd
+             | (fst, NONE) => fst
+             | _ => NONE)
+
+      (* If either one are present, return it.  If both present, prefers left *)
+      val eitherOneOf : ('a option) * ('a option) -> 'a option = 
+       fn (fst, snd) => 
+          (case fst
+            of NONE => snd
+             | _ => fst)
+
+
     end
 
     (* Numeric stuff *)
