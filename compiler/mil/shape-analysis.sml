@@ -41,10 +41,7 @@ struct
   structure L = Layout
   structure LU = LayoutUtils
   structure M = Mil
-  structure MilCfg = MilCfgF (type env = env 
-                              val getConfig = getConfig
-                              val passname = myPassname
-                              val indent = indent + 2)
+
   structure I = Identifier
   structure LS = Identifier.LabelSet
   structure LD = Identifier.LabelDict
@@ -180,7 +177,6 @@ struct
   and simpleToShape (st, s) =
       case s
        of M.SConstant c => constantToShape (c)
-        | M.SCoerce (_, ss) => simpleToShape (st, ss)
         | M.SVariable vv => st (vv)
 
   (*
@@ -195,16 +191,21 @@ struct
        of M.TIntegral _ => (SScalar, SUnknown)
         | M.TFloat => (SScalar, SUnknown)
         | M.TDouble => (SScalar, SUnknown)
-        | M.TTuple (pobj, _, dyn) => 
+        | M.TTuple {pok, fixed, array} => 
           let
-            val b = Utils.optDefault (Option.map (pobj, pObjToShape), 
+(*
+            val b = Utils.Option.get (Option.map (array, typToShape), 
                                       (SAny, SUnknown))
-            val tshp = Utils.optDefault (Option.map (dyn, typToShape),
+            val tshp = Utils.Option.get (Option.map (array, typToShape),
                                          (SAny, SUnknown))
             val a = (SDynamic (sMax (tshp)), SUnknown)
           in merge (a, b)
+*)
+          in (SAny, SUnknown)
           end
-        | M.TPObj pobj => pObjToShape (pobj)
+(* 
+       | M.TPObj pobj => pObjToShape (pobj)
+*)
         | _ => (SAny, SUnknown)
 
   (*
@@ -216,12 +217,13 @@ struct
    *)
   and pObjToShape (pObj) = 
       case pObj 
-       of M.PtRat => (SScalar, SUnknown)
-        | M.PtFloat => (SScalar, SUnknown)
-        | M.PtDouble => (SScalar, SUnknown)
-        | M.PtArray t => (SDynamic (sMax (typToShape t)), SUnknown)
-        | M.PtArrayIdx t => (SDynamic (sMax (typToShape t)), SUnknown)
-        | M.PtArrayFixed ts => 
+       of M.PokRat => (SScalar, SUnknown)
+        | M.PokFloat => (SScalar, SUnknown)
+        | M.PokDouble => (SScalar, SUnknown)
+(*        | M.PokOArray => (SDynamic (sMax (typToShape t)), SUnknown)*)
+(*        | M.PokIArray => (SDynamic (sMax (typToShape t)), SUnknown)*)
+(*        | M.PArrayIdx t => (SDynamic (sMax (typToShape t)), SUnknown)*)
+(*        | M.PtArrayFixed ts => 
           (SKnown (VInt (Vector.length ts),
                    (Vector.fold (ts, 
                                  SUnknown, 
@@ -233,8 +235,9 @@ struct
                                  SUnknown,
                                  fn (a, b) => lub (sMax (typToShape a), b)))),
            SUnknown)
+*)
         | _ => (SAny, SUnknown)
-
+ 
   (*
    * given the length as an operand and the element shape, returns 
    * the shape of the resulting array
@@ -266,24 +269,24 @@ struct
   fun deriveGlobal (env, st, g) =
       case g 
        of M.GSimple s => simpleToShape (st, s)
-        | M.GTuple (pobj, ops) => 
-          Utils.optDefault (Option.map (pobj, pObjToShape), (SAny, SUnknown))
-        | M.GPRat _ => (SScalar, SScalar)
+(*        | M.GTuple (pobj, ops) => 
+          Utils.Option.get (Option.map (pobj, pObjToShape), (SAny, SUnknown))*)
+        | M.GRat _ => (SScalar, SScalar)
         (* for all others there is no possible shape value *)
         | _ => (SAny, SAny)
 
   fun derivePrim (env, st, v, p, ops) = 
       case p
        of P.Prim _ => (SScalar, SScalar)
-                      (* all primitives operate on scalars *)
+        (* all primitives operate on scalars *)
         | _ => (SAny, SAny)
-               (* for the rest I don't know *)
+        (* for the rest I don't know *)
       
 
   fun deriveInstr (env, st, v, rhs) = 
       case rhs 
        of M.RhsSimple s => SOME (Option.valOf v, (simpleToShape (st, s)))
-        | M.RhsPrim (p, _, ops) => 
+(*        | M.RhsPrim (p, _, ops) => 
             Option.map (v, fn (vv) => (vv, derivePrim (env, st, vv, p, ops)))
         | M.RhsPRat _ => SOME (Option.valOf v, (SScalar, SScalar))
         | M.RhsTuple (pobj, ops, dyn) =>
@@ -321,6 +324,7 @@ struct
              *)
             SOME (v, (SAny, min))
           end
+*)
         | _ => Option.map (v, fn (vv) => (vv, (SAny, SAny)))
                               (* for the rest I don't know *)
 
