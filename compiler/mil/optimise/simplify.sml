@@ -189,6 +189,7 @@ struct
          ("BetaSwitch",       "Cases beta reduced"             ),
          ("CollapseSwitch",   "Cases collapsed"                ),
          ("DCE",              "Dead instrs/globals eliminated" ),
+         ("EtaSwitch",        "Cases eta reduced"              ),
          ("Globalized",       "Objects globalized"             ),
          ("IdxGet",           "Index gets reduced"             ),
          ("ObjectGetKind",    "ObjectGetKinds reduced"         ),
@@ -241,6 +242,7 @@ struct
     val betaSwitch = clicker "BetaSwitch"
     val collapseSwitch = clicker "CollapseSwitch"
     val dce = clicker "DCE"
+    val etaSwitch = clicker "EtaSwitch"
     val unreachable = clicker "Unreachable"
     val globalized = clicker "Globalized"
     val idxGet = clicker "IdxGet"
@@ -375,6 +377,70 @@ val template =
         in f
         end
 
+   (* Switch ETA Reduction:
+    *
+    * Example: Switch with operand "a", constant options c1, c2, ..., 
+    * =======  cn, and default.
+    *
+    * Before the reduction          After the reduction
+    * --------------------          -------------------
+    *
+    * Case (a)                   |  Goto L (c, a, d)
+    * of c1 => goto L (c, c1, d) |      
+    *    c2 => goto L (c, c2, d) |
+    *    ...                     |
+    *    cn => goto L (c, cn, d) |
+    *     _ => goto L (c,  a, d) |
+    *     
+    *)
+    val etaSwitch = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, {on, cases, default})) =>
+              let
+                (* Turn the constants into operands *)
+                val cases = Vector.map (cases, fn (a, tg) => (M.SConstant a, tg))
+                (* Add the default, using the scrutinee as the comparator *)
+                val cases = 
+                    case default
+                     of SOME tg => Utils.Vector.cons ((on, tg), cases)
+                      | NONE => cases
+                (* Ensure all labels are the same, and get an arbitrary one *)
+                val labels = Vector.map (cases, #block o MU.Target.Dec.t o #2)
+                val () = Try.require (Utils.Vector.allEq (labels, op =))
+                val label = Try.V.sub (labels, 0)
+                (* Map each row (c, c2, d) to (SOME c, NONE, SOME d), where NONE indicates
+                 * that the element is equal either to the scrutinee, or to the particular 
+                 * constant guarding this branch. (Essentially, we mask out these elements,
+                 * and insist that the rest do not vary between rows) *)
+                val canonize = 
+                    fn (a, M.T {block, arguments}) => 
+                       let
+                         val mask = 
+                             fn b => if MU.Operand.eq (a, b) orelse MU.Operand.eq (on, b) then
+                                       NONE
+                                     else 
+                                       SOME b
+                         val arguments = Vector.map (arguments, mask)
+                       in arguments
+                       end
+                val argumentsV = Vector.map (cases, canonize)
+                (* Transpose the argument vectors into column vectors, and ensure that
+                 * each column contains all of the same elements (either all NONE), or
+                 * all SOME c for the same c *)
+                val argumentsVT = Utils.Vector.transpose argumentsV
+                val columnOk = 
+                 fn v => Utils.Vector.allEq (v, fn (a, b) => Option.equals (a, b, MU.Operand.eq))
+                val () = Try.require (Vector.forall (argumentsVT, columnOk))
+                val arguments = Try.V.sub (argumentsV, 0)
+                val arguments = Vector.map (arguments, fn a => Utils.Option.get (a, on))
+                val t = M.TGoto (M.T {block = label, arguments = arguments})
+                val () = IInstr.replaceTransfer (imil, i, t)
+              in [I.ItemInstr i]
+              end
+        in try (Click.etaSwitch, f)
+        end
+
     (* Turn a switch into a setCond:
      * case b of true => goto L1 ({}) 
      *        | false => goto L1 {a}
@@ -412,8 +478,7 @@ val template =
         in try (Click.switchToSetCond, f)
         end
 
-    val tCase3 = fn _ => NONE
-    val tCase = Try.or (tCase1, Try.or (switchToSetCond, tCase3))
+    val tCase = Try.or (tCase1, Try.or (switchToSetCond, etaSwitch))
 
     val tInterProc = fn _ => NONE
     val tReturn = fn _ => NONE

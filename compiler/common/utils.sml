@@ -57,6 +57,30 @@ structure Utils = struct
              | v::vl => toListOnto (v, concatToList vl))
       val lookup : 'a vector * int -> 'a option = 
        fn (v, i) => (SOME (Vector.sub (v, i))) handle Subscript => NONE
+      val allEq : 'a vector * ('a * 'a -> bool) -> bool = 
+          fn (v, eq) => 
+             if Vector.isEmpty v then
+               true
+             else
+               let
+                 val b = Vector.sub (v, 0)
+                 val equal = Vector.forall (v, fn a => eq (a, b))
+               in equal
+               end
+      val transpose : 'a vector vector -> 'a vector vector = 
+          fn v =>
+             let
+               val newCols = Vector.length v
+               val newRows = if newCols > 0 then 
+                               Vector.length (Vector.sub (v, 0))
+                             else 
+                               0
+               val oldElt = 
+                fn (row, col) => 
+                   Vector.sub (Vector.sub (v, row), col)
+               val v = Vector.tabulate (newRows, fn row => Vector.tabulate (newCols, fn col => oldElt (col, row)))
+             in v
+             end
     end (* structure Vector *)
 
     structure Option = 
