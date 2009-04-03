@@ -83,6 +83,7 @@ struct
            | M.PokOptionSet => true
            | M.PokType      => true
            | M.PokThunk     => false
+           | M.PokRef       => true
 
      fun isPType (c, t) =
          case t

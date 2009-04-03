@@ -757,7 +757,7 @@ sig
     val box : Config.t * PObjKind.t * FieldKind.t * Operand.t -> Rhs.t
     val boxGlobal : Config.t * PObjKind.t * FieldKind.t * Simple.t -> Global.t
     val ofValIndex : int
-    val unbox : Config.t * PObjKind.t * FieldKind.t * Mil.variable -> Rhs.t
+    val unbox : Config.t * FieldKind.t * Mil.variable -> Rhs.t
   end
 
   structure OrdinalArray :
@@ -772,10 +772,10 @@ sig
                    -> Rhs.t
     val newVar : Config.t * PObjKind.t * FieldKind.t * Mil.operand -> Rhs.t
     val lenIndex : int
-    val length : Config.t * PObjKind.t * FieldKind.t * Mil.variable -> Rhs.t
-    val sub : Config.t * PObjKind.t * FieldKind.t * Mil.variable * Operand.t
+    val length : Config.t * Mil.variable -> Rhs.t
+    val sub : Config.t * FieldKind.t * Mil.variable * Operand.t
               -> Rhs.t
-    val update : Config.t * PObjKind.t * FieldKind.t * Mil.variable * Operand.t
+    val update : Config.t * FieldKind.t * Mil.variable * Operand.t
                  * Operand.t
                  -> Rhs.t
     val inited : Config.t * PObjKind.t * FieldKind.t * Mil.variable -> Rhs.t
@@ -793,11 +793,48 @@ sig
                    -> Rhs.t
     val lenIndex : int
     val idxIndex : int
-    val index : Config.t * PObjKind.t * FieldKind.t * Mil.variable -> Rhs.t
-    val idxSub : Config.t * PObjKind.t * FieldKind.t * Mil.variable * Operand.t
+    val length : Config.t * Mil.variable -> Rhs.t
+    val index : Config.t * FieldKind.t * Mil.variable -> Rhs.t
+    val idxSub : Config.t * FieldKind.t * Mil.variable * Operand.t
                  -> Rhs.t
   end
 
+  structure Rational :
+  sig
+    val t : Mil.typ
+    val from : Prims.numTyp * Mil.operand -> Mil.rhs
+    val fromIntegral : IntArb.typ * Mil.operand -> Mil.rhs
+    val fromUIntp : Config.t * Mil.operand -> Mil.rhs
+    val fromSIntp : Config.t * Mil.operand -> Mil.rhs
+    structure Opt :
+    sig
+      val max : IntInf.t
+      val min : IntInf.t
+      val integerFits  : IntInf.t -> bool
+      val rationalFits : Rat.t -> bool
+      val fromInteger : IntInf.t -> Mil.constant option
+      val fromRational : Rat.t -> Mil.constant option
+    end (* structure Opt *)
+
+  end (* structure Rational *)
+
+  structure Integer :
+  sig
+    val t : Mil.typ
+    val from : Prims.numTyp * Mil.operand -> Mil.rhs
+    val fromIntegral : IntArb.typ * Mil.operand -> Mil.rhs
+    val fromUIntp : Config.t * Mil.operand -> Mil.rhs
+    val fromSIntp : Config.t * Mil.operand -> Mil.rhs
+    structure Opt :
+    sig
+      val max : IntInf.t
+      val min : IntInf.t
+      val integerFits  : IntInf.t -> bool
+      val rationalFits : Rat.t -> bool
+      val fromInteger : IntInf.t -> Mil.constant option
+      val fromRational : Rat.t -> Mil.constant option
+    end (* structure Opt *)
+  end (* structure Integer *)
 
   structure Def :
   sig
@@ -815,6 +852,33 @@ sig
       val pSet : t -> Mil.simple option
     end (* structure Out *)
   end (* structure Def *)
+
+  structure Prims :
+  sig
+    structure Dec :
+    sig
+      val prim : Prims.t -> Prims.prim option
+      val runtime : Prims.t -> Prims.runtime option
+      val vi : Prims.t -> VectorInstructions.prim option
+    end
+
+    structure Constant :
+    sig
+      val fromMilConstant : Mil.constant -> Prims.constant option
+      val toMilGlobal : Config.t * Prims.constant -> Mil.global
+      val toMilConstant : Config.t * Prims.constant -> Mil.constant option
+    end (* structure Constant *)
+
+    structure Operation :
+    sig
+      val fromMilConstant : Mil.constant -> Mil.operand Prims.operation
+      val fromMilGlobal : Mil.global -> Mil.operand Prims.operation
+      val fromMilRhs : Mil.rhs -> Mil.operand Prims.operation
+      val fromDef : Def.t -> Mil.operand Prims.operation
+    end (* structure Operation *)
+
+  end (* structure Prims *)
+
 end;
 
 functor Intp(val sgn : IntArb.signed
@@ -921,6 +985,7 @@ struct
                 | M.PokOptionSet => 9
                 | M.PokType      => 10
                 | M.PokThunk     => 11
+                | M.PokRef       => 12
         in C.fromOrd ord (pok1, pok2)
         end
 
@@ -1511,6 +1576,7 @@ struct
           | M.PokIArray    => #"B"
           | M.PokSum       => #"S"
           | M.PokOptionSet => #"O"
+          | M.PokRef       => #"r"
           | M.PokType      => #"T"
           | M.PokThunk     => #"t"
 
@@ -1526,6 +1592,7 @@ struct
           | M.PokIArray    => "iarray"
           | M.PokSum       => "sum"
           | M.PokOptionSet => "set"
+          | M.PokRef       => "ref"
           | M.PokType      => "type"
           | M.PokThunk     => "thunk"
 
@@ -1558,7 +1625,7 @@ struct
            | M.TPFunction {args, ress}    => SOME M.PokFunction
            | M.TPSum nts                  => SOME M.PokSum
            | M.TPType {kind, over}        => SOME M.PokType
-           | M.TPRef t                    => NONE)
+           | M.TPRef t                    => SOME M.PokRef)
   end
 
   structure ValueSize =
@@ -3237,7 +3304,7 @@ struct
 
     val ofValIndex = 0
 
-    fun unbox (c, pok, fk, v) =
+    fun unbox (c, fk, v) =
         M.RhsTupleSub (M.TF {tupDesc = td fk,
                              tup = v,
                              field = M.FiFixed ofValIndex})
@@ -3333,17 +3400,17 @@ struct
     fun newVar (c, pok, fk, len) =
         M.RhsTuple {vtDesc = vtdVar (c, pok, fk), inits = Vector.new1 len}
 
-    fun length (c, pok, fk, arr) =
-        M.RhsTupleSub (M.TF {tupDesc = tdVar (c, fk),
+    fun length (c, arr) =
+        M.RhsTupleSub (M.TF {tupDesc = tdFixed (c, Vector.new0()),
                              tup = arr,
                              field = M.FiFixed lenIndex})
 
-    fun sub (c, pok, fk, arr, idx) =
+    fun sub (c, fk, arr, idx) =
         M.RhsTupleSub (M.TF {tupDesc = tdVar (c, fk),
                              tup = arr,
                              field = M.FiVariable idx})
 
-    fun update (c, pok, fk, arr, idx, ofVal) =
+    fun update (c, fk, arr, idx, ofVal) =
         M.RhsTupleSet {tupField = M.TF {tupDesc = tdVar (c, fk),
                                         tup = arr,
                                         field = M.FiVariable idx},
@@ -3370,7 +3437,7 @@ struct
                                        (M.TIdx, M.FvReadOnly)),
                   array = SOME (t, M.FvReadOnly)}
 
-    fun tdFixed (c, d, fks) =
+    fun tdFixed (c, fks) =
         let
           val lenFd = M.FD {kind = UIntp.fieldKind c, var = M.FvReadOnly}
           val idxFd = M.FD {kind = M.FkRef, var = M.FvReadOnly}
@@ -3390,7 +3457,7 @@ struct
           M.TD {fixed = Vector.new2 (lenFd, idxFd), array = SOME eltFd}
         end
 
-    fun vtdFixed (c, pok, d, fks) =
+    fun vtdFixed (c, pok, fks) =
         let
           val lenFd = M.FD {kind = UIntp.fieldKind c, var = M.FvReadOnly}
           val idxFd = M.FD {kind = M.FkRef, var = M.FvReadOnly}
@@ -3417,7 +3484,7 @@ struct
 
     fun newFixed (c, pok, d, fks, idxVar, os) =
         let
-          val vtd = vtdFixed (c, pok, d, fks)
+          val vtd = vtdFixed (c, pok, fks)
           val leni = M.SConstant (UIntp.int (c, Vector.length fks))
           val inits =
               Vector.concat [Vector.new2 (leni, M.SVariable idxVar), os]
@@ -3425,22 +3492,92 @@ struct
         in rhs
         end
 
-    fun length (c, pok, fk, arr) =
-        M.RhsTupleSub (M.TF {tupDesc = tdVar (c, fk),
+    fun length (c, arr) =
+        M.RhsTupleSub (M.TF {tupDesc = tdFixed (c, Vector.new0()),
                              tup = arr,
                              field = M.FiFixed lenIndex})
 
-    fun index (c, pok, fk, arr) =
+    fun index (c, fk, arr) =
         M.RhsTupleSub (M.TF {tupDesc = tdVar (c, fk),
                              tup = arr,
                              field = M.FiFixed idxIndex})
 
-    fun idxSub (c, pok, fk, arr, idx) =
+    fun idxSub (c, fk, arr, idx) =
         M.RhsTupleSub (M.TF {tupDesc = tdVar (c, fk),
                              tup = arr,
                              field = M.FiVariable idx})
 
   end
+
+  structure Integer =
+  struct
+    val t = Mil.TInteger
+
+    val from =
+     fn (nt, p) => M.RhsPrim {prim = Prims.Prim (Prims.PNumConvert (Prims.NtInteger, nt)),
+                              createThunks = false,
+                              args = Vector.new1 p}
+
+    val fromIntegral = 
+        fn (iat, p) => from (Prims.NtIntegral iat, p)
+
+    val fromUIntp = 
+        fn (config, p) => fromIntegral (UIntp.intArbTyp config, p)
+
+    val fromSIntp = 
+        fn (config, p) => fromIntegral (SIntp.intArbTyp config, p)
+
+    structure Opt = 
+    struct
+      val max = IntInf.- (IntInf.<< (IntInf.one, 0w30), IntInf.one)
+      val min = IntInf.~ max
+      val integerFits = 
+       fn i => IntInf.>= (i, min) andalso IntInf.<= (i, max) 
+      val rationalFits = 
+       fn r => 
+          (case Rat.toIntInf r
+            of SOME i => integerFits i
+             | NONE => false)
+      val fromInteger = 
+       fn i => if integerFits i then SOME (M.CInteger i) else NONE
+      val fromRational = 
+       fn r => Utils.Option.bind (Rat.toIntInf r, fromInteger)
+
+    end (* structure Opt *)
+
+  end (* structure Integer *)
+
+  structure Rational =
+  struct
+    val t = Mil.TRat
+
+    val from =
+     fn (nt, p) => M.RhsPrim {prim = Prims.Prim (Prims.PNumConvert (Prims.NtRat, nt)),
+                              createThunks = false,
+                              args = Vector.new1 p}
+
+    val fromIntegral = 
+        fn (iat, p) => from (Prims.NtIntegral iat, p)
+
+    val fromUIntp = 
+        fn (config, p) => fromIntegral (UIntp.intArbTyp config, p)
+
+    val fromSIntp = 
+        fn (config, p) => fromIntegral (SIntp.intArbTyp config, p)
+
+    structure Opt = 
+    struct
+      val max = Integer.Opt.max
+      val min = Integer.Opt.min
+      val integerFits = Integer.Opt.integerFits
+      val rationalFits = Integer.Opt.rationalFits
+      val fromInteger = 
+       fn i => if integerFits i then SOME (M.CRat i) else NONE
+      val fromRational = 
+       fn r => Utils.Option.bind (Rat.toIntInf r, fromInteger)
+    end (* structure Opt *)
+
+  end (* structure Rational *)
 
   structure Def =
   struct
@@ -3488,5 +3625,100 @@ struct
              | _ => NONE)
     end (* structure Out *)
   end (* structure Def *)
+
+  structure Prims =
+  struct
+    structure P = Prims
+
+    structure Dec =
+    struct
+      val prim = 
+       fn p => 
+          (case p
+            of Prims.Prim p => SOME p
+             | _ => NONE)
+      val runtime = 
+       fn p => 
+          (case p
+            of Prims.Runtime p => SOME p
+             | _ => NONE)
+      val vi = 
+       fn p => 
+          (case p
+            of Prims.Vi p => SOME p
+             | _ => NONE)
+    end (* structure Dec *)
+
+    structure Constant =
+    struct
+      val fromMilConstant = 
+       fn c => 
+          (case c
+            of M.CRat i          => SOME (P.CRat (Rat.fromIntInf i))
+             | M.CInteger i      => SOME (P.CInteger i)
+             | M.CName _         => NONE
+             | M.CIntegral i     => SOME (P.CIntegral i)
+             | M.CFloat f        => SOME (P.CFloat f)
+             | M.CDouble d       => SOME (P.CDouble d)
+             | M.CViVector _     => NONE
+             | M.CViMask _       => NONE
+             | M.CPok _          => NONE
+             | M.COptionSetEmpty => NONE
+             | M.CTypePH         => NONE)
+
+
+      val toMilGlobal = 
+       fn (config, c) => 
+          let
+            val simple = fn c => fn i => (M.GSimple o M.SConstant o c) i
+          in
+            case c
+             of Prims.CRat r      => M.GRat r
+              | Prims.CInteger i  => M.GInteger i
+              | Prims.CIntegral i => simple M.CIntegral i
+              | Prims.CFloat r    => simple M.CFloat r
+              | Prims.CDouble r   => simple M.CDouble r
+              | Prims.CBool b     => simple Bool.fromBool (config, b)
+          end
+
+    val toMilConstant = 
+     fn (config, c) =>
+        (case toMilGlobal (config, c)
+          of M.GSimple (M.SConstant c) => SOME c
+           | _ => NONE)
+
+    end (* structure Constant *)
+
+    structure Operation =
+    struct
+      val fromMilConstant = 
+       fn c => 
+          (case Constant.fromMilConstant c
+            of SOME c => Prims.OConstant c
+             | NONE => Prims.OOther)
+
+      val fromMilGlobal = 
+       fn g => 
+          (case g
+            of M.GRat r => Prims.OConstant (P.CRat r)
+             | M.GInteger i => Prims.OConstant (P.CInteger i)
+             | _ => Prims.OOther)
+
+      val fromMilRhs = 
+       fn rhs => 
+          (case rhs 
+            of M.RhsPrim {prim = P.Prim p, args, ...} => P.OPrim (p, Vector.toList args)
+             | _ => P.OOther)
+
+      val fromDef = 
+       fn def => 
+          (case def
+            of Def.DefGlobal g => fromMilGlobal g
+             | Def.DefRhs rhs => fromMilRhs rhs)
+
+    end (* structure Operation *)
+
+  end (* structure Prims *)
+
 
 end

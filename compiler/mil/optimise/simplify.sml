@@ -20,7 +20,9 @@ struct
   val passname = "MilSimplify"
 
   structure M = Mil
+  structure P = Prims
   structure MU = MilUtils
+  structure POM = PObjectModel
   structure I = IMil
   structure IInstr = I.IInstr
   structure IGlobal = I.IGlobal
@@ -188,7 +190,9 @@ struct
          ("IdxGet",           "Index gets reduced"             ),
          ("ObjectGetKind",    "ObjectGetKinds reduced"         ),
          ("PFunctionGetFv",   "Closure fv projections reduced" ),
-         ("PFunctionInitCode","Closure code ptrs killed"       ), 
+         ("PFunctionInitCode","Closure code ptrs killed"       ),
+         ("PrimPrim",         "Primitives reduced"             ),
+         ("PrimToLen",        "P Nom/Dub -> length reductions" ),
          ("PSetGet",          "SetGet ops reduced"             ),
          ("PSetNewEta",       "SetNew ops eta reduced"         ),
          ("PSumProj",         "Sum projections reduced"        ),
@@ -243,6 +247,8 @@ struct
     val objectGetKind = clicker "ObjectGetKind"
     val pFunctionInitCode = clicker "PFunctionInitCode"
     val pFunctionGetFv = clicker "PFunctionGetFv"
+    val primPrim = clicker "PrimPrim"
+    val primToLen = clicker "PrimToLen"
     val simple = clicker "Simple"
     val thunkGetFv = clicker "ThunkGetFv"
     val thunkGetValue = clicker "ThunkGetValue"
@@ -315,7 +321,7 @@ struct
                    let
                      val gv = Var.related (imil, v, "", Var.typ (imil, v), true)
                      val () = IInstr.delete (imil, i)
-                     val g = IGlobal.new (imil, gv, g)
+                     val g = IGlobal.build (imil, gv, g)
                      val () = WS.addGlobal (ws, g)
                      val () = Use.replaceUses (imil, v, M.SVariable gv)
                    in ()
@@ -432,7 +438,103 @@ struct
         in try (Click.simple, f)
         end
 
-    val prim = fn (state, (i, dest, r)) => NONE
+    val primToLen = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dest, {prim, createThunks, args})) =>
+              let
+                val dv = <- dest
+                val p = <@ MU.Prims.Dec.prim prim
+                val () = Try.require (p = Prims.PNub)
+                val v1 = <@ MU.Simple.Dec.sVariable o Try.V.singleton @@ args
+                val {prim, args, ...} = <@ MU.Rhs.Dec.rhsPrim <! Def.toRhs o Def.get @@ (imil, v1)
+                val p = <@ MU.Prims.Dec.prim prim
+                val () = Try.require (p = Prims.PDom)
+                val arrv = <@ MU.Simple.Dec.sVariable o Try.V.singleton @@ args
+                val config = PD.getConfig d
+                val uintv = IMil.Var.related (imil, dv, "uint", MU.UIntp.t config, false)
+                val ni1 = 
+                    let
+                      val rhs = POM.OrdinalArray.length (config, arrv)
+                      val mi = M.I {dest = SOME uintv, rhs = rhs}
+                      val ni = IInstr.insertBefore (imil, mi, i)
+                    in ni
+                    end
+                val ratv = IMil.Var.related (imil, dv, "rat", MU.Rational.t, false)
+                val ni2 = 
+                    let
+                      val rhs = MU.Rational.fromUIntp (config, M.SVariable uintv)
+                      val mi = M.I {dest = SOME ratv, rhs = rhs}
+                      val ni = IInstr.insertBefore (imil, mi, i)
+                    in ni
+                    end
+                val () = 
+                    let
+                      val rhs = POM.Rat.mk (config, M.SVariable ratv)
+                      val mi = M.I {dest = SOME dv, rhs = rhs}
+                      val () = IInstr.replaceInstruction (imil, i, mi)
+                    in ()
+                    end
+              in [I.ItemInstr ni1, I.ItemInstr ni2, I.ItemInstr i]
+              end
+        in try (Click.primToLen, f)
+        end
+
+    val primPrim = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dest, {prim, createThunks, args})) =>
+              let
+                val dv = <- dest
+
+                val p = <@ MU.Prims.Dec.prim prim
+
+                val milToPrim = 
+                 fn p => 
+                    (case p
+                      of M.SConstant c => MU.Prims.Operation.fromMilConstant c
+                       | M.SVariable v => 
+                         (case Def.toMilDef o Def.get @@ (imil, v)
+                           of SOME def => MU.Prims.Operation.fromDef def
+                            | NONE => Prims.OOther))
+
+                val config = PD.getConfig d
+
+                val rr = P.reduce (config, p, Vector.toList args, milToPrim)
+
+                val l = 
+                    (case rr
+                      of P.RrUnchanged => Try.fail ()
+                       | P.RrBase new  =>
+                         let
+                           val () = Use.replaceUses (imil, dv, new)
+                           val () = IInstr.delete (imil, i)
+                         in []
+                         end
+                       | P.RrConstant c =>
+                         let
+                           val gv = Var.new (imil, "mrt", MU.Rational.t, true)
+                           val mg = MU.Prims.Constant.toMilGlobal (PD.getConfig d, c)
+                           val g = IGlobal.build (imil, gv, mg)
+                           val () = Use.replaceUses (imil, dv, M.SVariable gv)
+                           val () = IInstr.delete (imil, i)
+                         in [I.ItemGlobal g]
+                         end
+                       | P.RrPrim (p, ops) =>
+                         let
+                           val rhs = M.RhsPrim {prim = P.Prim p, 
+                                                createThunks = createThunks,
+                                                args = Vector.fromList ops}
+                           val ni = M.I {dest = SOME dv, rhs = rhs}
+                           val () = IInstr.replaceInstruction (imil, i, ni)
+                         in [I.ItemInstr i]
+                         end)
+              in l
+              end
+        in try (Click.primPrim, f)
+        end
+
+    val prim = Try.or (primPrim, primToLen)
 
     val tuple = fn (state, (i, dest, r)) => NONE
 

@@ -47,7 +47,8 @@ struct
              | M.PokSum       => "VSumTag"
              | M.PokOptionSet => "VSetTag"
              | M.PokType      => "VTypeTag"
-             | M.PokThunk     => "VThunkTag")
+             | M.PokThunk     => "VThunkTag"
+             | M.PokRef       => "VRefTag")
         
     fun pObjKindVTable pok =
         Pil.identifier
@@ -63,7 +64,8 @@ struct
              | M.PokSum       => "pLsrPSumVTable"
              | M.PokOptionSet => "pLsrPSetVTable"
              | M.PokType      => "pLsrPTypeVTable"
-             | M.PokThunk     => "pLsrThunkValVTable")
+             | M.PokThunk     => "pLsrThunkValVTable"
+             | M.PokRef       => "pLsrPRefVTable")
 
     val alwaysMutable   = Pil.identifier "PGC_ALWAYS_MUTABLE"
     val createdMutable  = Pil.identifier "PGC_CREATED_MUTABLE"
@@ -141,8 +143,8 @@ struct
   structure Rat =
   struct
 
-    val optMax = IntInf.- (IntInf.<< (IntInf.one, 0w30), IntInf.one)
-    val optMin = IntInf.~ optMax
+    val optMax = MilUtils.Rational.Opt.max
+    val optMin = MilUtils.Rational.Opt.min
 
     val smallMax = Pil.identifier "pLsrPSmallRationalMax"
     val smallMin = Pil.identifier "pLsrPSmallRationalMin"

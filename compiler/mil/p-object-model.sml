@@ -76,7 +76,7 @@ sig
     val newFixed : Config.t * Mil.fieldKind Vector.t * Mil.operand Vector.t
                    -> Mil.rhs
     val newVar : Config.t * Mil.fieldKind * Mil.operand -> Mil.rhs
-    val length : Config.t * Mil.fieldKind * Mil.variable -> Mil.rhs
+    val length : Config.t * Mil.variable -> Mil.rhs
     val sub : Config.t * Mil.fieldKind * Mil.variable * Mil.operand -> Mil.rhs
     val update : Config.t * Mil.fieldKind * Mil.variable * Mil.operand
                  * Mil.operand
@@ -154,7 +154,7 @@ struct
 
     val ofValIndex = B.ofValIndex
 
-    fun extract (c, v) = B.unbox (c, M.PokDouble, M.FkBits M.Fs64, v)
+    fun extract (c, v) = B.unbox (c, M.FkBits M.Fs64, v)
 
   end
 
@@ -172,7 +172,7 @@ struct
 
     val ofValIndex = B.ofValIndex
 
-    fun extract (c, v) = B.unbox (c, M.PokFloat, M.FkBits M.Fs32, v)
+    fun extract (c, v) = B.unbox (c, M.FkBits M.Fs32, v)
 
   end
 
@@ -284,7 +284,7 @@ struct
     fun newFixed (c, d, fks, v, os) =
         IA.newFixed (c, M.PokIArray, d, fks, v, os)
 
-    fun idxSub (c, fk, v, opnd) = IA.idxSub (c, M.PokIArray, fk, v, opnd)
+    fun idxSub (c, fk, v, opnd) = IA.idxSub (c, fk, v, opnd)
 
   end
 
@@ -303,11 +303,11 @@ struct
 
     fun newVar (c, fk, opnd) = OA.newVar (c, M.PokOArray, fk, opnd)
 
-    fun length (c, fk, v) = OA.length (c, M.PokOArray, fk, v)
+    fun length (c, v) = OA.length (c, v)
 
-    fun sub (c, fk, v, opnd) = OA.sub (c, M.PokOArray, fk, v, opnd)
+    fun sub (c, fk, v, opnd) = OA.sub (c, fk, v, opnd)
 
-    fun update (c, fk, v, o1, o2) = OA.update (c, M.PokOArray, fk, v, o1, o2)
+    fun update (c, fk, v, o1, o2) = OA.update (c, fk, v, o1, o2)
 
     fun inited (c, fk, v) = OA.inited (c, M.PokOArray, fk, v)
 
@@ -400,7 +400,7 @@ struct
 
     val ofValIndex = B.ofValIndex
 
-    fun extract (c, v) = B.unbox (c, M.PokRat, M.FkRef, v)
+    fun extract (c, v) = B.unbox (c, M.FkRef, v)
 
   end
 

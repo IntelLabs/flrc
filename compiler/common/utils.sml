@@ -1820,7 +1820,6 @@ struct
   open Lat
 end
 
-
 (* Build functional get/set methods for a record type.  To use,
  * define functions mapping a record type into and out of a nested 
  * tuple type, and pass these to the mk function of the appropriate arity.  

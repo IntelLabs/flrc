@@ -36,6 +36,7 @@ struct
     | PokIArray
     | PokSum
     | PokOptionSet
+    | PokRef
     | PokType
     | PokThunk
 
