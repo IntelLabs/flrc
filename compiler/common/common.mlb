@@ -5,6 +5,7 @@ local
 
         (* Library stuff *)
         $(SML_LIB)/mlton/sources.mlb
+        tuple.sml
         fail.sml
         try.sml
         lub.sml
