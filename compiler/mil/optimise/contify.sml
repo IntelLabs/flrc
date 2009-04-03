@@ -508,7 +508,7 @@ struct
           | M.CDirectClosure {cls, code, ...} =>
             (case getFunEntry (env, code)
               of NONE => NONE
-               | SOME l => SOME (l, Utils.vcons (M.SVariable cls, args)))
+               | SOME l => SOME (l, Utils.Vector.cons (M.SVariable cls, args)))
 
     (* Given a Mil call that is a tail call, determine if it is
      * a self tail call and compute an optional label to jump to, or

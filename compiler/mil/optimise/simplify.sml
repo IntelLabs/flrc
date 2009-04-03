@@ -27,6 +27,7 @@ struct
   structure IInstr = I.IInstr
   structure IGlobal = I.IGlobal
   structure IFunc = I.IFunc
+  structure IBlock = I.IBlock
   structure Var = I.Var
   structure Use = I.Use
   structure Def = I.Def
@@ -185,6 +186,8 @@ struct
 
     val localNms = 
         [
+         ("BetaSwitch",       "Cases beta reduced"             ),
+         ("CollapseSwitch",   "Cases collapsed"                ),
          ("DCE",              "Dead instrs/globals eliminated" ),
          ("Globalized",       "Objects globalized"             ),
          ("IdxGet",           "Index gets reduced"             ),
@@ -199,6 +202,7 @@ struct
          ("PSetQuery",        "SetQuery ops reduced"           ),
          ("PSetCond",         "SetCond ops reduced"            ),
          ("Simple",           "Simple moves eliminated"        ),
+         ("SwitchToSetCond",  "Cases converted to SetCond"     ),
          ("ThunkGetFv",       "Thunk fv projections reduced"   ),
          ("ThunkGetValue",    "ThunkGetValue ops reduced"      ),
          ("ThunkInitCode",    "Thunk code ptrs killed"         ), 
@@ -234,6 +238,8 @@ struct
 
     val stats = List.map (localNms, fn (nm, info) => (globalNm nm, info))
 
+    val betaSwitch = clicker "BetaSwitch"
+    val collapseSwitch = clicker "CollapseSwitch"
     val dce = clicker "DCE"
     val unreachable = clicker "Unreachable"
     val globalized = clicker "Globalized"
@@ -250,6 +256,7 @@ struct
     val primPrim = clicker "PrimPrim"
     val primToLen = clicker "PrimToLen"
     val simple = clicker "Simple"
+    val switchToSetCond = clicker "SwitchToSetCond"
     val thunkGetFv = clicker "ThunkGetFv"
     val thunkGetValue = clicker "ThunkGetValue"
     val thunkInitCode = clicker "ThunkInitCode"
@@ -294,9 +301,154 @@ struct
   structure TransferR : REDUCE =
   struct
     type t = I.iInstr * M.transfer
+             (*
+val template = 
+    let
+      val f = 
+       fn ((d, imil, ws), (i, _)) =>
+          let
+          in []
+          end
+    in try (Click., f)
+    end
+*)
+    val betaSwitch = 
+     fn {get, eq, dec, con} => 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, {on, cases, default})) =>
+              let
+                val c = <@ get (imil, on)
+                val eqToC = fn (c', _) => eq (c, c')
+                val {yes, no} = Vector.partition (cases, eqToC)
+                val tg = 
+                    (case (Vector.length yes, default)
+                      of (0, SOME tg) => tg
+                       | (1, _) => #2 (Vector.sub (yes, 0))
+                       | _ => Try.fail ())
+                val mi = M.TGoto tg
+                val () = IInstr.replaceTransfer (imil, i, mi)
+              in [I.ItemInstr i]
+              end
+        in try (Click.betaSwitch, f)
+        end
+
+    (* XXX This has a bug in it - can loop -leaf *)
+    val collapseSwitch = 
+     fn {get, eq, dec, con} => 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, {on, cases, default})) =>
+              let
+                val {block, arguments} = MU.Target.Dec.t (<- default)
+                val () = Try.require (Vector.isEmpty arguments)
+                val iFunc = IInstr.getIFunc (imil, i)
+                val fallthruBlock = IFunc.getBlockByLabel (imil, iFunc, block)
+                val params = IBlock.getParameters (imil, fallthruBlock)
+                val () = Try.require (Vector.isEmpty params andalso
+                                      IBlock.isEmpty (imil, fallthruBlock))
+                val t = IBlock.getTransfer' (imil, fallthruBlock)
+                val {on = on2, cases = cases2, default = default2} = <@ dec t
+                val () = Try.require (MU.Operand.eq (on, on2))
+                val check = fn x => (fn (y, _) => not (eq (x, y)))
+                val notAnArmInFirst = 
+                 fn (x, _) => Vector.forall (cases, check x)
+                val cases2 = Vector.keepAll (cases2, notAnArmInFirst)
+                val cases = Vector.concat [cases, cases2]
+                val t = con {on = on, cases = cases, default = default2}
+                val () = IInstr.replaceTransfer (imil, i, t)
+              in [I.ItemInstr i]
+              end
+        in try (Click.collapseSwitch, f)
+        end
+
+    val switch = fn ops => Try.or (betaSwitch ops, collapseSwitch ops)
+        
+    val tGoto = fn _ => NONE
+    val tCase1 = 
+        let
+          val get = (fn (imil, s) => MU.Simple.Dec.sConstant s)
+          val eq = MU.Constant.eq
+          val dec = MU.Transfer.Dec.tCase
+          val con = M.TCase
+          val f = switch {get = get, eq = eq, dec = dec, con = con}
+        in f
+        end
+
+    (* Turn a switch into a setCond:
+     * case b of true => goto L1 ({}) 
+     *        | false => goto L1 {a}
+     *   ==  x = setCond(b, a);
+     *       goto L1(x);
+     *)
+    val switchToSetCond = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, {on, cases, default})) =>
+              let
+                val config = PD.getConfig d
+                val (c, tg1) = Try.V.singleton cases
+                val tg2 = <- default
+                val () = Try.require (MU.Constant.eq (c, MU.Bool.F config))
+                val M.T {block = l1, arguments = args1} = tg1
+                val M.T {block = l2, arguments = args2} = tg2
+                val () = Try.require (l1 = l2)
+                val arg1 = Try.V.singleton args1
+                val arg2 = Try.V.singleton args2
+                val () = <@ MU.Constant.Dec.cOptionSetEmpty <! MU.Simple.Dec.sConstant @@ arg1
+                val contents = <@ MU.Def.Out.pSet <! Def.toMilDef o Def.get @@ (imil, <@ MU.Simple.Dec.sVariable arg2)
+                val t = MilType.Typer.operand (config, IMil.T.getSi imil, contents)
+                val v = IMil.Var.new (imil, "sset", t, false)
+                val ni = M.I {dest = SOME v, 
+                              rhs  = M.RhsPSetCond {bool = on, ofVal = contents}}
+                val mv = IInstr.insertBefore (imil, ni, i)
+                val tg = 
+                    M.T {block = l1, 
+                         arguments = Vector.new1 (M.SVariable v)}
+                val goto = M.TGoto tg
+                val () = IInstr.replaceTransfer (imil, i, goto)
+              in [I.ItemInstr i, I.ItemInstr mv]
+              end
+        in try (Click.switchToSetCond, f)
+        end
+
+    val tCase3 = fn _ => NONE
+    val tCase = Try.or (tCase1, Try.or (switchToSetCond, tCase3))
+
+    val tInterProc = fn _ => NONE
+    val tReturn = fn _ => NONE
+    val tCut = fn _ => NONE
+    val tPSumCase = 
+        let
+          val get = 
+              Try.lift 
+                (fn (imil, oper) => 
+                    let
+                      val v = <@ MU.Simple.Dec.sVariable oper
+                      val nm = #tag <! MU.Def.Out.pSum <! Def.toMilDef o Def.get @@ (imil, v)
+                    in nm 
+                    end)
+          val eq = fn (nm, nm') => nm = nm'
+          val dec = MU.Transfer.Dec.tPSumCase
+          val con = M.TPSumCase
+          val f = switch {get = get, eq = eq, dec = dec, con = con}
+        in f
+        end
 
     val reduce = 
-     fn _ => NONE
+     fn (state, (i, t)) =>
+        let
+          val r = 
+              (case t
+                of M.TGoto tg => tGoto (state, (i, tg))
+                 | M.TCase sw => tCase (state, (i, sw))
+                 | M.TInterProc ip => tInterProc (state, (i, ip))
+                 | M.TReturn rts => tReturn (state, (i, rts))
+                 | M.TCut ct => tCut (state, (i, ct))
+                 | M.TPSumCase sw => tPSumCase (state, (i, sw)))
+       in r
+       end
+
   end (* structure TransferR *)
 
   structure LabelR : REDUCE =

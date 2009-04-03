@@ -432,6 +432,10 @@ sig
     val compare : t Compare.t
     val eq : t * t -> bool
     val fromVars : Mil.label * Mil.variable Vector.t -> t
+    structure Dec :
+    sig
+      val t : t -> {block : Mil.label, arguments : Operand.t Vector.t}
+    end
   end
 
   structure Switch :
@@ -2504,6 +2508,10 @@ struct
     fun fromVars (b, vs) =
         M.T {block = b, arguments = Vector.map (vs, M.SVariable)}
 
+    structure Dec = 
+    struct
+      val t = fn (M.T args) => args
+    end
   end
 
   structure Switch =
@@ -2806,7 +2814,7 @@ struct
                        OekInterProcRet {callee = callee, rets = rets, fx = fx}
                    val e1 = OE {kind = k, dest = OedBlock block}
                    val es = genCutsEdges cuts
-                   val es = Utils.vcons (e1, es)
+                   val es = Utils.Vector.cons (e1, es)
                  in es
                  end
                | M.RTail =>
@@ -3317,7 +3325,7 @@ struct
     fun fixedTyp (c, pok, ts) =
         let
           fun addVar t = (t, M.FvReadOnly)
-          val tvs = Vector.map (Utils.vcons (UIntp.t c, ts), addVar)
+          val tvs = Vector.map (Utils.Vector.cons (UIntp.t c, ts), addVar)
         in
           M.TTuple {pok = pok, fixed = tvs, array = NONE}
         end
@@ -3355,7 +3363,7 @@ struct
         let
           val lenFd = M.FD {kind = UIntp.fieldKind c, var = M.FvReadOnly}
           fun doOne fk = M.FD {kind = fk, var = M.FvReadOnly}
-          val fks = Utils.vcons (lenFd, Vector.map (fks, doOne))
+          val fks = Utils.Vector.cons (lenFd, Vector.map (fks, doOne))
         in
           M.TD {fixed = fks, array = NONE}
         end
@@ -3372,7 +3380,7 @@ struct
         let
           val lenFd = M.FD {kind = UIntp.fieldKind c, var = M.FvReadOnly}
           fun doOne fk = M.FD {kind = fk, var = M.FvReadOnly}
-          val fks = Utils.vcons (lenFd, Vector.map (fks, doOne))
+          val fks = Utils.Vector.cons (lenFd, Vector.map (fks, doOne))
         in
           M.VTD {pok = pok, fixed = fks, array = NONE}
         end
@@ -3392,7 +3400,7 @@ struct
         let
           val vtd = vtdFixed (c, pok, fks)
           val inits =
-              Utils.vcons (M.SConstant (UIntp.int (c, Vector.length fks)), os)
+              Utils.Vector.cons (M.SConstant (UIntp.int (c, Vector.length fks)), os)
           val rhs = M.RhsTuple {vtDesc = vtd, inits = inits}
         in rhs
         end

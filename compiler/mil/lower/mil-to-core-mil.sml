@@ -466,7 +466,7 @@ struct
                  transfer = transfer}
         val blocks = LD.insert (blocks, newEntry, block)
         val body = M.CB {entry = newEntry, blocks = blocks}
-        val args = Utils.vcons (cls, args)
+        val args = Utils.Vector.cons (cls, args)
       in (M.CcCode, args, body)
       end
 

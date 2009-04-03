@@ -180,7 +180,7 @@ struct
   struct
 
     fun codeTyp (cls, args, ress) =
-        M.TCode {cc = M.CcCode, args = Utils.vcons (cls, args), ress = ress}
+        M.TCode {cc = M.CcCode, args = Utils.Vector.cons (cls, args), ress = ress}
 
     fun closureTyp (args, ress) =
         let
@@ -200,7 +200,7 @@ struct
 
     fun td (c, fks) =
       let
-        val fks = Utils.vcons (MU.FieldKind.nonRefPtr c, fks)
+        val fks = Utils.Vector.cons (MU.FieldKind.nonRefPtr c, fks)
         fun doOne fk = M.FD {kind = fk, var = M.FvReadOnly}
         val fds = Vector.map (fks, doOne)
         val td = M.TD {fixed = fds, array = NONE}
@@ -210,7 +210,7 @@ struct
     fun vtd (c, fks) =
       let
         val pok = M.PokFunction
-        val fks = Utils.vcons (MU.FieldKind.nonRefPtr c, fks)
+        val fks = Utils.Vector.cons (MU.FieldKind.nonRefPtr c, fks)
         fun doOne fk = M.FD {kind = fk, var = M.FvReadOnly}
         val fds = Vector.map (fks, doOne)
         val vtd = M.VTD {pok = pok, fixed = fds, array = NONE}
@@ -224,7 +224,7 @@ struct
         let
           val (fks, os) = Vector.unzip fkos
         in
-          M.RhsTuple {vtDesc = vtd (c, fks), inits = Utils.vcons (code, os)}
+          M.RhsTuple {vtDesc = vtd (c, fks), inits = Utils.Vector.cons (code, os)}
         end
 
     fun mkGlobal (c, code) =
@@ -265,7 +265,7 @@ struct
         end
 
     fun doCall (c, codev, clsv, args) =
-        (M.CCode codev, Utils.vcons (M.SVariable clsv, args))
+        (M.CCode codev, Utils.Vector.cons (M.SVariable clsv, args))
         
   end
 

@@ -29,32 +29,36 @@ structure Utils = struct
       (* infix 3 *)
       val @@ : ('a -> 'b) * 'a -> 'b = 
        fn (f, a) => f a
-    end
+    end (* structure Function *)
 
-    fun vcons (a, v) = Vector.concat [Vector.new1 a, v]
+    structure Vector = 
+    struct 
+      val cons : 'a * 'a vector -> 'a vector = 
+       fn (a, v) => Vector.concat [Vector.new1 a, v]
+      val update : 'a vector * int * 'a -> 'a vector = 
+       fn (vec, i , elem) =>
+          Vector.mapi (vec, fn(i', elem') => if (i = i') then elem else elem')
+      val count : 'a vector * ('a -> bool) -> int = 
+       fn (vec, p) =>
+          Vector.fold (vec, 0, fn (a, i) => if p a then i+1 else i)
+      val split : 'a vector * int -> 'a vector * 'a vector = 
+       fn (vec, i) =>
+          let
+            val a = Vector.prefix (vec, i)
+            val b = Vector.dropPrefix (vec, i)
+          in (a, b)
+          end
+      val toListOnto : 'a vector * 'a list -> 'a list = 
+       fn (v, l) => Vector.foldr (v, l, op ::)
+      val rec concatToList : 'a vector list -> 'a list = 
+       fn vl => 
+          (case vl
+            of [] => []
+             | v::vl => toListOnto (v, concatToList vl))
+      val lookup : 'a vector * int -> 'a option = 
+       fn (v, i) => (SOME (Vector.sub (v, i))) handle Subscript => NONE
+    end (* structure Vector *)
 
-
-
-    fun vectorUpdate (vec : 'a vector, i : int , elem : 'a) : 'a vector = 
-        Vector.mapi (vec, fn(i', elem') => if (i = i') then elem else elem')
-
-    fun vectorCount (vec : 'a vector, p : 'a -> bool) : int = 
-        Vector.fold (vec, 0, fn (a, i) => if p a then i+1 else i)
-
-    fun vectorSplit (vec : 'a vector, i : int) = 
-        let
-          val a = Vector.prefix (vec, i)
-          val b = Vector.dropPrefix (vec, i)
-        in (a, b)
-        end
-
-    fun vectorToListOnto (v, l) = Vector.foldr(v, l, op ::)
-
-    fun vectorListToList vl = 
-        (case vl
-          of [] => []
-           | v::vl => vectorToListOnto(v,vectorListToList vl))
-    
     structure Option = 
     struct
       val out : 'a option * (unit -> 'a) -> 'a = 
@@ -96,9 +100,7 @@ structure Utils = struct
           (case fst
             of NONE => snd
              | _ => fst)
-
-
-    end
+    end (* structure Option *)
 
     (* Numeric stuff *)
 

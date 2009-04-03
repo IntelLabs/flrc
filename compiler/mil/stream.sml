@@ -819,9 +819,9 @@ struct
                val body = appendl (state, env, body, [inc, test])
              in body
              end
-         val inits' = Utils.vcons (start, inits)
-         val inargs = Utils.vcons (i, inargs)
-         val resv'  = Utils.vcons (M.SVariable ni, resv)
+         val inits' = Utils.Vector.cons (start, inits)
+         val inargs = Utils.Vector.cons (i, inargs)
+         val resv'  = Utils.Vector.cons (M.SVariable ni, resv)
          val nd' = namedVar (state, "mild", MU.Bool.t c, false)
          val preLoop = bindRhs (state, env, nd', MU.UIntp.lt (c, start, limit))
          fun enterF (state, env, entry, exit) = 
