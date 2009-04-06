@@ -39,6 +39,7 @@ struct
   structure IVD = Identifier.ImpVariableDict
   structure PD = PassData
   structure SD = StringDict
+  structure VS = M.VS
 
   structure Chat = ChatF (struct 
                             type env = PD.t
@@ -52,8 +53,12 @@ struct
   val <! = Try.<!
   val << = Try.<<
   val oo = Try.oo
+  val om = Try.om
+  val or = Try.or
+  val || = Try.||
   val @@ = Utils.Function.@@
-  infix 3 << @@ oo <!
+  infix 3 << @@ oo om <!
+  infix 4 or || 
 
  (* Reports a fail message and exit the program.
   * param f: The function name.
@@ -187,11 +192,13 @@ struct
     val localNms = 
         [
          ("BetaSwitch",       "Cases beta reduced"             ),
+         ("CallInline",       "Calls inlined"                  ),
          ("CollapseSwitch",   "Cases collapsed"                ),
          ("DCE",              "Dead instrs/globals eliminated" ),
          ("EtaSwitch",        "Cases eta reduced"              ),
          ("Globalized",       "Objects globalized"             ),
          ("IdxGet",           "Index gets reduced"             ),
+         ("MakeDirect",       "Call/Evals made direct"         ),
          ("ObjectGetKind",    "ObjectGetKinds reduced"         ),
          ("PFunctionGetFv",   "Closure fv projections reduced" ),
          ("PFunctionInitCode","Closure code ptrs killed"       ),
@@ -202,12 +209,17 @@ struct
          ("PSumProj",         "Sum projections reduced"        ),
          ("PSetQuery",        "SetQuery ops reduced"           ),
          ("PSetCond",         "SetCond ops reduced"            ),
+         ("PruneCuts",        "Cut sets pruned"                ),
+         ("PruneFx",          "Fx sets pruned"                 ),
          ("Simple",           "Simple moves eliminated"        ),
          ("SwitchToSetCond",  "Cases converted to SetCond"     ),
+         ("TCut",             "Cuts eliminated"                ),
+         ("TGoto",            "Gotos eliminated"               ),
          ("ThunkGetFv",       "Thunk fv projections reduced"   ),
          ("ThunkGetValue",    "ThunkGetValue ops reduced"      ),
          ("ThunkInitCode",    "Thunk code ptrs killed"         ), 
          ("ThunkSpawnFX",     "Spawn fx pruned"                ),
+         ("ThunkValueBeta",    "ThunkValues beta reduced"      ),
          ("ThunkValueEta",    "ThunkValues eta reduced"        ),
          ("TupleSub",         "Tuple subscripts reduced"       ),
          ("Unreachable",      "Unreachable objects killed"     )
@@ -240,12 +252,14 @@ struct
     val stats = List.map (localNms, fn (nm, info) => (globalNm nm, info))
 
     val betaSwitch = clicker "BetaSwitch"
+    val callInline = clicker "CallInline"
     val collapseSwitch = clicker "CollapseSwitch"
     val dce = clicker "DCE"
     val etaSwitch = clicker "EtaSwitch"
     val unreachable = clicker "Unreachable"
     val globalized = clicker "Globalized"
     val idxGet = clicker "IdxGet"
+    val makeDirect = clicker "MakeDirect"
     val pSumProj = clicker  "PSumProj"
     val pSetQuery = clicker  "PSetQuery"
     val pSetCond = clicker  "PSetCond"
@@ -257,11 +271,16 @@ struct
     val pFunctionGetFv = clicker "PFunctionGetFv"
     val primPrim = clicker "PrimPrim"
     val primToLen = clicker "PrimToLen"
+    val pruneCuts = clicker "PruneCuts"
+    val pruneFx = clicker "PruneFx"
     val simple = clicker "Simple"
     val switchToSetCond = clicker "SwitchToSetCond"
+    val tCut = clicker "TCut"
+    val tGoto = clicker "TGoto"
     val thunkGetFv = clicker "ThunkGetFv"
     val thunkGetValue = clicker "ThunkGetValue"
     val thunkInitCode = clicker "ThunkInitCode"
+    val thunkValueBeta = clicker "ThunkValueBeta"
     val thunkValueEta = clicker "ThunkValueEta"
     val tupleSub = clicker "TupleSub"
 
@@ -280,6 +299,16 @@ struct
 
   val try = 
    fn (clicker, reduce) => Click.wrap (clicker, Try.lift reduce)
+
+
+   val getUniqueInit =
+       Try.lift
+       (fn (imil, v) =>
+           let
+             val {inits, others} = Use.splitUses (imil, v)
+             val init = <@ Use.toInstruction o Try.V.singleton @@ inits
+           in init
+           end)
 
   
   structure FuncR : REDUCE = 
@@ -314,175 +343,441 @@ val template =
     in try (Click., f)
     end
 *)
-    val betaSwitch = 
-     fn {get, eq, dec, con} => 
+    val tGoto =
         let
           val f = 
-           fn ((d, imil, ws), (i, {on, cases, default})) =>
+           fn ((d, imil, ws), (i, M.T {block, arguments})) =>
               let
-                val c = <@ get (imil, on)
-                val eqToC = fn (c', _) => eq (c, c')
-                val {yes, no} = Vector.partition (cases, eqToC)
-                val tg = 
-                    (case (Vector.length yes, default)
-                      of (0, SOME tg) => tg
-                       | (1, _) => #2 (Vector.sub (yes, 0))
+                val () = Try.V.isEmpty arguments
+                val b = IInstr.getIBlock (imil, i)
+                val oEdges = IBlock.outEdges (imil, b)
+                val succ = 
+                    (case oEdges
+                      of [(_, succ)] => succ
                        | _ => Try.fail ())
-                val mi = M.TGoto tg
-                val () = IInstr.replaceTransfer (imil, i, mi)
-              in [I.ItemInstr i]
+                val () = 
+                    (case IBlock.preds (imil, succ)
+                      of [_] => ()
+                       | _ => Try.fail ())
+                val () = IBlock.merge (imil, b, succ)
+              in []
               end
-        in try (Click.betaSwitch, f)
+        in try (Click.tGoto, f)
         end
 
-    (* XXX This has a bug in it - can loop -leaf *)
-    val collapseSwitch = 
-     fn {get, eq, dec, con} => 
-        let
-          val f = 
-           fn ((d, imil, ws), (i, {on, cases, default})) =>
+    structure TCase = 
+    struct
+      val betaSwitch = 
+       fn {get, eq, dec, con} => 
+          let
+            val f = 
+             fn ((d, imil, ws), (i, {on, cases, default})) =>
+                let
+                  val c = <@ get (imil, on)
+                  val eqToC = fn (c', _) => eq (c, c')
+                  val {yes, no} = Vector.partition (cases, eqToC)
+                  val tg = 
+                      (case (Vector.length yes, default)
+                        of (0, SOME tg) => tg
+                         | (1, _) => #2 (Vector.sub (yes, 0))
+                         | _ => Try.fail ())
+                  val mi = M.TGoto tg
+                  val () = IInstr.replaceTransfer (imil, i, mi)
+                in [I.ItemInstr i]
+                end
+          in try (Click.betaSwitch, f)
+          end
+
+            (* XXX This has a bug in it - can loop -leaf *)
+      val collapseSwitch = 
+       fn {get, eq, dec, con} => 
+          let
+            val f = 
+             fn ((d, imil, ws), (i, {on, cases, default})) =>
+                let
+                  val {block, arguments} = MU.Target.Dec.t (<- default)
+                  val () = Try.V.isEmpty arguments
+                  val iFunc = IInstr.getIFunc (imil, i)
+                  val fallthruBlock = IFunc.getBlockByLabel (imil, iFunc, block)
+                  val params = IBlock.getParameters (imil, fallthruBlock)
+                  val () = Try.V.isEmpty params
+                  val () = Try.require (IBlock.isEmpty (imil, fallthruBlock))
+                  val t = IBlock.getTransfer' (imil, fallthruBlock)
+                  val {on = on2, cases = cases2, default = default2} = <@ dec t
+                  val () = Try.require (MU.Operand.eq (on, on2))
+                  val check = fn x => (fn (y, _) => not (eq (x, y)))
+                  val notAnArmInFirst = 
+                   fn (x, _) => Vector.forall (cases, check x)
+                  val cases2 = Vector.keepAll (cases2, notAnArmInFirst)
+                  val cases = Vector.concat [cases, cases2]
+                  val t = con {on = on, cases = cases, default = default2}
+                  val () = IInstr.replaceTransfer (imil, i, t)
+                in [I.ItemInstr i]
+                end
+          in try (Click.collapseSwitch, f)
+          end
+
+      val switch = fn ops => Try.or (betaSwitch ops, collapseSwitch ops)
+                             
+      val tCase1 = 
+          let
+            val get = (fn (imil, s) => MU.Simple.Dec.sConstant s)
+            val eq = MU.Constant.eq
+            val dec = MU.Transfer.Dec.tCase
+            val con = M.TCase
+            val f = switch {get = get, eq = eq, dec = dec, con = con}
+          in f
+          end
+
+            (* Switch ETA Reduction:
+             *
+             * Example: Switch with operand "a", constant options c1, c2, ..., 
+             * =======  cn, and default.
+             *
+             * Before the reduction          After the reduction
+             * --------------------          -------------------
+             *
+             * Case (a)                   |  Goto L (c, a, d)
+             * of c1 => goto L (c, c1, d) |      
+             *    c2 => goto L (c, c2, d) |
+             *    ...                     |
+             *    cn => goto L (c, cn, d) |
+             *     _ => goto L (c,  a, d) |
+             *     
+             *)
+      val etaSwitch = 
+          let
+            val f = 
+             fn ((d, imil, ws), (i, {on, cases, default})) =>
+                let
+                  (* Turn the constants into operands *)
+            val cases = Vector.map (cases, fn (a, tg) => (M.SConstant a, tg))
+                                   (* Add the default, using the scrutinee as the comparator *)
+            val cases = 
+                case default
+                 of SOME tg => Utils.Vector.cons ((on, tg), cases)
+                  | NONE => cases
+                              (* Ensure all labels are the same, and get an arbitrary one *)
+            val labels = Vector.map (cases, #block o MU.Target.Dec.t o #2)
+            val () = Try.require (Utils.Vector.allEq (labels, op =))
+            val label = Try.V.sub (labels, 0)
+                                  (* Map each row (c, c2, d) to (SOME c, NONE, SOME d), where NONE indicates
+                                   * that the element is equal either to the scrutinee, or to the particular 
+                                   * constant guarding this branch. (Essentially, we mask out these elements,
+                                   * and insist that the rest do not vary between rows) *)
+            val canonize = 
+             fn (a, M.T {block, arguments}) => 
+                let
+                  val mask = 
+                   fn b => if MU.Operand.eq (a, b) orelse MU.Operand.eq (on, b) then
+                             NONE
+                           else 
+                             SOME b
+                  val arguments = Vector.map (arguments, mask)
+                in arguments
+                end
+            val argumentsV = Vector.map (cases, canonize)
+                                        (* Transpose the argument vectors into column vectors, and ensure that
+                                         * each column contains all of the same elements (either all NONE), or
+                                         * all SOME c for the same c *)
+            val argumentsVT = Utils.Vector.transpose argumentsV
+            val columnOk = 
+             fn v => Utils.Vector.allEq (v, fn (a, b) => Option.equals (a, b, MU.Operand.eq))
+            val () = Try.require (Vector.forall (argumentsVT, columnOk))
+            val arguments = Try.V.sub (argumentsV, 0)
+            val arguments = Vector.map (arguments, fn a => Utils.Option.get (a, on))
+            val t = M.TGoto (M.T {block = label, arguments = arguments})
+            val () = IInstr.replaceTransfer (imil, i, t)
+                in [I.ItemInstr i]
+                end
+          in try (Click.etaSwitch, f)
+          end
+
+            (* Turn a switch into a setCond:
+             * case b of true => goto L1 ({}) 
+             *        | false => goto L1 {a}
+             *   ==  x = setCond(b, a);
+             *       goto L1(x);
+             *)
+      val switchToSetCond = 
+          let
+            val f = 
+             fn ((d, imil, ws), (i, {on, cases, default})) =>
+                let
+                  val config = PD.getConfig d
+                  val (c, tg1) = Try.V.singleton cases
+                  val tg2 = <- default
+                  val () = Try.require (MU.Constant.eq (c, MU.Bool.F config))
+                  val M.T {block = l1, arguments = args1} = tg1
+                  val M.T {block = l2, arguments = args2} = tg2
+                  val () = Try.require (l1 = l2)
+                  val arg1 = Try.V.singleton args1
+                  val arg2 = Try.V.singleton args2
+                  val () = <@ MU.Constant.Dec.cOptionSetEmpty <! MU.Simple.Dec.sConstant @@ arg1
+                  val contents = <@ MU.Def.Out.pSet <! Def.toMilDef o Def.get @@ (imil, <@ MU.Simple.Dec.sVariable arg2)
+                  val t = MilType.Typer.operand (config, IMil.T.getSi imil, contents)
+                  val v = IMil.Var.new (imil, "sset", t, false)
+                  val ni = M.I {dest = SOME v, 
+                                rhs  = M.RhsPSetCond {bool = on, ofVal = contents}}
+                  val mv = IInstr.insertBefore (imil, ni, i)
+                  val tg = 
+                      M.T {block = l1, 
+                           arguments = Vector.new1 (M.SVariable v)}
+                  val goto = M.TGoto tg
+                  val () = IInstr.replaceTransfer (imil, i, goto)
+                in [I.ItemInstr i, I.ItemInstr mv]
+                end
+          in try (Click.switchToSetCond, f)
+          end
+
+      val reduce = Try.or (tCase1, Try.or (switchToSetCond, etaSwitch))
+    end (* structure TCase *)
+
+    val tCase = TCase.reduce
+
+    structure TInterProc = 
+    struct
+
+      val callInlineCode = 
+          Try.lift 
+            (fn ((d, imil, ws), (i, fname)) => 
+                let
+                  val uses = Use.getUses (imil, fname)
+                  val use = Try.V.singleton uses
+                  val iFunc = IFunc.getIFuncByName (imil, fname)
+                  val () = Try.require (not (IFunc.getRecursive (imil, iFunc)))
+                  val is = IFunc.inline (imil, fname, i)
+                in is
+                end)
+
+      val callInlineClosure = 
+          Try.lift 
+          (fn ((d, imil, ws), (i, {cls, code})) => 
               let
-                val {block, arguments} = MU.Target.Dec.t (<- default)
-                val () = Try.require (Vector.isEmpty arguments)
-                val iFunc = IInstr.getIFunc (imil, i)
-                val fallthruBlock = IFunc.getBlockByLabel (imil, iFunc, block)
-                val params = IBlock.getParameters (imil, fallthruBlock)
-                val () = Try.require (Vector.isEmpty params andalso
-                                      IBlock.isEmpty (imil, fallthruBlock))
-                val t = IBlock.getTransfer' (imil, fallthruBlock)
-                val {on = on2, cases = cases2, default = default2} = <@ dec t
-                val () = Try.require (MU.Operand.eq (on, on2))
-                val check = fn x => (fn (y, _) => not (eq (x, y)))
-                val notAnArmInFirst = 
-                 fn (x, _) => Vector.forall (cases, check x)
-                val cases2 = Vector.keepAll (cases2, notAnArmInFirst)
-                val cases = Vector.concat [cases, cases2]
-                val t = con {on = on, cases = cases, default = default2}
-                val () = IInstr.replaceTransfer (imil, i, t)
-              in [I.ItemInstr i]
-              end
-        in try (Click.collapseSwitch, f)
-        end
+                val iFunc = IFunc.getIFuncByName (imil, code)
+                (* We allow inlining of "recursive" functions,
+                 * as long as all uses are known, there is only
+                 * one call, and that call is not a recursive call. *)
+                val () = Try.require (not (IInstr.isRec (imil, i)))
+                val () = Try.require (not (IFunc.getEscapes (imil, iFunc)))
+                (* Ensure that this code pointer only escapes
+                 * into this closure.  *)
+                val uses = Use.getUses (imil, code)
+                val getCode = (<@ #code <! MU.Rhs.Dec.rhsPFunctionInit <! Use.toRhs)
+                           || (<- o <@ MU.Global.Dec.gPFunction o #2 <! Use.toGlobal)
+                val isInit = 
+                 fn u => 
+                    (case getCode u
+                      of SOME code2 => code2 = code
+                       | NONE => false)
+                val {yes = inits, no = nonInits} = Vector.partition (uses, isInit)
+                val () = Try.V.lenEq (nonInits, 1)
+                val () = Try.V.lenEq (inits, 1)
+                val is = IFunc.inline (imil, code, i)
+                val fix = 
+                 fn init => 
+                    Try.exec
+                      (fn () => 
+                          (case init
+                            of I.UseGlobal g => 
+                               let
+                                 val (v, mg) = <@ IGlobal.toGlobal g
+                                 val code = MU.Global.Dec.gPFunction mg
+                                 val mg = M.GPFunction NONE
+                                 val () = IGlobal.replaceMil (imil, g, I.GGlobal (v, mg))
+                               in ()
+                               end
+                             | I.UseInstr i => 
+                               let
+                                 val mi = <@ IInstr.toInstruction i
+                                 val M.I {dest, rhs} = mi
+                                 val {cls, code, fvs} = <@ MU.Rhs.Dec.rhsPFunctionInit rhs
+                                 val rhs = M.RhsPFunctionInit {cls = cls, code = NONE, fvs = fvs}
+                                 val mi = M.I {dest = dest, rhs = rhs}
+                                 val () = IInstr.replaceInstruction (imil, i, mi)
+                               in ()
+                               end
+                             | I.Used => ()))
+                val () = Vector.foreach (uses, fix)
+              in is
+              end)
 
-    val switch = fn ops => Try.or (betaSwitch ops, collapseSwitch ops)
-        
-    val tGoto = fn _ => NONE
-    val tCase1 = 
-        let
-          val get = (fn (imil, s) => MU.Simple.Dec.sConstant s)
-          val eq = MU.Constant.eq
-          val dec = MU.Transfer.Dec.tCase
-          val con = M.TCase
-          val f = switch {get = get, eq = eq, dec = dec, con = con}
-        in f
-        end
+      val callInline = 
+          let
+            val f = 
+             fn (s, (i, {callee, ret, fx})) =>
+                let
+                  val {call, args} = <@ MU.InterProc.Dec.ipCall callee
+                  val is = 
+                      (case call
+                        of M.CCode fname => <@ callInlineCode (s, (i, fname))
+                         | M.CDirectClosure r => <@ callInlineClosure (s, (i, r))
+                         | _ => Try.fail ())
+                  val is = List.map (is, I.ItemInstr)
+                in is
+                end
+          in try (Click.callInline, f)
+          end
 
-   (* Switch ETA Reduction:
-    *
-    * Example: Switch with operand "a", constant options c1, c2, ..., 
-    * =======  cn, and default.
-    *
-    * Before the reduction          After the reduction
-    * --------------------          -------------------
-    *
-    * Case (a)                   |  Goto L (c, a, d)
-    * of c1 => goto L (c, c1, d) |      
-    *    c2 => goto L (c, c2, d) |
-    *    ...                     |
-    *    cn => goto L (c, cn, d) |
-    *     _ => goto L (c,  a, d) |
-    *     
-    *)
-    val etaSwitch = 
-        let
-          val f = 
-           fn ((d, imil, ws), (i, {on, cases, default})) =>
-              let
-                (* Turn the constants into operands *)
-                val cases = Vector.map (cases, fn (a, tg) => (M.SConstant a, tg))
-                (* Add the default, using the scrutinee as the comparator *)
-                val cases = 
-                    case default
-                     of SOME tg => Utils.Vector.cons ((on, tg), cases)
-                      | NONE => cases
-                (* Ensure all labels are the same, and get an arbitrary one *)
-                val labels = Vector.map (cases, #block o MU.Target.Dec.t o #2)
-                val () = Try.require (Utils.Vector.allEq (labels, op =))
-                val label = Try.V.sub (labels, 0)
-                (* Map each row (c, c2, d) to (SOME c, NONE, SOME d), where NONE indicates
-                 * that the element is equal either to the scrutinee, or to the particular 
-                 * constant guarding this branch. (Essentially, we mask out these elements,
-                 * and insist that the rest do not vary between rows) *)
-                val canonize = 
-                    fn (a, M.T {block, arguments}) => 
+      val thunkValueBeta = 
+          let
+            val f = 
+             fn ((d, imil, ws), (i, {callee, ret, fx})) =>
+                let
+                  val t = MU.Eval.thunk o #eval <! MU.InterProc.Dec.ipEval @@ callee
+                  val get = (#ofVal <! MU.Def.Out.thunkValue <! Def.toMilDef o Def.get) 
+                         || (#ofVal <! MU.Rhs.Dec.rhsThunkValue o MU.Instruction.rhs <! getUniqueInit)
+                            
+                  val s = <@ get (imil, t)
+                  val () = 
+                      let
+                        val succs = IInstr.succs (imil, i)
+                        fun activate b =
+                            WS.addInstr (ws, 
+                                         IBlock.getLabel (imil, b))
+                            
+                        val () = List.foreach (succs, activate)
+                      in ()
+                      end
+                  val t = 
+                      (case ret
+                        of M.RNormal {block, rets, ...} =>
+                           let
+                             val () = assert ("thunkValueBeta", "Bad number of ret vars", Vector.length rets = 1)
+                             val v = Vector.sub (rets, 0)
+                             val () = Use.replaceUses (imil, v, s)
+                             val tg = M.T {block = block,
+                                           arguments = Vector.new0 ()}
+                           in M.TGoto tg
+                           end
+                         | M.RTail => M.TReturn (Vector.new1 s))
+                  val () = IInstr.replaceTransfer (imil, i, t)
+                in [I.ItemInstr i]
+                end
+          in try (Click.thunkValueBeta, f)
+          end
+
+      val makeDirectCall = 
+          Try.lift 
+            (fn ((d, imil, ws), call) => 
+                let
+                  val {cls, code = {exhaustive, possible}} = <@ MU.Call.Dec.cClosure call
+                  val code = 
+                      (case (exhaustive, VS.toList possible)
+                        of (true, [code]) => code
+                         | _ => 
+                           let
+                             val get = (<@ #code <! MU.Def.Out.pFunction <! Def.toMilDef o Def.get)
+                                    || (<@ #code <! MU.Rhs.Dec.rhsPFunctionInit o MU.Instruction.rhs <! getUniqueInit)
+                             val code = <@ get (imil, cls)
+                           in code
+                           end)
+                  val call = M.CDirectClosure {cls = cls, code = code}
+                in call
+                end)
+
+      val makeDirectEval = 
+          Try.lift 
+            (fn ((d, imil, ws), eval) => 
+                let
+                  val {thunk, code = {exhaustive, possible}} = <@ MU.Eval.Dec.eThunk eval
+                  val code = 
+                      (case (exhaustive, VS.toList possible)
+                        of (true, [code]) => code
+                         | _ => 
+                           let
+                             val get = (<@ MU.Rhs.Dec.rhsThunkInit <! Def.toRhs o Def.get)
+                                    || (<@ MU.Rhs.Dec.rhsThunkInit o MU.Instruction.rhs <! getUniqueInit)
+                             val f = <@ #code <! get @@ (imil, thunk)
+                           in f
+                           end)
+                  val eval = M.EDirectThunk {thunk = thunk, code = code}
+                in eval
+                end)
+
+      val makeDirect = 
+          let
+            val f = 
+             fn ((s as (d, imil, ws)), (i, {callee, ret, fx})) =>
+                 let
+                   val callee = 
+                       (case callee
+                         of M.IpCall {call, args} => M.IpCall {call = <@ makeDirectCall (s, call), args = args}
+                          | M.IpEval {typ, eval} => M.IpEval {eval = <@ makeDirectEval (s, eval), typ = typ})
+                   val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                   val () = IInstr.replaceTransfer (imil, i, t)
+                 in [I.ItemInstr i]
+                 end
+          in try (Click.makeDirect, f)
+          end
+
+      val pruneCuts = 
+          let
+            val f = 
+             fn ((d, imil, ws), (i, {callee, ret, fx})) =>
+                 let
+                   val {rets, block, cuts} = <@ MU.Return.Dec.rNormal ret
+                   val fails = Effect.contains (fx, Effect.Fails)
+                   val () = Try.require (not fails)
+                   val () = Try.require (MU.Cuts.hasCuts cuts)
+                   val ret = M.RNormal {rets = rets, block = block, cuts = MU.Cuts.none}
+                   val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                   val () = IInstr.replaceTransfer (imil, i, t)
+                 in [I.ItemInstr i]
+                 end
+          in try (Click.pruneCuts, f)
+          end
+
+      val pruneFx = 
+          let
+            val f = 
+             fn ((d, imil, ws), (i, {callee, ret, fx})) =>
+                 let
+                   val {possible, exhaustive} = MU.InterProc.codes callee
+                   val () = Try.require exhaustive
+                   val folder = 
+                    fn (codeptr, codeFx) =>
                        let
-                         val mask = 
-                             fn b => if MU.Operand.eq (a, b) orelse MU.Operand.eq (on, b) then
-                                       NONE
-                                     else 
-                                       SOME b
-                         val arguments = Vector.map (arguments, mask)
-                       in arguments
+                         val iFunc = IFunc.getIFuncByName (imil, codeptr)
+                         val fx = IFunc.getEffects (imil, iFunc)
+                       in Effect.union (codeFx, fx)
                        end
-                val argumentsV = Vector.map (cases, canonize)
-                (* Transpose the argument vectors into column vectors, and ensure that
-                 * each column contains all of the same elements (either all NONE), or
-                 * all SOME c for the same c *)
-                val argumentsVT = Utils.Vector.transpose argumentsV
-                val columnOk = 
-                 fn v => Utils.Vector.allEq (v, fn (a, b) => Option.equals (a, b, MU.Operand.eq))
-                val () = Try.require (Vector.forall (argumentsVT, columnOk))
-                val arguments = Try.V.sub (argumentsV, 0)
-                val arguments = Vector.map (arguments, fn a => Utils.Option.get (a, on))
-                val t = M.TGoto (M.T {block = label, arguments = arguments})
+                   val codeFx = VS.fold (possible, Effect.Total, folder)
+                   val () = Try.require (not (Effect.subset (fx, codeFx)))
+                   val fx = Effect.intersection (fx, codeFx)
+                   val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                   val () = IInstr.replaceTransfer (imil, i, t)
+                 in [I.ItemInstr i]
+                 end
+          in try (Click.pruneFx, f)
+          end
+
+      val reduce = Try.or (callInline, 
+                   Try.or (thunkValueBeta, 
+                   Try.or (makeDirect, 
+                   Try.or (pruneCuts, 
+                           pruneFx))))
+
+    end (* structure TInterProc *)
+
+    val tInterProc = TInterProc.reduce 
+
+    val tReturn = fn _ => NONE
+
+    val tCut = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, {cont, args, cuts})) =>
+              let
+                val l = <@ MU.Rhs.Dec.rhsCont <! Def.toRhs o Def.get @@ (imil, cont)
+                val tgt = M.T {block = l, arguments = args}
+                val t = M.TGoto tgt
                 val () = IInstr.replaceTransfer (imil, i, t)
               in [I.ItemInstr i]
               end
-        in try (Click.etaSwitch, f)
+        in try (Click.tCut, f)
         end
 
-    (* Turn a switch into a setCond:
-     * case b of true => goto L1 ({}) 
-     *        | false => goto L1 {a}
-     *   ==  x = setCond(b, a);
-     *       goto L1(x);
-     *)
-    val switchToSetCond = 
-        let
-          val f = 
-           fn ((d, imil, ws), (i, {on, cases, default})) =>
-              let
-                val config = PD.getConfig d
-                val (c, tg1) = Try.V.singleton cases
-                val tg2 = <- default
-                val () = Try.require (MU.Constant.eq (c, MU.Bool.F config))
-                val M.T {block = l1, arguments = args1} = tg1
-                val M.T {block = l2, arguments = args2} = tg2
-                val () = Try.require (l1 = l2)
-                val arg1 = Try.V.singleton args1
-                val arg2 = Try.V.singleton args2
-                val () = <@ MU.Constant.Dec.cOptionSetEmpty <! MU.Simple.Dec.sConstant @@ arg1
-                val contents = <@ MU.Def.Out.pSet <! Def.toMilDef o Def.get @@ (imil, <@ MU.Simple.Dec.sVariable arg2)
-                val t = MilType.Typer.operand (config, IMil.T.getSi imil, contents)
-                val v = IMil.Var.new (imil, "sset", t, false)
-                val ni = M.I {dest = SOME v, 
-                              rhs  = M.RhsPSetCond {bool = on, ofVal = contents}}
-                val mv = IInstr.insertBefore (imil, ni, i)
-                val tg = 
-                    M.T {block = l1, 
-                         arguments = Vector.new1 (M.SVariable v)}
-                val goto = M.TGoto tg
-                val () = IInstr.replaceTransfer (imil, i, goto)
-              in [I.ItemInstr i, I.ItemInstr mv]
-              end
-        in try (Click.switchToSetCond, f)
-        end
-
-    val tCase = Try.or (tCase1, Try.or (switchToSetCond, etaSwitch))
-
-    val tInterProc = fn _ => NONE
-    val tReturn = fn _ => NONE
-    val tCut = fn _ => NONE
     val tPSumCase = 
         let
           val get = 
@@ -496,7 +791,7 @@ val template =
           val eq = fn (nm, nm') => nm = nm'
           val dec = MU.Transfer.Dec.tPSumCase
           val con = M.TPSumCase
-          val f = switch {get = get, eq = eq, dec = dec, con = con}
+          val f = TCase.switch {get = get, eq = eq, dec = dec, con = con}
         in f
         end
 
@@ -595,15 +890,6 @@ val template =
              in []
              end))
 
-   val getUniqueInit =
-       Try.lift
-       (fn (imil, v) =>
-           let
-             val {inits, others} = Use.splitUses (imil, v)
-             val init = <@ Use.toInstruction o Try.V.singleton @@ inits
-           in init
-           end)
-
    val getClosureOrThunkParameters = 
     Try.lift
       (fn (imil, c) =>
@@ -621,16 +907,6 @@ val template =
           in opers
           end)
 
-   val pruneEffects =
-       Try.lift
-         (fn (imil, codeptr, fx1) =>
-             let
-               val iFunc = IFunc.getIFuncByName (imil, codeptr)
-               val fx2 = IFunc.getEffects (imil, iFunc)
-               val () = Try.require (not (Effect.subset (fx1, fx2)))
-               val fx = Effect.intersection (fx1, fx2)
-             in fx
-             end)
 (*
     val template = 
         let
@@ -916,7 +1192,10 @@ val template =
            fn ((d, imil, ws), (i, dest, {thunk, fx, typ})) =>
               let
                 val code = <@ #code <! MU.Rhs.Dec.rhsThunkInit <! Def.toRhs o Def.get @@ (imil, thunk)
-                val fx = <@ pruneEffects (imil, code, fx)
+                val iFunc = IFunc.getIFuncByName (imil, code)
+                val fx2 = IFunc.getEffects (imil, iFunc)
+                val () = Try.require (not (Effect.subset (fx, fx2)))
+                val fx = Effect.intersection (fx, fx2)
                 val r = {thunk = thunk, fx = fx, typ = typ}
                 val rhs = M.RhsThunkSpawn r
                 val mi = M.I {dest = dest, rhs = rhs}

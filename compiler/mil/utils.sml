@@ -473,6 +473,7 @@ sig
     val eq : t * t -> bool
     val cls : t -> Mil.variable option
     val code : t -> Mil.variable option
+    val codes : t -> Mil.codes
     structure Dec : 
     sig
       val cCode : t -> Mil.variable option
@@ -487,6 +488,7 @@ sig
     val compare : t Compare.t
     val eq : t * t -> bool
     val thunk : t -> Mil.variable 
+    val codes : t -> Mil.codes
     structure Dict : DICT where type key = t
     structure Dec : 
     sig
@@ -500,6 +502,7 @@ sig
     type t = Mil.interProc
     val compare : t Compare.t
     val eq : t * t -> bool
+    val codes : t -> Mil.codes
     structure Dec : 
     sig
       val ipCall : t -> {call : Mil.call, args : Mil.operand Vector.t} option
@@ -512,6 +515,7 @@ sig
     type t = Mil.cuts
     val exits : t -> bool
     val targets : t -> Mil.LS.t
+    val hasCuts : t -> bool
     val includes : t * Mil.label -> bool
     val union : t * t -> t
     val intersection : t * t -> t
@@ -2591,6 +2595,13 @@ struct
            | M.CClosure _ => NONE
            | M.CDirectClosure {code, ...} => SOME code)
 
+    val codes = 
+     fn call => 
+        (case call
+          of M.CCode v => {possible = VS.singleton v, exhaustive = true}
+           | M.CClosure {cls, code} => code
+           | M.CDirectClosure {cls, code} => {possible = VS.singleton code, exhaustive = true})
+
     structure Dec = 
     struct
       val cCode = 
@@ -2617,6 +2628,12 @@ struct
           of M.EThunk {thunk, ...} => thunk
            | M.EDirectThunk {thunk, ...} => thunk)
 
+    val codes = 
+     fn eval => 
+        (case eval
+          of M.EThunk {thunk, code} => code
+           | M.EDirectThunk {thunk, code} => {possible = VS.singleton code, exhaustive = true})
+
     structure O = struct type t = t val compare = compare end
     structure Dict = DictF(O)
 
@@ -2638,6 +2655,12 @@ struct
     val compare = Compare.interProc
     val eq = Compare.C.equal compare
 
+    val codes =
+     fn i => 
+        (case i
+          of M.IpCall {call, ...} => Call.codes call
+           | M.IpEval {eval, ...} => Eval.codes eval)
+
     structure Dec =
     struct
       val ipCall =
@@ -2655,6 +2678,8 @@ struct
 
     fun exits   (M.C {exits,   ...}) = exits
     fun targets (M.C {targets, ...}) = targets
+
+    fun hasCuts (M.C {exits, targets}) = exits orelse (not (LS.isEmpty targets))
 
     fun includes (cuts, l) = LS.member (targets cuts, l)
 
