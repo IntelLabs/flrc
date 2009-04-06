@@ -15,7 +15,7 @@ signature EFFECT = sig
 
   val Partial   : effect 
   val Io        : effect 
-  val HeapNew   : effect 
+  val HeapGen   : effect 
   val HeapRead  : effect 
   val HeapWrite : effect 
   val Throws    : effect 
@@ -23,20 +23,20 @@ signature EFFECT = sig
   val Fails     : effect
 
   (* Non P-level effects *)
-  val InitNew   : effect  (* allocates not fully initialised objects *)
+  val InitGen   : effect  (* allocates not fully initialised objects *)
   val InitRead  : effect  (* reads from fields not initialised at allocation *)
   val InitWrite : effect  (* initialises fields not at allocation *)
 
   val PartialS   : set
   val IoS        : set
-  val HeapNewS   : set
+  val HeapGenS   : set
   val HeapReadS  : set
   val HeapWriteS : set
   val ThrowsS    : set
   val ReturnsS   : set
   val FailsS     : set
 
-  val InitNewS   : set
+  val InitGenS   : set
   val InitReadS  : set
   val InitWriteS : set
                 
@@ -71,48 +71,48 @@ structure Effect :> EFFECT = struct
 
   val Partial   : effect = lshift(1, 0)
   val Io        : effect = lshift(1, 1)
-  val HeapNew   : effect = lshift(1, 2)
+  val HeapGen   : effect = lshift(1, 2)
   val HeapRead  : effect = lshift(1, 3)
   val HeapWrite : effect = lshift(1, 4)
   val Throws    : effect = lshift(1, 5)
   val Returns   : effect = lshift(1, 6)
   val Fails     : effect = lshift(1, 7)
 
-  val InitNew   : effect = lshift(1, 8)
+  val InitGen   : effect = lshift(1, 8)
   val InitRead  : effect = lshift(1, 9)
   val InitWrite : effect = lshift(1, 10)
 
   val PartialS   : set = Partial
   val IoS        : set = Io
-  val HeapNewS   : set = HeapNew
+  val HeapGenS   : set = HeapGen
   val HeapReadS  : set = HeapRead
   val HeapWriteS : set = HeapWrite
   val ThrowsS    : set = Throws
   val ReturnsS   : set = Returns
   val FailsS     : set = Fails
 
-  val InitNewS   : set = InitNew
+  val InitGenS   : set = InitGen
   val InitReadS  : set = InitRead
   val InitWriteS : set = InitWrite
 
   val effects =
       [Partial, Io, 
-       HeapNew, HeapRead, HeapWrite,
+       HeapGen, HeapRead, HeapWrite,
        Throws, Returns, Fails,
-       InitNew, InitRead, InitWrite
+       InitGen, InitRead, InitWrite
       ]
 
   (* Keep these one letter so that layout can be compact *)
   fun effectToString f = 
       if f = Partial then "P"
       else if f = Io then "I"
-      else if f =  HeapNew then "N"
+      else if f =  HeapGen then "N"
       else if f =  HeapRead then "R"
       else if f =  HeapWrite then "W"
       else if f =  Throws then "T"
       else if f =  Returns then "R"
       else if f =  Fails then "F"
-      else if f =  InitNew then "iN"
+      else if f =  InitGen then "iN"
       else if f =  InitRead then "iR"
       else if f =  InitWrite then "iW"
       else raise Fail "Impossible effect"
@@ -140,11 +140,11 @@ structure Effect :> EFFECT = struct
 
   val PAny     : set = 
       fromList  [Partial, Io, 
-                 HeapNew, HeapRead, HeapWrite,
+                 HeapGen, HeapRead, HeapWrite,
                  Throws, Returns, Fails
                 ]
-  val ReadOnly : set = fromList [HeapNew, HeapRead, InitNew, InitRead]
-  val Heap     : set = fromList [HeapNew, HeapRead, HeapWrite]
+  val ReadOnly : set = fromList [HeapGen, HeapRead, InitGen, InitRead]
+  val Heap     : set = fromList [HeapGen, HeapRead, HeapWrite]
   val Control  : set = fromList [Partial, Throws, Returns, Fails]
 
   val compare = WordN.compare

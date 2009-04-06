@@ -93,6 +93,12 @@ struct
     array : (int * fieldDescriptor) option
   }
 
+  (* Vector indexing conventions:
+   *   The element at index 0 is the same element that a vector load will load from the address loaded from.
+   *   The element at the highest index is the same element that a vector load will load from the address furtherest
+   *   away from the addresse loaded from.
+   *)
+
   (* Unboxed constants *)
   datatype constant =
     (* Core *)
@@ -102,8 +108,8 @@ struct
     | CIntegral of IntArb.t
     | CFloat    of Real32.t
     | CDouble   of Real64.t
-    | CViVector of {typ : VI.elemType, elts : constant Vector.t}
-    | CViMask   of {typ : VI.elemType, elts : bool Vector.t}
+    | CViVector of {typ : VI.elemType, elts : constant Vector.t}  (* see vector indexing conventions above *)
+    | CViMask   of {typ : VI.elemType, elts : bool Vector.t}      (* see vector indexing conventions above *)
     | CPok      of pObjKind
     (* HL *)
     | COptionSetEmpty
