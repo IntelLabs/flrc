@@ -2330,7 +2330,7 @@ struct
       fun tuple {vtDesc, inits} =
           if VTableDescriptor.hasArray vtDesc orelse
              VTableDescriptor.numFixed vtDesc <> Vector.length inits
-          then InitNewS
+          then InitGenS
           else T
       fun thunkInit {thunk, ...} =
           if Option.isSome thunk then InitWriteS else T
@@ -2350,13 +2350,13 @@ struct
           | M.RhsIdxGet _             => InitReadS
           | M.RhsCont _               => T
           | M.RhsObjectGetKind _      => T
-          | M.RhsThunkMk _            => InitNewS
+          | M.RhsThunkMk _            => InitGenS
           | M.RhsThunkInit x          => thunkInit x
           | M.RhsThunkGetFv _         => InitReadS
           | M.RhsThunkValue x         => thunkValue x
           | M.RhsThunkGetValue _      => InitReadS
           | M.RhsThunkSpawn {fx, ...} => fx
-          | M.RhsPFunctionMk _        => InitNewS
+          | M.RhsPFunctionMk _        => InitGenS
           | M.RhsPFunctionInit x      => pFunctionInit x
           | M.RhsPFunctionGetFv _     => InitReadS
           | M.RhsPSetNew _            => T

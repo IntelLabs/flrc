@@ -1100,7 +1100,7 @@ struct
                    in
                      if b then Word32.orb (w, Word32.fromInt 1) else w
                    end
-               val m = Vector.fold (elts, Word32.fromInt 0, shiftBool)
+               val m = Vector.foldr (elts, Word32.fromInt 0, shiftBool)
              in 
                Pil.E.word32 m
              end) 
