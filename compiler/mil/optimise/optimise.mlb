@@ -25,7 +25,7 @@ local
         rep-seq.sml
         rep.sml
         fusion.sml *)
-(*        vectorize.sml*)
+        vectorize.sml
 in
         structure MilCse
         structure MilContify
@@ -37,6 +37,6 @@ in
         structure MilDblDiamond
         structure MilLicm
         structure MilRep *)
-(*        structure MilVectorize*)
+        structure MilVectorize
 (*        structure VpFusion*)
 end
