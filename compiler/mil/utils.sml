@@ -580,6 +580,8 @@ sig
     val successors : t -> {blocks : Identifier.LabelSet.t, exits : bool}
     val cuts : t -> Cuts.t
     val isBoolIf : t -> {on : Operand.t, trueBranch : Target.t, falseBranch : Target.t} option
+    val isIntraProcedural : t -> Target.t Vector.t option
+    val mapOverTargets : t * (Mil.target -> Mil.target) -> t
     val fx : Config.t * t -> Effect.set
     structure Dec : 
     sig
@@ -2904,6 +2906,48 @@ struct
                   else Try.fail ()
             in {on = on, trueBranch = tt, falseBranch = tf}
             end)
+
+    val mapOverTargets = 
+     fn (t, f) => 
+        let
+          val doCase = 
+           fn {on, cases, default} => 
+              let
+                val tgs = Vector.map (cases, (fn (a, tg) => (a, f tg)))
+                val default = Option.map (default, f)
+              in {on = on, cases = cases, default = default}
+              end
+        in
+          case t
+           of M.TGoto tg     => M.TGoto (f tg)
+            | M.TCase r      => M.TCase (doCase r)
+            | M.TInterProc _ => t
+            | M.TReturn _    => t
+            | M.TCut _       => t
+            | M.TPSumCase r  => M.TPSumCase (doCase r)
+        end
+
+    val isIntraProcedural = 
+     fn t => 
+        let
+          val doCase = 
+           fn {on, cases, default} => 
+              let
+                val tgs = Vector.map (cases, #2)
+              in
+                SOME (case default
+                       of NONE => tgs
+                        | SOME tg => Utils.Vector.cons (tg, tgs))
+              end
+        in
+          case t
+           of M.TGoto tg     => SOME (Vector.new1 tg)
+            | M.TCase r      => doCase r
+            | M.TInterProc _ => NONE
+            | M.TReturn _    => NONE
+            | M.TCut _       => NONE
+            | M.TPSumCase r  => doCase r
+        end
 
     val fx  = 
      fn (c, t) => 

@@ -96,8 +96,11 @@ struct
   val (showPhaseD, showPhase) =
       mkDebug ("show-phase", "Show IR between each phase", 1)
 
+  val (showReductionsD, showReductions) = 
+      mkDebug ("show", "Show each successful reduction attempt", 1)
+
   val (showEachD, showEach) = 
-      mkDebug ("show", "Show each reduction attempt", 1)
+      mkDebug ("show-each", "Show each reduction attempt", 2)
 
   val (checkIrD, checkIr) =
       mkDebug ("check-ir", "Check IR after each successful reduction", 2)
@@ -105,7 +108,7 @@ struct
   val (showIrD, showIr) =
       mkDebug ("show-ir", "Show IR after each successful reduction", 2)
 
-  val debugs = [debugPassD, showEachD, showIrD, checkIrD, showPhaseD, checkPhaseD]
+  val debugs = [debugPassD, showEachD, showReductionsD, showIrD, checkIrD, showPhaseD, checkPhaseD]
 
   val mkLogFeature : string * string * int -> (Config.Feature.feature * (PassData.t -> bool)) = 
    fn (tag, description, level) =>
@@ -198,7 +201,9 @@ struct
          ("EtaSwitch",        "Cases eta reduced"              ),
          ("Globalized",       "Objects globalized"             ),
          ("IdxGet",           "Index gets reduced"             ),
+         ("KillParameters",   "Block parameter lists trimmed"  ),
          ("MakeDirect",       "Call/Evals made direct"         ),
+         ("MergeBlocks",      "Blocks merged"                  ),
          ("ObjectGetKind",    "ObjectGetKinds reduced"         ),
          ("PFunctionGetFv",   "Closure fv projections reduced" ),
          ("PFunctionInitCode","Closure code ptrs killed"       ),
@@ -239,14 +244,19 @@ struct
         in ()
         end
 
-    val click = 
-     fn (pd, s) => PD.click (pd, globalNm s)
-
     val clicker = 
      fn s => 
         let
           val nm = globalNm s
-        in fn pd => PD.click (pd, nm)
+          val click = 
+           fn pd => 
+              let
+                val () = if showEach pd orelse showReductions pd then
+                           (print "Reduction#";print s;print "\n")
+                         else ()
+              in PD.click (pd, nm)
+              end
+        in click
         end
 
     val stats = List.map (localNms, fn (nm, info) => (globalNm nm, info))
@@ -256,10 +266,12 @@ struct
     val collapseSwitch = clicker "CollapseSwitch"
     val dce = clicker "DCE"
     val etaSwitch = clicker "EtaSwitch"
+    val killParameters = clicker "KillParameters"
     val unreachable = clicker "Unreachable"
     val globalized = clicker "Globalized"
     val idxGet = clicker "IdxGet"
     val makeDirect = clicker "MakeDirect"
+    val mergeBlocks = clicker "MergeBlocks"
     val pSumProj = clicker  "PSumProj"
     val pSetQuery = clicker  "PSetQuery"
     val pSetCond = clicker  "PSetCond"
@@ -332,17 +344,7 @@ struct
   structure TransferR : REDUCE =
   struct
     type t = I.iInstr * M.transfer
-             (*
-val template = 
-    let
-      val f = 
-       fn ((d, imil, ws), (i, _)) =>
-          let
-          in []
-          end
-    in try (Click., f)
-    end
-*)
+
     val tGoto =
         let
           val f = 
@@ -388,7 +390,7 @@ val template =
           in try (Click.betaSwitch, f)
           end
 
-            (* XXX This has a bug in it - can loop -leaf *)
+     (* XXX This has a bug in it - can loop -leaf *)
       val collapseSwitch = 
        fn {get, eq, dec, con} => 
           let
@@ -417,7 +419,7 @@ val template =
           in try (Click.collapseSwitch, f)
           end
 
-      val switch = fn ops => Try.or (betaSwitch ops, collapseSwitch ops)
+      val switch = fn ops => (betaSwitch ops) or (collapseSwitch ops)
                              
       val tCase1 = 
           let
@@ -502,19 +504,17 @@ val template =
       val switchToSetCond = 
           let
             val f = 
-             fn ((d, imil, ws), (i, {on, cases, default})) =>
+             fn ((d, imil, ws), (i, r)) =>
                 let
                   val config = PD.getConfig d
-                  val (c, tg1) = Try.V.singleton cases
-                  val tg2 = <- default
-                  val () = Try.require (MU.Constant.eq (c, MU.Bool.F config))
-                  val M.T {block = l1, arguments = args1} = tg1
-                  val M.T {block = l2, arguments = args2} = tg2
+                  val {on, trueBranch, falseBranch} = <@ MU.Transfer.isBoolIf (M.TCase r)
+                  val M.T {block = l1, arguments = args1} = trueBranch
+                  val M.T {block = l2, arguments = args2} = falseBranch
                   val () = Try.require (l1 = l2)
                   val arg1 = Try.V.singleton args1
                   val arg2 = Try.V.singleton args2
-                  val () = <@ MU.Constant.Dec.cOptionSetEmpty <! MU.Simple.Dec.sConstant @@ arg1
-                  val contents = <@ MU.Def.Out.pSet <! Def.toMilDef o Def.get @@ (imil, <@ MU.Simple.Dec.sVariable arg2)
+                  val () = <@ MU.Constant.Dec.cOptionSetEmpty <! MU.Simple.Dec.sConstant @@ arg2
+                  val contents = <@ MU.Def.Out.pSet <! Def.toMilDef o Def.get @@ (imil, <@ MU.Simple.Dec.sVariable arg1)
                   val t = MilType.Typer.operand (config, IMil.T.getSi imil, contents)
                   val v = IMil.Var.new (imil, "sset", t, false)
                   val ni = M.I {dest = SOME v, 
@@ -530,7 +530,7 @@ val template =
           in try (Click.switchToSetCond, f)
           end
 
-      val reduce = Try.or (tCase1, Try.or (switchToSetCond, etaSwitch))
+      val reduce = tCase1 or switchToSetCond or etaSwitch
     end (* structure TCase *)
 
     val tCase = TCase.reduce
@@ -752,11 +752,11 @@ val template =
           in try (Click.pruneFx, f)
           end
 
-      val reduce = Try.or (callInline, 
-                   Try.or (thunkValueBeta, 
-                   Try.or (makeDirect, 
-                   Try.or (pruneCuts, 
-                           pruneFx))))
+      val reduce = callInline
+                     or thunkValueBeta
+                     or makeDirect 
+                     or pruneCuts
+                     or pruneFx
 
     end (* structure TInterProc *)
 
@@ -815,8 +815,150 @@ val template =
   struct
     type t = I.iInstr * (M.label * M.variable Vector.t)
 
-    val reduce = 
+    val mergeBlocks =
+        let
+          val f = 
+           fn ((d, imil, ws), (i, (l, parms), pred)) => 
+              let
+                val () = 
+                    (case IBlock.succs (imil, pred)
+                      of [_] => ()
+                       | _ => Try.fail ())
+                val tf = IBlock.getTransfer' (imil, pred)
+                (* Since there are no parameters, even switches with multiple out edges
+                 * can be merged.
+                 *)
+                val _ = <@ MU.Transfer.isIntraProcedural tf
+                val b = IInstr.getIBlock (imil, i)
+                val () = IBlock.merge (imil, pred, b)
+              in []
+              end
+        in try (Click.mergeBlocks, f)
+        end
+
+    val killParameters =
+        let
+          val f = 
+           fn ((d, imil, ws), (i, (l, parms), (preds, pcount))) => 
+              let
+                (* This is mostly straightforward: just look for parameters
+                 * that are either unused, or are constant.  Most of the 
+                 * ugliness arises because of the possibility that a single 
+                 * predecessor block targets this block via multiple paths 
+                 * in a switch, e.g.
+                 * B1:
+                 *   switch (a) 
+                 *        1 => goto B2 (3)
+                 *        2 => goto B2 (4)
+                 *)
+                val () = Try.require (not (List.isEmpty preds))
+                val ts =  List.map (preds, fn p => IBlock.getTransfer (imil, p))
+                val tfs = List.map (ts, <@ IInstr.toTransfer)
+                (* list of vector of targets *)
+                val tgs = List.map (tfs, <@ MU.Transfer.isIntraProcedural)
+                (* vector of targets *)
+                val tgs = Vector.concat tgs
+                (* Keep only those targeting this block *)
+                (* inargs is a vector of vectors*)
+                val inargs = Vector.keepAllMap (tgs, fn (M.T {block, arguments}) => 
+                                                        if block = l then SOME arguments else NONE)
+                (* Get the columns.  This is essentially the RHS of a phi instruction *)
+                val inargsT = Utils.Vector.transpose inargs                              
+                val () = assert ("killParameters", "Bad phi", Vector.length inargsT = pcount)
+                val phis = Vector.zip (parms, inargsT)
+
+                (* Trace back the SSA edges before rewriting to capture potentially
+                 * newly dead instructions *)
+                val usedBy = Utils.Vector.concatToList (List.map (ts, fn t => IInstr.getUsedBy (imil, t)))
+
+                (* Mark true those to be removed *)
+                val kill = Array.array (pcount, false)
+                val progress = ref false
+
+                val killIthParm = 
+                 fn i =>
+                    let
+                      val () = progress := true
+                      val () = Array.update (kill, i, true)
+                    in ()
+                    end
+
+                val replaceIthParm = 
+                 fn (i, p, inarg) =>
+                    let
+                      val () = progress := true
+                      val () = Array.update (kill, i, true)
+                      val () = Use.replaceUses (imil, p, inarg)
+                    in ()
+                    end
+
+                val allEq = fn v => Utils.Vector.allEq (v, MU.Operand.eq)
+
+                val doPhi = 
+                 fn (i, (pv, args)) =>
+                    if Vector.isEmpty (Use.getUses (imil, pv)) then
+                      killIthParm i 
+                    else
+                      let
+                        val loopCarried = fn i => MU.Operand.eq (i, M.SVariable pv)
+                        (* Filter out the loop carried*)
+                        val args = Vector.keepAll (args, not o loopCarried)
+                        (* Ensure that all non loop carried are equal *)
+                        (* xi = phi (c, c, xi, c, xi, x) *)
+                        val () = 
+                            if (allEq args andalso Vector.length args > 0) then
+                              replaceIthParm (i, pv, Vector.sub (args, 0))
+                            else
+                              ()
+                      in ()
+                      end
+                val () = Vector.foreachi (phis, doPhi)
+
+                (* If no progress has been made, bail out *)
+                val () = Try.require (!progress)
+
+                val killVector = 
+                 fn v => Vector.keepAllMapi (v, 
+                                          fn (i, elt) => if Array.sub (kill, i) then NONE else SOME elt)
+                val rewriteTarget = 
+                 fn (t as (M.T {block, arguments})) =>
+                    if block = l then
+                      M.T {block = block,
+                           arguments = killVector arguments}
+                    else t                         
+
+                val rewriteTransfer = 
+                 fn tf => MU.Transfer.mapOverTargets (tf, rewriteTarget)
+
+                val rewriteTransfer = 
+                    fn t =>
+                       (case IInstr.toTransfer t
+                         of SOME tf => IInstr.replaceTransfer (imil, t, rewriteTransfer tf)
+                          | NONE => fail ("rewriteTransfer", "Not a transfer"))
+                       
+                val () = List.foreach (ts, rewriteTransfer)
+                val parms = killVector parms
+                val () = IInstr.replaceLabel (imil, i, (l, parms))
+                val ls = List.map (i::ts, I.ItemInstr) @ usedBy
+              in ls
+              end
+        in try (Click.killParameters, f)
+        end
+
+    val labelOpts = 
+        Try.lift
+        (fn (s as (d, imil, ws), (i, (l, parms))) => 
+            (case (IInstr.preds (imil, i), Vector.length parms)
+              of ([pred], 0) => <@ mergeBlocks (s, (i, (l, parms), pred))
+               | (_, 0) => Try.fail ()
+               | r => <@ killParameters (s, (i, (l, parms), r))))
+
+
+    val loopFlatten = 
      fn _ => NONE
+
+    val reduce = labelOpts or loopFlatten
+
   end (* structure LabelR *)
 
   structure InstructionR : REDUCE =
@@ -907,17 +1049,7 @@ val template =
           in opers
           end)
 
-(*
-    val template = 
-        let
-          val f = 
-           fn ((d, imil, ws), (i, dest, _)) =>
-              let
-              in []
-              end
-        in try (Click., f)
-        end
-*)
+
     val simple = 
         let
           val f = 
@@ -946,29 +1078,21 @@ val template =
                 val arrv = <@ MU.Simple.Dec.sVariable o Try.V.singleton @@ args
                 val config = PD.getConfig d
                 val uintv = IMil.Var.related (imil, dv, "uint", MU.UIntp.t config, false)
-                val ni1 = 
+                val ni = 
                     let
                       val rhs = POM.OrdinalArray.length (config, arrv)
                       val mi = M.I {dest = SOME uintv, rhs = rhs}
                       val ni = IInstr.insertBefore (imil, mi, i)
                     in ni
                     end
-                val ratv = IMil.Var.related (imil, dv, "rat", MU.Rational.t, false)
-                val ni2 = 
-                    let
-                      val rhs = MU.Rational.fromUIntp (config, M.SVariable uintv)
-                      val mi = M.I {dest = SOME ratv, rhs = rhs}
-                      val ni = IInstr.insertBefore (imil, mi, i)
-                    in ni
-                    end
                 val () = 
                     let
-                      val rhs = POM.Rat.mk (config, M.SVariable ratv)
+                      val rhs = MU.Rational.fromUIntp (config, M.SVariable uintv)
                       val mi = M.I {dest = SOME dv, rhs = rhs}
                       val () = IInstr.replaceInstruction (imil, i, mi)
                     in ()
                     end
-              in [I.ItemInstr ni1, I.ItemInstr ni2, I.ItemInstr i]
+              in [I.ItemInstr ni, I.ItemInstr i]
               end
         in try (Click.primToLen, f)
         end
@@ -1027,7 +1151,7 @@ val template =
         in try (Click.primPrim, f)
         end
 
-    val prim = Try.or (primPrim, primToLen)
+    val prim = primPrim or primToLen
 
     val tuple = fn (state, (i, dest, r)) => NONE
 
@@ -1383,7 +1507,7 @@ val template =
         in r
         end
 
-    val reduce = Try.or (globalize, simplify)
+    val reduce = globalize or simplify
   end (* structure InstructionR *)
 
   structure InstrR : REDUCE =
@@ -1475,19 +1599,6 @@ val template =
       in kill
       end
 
-  fun optimizeItem (d, imil, ws, i) = 
-       let
-         val () = if showEach d then (print "R: ";Item.print (imil, i)) else ()
-
-         val uses = Item.getUses (imil, i)
-
-         val reduced = deadCode (d, imil, ws, i, uses) orelse ItemR.reduce (d, imil, ws, i, uses)
-
-         val () = if reduced andalso showEach d then (print "-> ";Item.print (imil, i)) else ()
-       in reduced
-       end
-
-
   val postReduction = 
    fn (d, imil) => 
       let
@@ -1499,13 +1610,30 @@ val template =
   val simplify = 
    fn (d, imil, ws) => 
       let
+        val sEach = showEach d
+        val sReductions = showReductions d
+        val layout = 
+         fn (s, i) => if sEach orelse sReductions then
+                        Layout.seq [Layout.str s, Item.layout (imil, i)]
+                      else
+                        Layout.empty
         val rec loop = 
          fn () =>
             case WS.chooseWork ws
              of SOME i => 
                 let
+                  val l1 = layout ("R: ", i)
+                  val uses = Item.getUses (imil, i)
+                  val reduced = deadCode (d, imil, ws, i, uses) orelse ItemR.reduce (d, imil, ws, i, uses)
+                  val () = if sEach then LayoutUtils.printLayout l1 else ()
                   val () = 
-                      if optimizeItem (d, imil, ws, i) then postReduction (d, imil) else ()
+                      if reduced then
+                        let
+                          val () = if sEach then LayoutUtils.printLayout (layout ("==> ", i)) else ()
+                          val () = postReduction (d, imil)
+                        in ()
+                        end
+                      else ()
                 in loop ()
                 end
               | NONE => ()
