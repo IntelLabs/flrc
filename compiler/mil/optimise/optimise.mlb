@@ -24,8 +24,8 @@ local
         licm.sml
         rep-seq.sml
         rep.sml
-        fusion.sml
-        vectorize.sml*)
+        fusion.sml *)
+        vectorize.sml
 in
         structure MilCse
         structure MilContify
@@ -36,7 +36,7 @@ in
         structure MilInlineSmall (* XXX EB: Deprecated. Remove it. *)
         structure MilDblDiamond
         structure MilLicm
-        structure MilRep
+        structure MilRep *)
         structure MilVectorize
-        structure VpFusion*)
+(*        structure VpFusion*)
 end

@@ -1010,6 +1010,8 @@ struct
                 | M.Vs128 => 4
                 | M.Vs256 => 5
                 | M.Vs512 => 6
+
+
         in C.fromOrd ord (vs1, vs2)
         end
 

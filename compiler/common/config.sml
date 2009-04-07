@@ -29,6 +29,7 @@ signature CONFIG = sig
   datatype wordSize = Ws32 | Ws64
   datatype vectorSize = Vs128 | Vs256 | Vs512
   datatype vectorIsaCapabilities = Vic of {size : vectorSize}
+  datatype vectorArch = ViREF | ViSSE | ViLRB
   datatype t = C of {agc: agcProg,
 		     control_: string StringDict.t,
 		     core: string,
@@ -67,6 +68,7 @@ signature CONFIG = sig
 		     timeExecution: string option,
 		     toolset: toolset,
                      vi: bool,
+                     va: vectorArch,
 		     warnLev: verbosity}
   val agc: t -> agcProg
   val core: t -> string
@@ -120,6 +122,7 @@ signature CONFIG = sig
   val toolset: t -> toolset
   val verbose: t -> bool
   val vi: t -> bool
+  val va: t -> vectorArch
   val warnLevel: t * 'a -> int
   structure Control : sig
     type control
@@ -204,8 +207,9 @@ structure Config :> CONFIG = struct
 
     datatype wordSize = Ws32 | Ws64
 
-    datatype vectorSize = Vs128 | Vs256 | Vs512
+    datatype vectorSize = Vs128 | Vs256 | Vs512 
     datatype vectorIsaCapabilities = Vic of {size : vectorSize}
+    datatype vectorArch = ViREF | ViSSE | ViLRB
 
     type passInfo = {
          enable   : bool,
@@ -265,6 +269,7 @@ structure Config :> CONFIG = struct
          timeExecution    : string option,
          toolset          : toolset,
          vi               : bool,
+         va               : vectorArch,
          warnLev          : verbosity
     }
 
@@ -293,6 +298,7 @@ structure Config :> CONFIG = struct
     fun timeExecution c               = get (c, #timeExecution)
     fun toolset c                     = get (c, #toolset)
     fun vi c                          = get (c, #vi)
+    fun va c               = get (c, #va)
 
     (*** Derived Getters ***)
 
