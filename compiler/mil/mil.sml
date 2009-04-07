@@ -40,7 +40,7 @@ struct
     | PokType
     | PokThunk
 
-  datatype valueSize = Vs8 | Vs16 | Vs32 | Vs64 | Vs128 | Vs256 | Vs512
+  datatype valueSize = Vs8 | Vs16 | Vs32 | Vs64 | Vs128 | Vs256 | Vs512 
 
   datatype fieldVariance = FvReadOnly | FvReadWrite
 

@@ -182,6 +182,13 @@ struct
              ]
          val vtbChg =
              if vtableChange config then ["P_DO_VTABLE_CHANGE"] else []
+
+         val va = 
+             case (Config.va config)
+              of Config.ViREF => ["P_USE_VI_REF"]
+               | Config.ViSSE => ["P_USE_VI_SSE"]
+               | Config.ViLRB => ["P_USE_VI_LRB"]
+
        in
          List.concat [runtime, 
                       vi, 
@@ -191,7 +198,8 @@ struct
                       debug, 
                       pbase, 
                       instr, 
-                      vtbChg]
+                      vtbChg,
+                      va]
        end
 
    val pillarStack =   2097152  (* Decimal integer in bytes (  0x200000) *)
