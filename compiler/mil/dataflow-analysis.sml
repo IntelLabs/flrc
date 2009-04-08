@@ -350,15 +350,10 @@ functor MilDataFlowAnalysisF (
       end
 
   and goLabel (E env, st, l) = 
-      let
-        val ll = I.labelString l
-        val () = dbgPrint (E env, "zying1" ^ ll)
-      in
-        if envValidTarget (E env, l) then 
-          goBlock (E env, st, l)
-        else 
-          envRememberJump (E env, l)
-      end
+      if envValidTarget (E env, l) then 
+        goBlock (E env, st, l)
+      else 
+        envRememberJump (E env, l)
 
   and inferTransfer (E env, st, transfer) = 
       let
