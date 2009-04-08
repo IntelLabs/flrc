@@ -202,6 +202,7 @@ struct
          ("Globalized",       "Objects globalized"             ),
          ("IdxGet",           "Index gets reduced"             ),
          ("KillParameters",   "Block parameter lists trimmed"  ),
+         ("LoopFlatten",      "Loop arguments flattened"       ),
          ("MakeDirect",       "Call/Evals made direct"         ),
          ("MergeBlocks",      "Blocks merged"                  ),
          ("ObjectGetKind",    "ObjectGetKinds reduced"         ),
@@ -270,6 +271,7 @@ struct
     val unreachable = clicker "Unreachable"
     val globalized = clicker "Globalized"
     val idxGet = clicker "IdxGet"
+    val loopFlatten = clicker "LoopFlatten"
     val makeDirect = clicker "MakeDirect"
     val mergeBlocks = clicker "MergeBlocks"
     val pSumProj = clicker  "PSumProj"
@@ -815,149 +817,503 @@ struct
   struct
     type t = I.iInstr * (M.label * M.variable Vector.t)
 
-    val mergeBlocks =
-        let
-          val f = 
-           fn ((d, imil, ws), (i, (l, parms), pred)) => 
-              let
-                val () = 
-                    (case IBlock.succs (imil, pred)
-                      of [_] => ()
-                       | _ => Try.fail ())
-                val tf = IBlock.getTransfer' (imil, pred)
-                (* Since there are no parameters, even switches with multiple out edges
-                 * can be merged.
-                 *)
-                val _ = <@ MU.Transfer.isIntraProcedural tf
-                val b = IInstr.getIBlock (imil, i)
-                val () = IBlock.merge (imil, pred, b)
-              in []
-              end
-        in try (Click.mergeBlocks, f)
-        end
+    structure LabelOpts = 
+    struct
+      val mergeBlocks =
+          let
+            val f = 
+             fn ((d, imil, ws), (i, (l, parms), pred)) => 
+                let
+                  val () = 
+                      (case IBlock.succs (imil, pred)
+                        of [_] => ()
+                         | _ => Try.fail ())
+                  val tf = IBlock.getTransfer' (imil, pred)
+                  (* Since there are no parameters, even switches with multiple out edges
+                   * can be merged.
+                   *)
+                  val _ = <@ MU.Transfer.isIntraProcedural tf
+                  val b = IInstr.getIBlock (imil, i)
+                  val () = IBlock.merge (imil, pred, b)
+                in []
+                end
+          in try (Click.mergeBlocks, f)
+          end
 
-    val killParameters =
-        let
-          val f = 
-           fn ((d, imil, ws), (i, (l, parms), (preds, pcount))) => 
-              let
-                (* This is mostly straightforward: just look for parameters
-                 * that are either unused, or are constant.  Most of the 
-                 * ugliness arises because of the possibility that a single 
-                 * predecessor block targets this block via multiple paths 
-                 * in a switch, e.g.
-                 * B1:
-                 *   switch (a) 
-                 *        1 => goto B2 (3)
-                 *        2 => goto B2 (4)
-                 *)
-                val () = Try.require (not (List.isEmpty preds))
-                val ts =  List.map (preds, fn p => IBlock.getTransfer (imil, p))
-                val tfs = List.map (ts, <@ IInstr.toTransfer)
-                (* list of vector of targets *)
-                val tgs = List.map (tfs, <@ MU.Transfer.isIntraProcedural)
-                (* vector of targets *)
-                val tgs = Vector.concat tgs
-                (* Keep only those targeting this block *)
-                (* inargs is a vector of vectors*)
-                val inargs = Vector.keepAllMap (tgs, fn (M.T {block, arguments}) => 
-                                                        if block = l then SOME arguments else NONE)
-                (* Get the columns.  This is essentially the RHS of a phi instruction *)
-                val inargsT = Utils.Vector.transpose inargs                              
-                val () = assert ("killParameters", "Bad phi", Vector.length inargsT = pcount)
-                val phis = Vector.zip (parms, inargsT)
+      val killParameters =
+          let
+            val f = 
+             fn ((d, imil, ws), (i, (l, parms), (preds, pcount))) => 
+                let
+                  (* This is mostly straightforward: just look for parameters
+                   * that are either unused, or are constant.  Most of the 
+                   * ugliness arises because of the possibility that a single 
+                   * predecessor block targets this block via multiple paths 
+                   * in a switch, e.g.
+                   * B1:
+                   *   switch (a) 
+                   *        1 => goto B2 (3)
+                   *        2 => goto B2 (4)
+                   *)
+                  val () = Try.require (not (List.isEmpty preds))
+                  val ts =  List.map (preds, fn p => IBlock.getTransfer (imil, p))
+                  val tfs = List.map (ts, <@ IInstr.toTransfer)
+                  (* list of vector of targets *)
+                  val tgs = List.map (tfs, <@ MU.Transfer.isIntraProcedural)
+                  (* vector of targets *)
+                  val tgs = Vector.concat tgs
+                  (* Keep only those targeting this block *)
+                  (* inargs is a vector of vectors*)
+                  val inargs = Vector.keepAllMap (tgs, fn (M.T {block, arguments}) => 
+                                                          if block = l then SOME arguments else NONE)
+                  (* Get the columns.  This is essentially the RHS of a phi instruction *)
+                  val inargsT = Utils.Vector.transpose inargs                              
+                  val () = assert ("killParameters", "Bad phi", Vector.length inargsT = pcount)
+                  val phis = Vector.zip (parms, inargsT)
 
-                (* Trace back the SSA edges before rewriting to capture potentially
-                 * newly dead instructions *)
-                val usedBy = Utils.Vector.concatToList (List.map (ts, fn t => IInstr.getUsedBy (imil, t)))
+                  (* Trace back the SSA edges before rewriting to capture potentially
+                   * newly dead instructions *)
+                  val usedBy = Utils.Vector.concatToList (List.map (ts, fn t => IInstr.getUsedBy (imil, t)))
 
-                (* Mark true those to be removed *)
-                val kill = Array.array (pcount, false)
-                val progress = ref false
+                  (* Mark true those to be removed *)
+                  val kill = Array.array (pcount, false)
+                  val progress = ref false
 
-                val killIthParm = 
-                 fn i =>
-                    let
-                      val () = progress := true
-                      val () = Array.update (kill, i, true)
-                    in ()
-                    end
-
-                val replaceIthParm = 
-                 fn (i, p, inarg) =>
-                    let
-                      val () = progress := true
-                      val () = Array.update (kill, i, true)
-                      val () = Use.replaceUses (imil, p, inarg)
-                    in ()
-                    end
-
-                val allEq = fn v => Utils.Vector.allEq (v, MU.Operand.eq)
-
-                val doPhi = 
-                 fn (i, (pv, args)) =>
-                    if Vector.isEmpty (Use.getUses (imil, pv)) then
-                      killIthParm i 
-                    else
+                  val killIthParm = 
+                   fn i =>
                       let
-                        val loopCarried = fn i => MU.Operand.eq (i, M.SVariable pv)
-                        (* Filter out the loop carried*)
-                        val args = Vector.keepAll (args, not o loopCarried)
-                        (* Ensure that all non loop carried are equal *)
-                        (* xi = phi (c, c, xi, c, xi, x) *)
-                        val () = 
-                            if (allEq args andalso Vector.length args > 0) then
-                              replaceIthParm (i, pv, Vector.sub (args, 0))
-                            else
-                              ()
+                        val () = progress := true
+                        val () = Array.update (kill, i, true)
                       in ()
                       end
-                val () = Vector.foreachi (phis, doPhi)
 
-                (* If no progress has been made, bail out *)
-                val () = Try.require (!progress)
+                  val replaceIthParm = 
+                   fn (i, p, inarg) =>
+                      let
+                        val () = progress := true
+                        val () = Array.update (kill, i, true)
+                        val () = Use.replaceUses (imil, p, inarg)
+                      in ()
+                      end
 
-                val killVector = 
-                 fn v => Vector.keepAllMapi (v, 
-                                          fn (i, elt) => if Array.sub (kill, i) then NONE else SOME elt)
-                val rewriteTarget = 
-                 fn (t as (M.T {block, arguments})) =>
-                    if block = l then
-                      M.T {block = block,
-                           arguments = killVector arguments}
-                    else t                         
+                  val allEq = fn v => Utils.Vector.allEq (v, MU.Operand.eq)
 
-                val rewriteTransfer = 
-                 fn tf => MU.Transfer.mapOverTargets (tf, rewriteTarget)
+                  val doPhi = 
+                   fn (i, (pv, args)) =>
+                      if Vector.isEmpty (Use.getUses (imil, pv)) then
+                        killIthParm i 
+                      else
+                        let
+                          val loopCarried = fn i => MU.Operand.eq (i, M.SVariable pv)
+                          (* Filter out the loop carried*)
+                          val args = Vector.keepAll (args, not o loopCarried)
+                          (* Ensure that all non loop carried are equal *)
+                          (* xi = phi (c, c, xi, c, xi, x) *)
+                          val () = 
+                              if (allEq args andalso Vector.length args > 0) then
+                                replaceIthParm (i, pv, Vector.sub (args, 0))
+                              else
+                                ()
+                        in ()
+                        end
+                  val () = Vector.foreachi (phis, doPhi)
 
-                val rewriteTransfer = 
-                    fn t =>
-                       (case IInstr.toTransfer t
-                         of SOME tf => IInstr.replaceTransfer (imil, t, rewriteTransfer tf)
-                          | NONE => fail ("rewriteTransfer", "Not a transfer"))
-                       
-                val () = List.foreach (ts, rewriteTransfer)
-                val parms = killVector parms
-                val () = IInstr.replaceLabel (imil, i, (l, parms))
-                val ls = List.map (i::ts, I.ItemInstr) @ usedBy
-              in ls
-              end
-        in try (Click.killParameters, f)
-        end
+                  (* If no progress has been made, bail out *)
+                  val () = Try.require (!progress)
 
-    val labelOpts = 
-        Try.lift
-        (fn (s as (d, imil, ws), (i, (l, parms))) => 
-            (case (IInstr.preds (imil, i), Vector.length parms)
-              of ([pred], 0) => <@ mergeBlocks (s, (i, (l, parms), pred))
-               | (_, 0) => Try.fail ()
-               | r => <@ killParameters (s, (i, (l, parms), r))))
+                  val killVector = 
+                   fn v => Vector.keepAllMapi (v, 
+                                            fn (i, elt) => if Array.sub (kill, i) then NONE else SOME elt)
+                  val rewriteTarget = 
+                   fn (t as (M.T {block, arguments})) =>
+                      if block = l then
+                        M.T {block = block,
+                             arguments = killVector arguments}
+                      else t                         
+
+                  val rewriteTransfer = 
+                   fn tf => MU.Transfer.mapOverTargets (tf, rewriteTarget)
+
+                  val rewriteTransfer = 
+                      fn t =>
+                         (case IInstr.toTransfer t
+                           of SOME tf => IInstr.replaceTransfer (imil, t, rewriteTransfer tf)
+                            | NONE => fail ("rewriteTransfer", "Not a transfer"))
+
+                  val () = List.foreach (ts, rewriteTransfer)
+                  val parms = killVector parms
+                  val () = IInstr.replaceLabel (imil, i, (l, parms))
+                  val ls = List.map (i::ts, I.ItemInstr) @ usedBy
+                in ls
+                end
+          in try (Click.killParameters, f)
+          end
+
+      val labelOpts = 
+          Try.lift
+          (fn (s as (d, imil, ws), (i, (l, parms))) => 
+              (case (IInstr.preds (imil, i), Vector.length parms)
+                of ([pred], 0) => <@ mergeBlocks (s, (i, (l, parms), pred))
+                 | (_, 0) => Try.fail ()
+                 | r => <@ killParameters (s, (i, (l, parms), r))))
+    end (* structure LabelOpts *)
 
 
-    val loopFlatten = 
-     fn _ => NONE
+    structure Flatten = 
+    struct
 
-    val reduce = labelOpts or loopFlatten
+      datatype 'a object = OTuple of 'a Vector.t
+                         | OThunk of 'a
+
+      type arg = M.operand object option
+      type argVec = arg Vector.t
+
+      datatype transfer = 
+               TGoto of {i : IMil.iInstr, outArgs : argVec}
+             | TSwitch of {i : IMil.iInstr, cases : argVec option Vector.t, default : argVec option}
+
+      val transferFold = 
+       fn (t, a, f) => 
+          (case t
+            of TGoto {i, outArgs} => f (outArgs, a)
+             | TSwitch {i, cases, default} => 
+               let
+                 val option =
+                  fn (vo, a) => Option.fold (vo, a, f)
+                 val a = Vector.fold (cases, a, option)
+                 val a = option (default, a)
+               in a
+               end)
+          
+      val transferMap = 
+       fn (t, f) => 
+          (case t
+            of TGoto {i, outArgs} => TGoto {i = i, outArgs = f outArgs}
+             | TSwitch {i, cases, default} => 
+               let
+                 val option = fn opt => Option.map (opt, f)
+                 val res = 
+                     TSwitch {i = i, cases = Vector.map (cases, option), default = option default}
+               in res
+               end)
+
+
+      val oper2Object = 
+          Try.lift
+          (fn (d, imil, a) =>
+              let
+                val v = <@ MU.Simple.Dec.sVariable a
+                val res = 
+                    (case <@ Def.toMilDef o Def.get @@ (imil, v)
+                      of MU.Def.DefGlobal (M.GTuple {inits, ...})      => OTuple inits
+                       | MU.Def.DefGlobal (M.GThunkValue {ofVal, ...}) => OThunk ofVal
+                       | MU.Def.DefRhs (M.RhsTuple {inits, vtDesc})    => 
+                         let
+                           val () = Try.require (MU.VTableDescriptor.immutable vtDesc andalso 
+                                                 not (MU.VTableDescriptor.hasArray vtDesc))
+                         in OTuple inits
+                         end
+                       | MU.Def.DefRhs (M.RhsThunkValue {typ, thunk = NONE, ofVal}) => OThunk ofVal
+                       | _                              => Try.fail ())
+              in res
+              end)
+
+      val outArgs2Objects = 
+       fn (d, imil, aa) => Vector.map (aa, fn a => oper2Object (d, imil, a))
+                           
+
+      val analyzeSwitch = 
+       fn (d, imil, i, {on, cases, default}, l) => 
+          let     
+            val help = 
+             fn (M.T {block, arguments}) => 
+                if block = l then
+                  SOME (outArgs2Objects (d, imil, arguments))
+                else
+                  NONE
+                  
+            val cases = Vector.map (cases, fn (a, tg) => help tg)
+            val default = Utils.Option.bind (default, help)
+            val res = TSwitch {i = i, cases = cases, default = default}
+          in res
+          end
+         
+      val analyzeTransfer = 
+       fn (d, imil, i, l) =>
+          (case IInstr.toTransfer i
+            of SOME t => 
+               (case t
+                 of M.TGoto (M.T {block, arguments}) => 
+                    SOME (TGoto {i = i, outArgs = outArgs2Objects (d, imil, arguments)})
+                  | M.TCase sw     => SOME (analyzeSwitch (d, imil, i, sw, l))
+                  | M.TPSumCase sw => SOME (analyzeSwitch (d, imil, i, sw, l))
+                  | _ => NONE)
+             | NONE => fail ("analyzeTransfer", "Not a transfer"))
+          
+      val analyzePred = 
+       fn (d, imil, b, l) => 
+          analyzeTransfer (d, imil, IBlock.getTransfer (imil, b), l)
+          
+      val analyzeInEdges = 
+          Try.lift
+            (fn (d, imil, i, l) => 
+                let
+                  val block = IInstr.getIBlock (imil, i)
+                                          
+                  (* Each def is a triple containing:
+                   *  the transfer instruction
+                   *  the index of the switch arm if appropriate 
+                   *  the shapes of the def, if any
+                   *)
+                  val defs = 
+                      let
+                        val preds = IBlock.preds (imil, block)
+                        val help = fn b => <@ analyzePred (d, imil, b, l)
+                        val defs = List.map (preds, help)
+                      in defs
+                      end
+
+                  val config = PD.getConfig d
+                  val si = IMil.T.getSi imil
+                  val typeOfObject = 
+                   fn object => 
+                      (case object
+                        of OTuple ts => OTuple (MilType.Typer.operands (config, si, ts))
+                         | OThunk t  => OThunk (MilType.Typer.operand (config, si, t)))
+
+                  val summarizeArgs = 
+                   fn objects => Vector.map (objects, fn opt => Option.map (opt, typeOfObject))
+
+                  val combineObject =
+                      Try.lift 
+                        (fn (objO, tobjO) => 
+                            (case (<- objO, <- tobjO)
+                              of (OTuple v, OTuple ts) => 
+                                 let
+                                   val () = Try.require (Vector.length v = Vector.length ts)
+                                 in OTuple ts
+                                 end
+                               | (OThunk v, OThunk t) => OThunk t
+                               | _ => Try.fail ()))
+                      
+                  val combineObjects = 
+                   fn (objects, tobjects) => 
+                      Vector.map2 (objects, tobjects, combineObject)
+                      
+                  val ok = 
+                   fn (transfer, summary) => 
+                      (case summary
+                        of NONE => 
+                           let
+                             val help = 
+                              fn (objects, opt) => 
+                                 (case opt
+                                   of NONE => SOME (summarizeArgs objects)
+                                    | SOME summary => SOME (combineObjects (objects, summary)))
+                                 
+                             val opt = 
+                                 transferFold (transfer, NONE, help)
+                           in opt
+                           end
+                         | SOME tobjects => 
+                           SOME (transferFold (transfer, tobjects, combineObjects)))
+                      
+                  val summary = Try.<- (List.fold (defs, NONE, ok))
+                in (summary, defs)
+                end)
+          
+      val analyzeUses =
+       fn (d, imil, parms) => 
+          let
+            val analyzeVar = 
+             fn v => 
+                let
+                  val uses = Use.getUses (imil, v)
+                  val ok = 
+                   fn use => 
+                      case (Use.toRhs use, Use.toTransfer use)
+                       of (SOME (M.RhsTupleSub _), _) => true
+                        | (SOME (M.RhsThunkGetValue _), _) => true
+                        | (_, SOME (M.TInterProc {callee = M.IpEval _, ...})) => true
+                        | _ => false
+                  val isOk = Vector.forall (uses, ok)
+                in isOk
+                end
+            val parmsOk = Vector.map (parms, analyzeVar)
+          in parmsOk
+          end
+
+      val rewriteBlock = 
+       fn (d, imil, worklist, i, (l, parms), defTypes) => 
+          let
+            val config = PD.getConfig d
+
+            val rewriteParm = 
+             fn (v, obj) => 
+                (case obj
+                  of SOME (OTuple ts) => 
+                     let
+                       val vnew = Var.clone (imil, v)
+                       val mkvar = fn (i, t) => Var.related (imil, v, Int.toString i, t, false)
+                       val vs = Vector.mapi (ts, mkvar)
+                       val aa = Vector.map (vs, M.SVariable)
+                       val fks = Vector.map (ts, fn t => MU.FieldKind.fromTyp (config, t))
+                       val vtd = MU.Tuple.vtdImmutable fks
+                       val rhs = MU.Tuple.new (vtd, aa)
+                       val mi = M.I {dest = SOME vnew, rhs = rhs}
+                       val () = Use.replaceUses (imil, v, M.SVariable vnew)
+                       val inew = IInstr.insertAfter (imil, i, mi)
+                       val () = WS.addInstr (worklist, inew)
+                       val uses = Use.getUses (imil, vnew)
+                       val () = WS.addUses (worklist, uses)
+                     in vs
+                     end
+                   | SOME (OThunk t) => 
+                     let
+                       val vnew = Var.clone (imil, v)
+                       val vval = Var.related (imil, v, "contents", t, false)
+                       val a = M.SVariable vval
+                       val fk = MU.FieldKind.fromTyp (config, t)
+                       val mi = M.I {dest = SOME vnew, 
+                                     rhs = M.RhsThunkValue {typ = fk, thunk = NONE, ofVal = a}}
+                       val () = Use.replaceUses (imil, v, M.SVariable vnew)
+                       val inew = IInstr.insertAfter (imil, i, mi)
+                       val () = WS.addInstr (worklist, inew)
+                       val uses = Use.getUses (imil, vnew)
+                       val () = WS.addUses (worklist, uses)
+                     in Vector.new1 vval
+                     end
+                   | ONone => Vector.new1 v)
+            val parmsV = 
+                Vector.map2 (parms, defTypes, rewriteParm)
+            val parms = Vector.concatV parmsV
+            val () = IInstr.replaceLabel (imil, i, (l, parms))
+            val () = WS.addInstr (worklist, i)
+          in ()
+         end
+
+      val rewriteInEdges = 
+       fn (d, imil, worklist, defs) => 
+          let 
+            val rewriteOutArg = 
+             fn (arg, object) => 
+                (case object
+                  of NONE => Vector.new1 arg
+                   | SOME (OThunk arg) => Vector.new1 arg
+                   | SOME (OTuple args) => args)
+
+            val rewriteTarget = 
+             fn (M.T {block, arguments}, objects) => 
+                let
+                  val argumentsV = 
+                      Vector.map2 (arguments, objects, rewriteOutArg)
+                  val arguments = Vector.concatV argumentsV
+                  val tg = 
+                      M.T {block = block, 
+                           arguments = arguments}
+                in tg
+                end
+
+            val rewriteGoto = 
+             fn {i, outArgs} => 
+                let
+                  val used = IInstr.getUsedBy (imil, i)
+                  val () = WS.addItems (worklist, used)
+                  val mt = 
+                      (case IInstr.toTransfer i
+                        of SOME (M.TGoto tg) => 
+                           M.TGoto (rewriteTarget (tg, outArgs))
+                         | _ => fail ("rewriteGoto", "Bad transfer"))
+                  val () = IInstr.replaceTransfer (imil, i, mt)
+                  val () = WS.addInstr (worklist, i)
+                in ()
+                end
+               
+            val rewriteCase = 
+             fn {i = i, cases = arms, default = dflt} => 
+                let
+                  val rewriteArm = 
+                   fn ((a, tg), opt) => 
+                      (case opt
+                        of SOME objects => 
+                           (a, rewriteTarget (tg, objects))
+                         | NONE => (a, tg))
+                  val rewriteSwitch = 
+                   fn {on = a, cases = arms', default = dflt'} => 
+                      {on = a, 
+                       cases = Vector.map2 (arms', arms, rewriteArm),
+                       default = case (dflt', dflt)
+                                  of (_, NONE) => NONE
+                                   | (SOME tg, SOME objects) => 
+                                     SOME (rewriteTarget (tg, objects))
+                                   | _ => fail ("rewriteCase", "Bad switch default")}
+                  val used = IInstr.getUsedBy (imil, i)
+                  val () = WS.addItems (worklist, used)
+                  val mt = 
+                      (case IInstr.toTransfer i
+                        of SOME (M.TCase sw) => 
+                           M.TCase (rewriteSwitch sw)
+                         | SOME (M.TPSumCase sw) => 
+                           M.TPSumCase (rewriteSwitch sw)
+                         | _ => fail ("rewriteSwitch", "Bad transfer"))
+                  val () = IInstr.replaceTransfer (imil, i, mt)
+                  val () = WS.addInstr (worklist, i)
+                in ()
+                end
+
+            val rewriteInEdge = 
+             fn t => 
+                (case t
+                  of TGoto a =>  rewriteGoto a
+                   | TSwitch a => rewriteCase a)
+
+            val () = List.foreach (defs, rewriteInEdge)
+                     
+          in ()
+          end
+
+      val loopFlatten = 
+          let
+            val f = 
+             fn ((d, imil, worklist), (i, (l, parms))) =>
+                let
+                  val (summary, defs) = <@ analyzeInEdges (d, imil, i, l)
+                  val parmsOk = analyzeUses (d, imil, parms)
+                  val () = Try.require (Vector.length summary = 
+                                        Vector.length parmsOk)
+                  val ok = 
+                   fn (obj, parmOk) => 
+                      (case (obj, parmOk)
+                        of (SOME _, true) => true
+                         | _ => false)
+                  val oks = 
+                      Vector.map2 (summary, parmsOk, ok)
+                  val () = Try.require (Vector.exists (oks, fn a => a))
+                 (* At this point, we have at least one parameter for which 
+                  * 1. All uses are subscripts
+                  * 2. All defs on all in-edges are tuple introductions of the
+                  *    correct shape.
+                  *)
+                  val filter1 = 
+                   fn (obj, ok) => 
+                      if ok then 
+                        obj 
+                      else
+                        NONE
+                  val summary = Vector.map2 (summary, oks, filter1)
+                  val filter2 = 
+                   fn t => 
+                      transferMap (t, fn objects => Vector.map2 (objects, oks, filter1))
+                  val defs = List.map (defs, filter2)
+                  val () = rewriteBlock (d, imil, worklist, i, (l, parms), summary)
+                  val () = rewriteInEdges (d, imil, worklist, defs)
+                in []
+                end
+          in try (Click.loopFlatten, f)
+          end
+    end (* structure Flatten *)
+
+    val reduce = LabelOpts.labelOpts or Flatten.loopFlatten
 
   end (* structure LabelR *)
 
@@ -1625,11 +1981,14 @@ struct
                   val l1 = layout ("R: ", i)
                   val uses = Item.getUses (imil, i)
                   val reduced = deadCode (d, imil, ws, i, uses) orelse ItemR.reduce (d, imil, ws, i, uses)
-                  val () = if sEach then LayoutUtils.printLayout l1 else ()
+                  val () = 
+                      if (sEach orelse (sReductions andalso reduced)) then
+                        LayoutUtils.printLayout l1
+                      else ()
                   val () = 
                       if reduced then
                         let
-                          val () = if sEach then LayoutUtils.printLayout (layout ("==> ", i)) else ()
+                          val () = if sReductions then LayoutUtils.printLayout (layout ("==> ", i)) else ()
                           val () = postReduction (d, imil)
                         in ()
                         end

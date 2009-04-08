@@ -770,6 +770,33 @@ sig
     val unbox : Config.t * FieldKind.t * Mil.variable -> Rhs.t
   end
 
+  (* This defines constructors for fixed length Mil tuples. *)
+  structure Tuple :
+  sig
+    val typ : Mil.pObjKind * (Mil.typ * Mil.fieldVariance) Vector.t -> Mil.typ
+
+    val td : Mil.fieldDescriptor Vector.t -> Mil.tupleDescriptor
+    val vtd : Mil.pObjKind * (Mil.fieldDescriptor Vector.t) -> Mil.vtableDescriptor
+
+    (* These assume PokNone *)
+    val vtdImmutable     : Mil.fieldKind Vector.t -> Mil.vtableDescriptor
+    val vtdImmutableRefs : int -> Mil.vtableDescriptor
+    val vtdImmutableBits : int * Mil.fieldSize -> Mil.vtableDescriptor
+
+    val tdImmutable     : Mil.fieldKind Vector.t -> Mil.tupleDescriptor
+    val tdImmutableRefs : int -> Mil.tupleDescriptor
+    val tdImmutableBits : int * Mil.fieldSize -> Mil.tupleDescriptor
+
+    val new : Mil.vtableDescriptor * Mil.operand Vector.t -> Mil.rhs
+    val proj : Mil.tupleDescriptor * Mil.variable * int -> Mil.rhs
+    val sub : Mil.tupleDescriptor * Mil.variable * Mil.operand -> Mil.rhs
+    val init : Mil.tupleDescriptor * Mil.variable * int * Mil.operand -> Mil.rhs 
+    val inited : Mil.vtableDescriptor * Mil.variable -> Mil.rhs
+  end (* structure Tuple *)
+
+  (* This defines an abstraction of variable length arrays in MIL.  
+   * These arrays always have length fields (even if created via
+   * the newFixed constructor *)
   structure OrdinalArray :
   sig
     val tdVar : Config.t * Mil.fieldKind -> Mil.tupleDescriptor
@@ -3390,6 +3417,61 @@ struct
 
   end
 
+
+  structure Tuple =
+  struct
+
+    val typ = 
+     fn (pok, ts) => M.TTuple {pok = pok, fixed = ts, array = NONE}
+
+    val td =
+     fn fds => M.TD {fixed = fds, array = NONE}
+
+    val vtd = 
+     fn (pok, fds) => M.VTD {pok = pok, fixed = fds, array = NONE}
+
+    val vtdImmutable = 
+     fn fks => vtd (M.PokNone, Vector.map (fks, fn fk => M.FD {kind = fk, var = M.FvReadOnly}))
+    val vtdImmutableRefs = 
+     fn i => vtdImmutable (Vector.new (i, M.FkRef))
+    val vtdImmutableBits = 
+     fn (i, fs) => vtdImmutable (Vector.new (i, M.FkBits fs))
+
+    val tdImmutable = VTableDescriptor.toTupleDescriptor o vtdImmutable
+    val tdImmutableRefs = VTableDescriptor.toTupleDescriptor o vtdImmutableRefs
+    val tdImmutableBits = VTableDescriptor.toTupleDescriptor o vtdImmutableBits
+
+    val new = 
+     fn (vt, inits) => M.RhsTuple {vtDesc = vt, inits = inits}
+
+    val proj = 
+     fn (td, arr, idx) =>
+        M.RhsTupleSub (M.TF {tupDesc = td,
+                             tup = arr,
+                             field = M.FiFixed idx})
+
+    val sub = 
+     fn (td, arr, idx) =>
+        M.RhsTupleSub (M.TF {tupDesc = td,
+                             tup = arr,
+                             field = M.FiVariable idx})
+
+    val init = 
+     fn (td, arr, idx, ofVal) =>
+        M.RhsTupleSet {tupField = M.TF {tupDesc = td,
+                                        tup = arr,
+                                        field = M.FiFixed idx},
+                       ofVal = ofVal}
+        
+    val inited = 
+     fn (vt, arr) =>
+        M.RhsTupleInited {vtDesc = vt, tup = arr}
+
+  end (* structure Tuple *)
+
+  (* This defines an abstraction of variable length arrays in MIL.  
+   * These arrays always have length fields (even if created via
+   * the newFixed constructor *)
   structure OrdinalArray =
   struct
 
