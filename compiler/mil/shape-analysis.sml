@@ -193,19 +193,18 @@ struct
         | M.TDouble => (SScalar, SUnknown)
         | M.TTuple {pok, fixed, array} => 
           let
-(*
-            val b = Utils.Option.get (Option.map (array, typToShape), 
-                                      (SAny, SUnknown))
-            val tshp = Utils.Option.get (Option.map (array, typToShape),
+            val b = pObjToShape pok
+            val arraytyp = (case array 
+                             of SOME (typ, _) => SOME typ 
+                              | NONE => NONE)
+            val tshp = Utils.Option.get (Option.map (arraytyp, typToShape),
                                          (SAny, SUnknown))
             val a = (SDynamic (sMax (tshp)), SUnknown)
-          in merge (a, b)
-*)
-          in (SAny, SUnknown)
+          in 
+            merge (a, b)
           end
-(* 
-       | M.TPObj pobj => pObjToShape (pobj)
-*)
+        | M.TPRef typ => typToShape typ
+(*      | M.TPObj pobj => pObjToShape (pobj) *)
         | _ => (SAny, SUnknown)
 
   (*
@@ -286,25 +285,26 @@ struct
   fun deriveInstr (env, st, v, rhs) = 
       case rhs 
        of M.RhsSimple s => SOME (Option.valOf v, (simpleToShape (st, s)))
-(*        | M.RhsPrim (p, _, ops) => 
-            Option.map (v, fn (vv) => (vv, derivePrim (env, st, vv, p, ops)))
-        | M.RhsPRat _ => SOME (Option.valOf v, (SScalar, SScalar))
-        | M.RhsTuple (pobj, ops, dyn) =>
+        | M.RhsPrim {prim, createThunks, args} => 
+          Option.map (v, fn (vv) => (vv, derivePrim (env, st, vv, prim, args)))
+(*        | M.RhsPRat _ => SOME (Option.valOf v, (SScalar, SScalar))*)
+(*        | M.RhsTuple (pobj, ops, dyn) =>*)
+(*        | M.RhsTuple {vtDesc, inits} =>
           let 
+            val vtd as M.VTD {pok, fixed, array} = vtDesc
+
             val () = dbgPrint (env, "TUPLE ->")
-            val pshp = case pobj 
-                        of SOME po => pObjToShape (po)
-                         | NONE => (SAny, SUnknown)
+            val pshp = pObjToShape (pok)
             val () = dbgPrint (env, "PSHP: " ^ shapeToString (pshp))
-            val tshp = case dyn 
-                        of SOME (i, t) => nestShapeP (Vector.sub (ops, i), 
+            val tshp = case array 
+                        of SOME (i, t) => nestShapeP (Vector.sub (fixed, i), 
                                                       typToShape (t))
                          | NONE => (SAny, SUnknown)
             val () = dbgPrint (env, "TSHP: " ^ shapeToString (tshp))
           in 
             SOME (Option.valOf v, (merge (pshp, tshp)))
-          end
-        | M.RhsTupleSub (s, f, dyn) =>
+          end*)
+(*        | M.RhsTupleSub (s, f, dyn) =>
           let
             val () = dbgPrint (env, "TUPLESUB ->")
             val shp = case dyn
