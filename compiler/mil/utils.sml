@@ -239,7 +239,7 @@ sig
     val eq : t * t -> bool
   end
 
-  structure VTableDescriptor :
+  structure VtableDescriptor :
   sig
     type t = Mil.vtableDescriptor
     val pok : t -> PObjKind.t
@@ -665,6 +665,7 @@ sig
     structure Dec : 
     sig
       val gCode : t -> Mil.code option
+      val gErrorVal : t -> Mil.typ option
       val gIdx : t -> int Mil.ND.t option
       val gTuple : t -> {vtDesc : Mil.vtableDescriptor, inits  : Mil.simple Vector.t} option
       val gRat : t -> Rat.t option
@@ -789,7 +790,6 @@ sig
 
     val new : Mil.vtableDescriptor * Mil.operand Vector.t -> Mil.rhs
     val proj : Mil.tupleDescriptor * Mil.variable * int -> Mil.rhs
-    val sub : Mil.tupleDescriptor * Mil.variable * Mil.operand -> Mil.rhs
     val init : Mil.tupleDescriptor * Mil.variable * int * Mil.operand -> Mil.rhs 
     val inited : Mil.vtableDescriptor * Mil.variable -> Mil.rhs
   end (* structure Tuple *)
@@ -1489,6 +1489,9 @@ struct
          of (M.GCode       x1, M.GCode       x2) => code (x1, x2)
           | (M.GCode       _ , _               ) => LESS
           | (_               , M.GCode       _ ) => GREATER
+          | (M.GErrorVal   x1, M.GErrorVal   x2) => typ (x1, x2)
+          | (M.GErrorVal _   , _               ) => LESS
+          | (_               , M.GErrorVal   _ ) => GREATER
           | (M.GIdx        x1, M.GIdx        x2) => idx (x1, x2)
           | (M.GIdx        _ , _               ) => LESS
           | (_               , M.GIdx        _ ) => GREATER
@@ -2071,7 +2074,7 @@ struct
 
   end
 
-  structure VTableDescriptor =
+  structure VtableDescriptor =
   struct
 
     type t = Mil.vtableDescriptor
@@ -2363,8 +2366,8 @@ struct
       val R = ReadOnly
       val writes = fromList [HeapWrite, InitWrite]
       fun tuple {vtDesc, inits} =
-          if VTableDescriptor.hasArray vtDesc orelse
-             VTableDescriptor.numFixed vtDesc <> Vector.length inits
+          if VtableDescriptor.hasArray vtDesc orelse
+             VtableDescriptor.numFixed vtDesc <> Vector.length inits
           then InitGenS
           else T
       fun thunkInit {thunk, ...} =
@@ -2424,7 +2427,7 @@ struct
         (case rhs 
           of M.RhsSimple s             => Simple.pObjKind s
            | M.RhsPrim _               => NONE (* XXX anything else here?  -leaf *)
-           | M.RhsTuple {vtDesc, ...}  => SOME (VTableDescriptor.pok vtDesc)
+           | M.RhsTuple {vtDesc, ...}  => SOME (VtableDescriptor.pok vtDesc)
            | M.RhsTupleSub _           => NONE
            | M.RhsTupleSet _           => NONE
            | M.RhsTupleInited _        => NONE
@@ -2942,7 +2945,7 @@ struct
           val doCase = 
            fn {on, cases, default} => 
               let
-                val tgs = Vector.map (cases, (fn (a, tg) => (a, f tg)))
+                val cases = Vector.map (cases, (fn (a, tg) => (a, f tg)))
                 val default = Option.map (default, f)
               in {on = on, cases = cases, default = default}
               end
@@ -3182,6 +3185,7 @@ struct
     fun isCore g =
         case g
          of M.GCode f       => Code.isCore f
+          | M.GErrorVal _   => true
           | M.GIdx _        => true
           | M.GTuple _      => true
           | M.GRat _        => true
@@ -3200,8 +3204,9 @@ struct
      fn g => 
         (case g
           of M.GCode f              => NONE
+           | M.GErrorVal _          => NONE
            | M.GIdx _               => NONE
-           | M.GTuple {vtDesc, ...} => SOME (VTableDescriptor.pok vtDesc)
+           | M.GTuple {vtDesc, ...} => SOME (VtableDescriptor.pok vtDesc)
            | M.GRat _               => NONE
            | M.GInteger _           => NONE
            | M.GThunkValue _        => SOME M.PokThunk
@@ -3218,6 +3223,8 @@ struct
     struct
       val gCode =
        fn g => (case g of M.GCode r => SOME r | _ => NONE)
+      val gErrorVal = 
+       fn g => (case g of M.GErrorVal r => SOME r | _ => NONE)
       val gIdx =
        fn g => (case g of M.GIdx r => SOME r | _ => NONE)
       val gTuple =
@@ -3437,9 +3444,9 @@ struct
     val vtdImmutableBits = 
      fn (i, fs) => vtdImmutable (Vector.new (i, M.FkBits fs))
 
-    val tdImmutable = VTableDescriptor.toTupleDescriptor o vtdImmutable
-    val tdImmutableRefs = VTableDescriptor.toTupleDescriptor o vtdImmutableRefs
-    val tdImmutableBits = VTableDescriptor.toTupleDescriptor o vtdImmutableBits
+    val tdImmutable = VtableDescriptor.toTupleDescriptor o vtdImmutable
+    val tdImmutableRefs = VtableDescriptor.toTupleDescriptor o vtdImmutableRefs
+    val tdImmutableBits = VtableDescriptor.toTupleDescriptor o vtdImmutableBits
 
     val new = 
      fn (vt, inits) => M.RhsTuple {vtDesc = vt, inits = inits}
@@ -3449,12 +3456,6 @@ struct
         M.RhsTupleSub (M.TF {tupDesc = td,
                              tup = arr,
                              field = M.FiFixed idx})
-
-    val sub = 
-     fn (td, arr, idx) =>
-        M.RhsTupleSub (M.TF {tupDesc = td,
-                             tup = arr,
-                             field = M.FiVariable idx})
 
     val init = 
      fn (td, arr, idx, ofVal) =>

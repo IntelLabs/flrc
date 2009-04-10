@@ -259,12 +259,13 @@ struct
     body      : codeBody
   }
 
-  (* Invariant: code pointers should never escape except through
+  (* Invariant: Before lowering, code pointers should never escape except through
    * closures.
    *)
   datatype global =
     (* Core *)
       GCode       of code
+    | GErrorVal   of typ
     | GIdx        of int ND.t
     | GTuple      of {
         vtDesc : vtableDescriptor,

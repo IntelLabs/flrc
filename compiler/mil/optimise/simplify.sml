@@ -338,8 +338,29 @@ struct
   struct
     type t = I.iGlobal 
 
+    val simple = 
+        let
+          val f = 
+           fn ((d, imil, ws), (g, v, s)) => 
+              let
+                val () = Use.replaceUses (imil, v, s)
+                val () = IGlobal.delete (imil, g)
+              in []
+              end
+        in try (Click.simple, f)
+        end
+
     val reduce = 
-     fn _ => NONE
+        Try.lift 
+          (fn (s as (d, imil, ws), g) => 
+              let
+                val t = 
+                    (case <@ IGlobal.toGlobal g
+                      of (v, M.GSimple oper) => <@ simple (s, (g, v, oper))
+                       | _ => Try.fail ())
+              in t
+              end)
+
 
   end (* structure GlobalR *)
 
@@ -1009,8 +1030,8 @@ struct
                        | MU.Def.DefGlobal (M.GThunkValue {ofVal, ...}) => OThunk ofVal
                        | MU.Def.DefRhs (M.RhsTuple {inits, vtDesc})    => 
                          let
-                           val () = Try.require (MU.VTableDescriptor.immutable vtDesc andalso 
-                                                 not (MU.VTableDescriptor.hasArray vtDesc))
+                           val () = Try.require (MU.VtableDescriptor.immutable vtDesc andalso 
+                                                 not (MU.VtableDescriptor.hasArray vtDesc))
                          in OTuple inits
                          end
                        | MU.Def.DefRhs (M.RhsThunkValue {typ, thunk = NONE, ofVal}) => OThunk ofVal
@@ -1322,71 +1343,68 @@ struct
     type t = I.iInstr * M.instruction
 
     val globalize = 
-        try
-        (Click.globalized,
-         (fn ((d, imil, ws), (i, M.I {dest, rhs})) => 
-             let
-               val add = 
-                fn (v, g) =>
-                   let
-                     val gv = Var.related (imil, v, "", Var.typ (imil, v), true)
-                     val () = IInstr.delete (imil, i)
-                     val g = IGlobal.build (imil, gv, g)
-                     val () = WS.addGlobal (ws, g)
-                     val () = Use.replaceUses (imil, v, M.SVariable gv)
-                   in ()
-                   end
+        let
+          val f = 
+           fn ((d, imil, ws), (i, M.I {dest, rhs})) => 
+              let
+                val add = 
+                 fn (v, g) =>
+                    let
+                      val gv = Var.related (imil, v, "", Var.typ (imil, v), true)
+                      val () = IInstr.delete (imil, i)
+                      val g = IGlobal.build (imil, gv, g)
+                      val () = WS.addGlobal (ws, g)
+                      val () = Use.replaceUses (imil, v, M.SVariable gv)
+                    in ()
+                    end
+                    
+                val const = 
+                 fn c => 
+                    (case c
+                      of M.SConstant c => true
+                       | M.SVariable v => Var.isGlobal (imil, v))
                    
-               val const = 
-                fn c => 
-                   (case c
-                     of M.SConstant c => true
-                      | M.SVariable v => Var.isGlobal (imil, v))
-                   
-               val consts = 
-                fn ops => Vector.forall (ops, const)
-                                
-               val () = 
-                   (case rhs
-                     of M.RhsSimple op1 => 
-                        if const op1 then 
-                          add (<- dest, M.GSimple op1)
-                        else 
-                          Try.fail ()
-                      | M.RhsTuple {vtDesc, inits} =>
-                        if MU.VTableDescriptor.immutable vtDesc andalso
-                           (not (MU.VTableDescriptor.hasArray vtDesc)) andalso
-                           Vector.forall (inits, const) 
-                        then
-                          add (<- dest, M.GTuple {vtDesc = vtDesc, inits = inits})
-                        else
-                          Try.fail ()
-                      | M.RhsThunkValue {typ, thunk, ofVal} =>
-                        if const ofVal then
-                          add (<@ Utils.Option.atMostOneOf (thunk, dest), 
-                               M.GThunkValue {typ = typ, ofVal = ofVal})
-                        else
-                          Try.fail ()
-                      | M.RhsPFunctionInit {cls, code, fvs} =>
-                        if Option.forall (code, fn v => Var.isGlobal (imil, v)) andalso 
-                           Vector.isEmpty fvs 
-                        then
-                          add (<@ Utils.Option.atMostOneOf (cls, dest), M.GPFunction code)
-                        else
-                          Try.fail ()
-                      | M.RhsPSetNew op1 => 
-                        if const op1 then
-                          add (<- dest, M.GPSet op1)
-                        else
-                          Try.fail ()
-                      | M.RhsPSum {tag, typ, ofVal} => 
-                        if const ofVal then
-                          add (<- dest, M.GPSum {tag = tag, typ = typ, ofVal = ofVal})
-                        else
-                          Try.fail ()
-                      | _ => Try.fail ())
-             in []
-             end))
+                val consts = 
+                 fn ops => Vector.forall (ops, const)
+                           
+                val () = 
+                    (case rhs
+                      of M.RhsTuple {vtDesc, inits} =>
+                         if MU.VtableDescriptor.immutable vtDesc andalso
+                            (not (MU.VtableDescriptor.hasArray vtDesc)) andalso
+                            Vector.forall (inits, const) 
+                         then
+                           add (<- dest, M.GTuple {vtDesc = vtDesc, inits = inits})
+                         else
+                           Try.fail ()
+                       | M.RhsThunkValue {typ, thunk, ofVal} =>
+                         if const ofVal then
+                           add (<@ Utils.Option.atMostOneOf (thunk, dest), 
+                                M.GThunkValue {typ = typ, ofVal = ofVal})
+                         else
+                           Try.fail ()
+                       | M.RhsPFunctionInit {cls, code, fvs} =>
+                         if Option.forall (code, fn v => Var.isGlobal (imil, v)) andalso 
+                            Vector.isEmpty fvs 
+                         then
+                           add (<@ Utils.Option.atMostOneOf (cls, dest), M.GPFunction code)
+                         else
+                           Try.fail ()
+                       | M.RhsPSetNew op1 => 
+                         if const op1 then
+                           add (<- dest, M.GPSet op1)
+                         else
+                           Try.fail ()
+                       | M.RhsPSum {tag, typ, ofVal} => 
+                         if const ofVal then
+                           add (<- dest, M.GPSum {tag = tag, typ = typ, ofVal = ofVal})
+                         else
+                           Try.fail ()
+                       | _ => Try.fail ())
+              in []
+              end
+        in try (Click.globalized, f)
+        end
 
    val getClosureOrThunkParameters = 
     Try.lift
@@ -1519,11 +1537,16 @@ struct
                 val dv = <- dest
                 val fi = MU.TupleField.field tf
                 val tup = MU.TupleField.tup tf
+                val tupDesc = MU.TupleField.tupDesc tf
                 val idx = 
                     (case fi
                       of M.FiFixed i => i
                        | M.FiVariable p => 
-                         <@ IntArb.toInt <! MU.Constant.Dec.cIntegral <! MU.Simple.Dec.sConstant @@ p
+                         let
+                           val fields = MU.TupleDescriptor.numFixed tupDesc
+                           val idx = <@ IntArb.toInt <! MU.Constant.Dec.cIntegral <! MU.Simple.Dec.sConstant @@ p
+                         in fields + idx
+                         end
                        | _ => Try.fail ())
                 val inits = #inits <! MU.Def.Out.tuple <! Def.toMilDef o Def.get @@ (imil, tup)
                 val p = Try.V.sub (inits, idx)
@@ -1978,11 +2001,12 @@ struct
             case WS.chooseWork ws
              of SOME i => 
                 let
+                  val () = if sEach then LayoutUtils.printLayout (layout ("Trying: ", i)) else ()
                   val l1 = layout ("R: ", i)
                   val uses = Item.getUses (imil, i)
                   val reduced = deadCode (d, imil, ws, i, uses) orelse ItemR.reduce (d, imil, ws, i, uses)
                   val () = 
-                      if (sEach orelse (sReductions andalso reduced)) then
+                      if (sReductions andalso reduced) then
                         LayoutUtils.printLayout l1
                       else ()
                   val () = 
