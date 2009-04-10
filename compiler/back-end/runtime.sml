@@ -50,7 +50,7 @@ struct
              | M.PokThunk     => "VThunkTag"
              | M.PokRef       => "VRefTag")
         
-    fun pObjKindVTable pok =
+    fun pObjKindVtable pok =
         Pil.identifier
           (case pok
             of M.PokNone      => "pLsrVTableNone"
@@ -458,5 +458,6 @@ struct
   end
 
   val pmain = Pil.identifier "__pmain"
+  val gErrorVal = Pil.identifier "pLsrErrorVal"
 
 end;

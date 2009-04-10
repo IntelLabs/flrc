@@ -403,6 +403,7 @@ struct
           val s = Layout.sequence ("{", "}", ",") ls
         in s
         end
+
 end;
 
 structure IntSet =
@@ -415,7 +416,7 @@ signature DICT = sig
     type key
     type 'a t
     val empty : 'a t
-    val choose : 'a t -> ('a t * 'a) option
+    val choose : 'a t -> ('a t * key * 'a) option
     val compare : 'a t * 'a t * ('a * 'a -> order) -> order
     val singleton : key * 'a -> 'a t
     val fromList : (key * 'a) list -> 'a t
@@ -519,10 +520,10 @@ struct
         fn lub => fn p => Lub.pairWise map2 lub p
     val lubStrict : 'a Lub.lubber -> 'a t Lub.lubber =
         fn lub => fn p => Lub.pairWiseStrict map2 lub p
-    val choose : 'a t -> ('a t * 'a) option = 
+    val choose : 'a t -> ('a t * key * 'a) option = 
         fn d => 
            case RBT.firsti d
-            of SOME (l, a) => SOME (remove (d, l), a)
+            of SOME (l, a) => SOME (remove (d, l), l, a)
              | NONE => NONE
 end;
 
@@ -544,7 +545,7 @@ sig
   (* Add all elements of the second to the first*)
   val add : 'a t * 'a t  -> unit
   val addWith : 'a t * 'a t * (key * 'a * 'a -> 'a) -> unit
-  val choose : 'a t -> 'a option 
+  val choose : 'a t -> (key * 'a) option 
   val fromList : (key * 'a) list -> 'a t
   val fromList2 : key list * 'a list -> 'a t
   (* Order of entries is arbitrary *)
@@ -610,7 +611,7 @@ struct
   fun copyWith (d, f) = ref (D.map (!d, f))
   fun choose d = 
       case D.choose (!d)
-       of SOME (dnew, a) => (d := dnew;SOME a)
+       of SOME (dnew, l, a) => (d := dnew;SOME (l, a))
         | NONE => NONE
 
 end

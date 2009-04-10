@@ -50,7 +50,7 @@ struct
   fun targetVectorSize env = Config.targetVectorSize (getConfig env)
 
   fun vtTagOnly          env = #tagOnly         (Config.gc (getConfig env))
-  fun vtReg              env = #registerVTables (Config.gc (getConfig env))
+  fun vtReg              env = #registerVtables (Config.gc (getConfig env))
   fun gcGRoots           env = #reportRoots     (Config.gc (getConfig env))
   fun gcGRootsInGlobals  env = #rootsInGlobals  (Config.gc (getConfig env))
   fun gcGlobals          env = #reportGlobals   (Config.gc (getConfig env))
@@ -82,7 +82,7 @@ struct
   fun notCoreMil (env, f, msg) =
       Fail.fail ("MilToPil", f, "not core Mil: " ^ msg)
 
-  (*** VTable Info ***)
+  (*** Vtable Info ***)
 
   (* This really belongs below in the VT module, but we need it memoised in
    * the state, and SML's module system can't handle this.
@@ -236,7 +236,7 @@ struct
 
   fun getStats (S {stats, ...}) = stats
 
-  fun incVTables s = Stats.incStat (getStats s, "vtables")
+  fun incVtables s = Stats.incStat (getStats s, "vtables")
   fun incNames s = Stats.incStat (getStats s, "names")
   fun incConts s = Stats.incStat (getStats s, "conts")
   fun incAliases s = Stats.incStat (getStats s, "aliases")
@@ -254,8 +254,8 @@ struct
   fun getName (S {names, ...}, n) = ND.lookup (!names, n)
   fun addName (S {names, ...}, n, v) = names := ND.insert (!names, n, v)
 
-  fun getVTable (S {vtables, ...}, vti) = VtiD.lookup (!vtables, vti)
-  fun addVTable (S {vtables, ...}, vti, v) =
+  fun getVtable (S {vtables, ...}, vti) = VtiD.lookup (!vtables, vti)
+  fun addVtable (S {vtables, ...}, vti, v) =
       vtables := VtiD.insert (!vtables, vti, v)
 
   fun getXtrGlbs (S {xtrGlbs, ...}) = List.rev (!xtrGlbs)
@@ -596,7 +596,7 @@ struct
   fun genVars (state, env, vs) =
       Vector.toListMap (vs, fn v => genVar (state, env, v))
 
-  (*** VTables ***)
+  (*** Vtables ***)
 
   (* This structure creates and memoises vtables for various objects
    * we want to create.
@@ -607,12 +607,12 @@ struct
        (* Return a pointer to the vtable for the given vtable descriptor,
         * generating it if necessary.
         *)
-       val genVTable :
+       val genVtable :
            state * env * string option * M.vtableDescriptor * bool -> Pil.E.t
        (* Return a pointer to the vtable for the given tuple,
         * generating it if necessary.
         *)
-       val genVTableThunk :
+       val genVtableThunk :
            state * env * string option * M.fieldKind * M.fieldKind Vector.t
            -> Pil.E.t
      end =
@@ -636,7 +636,7 @@ struct
     fun deriveVtInfo (state, env, no, vtd, nebi) =
         let
           val M.VTD {pok, fixed, array} = vtd
-          val td = MU.VTableDescriptor.toTupleDescriptor vtd
+          val td = MU.VtableDescriptor.toTupleDescriptor vtd
           val ws = OM.wordSize (state, env)
           val fs = OM.fixedSize (state, env, td)
           val frefs = Array.new (fs div ws, false)
@@ -674,7 +674,7 @@ struct
               case no
                of NONE => vtiToName (state, env, pok, fs, frefs, a)
                 | SOME n => n
-          val mut = not (MU.VTableDescriptor.immutable vtd)
+          val mut = not (MU.VtableDescriptor.immutable vtd)
           val vtm =
               if mut then
                 VtmAlwaysMutable
@@ -696,9 +696,9 @@ struct
     (* Given vtable information generate the global for the unboxed vtable
      * and return the variable bound to it.
      *)
-    fun genVTableUnboxed (state, env, vti) =
+    fun genVtableUnboxed (state, env, vti) =
         let
-          val () = incVTables state
+          val () = incVtables state
           val Vti {name, tag, fixedSize, fixedRefs, array, mut} = vti
           (* Generate the actual vtable *)
           val vt = freshVariableDT (state, env, "vtable", true)
@@ -738,11 +738,11 @@ struct
     fun vTableFromInfo (state, env, vti) =
         let
           val vt =
-              case getVTable (state, vti)
+              case getVtable (state, vti)
                of NONE =>
                   let
-                    val vt = genVTableUnboxed (state, env, vti)
-                    val () = addVTable (state, vti, vt)
+                    val vt = genVtableUnboxed (state, env, vti)
+                    val () = addVtable (state, vti, vt)
                   in vt
                   end
                 | SOME v => v
@@ -750,9 +750,9 @@ struct
           Pil.E.addrOf (genVarE (state, env, vt))
         end
 
-    fun genVTable (state, env, no, vtd as M.VTD {pok, ...}, nebi) =
+    fun genVtable (state, env, no, vtd as M.VTD {pok, ...}, nebi) =
         if vtTagOnly env then
-          Pil.E.namedConstant (RT.VT.pObjKindVTable pok)
+          Pil.E.namedConstant (RT.VT.pObjKindVtable pok)
         else
           let
             val vti = deriveVtInfo (state, env, no, vtd, nebi)
@@ -760,9 +760,9 @@ struct
           in vt
           end
 
-    fun genVTableThunk (state, env, no, typ, fks) =
+    fun genVtableThunk (state, env, no, typ, fks) =
         if vtTagOnly env then
-          Pil.E.namedConstant (RT.VT.pObjKindVTable M.PokThunk)
+          Pil.E.namedConstant (RT.VT.pObjKindVtable M.PokThunk)
         else
           let
             val fs = OM.thunkSize (state, env, typ, fks)
@@ -777,7 +777,7 @@ struct
                     val off = OM.thunkFvOffset (state, env, typ, fks, i)
                     val () =
                         if off mod ws <> 0 then
-                          Fail.unimplemented ("MilToPil.VT", "genVTableThunk",
+                          Fail.unimplemented ("MilToPil.VT", "genVtableThunk",
                                               "unaligned free variable")
                         else
                           ()
@@ -792,7 +792,7 @@ struct
             val off = OM.thunkResultOffset (state, env, typ, fks)
             val () =
                 if off mod ws <> 0 then
-                  Fail.unimplemented ("MilToPil.VT", "genVTableThunk",
+                  Fail.unimplemented ("MilToPil.VT", "genVtableThunk",
                                       "unaligned result")
                 else
                   ()
@@ -1100,7 +1100,7 @@ struct
                    in
                      if b then Word32.orb (w, Word32.fromInt 1) else w
                    end
-               val m = Vector.fold (elts, Word32.fromInt 0, shiftBool)
+               val m = Vector.foldr (elts, Word32.fromInt 0, shiftBool)
              in 
                Pil.E.word32 m
              end) 
@@ -1175,7 +1175,7 @@ struct
   fun genTuple (state, env, no, dest, vtd, inits) = 
       let
         val M.VTD {pok, fixed, array} = vtd
-        val td = MU.VTableDescriptor.toTupleDescriptor vtd
+        val td = MU.VtableDescriptor.toTupleDescriptor vtd
         val (fdo, lenIdx, nebi) =
             case array
              of NONE => (NONE, 0, true)
@@ -1183,7 +1183,7 @@ struct
         val nebi = nebi andalso Vector.length inits = Vector.length fixed
         val fixedSize = OM.fixedSize (state, env, td)
         val dest = genVarE (state, env, dest)
-        val vtable = VT.genVTable (state, env, no, vtd, nebi)
+        val vtable = VT.genVtable (state, env, no, vtd, nebi)
         val newTuple =
             case array
              of SOME (i, _) =>
@@ -1336,7 +1336,7 @@ struct
   fun mkThunk (state, env, dest, typ, fvs) =
       let
         val no = mkAllocSiteName (state, env, dest)
-        val vt = VT.genVTableThunk (state, env, no, typ, fvs)
+        val vt = VT.genVtableThunk (state, env, no, typ, fvs)
         val sz = Pil.E.int (OM.thunkSize (state, env, typ, fvs))
         val new = Pil.E.namedConstant (RT.Thunk.new typ)
         val mk = Pil.E.call (new, [vt, sz])
@@ -1512,7 +1512,7 @@ struct
                                     "genInstr",
                                     "TupleInited returns no value",
                                     (fn () => not (isSome dest)))
-              val fvtb = VT.genVTable (state, env, NONE, vtDesc, true)
+              val fvtb = VT.genVtable (state, env, NONE, vtDesc, true)
               val tpl = genVarE (state, env, tup)
               val finalise =
                   Pil.E.call (Pil.E.namedConstant RT.GC.vtableChange,
@@ -1994,7 +1994,7 @@ struct
           end
 
   (* If a global is in a strongly connected component by itself, we
-   * don't generate fowards.  This function should generate that part
+   * don't generate forwards.  This function should generate that part
    * of the forwards that are really necessary.
    *)
   fun genGlobalSingle (state, env, v, g) =
@@ -2172,6 +2172,12 @@ struct
         val res = 
             case global
              of M.GCode code  => genFunction (state, env, var, code)
+              | M.GErrorVal t => 
+                let
+                  val g = Pil.E.call (Pil.E.variable RT.gErrorVal, [Pil.E.hackTyp (genTyp (state, env, t))])
+                in
+                  staticInit ([], g)
+                end
               | M.GIdx dict =>
                 (* Here we declare the idx global, but its entries are
                  * initialised in genInit below.
@@ -2206,7 +2212,7 @@ struct
                       if instrumentAllocationSites c
                       then SOME (I.variableString' var)
                       else NONE
-                  val vtable = VT.genVTable (state, env, no, vtDesc, true)
+                  val vtable = VT.genVtable (state, env, no, vtDesc, true)
                   fun doOne s = genGSimple (state, env, s)
                   val fields = Vector.toListMap (inits, doOne)
                   val elts = vtable::fields

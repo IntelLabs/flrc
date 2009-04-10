@@ -9,9 +9,10 @@ sig
   val try  : (unit -> 'a) -> 'a t
   val lift : ('a -> 'b) -> ('a -> 'b t)
   val exec : (unit -> unit) -> unit
-  val ||   : (unit -> 'a t) List.t -> 'a t
-  val or   : ('a -> 'b t) * ('a -> 'b t) -> ('a -> 'b t)
+  val ||   : ('a -> 'b) * ('a -> 'b) -> ('a -> 'b t) (* use infix 4 *)
+  val or   : ('a -> 'b t) * ('a -> 'b t) -> ('a -> 'b t) (* use infix 4 *)
   val oo : ('b -> 'c t) * ('a -> 'b t) -> ('a -> 'c t)  (* use infix 3 *)
+  val om : ('b -> 'c) * ('a -> 'b t) -> ('a -> 'c t)  (* use infix 3 *)
   val success : 'a -> 'a t
   val failure : unit -> 'a t
   val ? : bool -> unit t 
@@ -33,6 +34,7 @@ sig
     val sub : 'a Vector.t * int -> 'a
     val singleton : 'a Vector.t -> 'a
     val lenEq : 'a Vector.t * int -> unit
+    val isEmpty : 'a Vector.t -> unit
   end
 
 end
@@ -52,13 +54,11 @@ struct
 
   fun exec f = ignore (try(f))
 
-  fun || fs =
-      (case fs
-        of [] => NONE
-         | f :: fs => 
-           (case f ()
-             of SOME a => SOME a
-              | NONE => || fs))
+  fun || (f, g) =
+   fn arg => 
+      (case try (fn () => f arg)
+        of NONE => try (fn () => g arg)
+         | ans => ans)
 
   val or = 
    fn (f1, f2) => 
@@ -72,6 +72,13 @@ struct
    fn x => 
       (case g x
         of SOME y => f y
+         | NONE => NONE)
+
+  val om = 
+   fn (f, g) => 
+   fn x => 
+      (case g x
+        of SOME y => SOME (f y)
          | NONE => NONE)
       
   fun success a = SOME a
@@ -119,6 +126,9 @@ struct
         end
 
     fun lenEq (v, i) = require (Vector.length v = i)
+
+    val isEmpty 
+      = fn v => lenEq (v, 0)
   end
 
 end

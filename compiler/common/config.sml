@@ -9,7 +9,7 @@
 signature CONFIG = sig
   datatype agcProg = AgcGcMf | AgcTgc | AgcCgc
   datatype gcStyle = GcsNone | GcsConservative | GcsAccurate
-  type gcConfig = {registerVTables: bool,
+  type gcConfig = {registerVtables: bool,
 		   reportGlobals: bool,
 		   reportRoots: bool,
 		   rootsInGlobals: bool,
@@ -29,13 +29,14 @@ signature CONFIG = sig
   datatype wordSize = Ws32 | Ws64
   datatype vectorSize = Vs128 | Vs256 | Vs512
   datatype vectorIsaCapabilities = Vic of {size : vectorSize}
+  datatype vectorArch = ViREF | ViSSE | ViLRB
   datatype t = C of {agc: agcProg,
 		     control_: string StringDict.t,
 		     core: string,
 		     debugLev: verbosity,
 		     debug_: StringSet.t,
 		     feature_: StringSet.t,
-		     gc: {registerVTables: bool,
+		     gc: {registerVtables: bool,
 			  reportGlobals: bool,
 			  reportRoots: bool,
 			  rootsInGlobals: bool,
@@ -67,13 +68,14 @@ signature CONFIG = sig
 		     timeExecution: string option,
 		     toolset: toolset,
                      vi: bool,
+                     va: vectorArch,
 		     warnLev: verbosity}
   val agc: t -> agcProg
   val core: t -> string
   val debug: bool
   val debugLevel: t * 'a -> int
   val gc: t
-	  -> {registerVTables: bool,
+	  -> {registerVtables: bool,
 	      reportGlobals: bool,
 	      reportRoots: bool,
 	      rootsInGlobals: bool,
@@ -120,6 +122,7 @@ signature CONFIG = sig
   val toolset: t -> toolset
   val verbose: t -> bool
   val vi: t -> bool
+  val va: t -> vectorArch
   val warnLevel: t * 'a -> int
   structure Control : sig
     type control
@@ -189,14 +192,14 @@ structure Config :> CONFIG = struct
 
     (* tagOnly means generate vtables with only tags in them, no size or ref
      * information.
-     * registerVTables means call the GC to register vtables.
+     * registerVtables means call the GC to register vtables.
      * report roots means call the GC to report global roots
      * rootsInGlobals means if reporting roots then include roots in globals
      * reportGlobals means report global objects to the GC
      * Note that not all combinations make sense, user beware!
      *)
     type gcConfig =
-         { tagOnly : bool, registerVTables : bool,
+         { tagOnly : bool, registerVtables : bool,
            reportRoots : bool, rootsInGlobals: bool,
            reportGlobals : bool, style : gcStyle }
 
@@ -204,8 +207,9 @@ structure Config :> CONFIG = struct
 
     datatype wordSize = Ws32 | Ws64
 
-    datatype vectorSize = Vs128 | Vs256 | Vs512
+    datatype vectorSize = Vs128 | Vs256 | Vs512 
     datatype vectorIsaCapabilities = Vic of {size : vectorSize}
+    datatype vectorArch = ViREF | ViSSE | ViLRB
 
     type passInfo = {
          enable   : bool,
@@ -265,6 +269,7 @@ structure Config :> CONFIG = struct
          timeExecution    : string option,
          toolset          : toolset,
          vi               : bool,
+         va               : vectorArch,
          warnLev          : verbosity
     }
 
@@ -293,6 +298,7 @@ structure Config :> CONFIG = struct
     fun timeExecution c               = get (c, #timeExecution)
     fun toolset c                     = get (c, #toolset)
     fun vi c                          = get (c, #vi)
+    fun va c               = get (c, #va)
 
     (*** Derived Getters ***)
 

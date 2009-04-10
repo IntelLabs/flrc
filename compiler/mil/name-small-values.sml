@@ -52,22 +52,24 @@ struct
   structure Stream = MSS.Stream
 
   val bind = 
-   fn mk => 
+   fn (global, mk) => 
    fn (state, env, oper) => 
       let
         val c = envGetConfig env
         val si = I.SymbolInfo.SiManager (stateGetStm state)
         val t = TO.operand (c, si, oper)
-        val v = stateGetFreshVariable (state, "mnm", t, false)
+        val v = stateGetFreshVariable (state, "mnm", t, global)
         val r = mk (v, oper)
       in ([r], M.SVariable v)
       end
 
-  val bindGlobal = bind (fn (v, oper) => 
-                            let
-                              val g = M.GSimple oper
-                            in (v, g)
-                            end)
+  val bindGlobal = bind (true, fn (v, oper) => 
+                                  let
+                                    val g = M.GSimple oper
+                                  in (v, g)
+                                  end)
+
+  val bindLocal = fn mk => bind (false, mk)
 
   val rec doOperand = 
    fn bind => 
@@ -102,12 +104,12 @@ struct
   val instr = 
    fn (state, env, M.I {dest, rhs}) => 
       let
-        val bind = bind (fn (v, oper) => 
-                            let
-                              val rhs = M.RhsSimple oper
-                              val s = Stream.bindRhs (state, env, v, rhs)
-                            in s
-                            end)
+        val bind = bindLocal (fn (v, oper) => 
+                                 let
+                                   val rhs = M.RhsSimple oper
+                                   val s = Stream.bindRhs (state, env, v, rhs)
+                                 in s
+                                 end)
         val lift = 
          fn doOp => 
          fn (state, env, obj) => 
@@ -293,12 +295,12 @@ struct
   val transfer = 
    fn (state, env, t) => 
       let
-        val bind = bind (fn (v, oper) => 
-                            let
-                              val rhs = M.RhsSimple oper
-                              val s = Stream.bindRhs (state, env, v, rhs)
-                            in s
-                            end)
+        val bind = bindLocal (fn (v, oper) => 
+                                 let
+                                   val rhs = M.RhsSimple oper
+                                   val s = Stream.bindRhs (state, env, v, rhs)
+                                 in s
+                                 end)
         val lift = 
          fn doOp => 
          fn (state, env, obj) => 

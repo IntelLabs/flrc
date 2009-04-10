@@ -1,7 +1,11 @@
 (* The Intel P to C/Pillar Compiler *)
 (* Copyright (C) Intel Corporation *)
 
-(* This module defines how P concepts are modelled in Mil *)
+(* This module defines how P concepts are modeled in core Mil.  Note that this
+ * does not necessarily correspond to how P concepts are modeled at any particular 
+ * point in the compiler, and hence this should only be used by the specific lowering 
+ * phases, or by phases which are guaranteed to be run post lowering.
+ *)
 
 signature P_OBJECT_MODEL = 
 sig
