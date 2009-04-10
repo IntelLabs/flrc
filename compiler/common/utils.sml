@@ -35,6 +35,7 @@ structure Utils = struct
     struct 
       val cons : 'a * 'a vector -> 'a vector = 
        fn (a, v) => Vector.concat [Vector.new1 a, v]
+      fun snoc (v, a) = Vector.concat [v, Vector.new1 a]
       val update : 'a vector * int * 'a -> 'a vector = 
        fn (vec, i , elem) =>
           Vector.mapi (vec, fn(i', elem') => if (i = i') then elem else elem')
@@ -174,6 +175,16 @@ structure Utils = struct
                    List.forall (aa, eq1)
              in eq
              end)
+
+    fun unzip3 l =
+        let
+          fun doOne ((a, b, c), (l1, l2, l3)) = (a::l1, b::l2, c::l3)
+          val (l1, l2, l3) = List.fold (l, ([], [], []), doOne)
+          val l1 = List.rev l1
+          val l2 = List.rev l2
+          val l3 = List.rev l3
+        in (l1, l2, l3)
+        end
 
     fun mapFoldl (l, ix, f) =
         let fun aux (item, (cx, a)) =
