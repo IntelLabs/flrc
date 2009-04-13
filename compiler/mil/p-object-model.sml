@@ -1,15 +1,43 @@
 (* The Intel P to C/Pillar Compiler *)
 (* Copyright (C) Intel Corporation *)
 
-(* This module defines how P concepts are modeled in core Mil.  Note that this
- * does not necessarily correspond to how P concepts are modeled at any particular 
- * point in the compiler, and hence this should only be used by the specific lowering 
- * phases, or by phases which are guaranteed to be run post lowering.
+(* This module defines how P concepts are modeled in core Mil.  There are three
+ * modules defined here:
+ *   PObjectModelCommon : P_OBJECT_MODEL_COMMON
+ *   PObjectModelHigh : P_OBJECT_MODEL_HIGH
+ *   PObjectModelLow : P_OBJECT_MODEL_LOW
+ *
+ * The Common structure defines P object model abstractions which are safe to use
+ * at any point in the compiler.  This should be used in preference to the others
+ * unless a pass needs to commit to an object model choice.
+ *
+ * The High structure includes the Common object model abstractions, and adds
+ * abstractions that are only safe to use before lowering.  This structure 
+ * should only be used in places where it can be guaranteed that lowering has 
+ * not yet occurred, either through the observed presence of un-lowered constructs
+ * or because of phase-ordering restrictions.
+ *
+ * The Low structure includes the Common object model abstractions, and adds
+ * abstractions that are only safe to use after lowering.  This structure 
+ * should only be used in places where it can be guaranteed that lowering has
+ * occurred.  This is generally only possible via phase-ordering restrictions.
+ *
+ * Passes which require access to object model assumptions and cannot meet the 
+ * the necessary guarantees as described above should be functorized over the
+ * appropriate object model.  So for example, pass which intends to create 
+ * P functions from scratch and which will be run both before and after
+ * lowering might need to be functorized over the object model.
+ * 
+ * To faciliate this, the signatures are proper (matching) extensions as follows:
+ *
+ * P_OBJECT_MODEL_LOW <# P_OBJECT_MODEL_HIGH <# P_OBJECT_MODEL_COMMON
+ *
  *)
 
-signature P_OBJECT_MODEL = 
-sig
+(*************** Common object model assumptions ******************************)
 
+signature P_OBJECT_MODEL_COMMON = 
+sig
   structure Double : sig
     val td : Mil.tupleDescriptor
     val typ : Mil.typ
@@ -26,33 +54,6 @@ sig
     val mkGlobal : Config.t * Real32.t -> Mil.global
     val ofValIndex : int
     val extract : Config.t * Mil.variable -> Mil.rhs
-  end
-
-  structure Function  : sig
-    val td : Config.t * Mil.fieldKind Vector.t -> Mil.tupleDescriptor
-    val closureTyp : Mil.typ Vector.t * Mil.typ Vector.t -> Mil.typ
-    val codeTyp : Mil.typ * Mil.typ Vector.t * Mil.typ Vector.t -> Mil.typ
-    val codeIndex : int
-    val fvIndex : int -> int
-    val mkUninit : Config.t * Mil.fieldKind Vector.t -> Mil.rhs
-    val mkInit : Config.t
-                 * Mil.operand
-                 * (Mil.fieldKind * Mil.operand) Vector.t
-                 -> Mil.rhs
-    val mkGlobal : Config.t * Mil.operand -> Mil.global
-    val init : Config.t
-               * Mil.variable
-               * Mil.operand
-               * (Mil.fieldKind * Mil.operand) Vector.t
-               -> Mil.rhs list
-    val getCode : Config.t * Mil.variable -> Mil.rhs
-    val getFv : Config.t * Mil.fieldKind Vector.t * Mil.variable * int
-                -> Mil.rhs
-    val doCall : Config.t
-                 * Mil.variable         (* code *)
-                 * Mil.variable         (* closure *)
-                 * Mil.operand Vector.t (* args *)
-                 -> Mil.call * Mil.operand Vector.t
   end
 
   structure IndexedArray : sig
@@ -88,18 +89,6 @@ sig
     val inited : Config.t * Mil.fieldKind * Mil.variable -> Mil.rhs
   end
 
-  structure OptionSet : sig
-    val td : Config.t -> Mil.tupleDescriptor
-    val loweredTyp : Mil.typ -> Mil.typ
-    val empty : Config.t -> Mil.rhs
-    val emptyGlobal : Config.t -> Mil.global
-    val mk : Config.t * Mil.operand -> Mil.rhs
-    val mkGlobal : Config.t * Mil.simple -> Mil.global
-    val ofValIndex : int
-    val get : Config.t * Mil.variable -> Mil.rhs
-    val query : Config.t * Mil.variable -> Mil.rhs * Mil.typ * Mil.constant
-  end
-
   structure Rat : sig
     val td : Mil.tupleDescriptor
     val typ : Mil.typ
@@ -109,32 +98,126 @@ sig
     val extract : Config.t * Mil.variable -> Mil.rhs
   end
 
-  structure Ref : sig
-    val loweredTyp : Mil.typ -> Mil.typ
-  end
+end
 
-  structure Sum : sig
-    val td : Config.t * Mil.fieldKind -> Mil.tupleDescriptor
-    val loweredTyp : Mil.typ Identifier.NameDict.t -> Mil.typ
-    val mk : Config.t * Mil.name * Mil.fieldKind * Mil.operand -> Mil.rhs
-    val mkGlobal : Config.t * Mil.name * Mil.fieldKind * Mil.simple
-                   -> Mil.global
-    val tagIndex : int
-    val ofValIndex : int
-    val getTag : Config.t * Mil.variable * Mil.fieldKind -> Mil.rhs
-    val getVal : Config.t * Mil.variable * Mil.fieldKind -> Mil.rhs
-  end
+(*************** High level object model assumptions **************************)
+   signature P_OBJECT_MODEL_FUNCTION_HIGH =
+   sig
+     val closureTyp : Mil.typ Vector.t * Mil.typ Vector.t -> Mil.typ
+     val mkUninit : Config.t * Mil.fieldKind Vector.t -> Mil.rhs
+     val mkInit : Config.t
+                  * Mil.variable option
+                  * (Mil.fieldKind * Mil.operand) Vector.t
+                  -> Mil.rhs
+     val mkGlobal : Config.t * Mil.variable option -> Mil.global
+     val init : Config.t
+                * Mil.variable
+                * Mil.variable option
+                * (Mil.fieldKind * Mil.operand) Vector.t
+                -> Mil.rhs list
+     val getFv : Config.t * Mil.fieldKind Vector.t * Mil.variable * int
+                 -> Mil.rhs
+   end
 
-  structure Type : sig
-    val td : Mil.tupleDescriptor
-    val loweredTyp : Mil.typ -> Mil.typ
-    val placeHolder : Mil.rhs
-    val placeHolderGlobal : Mil.global
-  end
+   signature P_OBJECT_MODEL_OPTION_SET_HIGH =
+   sig
+     val typ : Mil.typ -> Mil.typ
+     val empty : Config.t -> Mil.rhs
+     val emptyGlobal : Config.t -> Mil.global
+     val mk : Config.t * Mil.operand -> Mil.rhs
+     val mkGlobal : Config.t * Mil.simple -> Mil.global
+     val get : Config.t * Mil.variable -> Mil.rhs
+   end
 
-end;
+   signature P_OBJECT_MODEL_REF_HIGH =
+   sig
+     val typ : Mil.typ -> Mil.typ
+   end
 
-structure PObjectModel :> P_OBJECT_MODEL = 
+   signature P_OBJECT_MODEL_SUM_HIGH =
+   sig
+     val typ : Mil.typ Identifier.NameDict.t -> Mil.typ
+     val mk : Config.t * Mil.name * Mil.fieldKind * Mil.operand -> Mil.rhs
+     val mkGlobal : Config.t * Mil.name * Mil.fieldKind * Mil.simple
+                    -> Mil.global
+     val getVal : Config.t * Mil.variable * Mil.fieldKind * Mil.name -> Mil.rhs
+   end
+
+   signature P_OBJECT_MODEL_TYPE_HIGH =
+   sig
+     val typ : Mil.typ -> Mil.typ
+     val mk : unit -> Mil.rhs
+     val mkGlobal : unit -> Mil.global
+   end
+
+signature P_OBJECT_MODEL_HIGH = 
+sig
+  include P_OBJECT_MODEL_COMMON
+  structure Function : P_OBJECT_MODEL_FUNCTION_HIGH
+  structure OptionSet : P_OBJECT_MODEL_OPTION_SET_HIGH
+  structure Ref : P_OBJECT_MODEL_REF_HIGH
+  structure Sum : P_OBJECT_MODEL_SUM_HIGH
+  structure Type : P_OBJECT_MODEL_TYPE_HIGH
+end
+
+(*************** Low level object model assumptions **************************)
+   signature P_OBJECT_MODEL_FUNCTION_LOW =
+   sig
+     include P_OBJECT_MODEL_FUNCTION_HIGH
+     val td : Config.t * Mil.fieldKind Vector.t -> Mil.tupleDescriptor
+     val codeTyp : Mil.typ * Mil.typ Vector.t * Mil.typ Vector.t -> Mil.typ
+     val codeIndex : int
+     val fvIndex : int -> int
+     val getCode : Config.t * Mil.variable -> Mil.rhs
+     val doCall : Config.t
+                  * Mil.variable         (* code *)
+                  * Mil.variable         (* closure *)
+                  * Mil.operand Vector.t (* args *)
+                  -> Mil.call * Mil.operand Vector.t
+   end
+
+   signature P_OBJECT_MODEL_OPTION_SET_LOW =
+   sig
+     include P_OBJECT_MODEL_OPTION_SET_HIGH
+     val td : Config.t -> Mil.tupleDescriptor
+     val ofValIndex : int
+     val query : Config.t * Mil.variable -> Mil.rhs * Mil.typ * Mil.constant
+   end
+
+   signature P_OBJECT_MODEL_REF_LOW =
+   sig
+     include P_OBJECT_MODEL_REF_HIGH
+   end
+
+   signature P_OBJECT_MODEL_SUM_LOW =
+   sig
+     include P_OBJECT_MODEL_SUM_HIGH
+     val tagIndex : int
+     val ofValIndex : int
+     val getTag : Config.t * Mil.variable * Mil.fieldKind -> Mil.rhs
+     val td : Config.t * Mil.fieldKind -> Mil.tupleDescriptor
+   end
+
+   signature P_OBJECT_MODEL_TYPE_LOW =
+   sig
+     include P_OBJECT_MODEL_TYPE_HIGH
+     val td : Mil.tupleDescriptor
+   end
+
+signature P_OBJECT_MODEL_LOW = 
+sig
+  include P_OBJECT_MODEL_COMMON
+  structure Function : P_OBJECT_MODEL_FUNCTION_LOW
+  structure OptionSet : P_OBJECT_MODEL_OPTION_SET_LOW
+  structure Ref : P_OBJECT_MODEL_REF_LOW
+  structure Sum : P_OBJECT_MODEL_SUM_LOW
+  structure Type : P_OBJECT_MODEL_TYPE_LOW
+end
+
+
+(*************** Object model implementations  **************************)
+
+structure PObjectModelCommon :> P_OBJECT_MODEL_COMMON = 
 struct
 
   structure M = Mil
@@ -178,99 +261,6 @@ struct
 
     fun extract (c, v) = B.unbox (c, M.FkBits M.Fs32, v)
 
-  end
-
-  structure Function  =
-  struct
-
-    fun codeTyp (cls, args, ress) =
-        M.TCode {cc = M.CcCode, args = Utils.Vector.cons (cls, args), ress = ress}
-
-    fun closureTyp (args, ress) =
-        let
-          (* The code's first argument is the closure itself.
-           * To express this properly would require a recursive
-           * type.  Instead we approximate with TRef.
-           *)
-          val ct = codeTyp (M.TRef, args, ress)
-          val fts = Vector.new1 (ct, M.FvReadOnly)
-        in
-          M.TTuple {pok = M.PokFunction, fixed = fts, array = NONE}
-        end
-
-
-    val codeIndex = 0
-    fun fvIndex i = i + 1
-
-    fun td (c, fks) =
-      let
-        val fks = Utils.Vector.cons (MU.FieldKind.nonRefPtr c, fks)
-        fun doOne fk = M.FD {kind = fk, var = M.FvReadOnly}
-        val fds = Vector.map (fks, doOne)
-        val td = M.TD {fixed = fds, array = NONE}
-      in td
-      end
-
-    fun vtd (c, fks) =
-      let
-        val pok = M.PokFunction
-        val fks = Utils.Vector.cons (MU.FieldKind.nonRefPtr c, fks)
-        fun doOne fk = M.FD {kind = fk, var = M.FvReadOnly}
-        val fds = Vector.map (fks, doOne)
-        val vtd = M.VTD {pok = pok, fixed = fds, array = NONE}
-      in vtd
-      end
-
-    fun mkUninit (c, fks) =
-        M.RhsTuple {vtDesc = vtd (c, fks), inits = Vector.new0 ()}
-
-    fun mkInit (c, code, fkos) =
-        let
-          val (fks, os) = Vector.unzip fkos
-        in
-          M.RhsTuple {vtDesc = vtd (c, fks), inits = Utils.Vector.cons (code, os)}
-        end
-
-    fun mkGlobal (c, code) =
-        M.GTuple {vtDesc = vtd (c, Vector.new0 ()), inits = Vector.new1 code}
-
-    fun init (c, cls, code, fkos) =
-        let
-          val (fks, os) = Vector.unzip fkos
-          val td = td (c, fks)
-          val codetf =
-              M.TF {tupDesc = td, tup = cls, field = M.FiFixed codeIndex}
-          val coderhs = M.RhsTupleSet {tupField = codetf, ofVal = code}
-          fun doOne (i, opnd) =
-              let
-                val f = M.FiFixed (fvIndex i)
-                val tf = M.TF {tupDesc = td, tup = cls, field = f}
-                val rhs = M.RhsTupleSet {tupField = tf, ofVal = opnd}
-              in rhs
-              end
-          val fvsrhs = List.mapi (Vector.toList os, doOne)
-        in coderhs::fvsrhs
-        end
-
-    fun getCode (c, cls) =
-        let
-          val td = td (c, Vector.new0 ())
-          val f = M.FiFixed codeIndex
-          val rhs = M.RhsTupleSub (M.TF {tupDesc = td, tup = cls, field = f})
-        in rhs
-        end
-
-    fun getFv (c, fks, cls, idx) =
-        let
-          val td = td (c, fks)
-          val f = M.FiFixed (fvIndex idx)
-          val rhs = M.RhsTupleSub (M.TF {tupDesc = td, tup = cls, field = f})
-        in rhs
-        end
-
-    fun doCall (c, codev, clsv, args) =
-        (M.CCode codev, Utils.Vector.cons (M.SVariable clsv, args))
-        
   end
 
   structure IndexedArray =
@@ -317,10 +307,230 @@ struct
 
   end
 
+  structure Rat =
+  struct
+
+    val td = B.td M.FkRef
+
+    val typ = B.t (M.PokRat, M.TRat)
+
+    fun mk (c, opnd) = B.box (c, M.PokRat, M.FkRef, opnd)
+
+    fun mkGlobal (c, s) = B.boxGlobal (c, M.PokRat, M.FkRef, s)
+
+    val ofValIndex = B.ofValIndex
+
+    fun extract (c, v) = B.unbox (c, M.FkRef, v)
+
+  end
+
+end (* structure PObjectModelCommon *)
+
+structure PObjectModelHigh :> P_OBJECT_MODEL_HIGH = 
+struct
+
+  structure M = Mil
+  structure MU = MilUtils
+  structure B = MU.Boxed
+  structure OA = MU.OrdinalArray
+  structure IA = MU.IndexedArray
+  structure POMC = PObjectModelCommon
+
+  structure Double = POMC.Double
+
+  structure Float = POMC.Float
+
+  structure Function  =
+  struct
+    fun closureTyp (args, ress) = M.TPFunction {args = args, ress = ress}
+
+    fun mkUninit (c, fks) = M.RhsPFunctionMk {fvs = fks}
+
+    fun mkInit (c, code, fkos) = M.RhsPFunctionInit {cls = NONE, code = code, fvs = fkos}
+
+    fun mkGlobal (c, code) = M.GPFunction code
+
+    fun init (c, cls, code, fkos) = [M.RhsPFunctionInit {cls = SOME cls, 
+                                                         code = code, 
+                                                         fvs = fkos}]
+
+    fun getFv (c, fks, cls, idx) = M.RhsPFunctionGetFv {fvs = fks, cls = cls, idx = idx}
+
+  end (* structure Function *)
+
+  structure IndexedArray = POMC.IndexedArray
+
+  structure OrdinalArray = POMC.OrdinalArray
+
   structure OptionSet =
   struct
 
-    fun loweredTyp t =
+    fun typ t = M.TPType {kind = M.TkE, over = t}
+    fun empty c = M.RhsSimple (M.SConstant M.COptionSetEmpty)
+    fun emptyGlobal c = M.GSimple (M.SConstant M.COptionSetEmpty)
+    fun mk (c, opnd) = M.RhsPSetNew opnd
+    fun mkGlobal (c, s) = M.GPSet s
+    fun get (c, v) = M.RhsPSetGet v
+    fun query (c, opnd) = M.RhsPSetQuery opnd
+
+  end (* structure OptionSet *)
+
+  structure Rat = POMC.Rat
+
+  structure Ref =
+  struct
+
+    fun typ t =
+        Fail.unimplemented ("PObjectModelHigh.Ref", "typ", "*")
+
+  end (* structure Ref *)
+
+  structure Sum =
+  struct
+
+    fun typ nts = M.TPSum nts
+    fun mk (c, tag, fk, ofVal) = M.RhsPSum {tag = tag, typ = fk, ofVal = ofVal}
+    fun mkGlobal (c, tag, fk, ofVal) = M.GPSum {tag = tag, typ = fk, ofVal = ofVal}
+    fun getVal (c, v, fk, tag) = M.RhsPSumProj {typ = fk, sum = v, tag = tag}
+
+  end (* structure Sum *)
+
+  structure Type =
+  struct
+
+    fun typ t = M.TPType {kind = M.TkI, over = M.TNone}
+    fun mk () = M.RhsSimple (M.SConstant M.CTypePH)
+    fun mkGlobal () = M.GSimple (M.SConstant M.CTypePH)
+
+  end (* structure Type *)
+
+end (* structure PObjectModelHigh *)
+
+structure PObjectModelLow :> P_OBJECT_MODEL_LOW = 
+struct
+
+  structure M = Mil
+  structure MU = MilUtils
+  structure B = MU.Boxed
+  structure OA = MU.OrdinalArray
+  structure IA = MU.IndexedArray
+  structure POMC = PObjectModelCommon
+
+  structure Double = POMC.Double
+  structure Float = POMC.Float
+
+  structure Function  =
+  struct
+
+    fun codeTyp (cls, args, ress) =
+        M.TCode {cc = M.CcCode, args = Utils.Vector.cons (cls, args), ress = ress}
+
+    fun closureTyp (args, ress) =
+        let
+          (* The code's first argument is the closure itself.
+           * To express this properly would require a recursive
+           * type.  Instead we approximate with TRef.
+           *)
+          val ct = codeTyp (M.TRef, args, ress)
+          val fts = Vector.new1 (ct, M.FvReadOnly)
+        in
+          M.TTuple {pok = M.PokFunction, fixed = fts, array = NONE}
+        end
+
+
+    val codeIndex = 0
+    fun fvIndex i = i + 1
+
+    fun td (c, fks) =
+      let
+        val fks = Utils.Vector.cons (MU.FieldKind.nonRefPtr c, fks)
+        fun doOne fk = M.FD {kind = fk, var = M.FvReadOnly}
+        val fds = Vector.map (fks, doOne)
+        val td = M.TD {fixed = fds, array = NONE}
+      in td
+      end
+
+    fun vtd (c, fks) =
+      let
+        val pok = M.PokFunction
+        val fks = Utils.Vector.cons (MU.FieldKind.nonRefPtr c, fks)
+        fun doOne fk = M.FD {kind = fk, var = M.FvReadOnly}
+        val fds = Vector.map (fks, doOne)
+        val vtd = M.VTD {pok = pok, fixed = fds, array = NONE}
+      in vtd
+      end
+
+    fun mkUninit (c, fks) =
+        M.RhsTuple {vtDesc = vtd (c, fks), inits = Vector.new0 ()}
+
+    fun codeOptToCodePtr (c, vo) = 
+        case vo
+         of SOME v => M.SVariable v
+          | NONE => M.SConstant (MU.UIntp.zero c)
+
+    fun mkInit (c, vo, fkos) =
+        let
+          val code = codeOptToCodePtr (c, vo)
+          val (fks, os) = Vector.unzip fkos
+        in
+          M.RhsTuple {vtDesc = vtd (c, fks), inits = Utils.Vector.cons (code, os)}
+        end
+
+    fun mkGlobal (c, vo) =
+        let
+          val code = codeOptToCodePtr (c, vo)
+        in
+          M.GTuple {vtDesc = vtd (c, Vector.new0 ()), inits = Vector.new1 code}
+        end
+
+    fun init (c, cls, vo, fkos) =
+        let
+          val code = codeOptToCodePtr (c, vo)
+          val (fks, os) = Vector.unzip fkos
+          val td = td (c, fks)
+          val codetf =
+              M.TF {tupDesc = td, tup = cls, field = M.FiFixed codeIndex}
+          val coderhs = M.RhsTupleSet {tupField = codetf, ofVal = code}
+          fun doOne (i, opnd) =
+              let
+                val f = M.FiFixed (fvIndex i)
+                val tf = M.TF {tupDesc = td, tup = cls, field = f}
+                val rhs = M.RhsTupleSet {tupField = tf, ofVal = opnd}
+              in rhs
+              end
+          val fvsrhs = List.mapi (Vector.toList os, doOne)
+        in coderhs::fvsrhs
+        end
+
+    fun getCode (c, cls) =
+        let
+          val td = td (c, Vector.new0 ())
+          val f = M.FiFixed codeIndex
+          val rhs = M.RhsTupleSub (M.TF {tupDesc = td, tup = cls, field = f})
+        in rhs
+        end
+
+    fun getFv (c, fks, cls, idx) =
+        let
+          val td = td (c, fks)
+          val f = M.FiFixed (fvIndex idx)
+          val rhs = M.RhsTupleSub (M.TF {tupDesc = td, tup = cls, field = f})
+        in rhs
+        end
+
+    fun doCall (c, codev, clsv, args) =
+        (M.CCode codev, Utils.Vector.cons (M.SVariable clsv, args))
+
+  end
+
+  structure IndexedArray = POMC.IndexedArray
+
+  structure OrdinalArray = POMC.OrdinalArray
+
+  structure OptionSet =
+  struct
+
+    fun typ t =
         M.TTuple {pok = M.PokOptionSet,
                   fixed = Vector.new1 (t, M.FvReadOnly),
                   array = NONE}
@@ -391,35 +601,20 @@ struct
 
   end
 
-  structure Rat =
-  struct
-
-    val td = B.td M.FkRef
-
-    val typ = B.t (M.PokRat, M.TRat)
-
-    fun mk (c, opnd) = B.box (c, M.PokRat, M.FkRef, opnd)
-
-    fun mkGlobal (c, s) = B.boxGlobal (c, M.PokRat, M.FkRef, s)
-
-    val ofValIndex = B.ofValIndex
-
-    fun extract (c, v) = B.unbox (c, M.FkRef, v)
-
-  end
+  structure Rat = POMC.Rat
 
   structure Ref =
   struct
 
-    fun loweredTyp t =
-        Fail.unimplemented ("PObjectModel.Ref", "loweredTyp", "*")
+    fun typ t =
+        Fail.unimplemented ("PObjectModelLow.Ref", "typ", "*")
 
   end
 
-  structure Sum =
+  structure Sum = 
   struct
 
-    fun loweredTyp nts =
+    fun typ nts =
         M.TTuple {pok = M.PokSum,
                   fixed = Vector.new1 (M.TName, M.FvReadOnly),
                   array = NONE}
@@ -467,7 +662,7 @@ struct
         in rhs
         end
 
-    fun getVal (c, v, fk) =
+    fun getVal (c, v, fk, tag) =
         let
           val td = td (c, fk)
           val f = M.FiFixed ofValIndex
@@ -480,17 +675,18 @@ struct
   structure Type =
   struct
 
-    fun loweredTyp t =
+    fun typ t =
         M.TTuple {pok = M.PokType, fixed = Vector.new0 (), array = NONE}
 
     val td = M.TD {fixed = Vector.new0 (), array = NONE}
 
     val vtd = M.VTD {pok = M.PokType, fixed = Vector.new0 (), array = NONE}
 
-    val placeHolder = M.RhsTuple {vtDesc = vtd, inits = Vector.new0 ()}
+    fun mk () = M.RhsTuple {vtDesc = vtd, inits = Vector.new0 ()}
                     
-    val placeHolderGlobal = M.GTuple {vtDesc = vtd, inits = Vector.new0 ()}
+    fun mkGlobal () = M.GTuple {vtDesc = vtd, inits = Vector.new0 ()}
                     
   end
 
-end;
+end (* structure PObjectModelLow *)
+

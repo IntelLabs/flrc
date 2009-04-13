@@ -29,7 +29,7 @@ struct
   structure MSTM = MU.SymbolTableManager
   structure MTT = MilType.Typer
   structure MFV = MilFreeVars
-  structure POM = PObjectModel
+  structure POM = PObjectModelLow
 
   (*** The pass environment ***)
 
