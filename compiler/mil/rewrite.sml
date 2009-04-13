@@ -412,6 +412,7 @@ struct
               val global = 
                   case global
                    of M.GCode f => M.GCode (function (state, env, f))
+                    | M.GErrorVal _ => global
                     | M.GIdx _ => global
                     | M.GTuple {vtDesc, inits} =>
                       M.GTuple {vtDesc = vtDesc,

@@ -26,7 +26,7 @@ sig
     val layoutFieldDescriptor      : Mil.fieldDescriptor layout
     val layoutFieldDescriptorShort : Mil.fieldDescriptor layout
     val layoutTupleDescriptor      : Mil.tupleDescriptor layout
-    val layoutVTableDescriptor     : Mil.vtableDescriptor layout
+    val layoutVtableDescriptor     : Mil.vtableDescriptor layout
     val layoutConstant             : Mil.constant layout
     val layoutSimple               : Mil.simple layout
     val layoutOperand              : Mil.operand layout
@@ -356,7 +356,7 @@ struct
        in l
        end
 
-   fun layoutVTableDescriptor (env, M.VTD {pok, fixed, array}) =
+   fun layoutVtableDescriptor (env, M.VTD {pok, fixed, array}) =
        let
          val pok = layoutPObjKindShort (env, pok)
          val fixed = layoutVector (env, layoutFieldDescriptorShort, fixed)
@@ -463,7 +463,7 @@ struct
 
    fun layoutTuple (env, vtDesc, inits) =
        let
-         val vtd = layoutVTableDescriptor (env, vtDesc)
+         val vtd = layoutVtableDescriptor (env, vtDesc)
          val inits = layoutOperands (env, inits)
          val l = LU.brace (L.mayAlign (semiCommaL (vtd, inits)))
        in l
@@ -553,7 +553,7 @@ struct
                        LU.indent (layoutOperand (env, ofVal))]
          | M.RhsTupleInited {vtDesc, tup} =>
            let
-             val vtDesc = layoutVTableDescriptor (env, vtDesc)
+             val vtDesc = layoutVtableDescriptor (env, vtDesc)
              val tup = layoutVariable (env, tup)
              val l = L.seq [L.str "Inited", L.tuple [vtDesc, tup]]
            in l
@@ -891,6 +891,7 @@ struct
    fun layoutGlobalOnly (env, global) = 
        case global
         of M.GCode code => layoutCode (env, code)
+         | M.GErrorVal t => L.seq [L.str "ERRORVAL : ", layoutTyp (env, t)]
          | M.GIdx d => layoutIdx (env, d)
          | M.GTuple {vtDesc, inits} => layoutTuple (env, vtDesc, inits)
          | M.GRat r => L.seq [Rat.layout r, L.str "R"]
@@ -1078,7 +1079,7 @@ struct
    val layoutFieldDescriptor      = wrap layoutFieldDescriptor
    val layoutFieldDescriptorShort = wrap layoutFieldDescriptorShort
    val layoutTupleDescriptor      = wrap layoutTupleDescriptor
-   val layoutVTableDescriptor     = wrap layoutVTableDescriptor
+   val layoutVtableDescriptor     = wrap layoutVtableDescriptor
    val layoutConstant             = wrap layoutConstant
    val layoutSimple               = wrap layoutSimple
    val layoutOperand              = wrap layoutOperand

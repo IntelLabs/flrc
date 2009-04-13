@@ -509,6 +509,7 @@ struct
             case g
              of M.GCode code => 
                 SOME (v, M.GCode (doCode (state, env, code)))
+              | M.GErrorVal t => SOME (v, M.GErrorVal (doTyp (state, env, t)))
               (* name small values ensures this form *)
               | M.GSimple (M.SConstant (M.COptionSetEmpty)) => 
                 if lowerPTypes then
@@ -521,6 +522,7 @@ struct
                   SOME (v, POM.Type.placeHolderGlobal)
                 else
                   NONE
+              | M.GSimple _ => NONE
               | M.GPFunction vo => 
                 if lowerPFunctions then
                   let
@@ -543,7 +545,12 @@ struct
                   SOME (v, POM.OptionSet.mkGlobal (c, s))
                 else 
                   NONE
-              | _ => NONE
+              | M.GIdx _ => NONE
+              | M.GTuple _ => NONE
+              | M.GRat _ => NONE
+              | M.GInteger _ => NONE
+              | M.GThunkValue _ => NONE
+
         val gol = Option.map (go, fn (v, g) => [(v, g)])
       in (env, gol)
       end

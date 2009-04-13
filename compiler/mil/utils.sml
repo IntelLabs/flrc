@@ -239,7 +239,7 @@ sig
     val eq : t * t -> bool
   end
 
-  structure VTableDescriptor :
+  structure VtableDescriptor :
   sig
     type t = Mil.vtableDescriptor
     val pok : t -> PObjKind.t
@@ -580,6 +580,8 @@ sig
     val successors : t -> {blocks : Identifier.LabelSet.t, exits : bool}
     val cuts : t -> Cuts.t
     val isBoolIf : t -> {on : Operand.t, trueBranch : Target.t, falseBranch : Target.t} option
+    val isIntraProcedural : t -> Target.t Vector.t option
+    val mapOverTargets : t * (Mil.target -> Mil.target) -> t
     val fx : Config.t * t -> Effect.set
     structure Dec : 
     sig
@@ -663,6 +665,7 @@ sig
     structure Dec : 
     sig
       val gCode : t -> Mil.code option
+      val gErrorVal : t -> Mil.typ option
       val gIdx : t -> int Mil.ND.t option
       val gTuple : t -> {vtDesc : Mil.vtableDescriptor, inits  : Mil.simple Vector.t} option
       val gRat : t -> Rat.t option
@@ -768,6 +771,32 @@ sig
     val unbox : Config.t * FieldKind.t * Mil.variable -> Rhs.t
   end
 
+  (* This defines constructors for fixed length Mil tuples. *)
+  structure Tuple :
+  sig
+    val typ : Mil.pObjKind * (Mil.typ * Mil.fieldVariance) Vector.t -> Mil.typ
+
+    val td : Mil.fieldDescriptor Vector.t -> Mil.tupleDescriptor
+    val vtd : Mil.pObjKind * (Mil.fieldDescriptor Vector.t) -> Mil.vtableDescriptor
+
+    (* These assume PokNone *)
+    val vtdImmutable     : Mil.fieldKind Vector.t -> Mil.vtableDescriptor
+    val vtdImmutableRefs : int -> Mil.vtableDescriptor
+    val vtdImmutableBits : int * Mil.fieldSize -> Mil.vtableDescriptor
+
+    val tdImmutable     : Mil.fieldKind Vector.t -> Mil.tupleDescriptor
+    val tdImmutableRefs : int -> Mil.tupleDescriptor
+    val tdImmutableBits : int * Mil.fieldSize -> Mil.tupleDescriptor
+
+    val new : Mil.vtableDescriptor * Mil.operand Vector.t -> Mil.rhs
+    val proj : Mil.tupleDescriptor * Mil.variable * int -> Mil.rhs
+    val init : Mil.tupleDescriptor * Mil.variable * int * Mil.operand -> Mil.rhs 
+    val inited : Mil.vtableDescriptor * Mil.variable -> Mil.rhs
+  end (* structure Tuple *)
+
+  (* This defines an abstraction of variable length arrays in MIL.  
+   * These arrays always have length fields (even if created via
+   * the newFixed constructor *)
   structure OrdinalArray :
   sig
     val tdVar : Config.t * Mil.fieldKind -> Mil.tupleDescriptor
@@ -1460,6 +1489,9 @@ struct
          of (M.GCode       x1, M.GCode       x2) => code (x1, x2)
           | (M.GCode       _ , _               ) => LESS
           | (_               , M.GCode       _ ) => GREATER
+          | (M.GErrorVal   x1, M.GErrorVal   x2) => typ (x1, x2)
+          | (M.GErrorVal _   , _               ) => LESS
+          | (_               , M.GErrorVal   _ ) => GREATER
           | (M.GIdx        x1, M.GIdx        x2) => idx (x1, x2)
           | (M.GIdx        _ , _               ) => LESS
           | (_               , M.GIdx        _ ) => GREATER
@@ -2042,7 +2074,7 @@ struct
 
   end
 
-  structure VTableDescriptor =
+  structure VtableDescriptor =
   struct
 
     type t = Mil.vtableDescriptor
@@ -2334,8 +2366,8 @@ struct
       val R = ReadOnly
       val writes = fromList [HeapWrite, InitWrite]
       fun tuple {vtDesc, inits} =
-          if VTableDescriptor.hasArray vtDesc orelse
-             VTableDescriptor.numFixed vtDesc <> Vector.length inits
+          if VtableDescriptor.hasArray vtDesc orelse
+             VtableDescriptor.numFixed vtDesc <> Vector.length inits
           then InitGenS
           else T
       fun thunkInit {thunk, ...} =
@@ -2395,7 +2427,7 @@ struct
         (case rhs 
           of M.RhsSimple s             => Simple.pObjKind s
            | M.RhsPrim _               => NONE (* XXX anything else here?  -leaf *)
-           | M.RhsTuple {vtDesc, ...}  => SOME (VTableDescriptor.pok vtDesc)
+           | M.RhsTuple {vtDesc, ...}  => SOME (VtableDescriptor.pok vtDesc)
            | M.RhsTupleSub _           => NONE
            | M.RhsTupleSet _           => NONE
            | M.RhsTupleInited _        => NONE
@@ -2907,6 +2939,48 @@ struct
             in {on = on, trueBranch = tt, falseBranch = tf}
             end)
 
+    val mapOverTargets = 
+     fn (t, f) => 
+        let
+          val doCase = 
+           fn {on, cases, default} => 
+              let
+                val cases = Vector.map (cases, (fn (a, tg) => (a, f tg)))
+                val default = Option.map (default, f)
+              in {on = on, cases = cases, default = default}
+              end
+        in
+          case t
+           of M.TGoto tg     => M.TGoto (f tg)
+            | M.TCase r      => M.TCase (doCase r)
+            | M.TInterProc _ => t
+            | M.TReturn _    => t
+            | M.TCut _       => t
+            | M.TPSumCase r  => M.TPSumCase (doCase r)
+        end
+
+    val isIntraProcedural = 
+     fn t => 
+        let
+          val doCase = 
+           fn {on, cases, default} => 
+              let
+                val tgs = Vector.map (cases, #2)
+              in
+                SOME (case default
+                       of NONE => tgs
+                        | SOME tg => Utils.Vector.cons (tg, tgs))
+              end
+        in
+          case t
+           of M.TGoto tg     => SOME (Vector.new1 tg)
+            | M.TCase r      => doCase r
+            | M.TInterProc _ => NONE
+            | M.TReturn _    => NONE
+            | M.TCut _       => NONE
+            | M.TPSumCase r  => doCase r
+        end
+
     val fx  = 
      fn (c, t) => 
         let
@@ -3111,6 +3185,7 @@ struct
     fun isCore g =
         case g
          of M.GCode f       => Code.isCore f
+          | M.GErrorVal _   => true
           | M.GIdx _        => true
           | M.GTuple _      => true
           | M.GRat _        => true
@@ -3129,8 +3204,9 @@ struct
      fn g => 
         (case g
           of M.GCode f              => NONE
+           | M.GErrorVal _          => NONE
            | M.GIdx _               => NONE
-           | M.GTuple {vtDesc, ...} => SOME (VTableDescriptor.pok vtDesc)
+           | M.GTuple {vtDesc, ...} => SOME (VtableDescriptor.pok vtDesc)
            | M.GRat _               => NONE
            | M.GInteger _           => NONE
            | M.GThunkValue _        => SOME M.PokThunk
@@ -3147,6 +3223,8 @@ struct
     struct
       val gCode =
        fn g => (case g of M.GCode r => SOME r | _ => NONE)
+      val gErrorVal = 
+       fn g => (case g of M.GErrorVal r => SOME r | _ => NONE)
       val gIdx =
        fn g => (case g of M.GIdx r => SOME r | _ => NONE)
       val gTuple =
@@ -3346,6 +3424,55 @@ struct
 
   end
 
+
+  structure Tuple =
+  struct
+
+    val typ = 
+     fn (pok, ts) => M.TTuple {pok = pok, fixed = ts, array = NONE}
+
+    val td =
+     fn fds => M.TD {fixed = fds, array = NONE}
+
+    val vtd = 
+     fn (pok, fds) => M.VTD {pok = pok, fixed = fds, array = NONE}
+
+    val vtdImmutable = 
+     fn fks => vtd (M.PokNone, Vector.map (fks, fn fk => M.FD {kind = fk, var = M.FvReadOnly}))
+    val vtdImmutableRefs = 
+     fn i => vtdImmutable (Vector.new (i, M.FkRef))
+    val vtdImmutableBits = 
+     fn (i, fs) => vtdImmutable (Vector.new (i, M.FkBits fs))
+
+    val tdImmutable = VtableDescriptor.toTupleDescriptor o vtdImmutable
+    val tdImmutableRefs = VtableDescriptor.toTupleDescriptor o vtdImmutableRefs
+    val tdImmutableBits = VtableDescriptor.toTupleDescriptor o vtdImmutableBits
+
+    val new = 
+     fn (vt, inits) => M.RhsTuple {vtDesc = vt, inits = inits}
+
+    val proj = 
+     fn (td, arr, idx) =>
+        M.RhsTupleSub (M.TF {tupDesc = td,
+                             tup = arr,
+                             field = M.FiFixed idx})
+
+    val init = 
+     fn (td, arr, idx, ofVal) =>
+        M.RhsTupleSet {tupField = M.TF {tupDesc = td,
+                                        tup = arr,
+                                        field = M.FiFixed idx},
+                       ofVal = ofVal}
+        
+    val inited = 
+     fn (vt, arr) =>
+        M.RhsTupleInited {vtDesc = vt, tup = arr}
+
+  end (* structure Tuple *)
+
+  (* This defines an abstraction of variable length arrays in MIL.  
+   * These arrays always have length fields (even if created via
+   * the newFixed constructor *)
   structure OrdinalArray =
   struct
 
