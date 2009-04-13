@@ -3633,8 +3633,8 @@ struct
           M.VTD {pok = pok, fixed = fks, array = NONE}
         end
 
-    val lenIndex = 1
-    val idxIndex = 0
+    val lenIndex = 0
+    val idxIndex = 1
 
     fun vtdVar (c, pok, fk) =
         let
