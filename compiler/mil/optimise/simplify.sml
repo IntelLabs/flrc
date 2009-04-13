@@ -22,7 +22,7 @@ struct
   structure M = Mil
   structure P = Prims
   structure MU = MilUtils
-  structure POM = PObjectModel
+  structure POM = PObjectModelCommon
   structure I = IMil
   structure IInstr = I.IInstr
   structure IGlobal = I.IGlobal
@@ -1178,8 +1178,7 @@ struct
                        val mkvar = fn (i, t) => Var.related (imil, v, Int.toString i, t, false)
                        val vs = Vector.mapi (ts, mkvar)
                        val aa = Vector.map (vs, M.SVariable)
-                       val fks = Vector.map (ts, fn t => MU.FieldKind.fromTyp (config, t))
-                       val vtd = MU.Tuple.vtdImmutable fks
+                       val vtd = MU.Tuple.vtdImmutableTyps (config, ts)
                        val rhs = MU.Tuple.new (vtd, aa)
                        val mi = M.I {dest = SOME vnew, rhs = rhs}
                        val () = Use.replaceUses (imil, v, M.SVariable vnew)
