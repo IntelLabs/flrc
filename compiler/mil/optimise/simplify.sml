@@ -1450,7 +1450,7 @@ struct
                 val () = Try.require (p = Prims.PDom)
                 val arrv = <@ MU.Simple.Dec.sVariable o Try.V.singleton @@ args
                 val config = PD.getConfig d
-                val uintv = IMil.Var.related (imil, dv, "uint", MU.UIntp.t config, false)
+                val uintv = IMil.Var.related (imil, dv, "uint", MU.Uintp.t config, false)
                 val ni = 
                     let
                       val rhs = POM.OrdinalArray.length (config, arrv)
@@ -1460,7 +1460,7 @@ struct
                     end
                 val () = 
                     let
-                      val rhs = MU.Rational.fromUIntp (config, M.SVariable uintv)
+                      val rhs = MU.Rational.fromUintp (config, M.SVariable uintv)
                       val mi = M.I {dest = SOME dv, rhs = rhs}
                       val () = IInstr.replaceInstruction (imil, i, mi)
                     in ()
@@ -1569,7 +1569,7 @@ struct
                 val nm = <@ MU.Constant.Dec.cName <! MU.Simple.Dec.sConstant @@ ofVal
                 val idx = <@ MU.Global.Dec.gIdx o #2 <! Def.toGlobal o Def.get @@ (imil, idx)
                 val offset = <@ M.ND.lookup (idx, nm)
-                val p = M.SConstant (MU.UIntp.int (PD.getConfig d, offset))
+                val p = M.SConstant (MU.Uintp.int (PD.getConfig d, offset))
                 val () = Use.replaceUses (imil, dv, p)
                 val () = IInstr.delete (imil, i)
               in []

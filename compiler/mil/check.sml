@@ -410,7 +410,7 @@ struct
                              fn () => msg () ^ ": bad constant mask")
           in M.TViMask typ
           end
-        | M.CPok _ => MU.UIntp.t (getConfig e)
+        | M.CPok _ => MU.Uintp.t (getConfig e)
         | M.COptionSetEmpty => M.TPType {kind = M.TkE, over = M.TNone}
         | M.CTypePH => M.TPType {kind = M.TkI, over = M.TNone}
 
@@ -551,7 +551,7 @@ struct
             case opnd
              of M.SConstant (M.CIntegral i) =>
                 IntInf.isZero (IntArb.toIntInf i) andalso
-                IntArb.isTyp (i, MU.UIntp.intArbTyp (getConfig e))
+                IntArb.isTyp (i, MU.Uintp.intArbTyp (getConfig e))
               | _ => false
         val ns = Vector.map (inits, checkOne)
         val () = consistentVtDesc (s, e, msg, vtd, ts, ns)

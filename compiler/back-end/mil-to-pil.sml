@@ -511,7 +511,7 @@ struct
 
   fun freshVariableDT (state, env, hint, g) =
       let
-        val t = MU.UIntp.t (getConfig env)
+        val t = MU.Uintp.t (getConfig env)
       in
         MSTM.variableFresh (getStm state, hint, t, g)
       end

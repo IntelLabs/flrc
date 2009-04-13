@@ -466,7 +466,7 @@ struct
     fun codeOptToCodePtr (c, vo) = 
         case vo
          of SOME v => M.SVariable v
-          | NONE => M.SConstant (MU.UIntp.zero c)
+          | NONE => M.SConstant (MU.Uintp.zero c)
 
     fun mkInit (c, vo, fkos) =
         let
@@ -537,7 +537,7 @@ struct
 
     val ofValIndex = B.ofValIndex
 
-    fun nulConst c = MU.UIntp.zero c
+    fun nulConst c = MU.Uintp.zero c
 
     fun empty c =
         let

@@ -736,7 +736,7 @@ struct
            #1 (join (state, env, dests, p1, p2, doIt))
          end
 
-     fun zero env = MU.SIntp.zero (toConfig env)
+     fun zero env = MU.Sintp.zero (toConfig env)
 
      fun ifZero (state, env, dests, opnd, p1, p2) =
          ifConst (state, env, dests, opnd, zero env, p1, p2)
@@ -808,13 +808,13 @@ struct
                       resv, outargs) =
        let
          val c = toConfig env
-         val ni = relatedVar (state, i, "next", MU.UIntp.t c, false)
+         val ni = relatedVar (state, i, "next", MU.Uintp.t c, false)
          val nd = namedVar (state, "mild", MU.Bool.t c, false)
          val body = 
              let
-               val inc = MU.UIntp.add (c, M.SVariable i, incr)
+               val inc = MU.Uintp.add (c, M.SVariable i, incr)
                val inc = M.I {dest = SOME ni, rhs = inc}
-               val test = MU.UIntp.lt (c, M.SVariable ni, limit)
+               val test = MU.Uintp.lt (c, M.SVariable ni, limit)
                val test = M.I {dest = SOME nd, rhs = test}
                val body = appendl (state, env, body, [inc, test])
              in body
@@ -823,7 +823,7 @@ struct
          val inargs = Utils.Vector.cons (i, inargs)
          val resv'  = Utils.Vector.cons (M.SVariable ni, resv)
          val nd' = namedVar (state, "mild", MU.Bool.t c, false)
-         val preLoop = bindRhs (state, env, nd', MU.UIntp.lt (c, start, limit))
+         val preLoop = bindRhs (state, env, nd', MU.Uintp.lt (c, start, limit))
          fun enterF (state, env, entry, exit) = 
              let
                val tt = M.T {block = entry, arguments = inits'}
