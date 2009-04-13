@@ -333,9 +333,10 @@ struct
              M.TCode {cc = callConv (config, si, MU.Code.cc f),
                       args = variables (config, si, MU.Code.args f),
                       ress = MU.Code.rtyps f}
+           | M.GErrorVal t => t
            | M.GIdx _ => M.TIdx
            | M.GTuple {vtDesc, inits} => 
-             M.TTuple {pok = MU.VTableDescriptor.pok vtDesc,
+             M.TTuple {pok = MU.VtableDescriptor.pok vtDesc,
                        fixed = Vector.map (simples (config, si, inits),
                                            fn t => (t, M.FvReadWrite)),
                        array = NONE}

@@ -352,6 +352,7 @@ functor MilAnalyseF (
       in
         case g
          of M.GCode f                  => analyseCode (s, e, v, f)
+          | M.GErrorVal _              => ()
           | M.GIdx _                   => ()
           | M.GTuple {vtDesc, inits}   => analyseSimples (s, e, inits)
           | M.GRat _                   => ()

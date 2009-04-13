@@ -36,6 +36,7 @@ local
         dominance.sml
         rat.sml
         int-arb.sml
+        intr.sml
 
         (* Compiler stuff *)
         config.sml
@@ -82,6 +83,7 @@ in
         structure ImpQueue
         structure IntArb
         structure IntDict
+        structure Intr
         structure IntSet
         structure LayoutUtils
         structure Lub

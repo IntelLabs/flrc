@@ -9,7 +9,7 @@
 signature CONFIG = sig
   datatype agcProg = AgcGcMf | AgcTgc | AgcCgc
   datatype gcStyle = GcsNone | GcsConservative | GcsAccurate
-  type gcConfig = {registerVTables: bool,
+  type gcConfig = {registerVtables: bool,
 		   reportGlobals: bool,
 		   reportRoots: bool,
 		   rootsInGlobals: bool,
@@ -36,7 +36,7 @@ signature CONFIG = sig
 		     debugLev: verbosity,
 		     debug_: StringSet.t,
 		     feature_: StringSet.t,
-		     gc: {registerVTables: bool,
+		     gc: {registerVtables: bool,
 			  reportGlobals: bool,
 			  reportRoots: bool,
 			  rootsInGlobals: bool,
@@ -75,7 +75,7 @@ signature CONFIG = sig
   val debug: bool
   val debugLevel: t * 'a -> int
   val gc: t
-	  -> {registerVTables: bool,
+	  -> {registerVtables: bool,
 	      reportGlobals: bool,
 	      reportRoots: bool,
 	      rootsInGlobals: bool,
@@ -192,14 +192,14 @@ structure Config :> CONFIG = struct
 
     (* tagOnly means generate vtables with only tags in them, no size or ref
      * information.
-     * registerVTables means call the GC to register vtables.
+     * registerVtables means call the GC to register vtables.
      * report roots means call the GC to report global roots
      * rootsInGlobals means if reporting roots then include roots in globals
      * reportGlobals means report global objects to the GC
      * Note that not all combinations make sense, user beware!
      *)
     type gcConfig =
-         { tagOnly : bool, registerVTables : bool,
+         { tagOnly : bool, registerVtables : bool,
            reportRoots : bool, rootsInGlobals: bool,
            reportGlobals : bool, style : gcStyle }
 

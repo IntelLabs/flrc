@@ -1213,6 +1213,11 @@ struct
         val t =
             case g
              of M.GCode f => code (s, e, msg, f)
+              | M.GErrorVal t =>
+                let
+                  val () = typ (s, e, msg, t)
+                in t
+                end
               | M.GIdx nis => index (s, e, msg, nis)
               | M.GTuple {vtDesc, inits} =>
                 let

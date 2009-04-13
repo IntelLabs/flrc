@@ -156,6 +156,7 @@ struct
       in
         case g
          of M.GCode f                  => analyseCode (s, e, (v, f))
+          | M.GErrorVal t              => ()
           | M.GIdx nis                 => ()
           | M.GTuple {vtDesc, inits}   => ()
           | M.GRat r                   => ()
