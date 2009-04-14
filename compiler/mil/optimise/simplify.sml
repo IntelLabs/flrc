@@ -206,15 +206,17 @@ struct
          ("MakeDirect",       "Call/Evals made direct"         ),
          ("MergeBlocks",      "Blocks merged"                  ),
          ("ObjectGetKind",    "ObjectGetKinds reduced"         ),
+         ("OptInteger",       "Integers represented as ints"   ),
+         ("OptRational",      "Rationals represented as ints"  ),
          ("PFunctionGetFv",   "Closure fv projections reduced" ),
          ("PFunctionInitCode","Closure code ptrs killed"       ),
-         ("PrimPrim",         "Primitives reduced"             ),
-         ("PrimToLen",        "P Nom/Dub -> length reductions" ),
+         ("PSetCond",         "SetCond ops reduced"            ),
          ("PSetGet",          "SetGet ops reduced"             ),
          ("PSetNewEta",       "SetNew ops eta reduced"         ),
-         ("PSumProj",         "Sum projections reduced"        ),
          ("PSetQuery",        "SetQuery ops reduced"           ),
-         ("PSetCond",         "SetCond ops reduced"            ),
+         ("PSumProj",         "Sum projections reduced"        ),
+         ("PrimPrim",         "Primitives reduced"             ),
+         ("PrimToLen",        "P Nom/Dub -> length reductions" ),
          ("PruneCuts",        "Cut sets pruned"                ),
          ("PruneFx",          "Fx sets pruned"                 ),
          ("Simple",           "Simple moves eliminated"        ),
@@ -267,22 +269,22 @@ struct
     val collapseSwitch = clicker "CollapseSwitch"
     val dce = clicker "DCE"
     val etaSwitch = clicker "EtaSwitch"
-    val killParameters = clicker "KillParameters"
-    val unreachable = clicker "Unreachable"
     val globalized = clicker "Globalized"
     val idxGet = clicker "IdxGet"
+    val killParameters = clicker "KillParameters"
     val loopFlatten = clicker "LoopFlatten"
     val makeDirect = clicker "MakeDirect"
     val mergeBlocks = clicker "MergeBlocks"
-    val pSumProj = clicker  "PSumProj"
-    val pSetQuery = clicker  "PSetQuery"
+    val objectGetKind = clicker "ObjectGetKind"
+    val optInteger = clicker "OptInteger"
+    val optRational = clicker "OptRational"
+    val pFunctionGetFv = clicker "PFunctionGetFv"
+    val pFunctionInitCode = clicker "PFunctionInitCode"
     val pSetCond = clicker  "PSetCond"
     val pSetGet = clicker  "PSetGet"
     val pSetNewEta = clicker "PSetNewEta"
-    val thunkSpawnFx = clicker "ThunkSpawnFX"
-    val objectGetKind = clicker "ObjectGetKind"
-    val pFunctionInitCode = clicker "PFunctionInitCode"
-    val pFunctionGetFv = clicker "PFunctionGetFv"
+    val pSetQuery = clicker  "PSetQuery"
+    val pSumProj = clicker  "PSumProj"
     val primPrim = clicker "PrimPrim"
     val primToLen = clicker "PrimToLen"
     val pruneCuts = clicker "PruneCuts"
@@ -294,9 +296,11 @@ struct
     val thunkGetFv = clicker "ThunkGetFv"
     val thunkGetValue = clicker "ThunkGetValue"
     val thunkInitCode = clicker "ThunkInitCode"
+    val thunkSpawnFx = clicker "ThunkSpawnFX"
     val thunkValueBeta = clicker "ThunkValueBeta"
     val thunkValueEta = clicker "ThunkValueEta"
     val tupleSub = clicker "TupleSub"
+    val unreachable = clicker "Unreachable"
 
     val wrap : (PD.t -> unit) * ((PD.t * I.t * WS.ws) * 'a -> 'b option) 
                -> ((PD.t * I.t * WS.ws) * 'a -> 'b option) =
@@ -350,6 +354,27 @@ struct
         in try (Click.simple, f)
         end
 
+    val optNumeric = 
+     fn (from, click) => 
+        let
+          val f = 
+           fn ((d, imil, ws), (g, v, r)) => 
+              let
+                val () = Try.require (not (Globals.disableOptimizedRationals (PD.getConfig d)))
+                val c = <@ from r
+                val () = Use.replaceUses (imil, v, (M.SConstant c))
+                val () = IGlobal.delete (imil, g)
+              in []
+              end
+        in try (click, f)
+        end
+
+    val optRational = optNumeric (MU.Rational.Opt.fromRational, Click.optRational)
+    val optInteger = optNumeric (MU.Integer.Opt.fromInteger, Click.optInteger)
+
+    val rat = optRational
+    val integer = optInteger 
+
     val reduce = 
         Try.lift 
           (fn (s as (d, imil, ws), g) => 
@@ -357,6 +382,8 @@ struct
                 val t = 
                     (case <@ IGlobal.toGlobal g
                       of (v, M.GSimple oper) => <@ simple (s, (g, v, oper))
+                       | (v, M.GRat r) => <@ rat (s, (g, v, r))
+                       | (v, M.GInteger i) => <@ integer (s, (g, v, i))
                        | _ => Try.fail ())
               in t
               end)
@@ -1351,7 +1378,7 @@ struct
                     let
                       val gv = Var.related (imil, v, "", Var.typ (imil, v), true)
                       val () = IInstr.delete (imil, i)
-                      val g = IGlobal.build (imil, gv, g)
+                      val g = IGlobal.build (imil, (gv, g))
                       val () = WS.addGlobal (ws, g)
                       val () = Use.replaceUses (imil, v, M.SVariable gv)
                     in ()
@@ -1505,7 +1532,7 @@ struct
                          let
                            val gv = Var.new (imil, "mrt", MU.Rational.t, true)
                            val mg = MU.Prims.Constant.toMilGlobal (PD.getConfig d, c)
-                           val g = IGlobal.build (imil, gv, mg)
+                           val g = IGlobal.build (imil, (gv, mg))
                            val () = Use.replaceUses (imil, dv, M.SVariable gv)
                            val () = IInstr.delete (imil, i)
                          in [I.ItemGlobal g]

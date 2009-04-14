@@ -45,8 +45,10 @@ signature PIL = sig
     val variable : identifier -> t
     val int : int -> t
     val int32 : Int32.t -> t
+    val intInf : IntInf.t -> t (* Arbitrary precision *)
     val word   : Word.t -> t
     val word32 : Word32.word -> t
+    val wordInf : IntInf.t -> t (* Lay out in hex *)
     val float : Real32.t -> t
     val double : Real64.t -> t
     val char : char -> t
@@ -259,6 +261,13 @@ struct
 
     fun word  w = (L.str ("0x" ^ (Word.toString w)), 16)
     fun word32 w = (L.str ("0x" ^ (Word32.toString w)), 16)
+    fun wordInf w = (L.str ("0x" ^ (IntInf.format (w, StringCvt.HEX))), 16)
+
+    fun intInf i = 
+        if i >= 0 then
+          (IntInf.layout i, 16)
+        else
+          wordInf i
 
     fun int i = 
         if i >= 0 then

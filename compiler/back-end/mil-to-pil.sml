@@ -1079,12 +1079,7 @@ struct
          * changed it to raise an error.  At some point
          * we should figure out how to make it do the right
          * thing.  -leaf *)
-        | M.CIntegral i => 
-          (case IntArb.typOf i
-            of IntArb.T (IntArb.S64, _)  => Fail.fail ("MilToPil",
-                                                       "genConstant",
-                                                       "Unsupported size: 64")
-             | _ => Pil.E.int (IntInf.toInt (IntArb.toIntInf i)))
+        | M.CIntegral i => Pil.E.intInf (IntArb.toIntInf i)
         | M.CFloat r => Pil.E.float r
         | M.CDouble r => Pil.E.double r
         (* FIXME: WL: add runtime routine *)
