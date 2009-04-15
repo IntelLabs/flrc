@@ -94,7 +94,7 @@ struct
       mkDebug ("check-phase", "Check IR between each phase", 0)
 
   val (showPhaseD, showPhase) =
-      mkDebug ("show-phase", "Show IR between each phase", 1)
+      mkDebug ("show-phase", "Show IR between each phase", 0)
 
   val (showReductionsD, showReductions) = 
       mkDebug ("show", "Show each successful reduction attempt", 1)
@@ -160,38 +160,6 @@ struct
 
   structure Click = 
   struct
-    val localNms =
-        [("BlockKill",       "Blocks killed"                  ),
-         ("BlockMerge",      "Blocks merged"                  ),
-         ("CallDirect",      "Calls made direct"              ),
-         ("CaseCollapse",    "Cases collapsed"                ),
-         ("CaseReduce",      "Cases reduced"                  ),
-         ("CopyProp",        "Copies/Constants propagated"    ),
-         ("CutReduce",       "Cuts reduced"                   ),
-         ("DoubleArith",     "Double arith ops reduced"       ),
-         ("DoubleCmp",       "Double cmp ops reduced"         ),
-         ("EvalDirect",      "Evals made direct"              ),
-         ("FloatArith",      "Float arith ops reduced"        ),
-         ("FloatCmp",        "Float cmp ops reduced"          ),
-         ("FunctionGetFv",   "Function fv projections reduced"),
-         ("IdxGet",          "Index Get operations reduced"   ),
-         ("InlineOnce",      "Functions inlined once"         ),
-         ("TInlineOnce",     "Thunks inlined once"            ),
-         ("LoopFlatten",     "Loop tuple args flattened"      ),
-         ("NumConv",         "Numeric conversions reduced"    ),
-         ("PhiReduce",       "Phi transfers reduced"          ),
-         ("Prim",            "Primitives reduced"             ),
-
-
-         ("SwitchToSetCond", "Switches converted to SetCond"  ),
-         ("SwitchETAReduce", "Case switches converted to Goto"),
-         ("ThunkGetFv",      "Thunk fv projections reduced"   ),
-         ("ThunkVal",        "ThunkValues reduced"            ),
-         ("ThunkToThunkVal", "Thunks made ThunkValues"        ),
-         ("TupleSub",        "Tuple subscripts reduced"       )
-
-        ]
-
     val localNms = 
         [
          ("BetaSwitch",       "Cases beta reduced"             ),
@@ -227,6 +195,7 @@ struct
          ("ThunkGetValue",    "ThunkGetValue ops reduced"      ),
          ("ThunkInitCode",    "Thunk code ptrs killed"         ), 
          ("ThunkSpawnFX",     "Spawn fx pruned"                ),
+         ("ThunkToThunkVal",  "Thunks made Thunk Values"       ),
          ("ThunkValueBeta",    "ThunkValues beta reduced"      ),
          ("ThunkValueEta",    "ThunkValues eta reduced"        ),
          ("TupleSub",         "Tuple subscripts reduced"       ),
@@ -297,6 +266,7 @@ struct
     val thunkGetValue = clicker "ThunkGetValue"
     val thunkInitCode = clicker "ThunkInitCode"
     val thunkSpawnFx = clicker "ThunkSpawnFX"
+    val thunkToThunkVal = clicker "ThunkToThunkVal"
     val thunkValueBeta = clicker "ThunkValueBeta"
     val thunkValueEta = clicker "ThunkValueEta"
     val tupleSub = clicker "TupleSub"
@@ -333,8 +303,102 @@ struct
   struct
     type t = I.iFunc
 
-    val reduce = 
-     fn _ => NONE
+    val thunkToThunkVal = 
+        let
+          val f = 
+           fn ((d, imil, ws), c) => 
+              let
+                val config = PD.getConfig d
+                val fname = IFunc.getFName (imil, c)
+                val fvs = #fvs <! MU.CallConv.Dec.ccThunk o IFunc.getCallConv @@ (imil, c)
+                val instrs = IMil.Enumerate.IFunc.instructions (imil, c)
+                val total = fn i => (IInstr.fx (imil, i)) = Effect.Total
+                val () = Try.require (List.forall (instrs, total))
+                val transfers = IMil.Enumerate.IFunc.transfers (imil, c)
+                val retVal = 
+                    case transfers
+                     of [t] => Try.V.singleton <! MU.Transfer.Dec.tReturn <! IInstr.toTransfer @@ t
+                      | _ => Try.fail ()
+                datatype action = Globalize of (M.variable * M.operand * I.iGlobal) | Reduce of int
+                val globalize = 
+                 fn () =>
+                    let
+                      val t = M.TThunk (MilType.Typer.operand (config, IMil.T.getSi imil, retVal))
+                      val gv = Var.related (imil, fname, "tval", t, true)
+                      val fk = MU.FieldKind.fromTyp (config, t)
+                      val g = IGlobal.build (imil, (gv, M.GThunkValue {typ = fk, ofVal = retVal}))
+                    in Globalize (gv, retVal, g)
+                    end
+                val action = 
+                    (case retVal
+                      of M.SConstant c => globalize ()
+                       | M.SVariable v => 
+                         if Var.isGlobal (imil, v) then
+                           globalize ()
+                         else 
+                           Reduce (<@ Vector.index (fvs, fn v' => v = v')))
+                val changed = ref false
+                val fix = 
+                    Try.lift
+                      (fn u => 
+                          let
+                            val i = <@ Use.toIInstr u
+                            val () = 
+                                case IInstr.getMil (imil, i)
+                                 of IMil.MTransfer t => 
+                                    let
+                                      val {callee, ret, fx} = <@ MU.Transfer.Dec.tInterProc t
+                                      val {typ, eval} = <@ MU.InterProc.Dec.ipEval callee
+                                      val {thunk, code} = <@ MU.Eval.Dec.eDirectThunk eval
+                                      val () = Try.require (fname = code)
+                                      val eval = 
+                                          (case action
+                                            of Globalize (gv, oper, iGlobal) => 
+                                               M.EThunk {thunk = gv, code = MU.Codes.none}
+                                             | Reduce i => 
+                                               M.EThunk {thunk = thunk, code = MU.Codes.none})
+                                      val callee = M.IpEval {typ = typ, eval = eval}
+                                      val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                                      val () = IInstr.replaceTransfer (imil, i, t)
+                                      val () = changed := true
+                                    in ()
+                                    end
+                                  | IMil.MInstr m => 
+                                    let
+                                      val M.I {dest, rhs} = m
+                                      val {thunk, code, fvs, typ, ...} = <@ MU.Rhs.Dec.rhsThunkInit rhs
+                                      val code = <- code
+                                      val () = Try.require (code = fname)
+                                      val rhs = 
+                                          (case action
+                                            of Globalize (gv, oper, iGlobal) => 
+                                               M.RhsThunkValue {ofVal = oper, thunk = thunk, typ = typ}
+                                             | Reduce i => 
+                                               M.RhsThunkValue {ofVal = #2 o Vector.sub @@ (fvs, i), 
+                                                                thunk = thunk, 
+                                                                typ = typ})
+                                      val m = M.I {dest = dest, rhs = rhs}
+                                      val () = IInstr.replaceInstruction (imil, i, m)
+                                      val () = changed := true
+                                    in ()
+                                    end
+                                  | _ => Try.fail ()
+                          in I.ItemInstr i
+                          end)
+                val uses = Use.getUses (imil, fname)
+                val is = Vector.keepAllMap (uses, fix)
+                val () = Try.require (!changed)
+                val l = (I.ItemFunc c)::(Vector.toList is)
+                val l = 
+                    case action
+                     of Globalize (_, _, ig) => I.ItemGlobal ig :: l
+                      | _ => l
+              in l
+              end
+        in try (Click.thunkToThunkVal, f)
+        end
+
+    val reduce = thunkToThunkVal
 
   end (* structure FuncR *)
 

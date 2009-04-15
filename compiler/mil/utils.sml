@@ -464,6 +464,7 @@ sig
     val compare : t Compare.t
     val eq : t * t -> bool
     val all : t
+    val none : t
   end
 
   structure Call :
@@ -2605,6 +2606,7 @@ struct
     val eq = Compare.C.equal compare
 
     val all = {possible = VS.empty, exhaustive = false}
+    val none = {possible = VS.empty, exhaustive = true}
 
   end
 
