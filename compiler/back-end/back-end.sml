@@ -86,20 +86,6 @@ struct
 
    val instrumentAllocationSites = MilToPil.instrumentAllocationSites
 
-   val (usePillarTaggedRationalsF, usePillarTaggedRationals) =
-       Config.Feature.mk ("Plsr:pillar-use-tagged-rationals",
-                         "use tagged small ints for small rats in pillar")
-
-   val (disableCTaggedRationalsF, disableCTaggedRationals) =
-       Config.Feature.mk ("Plsr:c-disable-tagged-rationals",
-                          "disable tagged small ints for small rats in c")
-      
-   val useTaggedRationals = 
-    fn config => 
-       case Config.output config
-        of Config.OkPillar => usePillarTaggedRationals config
-         | Config.OkC      => not (disableCTaggedRationals config)
-
    val (instrumentAllocationF, instrumentAllocation) =
       Config.Feature.mk ("Plsr:instrument-allocation",
                          "gather allocation statistics")
@@ -175,10 +161,10 @@ struct
          val runtime = 
              List.concat
              [
-              if useTaggedRationals config then
-                ["P_USE_TAGGED_RATIONALS"]
-              else
+              if Globals.disableOptimizedRationals config then
                 []
+              else  
+                ["P_USE_TAGGED_RATIONALS"]
              ]
          val vtbChg =
              if vtableChange config then ["P_DO_VTABLE_CHANGE"] else []
@@ -644,8 +630,6 @@ struct
                        debugs = [],
                        features = [gcWriteBarriersF, 
                                    gcAllBarriersF,
-                                   usePillarTaggedRationalsF,
-                                   disableCTaggedRationalsF,
                                    instrumentAllocationF,
                                    instrumentVtbAllocationF,
                                    vtableChangeF],
