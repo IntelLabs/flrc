@@ -275,26 +275,20 @@ structure LayoutUtils = struct
     fun brace        b = L.seq [L.str "{", b, L.str "}"]
     fun angleBracket b = L.seq [L.str "<", b, L.str ">"]
 
-    fun printLayoutToStream (l, s) = 
-        Layout.outputWidth (Layout.seq [l, Layout.str "\n"],
-                            78, s)
+    fun printLayoutToStream (l, s) = Layout.outputWidth (Layout.seq [l, Layout.str "\n"], 115, s)
 
-    fun printLayout l = (printLayoutToStream(l, Pervasive.TextIO.stdOut);
-                         Pervasive.TextIO.flushOut Pervasive.TextIO.stdOut)
+    fun printLayout l =
+        (printLayoutToStream(l, Pervasive.TextIO.stdOut); Pervasive.TextIO.flushOut Pervasive.TextIO.stdOut)
 
     fun writeLayout' (l: Layout.t, fname: string, append: bool) =
         let
-          val os = if append then
-                     Pervasive.TextIO.openAppend fname
-                   else
-                     Pervasive.TextIO.openOut fname
+          val os = if append then Pervasive.TextIO.openAppend fname else Pervasive.TextIO.openOut fname
           val () = printLayoutToStream(l, os)
 	  val () = Pervasive.TextIO.closeOut os
         in ()
         end
 
-    fun writeLayout (l: Layout.t, fname: string) = 
-        writeLayout' (l, fname, false)
+    fun writeLayout (l: Layout.t, fname: string) = writeLayout' (l, fname, false)
 
     fun toString l =
         let
