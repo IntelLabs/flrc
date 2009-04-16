@@ -486,7 +486,7 @@ struct
      *)
     fun envReset (E {config, fmil, keep, funs, ...}, fes) =
         E {config = config, fmil = fmil, keep = keep, funs = funs, curReturn = NONE,
-           curCuts = MU.Cuts.none, funEntries = fes}
+           curCuts = MU.Cuts.justExits, funEntries = fes}
 
     (* Build the environment for transformaing an inlined cb.  Here we
      * add in curReturn and curCuts.
