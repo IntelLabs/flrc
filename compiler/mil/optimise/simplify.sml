@@ -1282,7 +1282,7 @@ struct
                    | SOME (OThunk t) => 
                      let
                        val vnew = Var.clone (imil, v)
-                       val vval = Var.related (imil, v, "contents", t, false)
+                       val vval = Var.related (imil, v, "cnts", t, false)
                        val a = M.SVariable vval
                        val fk = MU.FieldKind.fromTyp (config, t)
                        val mi = M.I {dest = SOME vnew, 

@@ -802,7 +802,8 @@ struct
         of M.TGoto tg => L.seq [L.str "Goto ", layoutTarget (env, tg)]
          | M.TCase s => layoutSwitch ("Case", layoutConstant) (env, s)
          | M.TInterProc {callee, ret, fx} =>
-           L.mayAlign [layoutInterProc (env, callee), layoutReturn (env, ret), layoutEffects (env, fx)]
+           L.mayAlign [layoutInterProc (env, callee), 
+                       L.mayAlign [layoutReturn (env, ret), layoutEffects (env, fx)]]
          | M.TReturn vs => L.seq [L.str "Return", LU.parenSeq (layoutOperands (env, vs))]
          | M.TCut {cont, args, cuts} =>
            L.mayAlign [L.seq [L.str "Cut ", layoutVariable (env, cont)],
