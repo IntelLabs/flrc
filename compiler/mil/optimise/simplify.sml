@@ -24,6 +24,7 @@ struct
   structure MU = MilUtils
   structure POM = PObjectModelCommon
   structure I = IMil
+  structure IML = I.Layout
   structure IInstr = I.IInstr
   structure IGlobal = I.IGlobal
   structure IFunc = I.IFunc
@@ -57,7 +58,9 @@ struct
   val or = Try.or
   val || = Try.||
   val @@ = Utils.Function.@@
-  infix 3 << @@ oo om <!
+
+  infix 3 << @@ oo om <! <\ 
+  infixr 3 />
   infix 4 or || 
 
  (* Reports a fail message and exit the program.
@@ -958,7 +961,8 @@ struct
              fn ((d, imil, ws), (i, (l, parms), (preds, pcount))) => 
                 let
                   (* This is mostly straightforward: just look for parameters
-                   * that are either unused, or are constant.  Most of the 
+                   * that are either unused, or are the same on all in-edges.  
+                   * Most of the 
                    * ugliness arises because of the possibility that a single 
                    * predecessor block targets this block via multiple paths 
                    * in a switch, e.g.
@@ -982,7 +986,18 @@ struct
                   val inargsT = Utils.Vector.transpose inargs                              
                   val () = assert ("killParameters", "Bad phi", Vector.length inargsT = pcount)
                   val phis = Vector.zip (parms, inargsT)
-
+                  val () = 
+                      let
+                        val oper = fn oper => MilLayout.layoutOperand (PD.getConfig d, I.T.getSi imil, oper)
+                        val lf = fn (pv, args) => 
+                                   Layout.seq[IML.var (imil, pv),
+                                              Layout.str " = Phi",
+                                              Vector.layout oper args]
+                        val l = Vector.toListMap (phis, lf)
+                        val l = Layout.align l
+                        val () = LayoutUtils.printLayout l
+                      in ()
+                      end
                   (* Trace back the SSA edges before rewriting to capture potentially
                    * newly dead instructions *)
                   val usedBy = Utils.Vector.concatToList (List.map (ts, fn t => IInstr.getUsedBy (imil, t)))
@@ -1029,10 +1044,10 @@ struct
                         in ()
                         end
                   val () = Vector.foreachi (phis, doPhi)
-
+                  val () = print "Got here\n"
                   (* If no progress has been made, bail out *)
                   val () = Try.require (!progress)
-
+                  val () = print "Got here2\n"
                   val killVector = 
                    fn v => Vector.keepAllMapi (v, 
                                             fn (i, elt) => if Array.sub (kill, i) then NONE else SOME elt)

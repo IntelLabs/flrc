@@ -3,9 +3,9 @@
 
 signature MIL_CFG_SIMPLIFY =
 sig
-  val function' : PassData.t * IMil.t * IMil.WorkSet.ws * IMil.cfg -> unit
   val program'  : PassData.t * IMil.t * IMil.WorkSet.ws -> unit
-  val function : PassData.t * IMil.t * IMil.cfg -> unit
+  val function' : PassData.t * IMil.t * IMil.WorkSet.ws * IMil.cfg -> unit
+  val function  : PassData.t * IMil.t * IMil.cfg -> unit
 end;
 
 structure MilCFGSimplify :> MIL_CFG_SIMPLIFY =
@@ -19,9 +19,8 @@ struct
   structure WS = IM.WorkSet
   structure Block = IM.Block
   structure Use = IM.Use
-  structure Instr = IM.Instr
-  structure Cfg = IM.Cfg
-  structure MOU = MilOptUtils
+  structure IInstr = IM.Instr
+  structure IFunc = IM.IFunc
 
   val passname = "MilCfgSimplify"
 
@@ -29,8 +28,6 @@ struct
                          val extract = PD.getConfig
                          val name = passname
                          val indent = 0)
-
-
                    
   datatype Val = 
            VArg of int
