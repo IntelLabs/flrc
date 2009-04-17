@@ -166,6 +166,7 @@ struct
     val localNms = 
         [
          ("BetaSwitch",       "Cases beta reduced"             ),
+         ("BlockKill",        "Blocks killed"                  ),
          ("CallInline",       "Calls inlined"                  ),
          ("CollapseSwitch",   "Cases collapsed"                ),
          ("DCE",              "Dead instrs/globals eliminated" ),
@@ -237,6 +238,7 @@ struct
     val stats = List.map (localNms, fn (nm, info) => (globalNm nm, info))
 
     val betaSwitch = clicker "BetaSwitch"
+    val blockKill = clicker "BlockKill"
     val callInline = clicker "CallInline"
     val collapseSwitch = clicker "CollapseSwitch"
     val dce = clicker "DCE"
@@ -2260,17 +2262,44 @@ struct
         Chat.log1 (d, "Skipping "^name)
 
 
-  val trimCfgs = fn (d, imil, ws) => ()
+  val trimCfgs = 
+   fn (d, imil, ws) =>
+      let
+        val addUsedBy = 
+         fn b => 
+            let
+              val used = IBlock.getUsedBy (imil, b)
+              val () = WS.addItems (ws, used)
+            in ()
+            end
+        val kill = 
+         fn b => 
+            let
+              val () = IBlock.delete (imil, b)
+              val () = Click.blockKill d
+            in ()
+            end
+        val doIFunc = 
+         fn (v, iFunc) =>
+            let
+(*              val () = MilCFGSimplify.function' (d, imil, ws, cfg)*)
+              val dead = IFunc.unreachable (imil, iFunc)
+              val () = List.foreach (dead, addUsedBy)
+              val () = List.foreach (dead, kill)
+            in ()
+            end
+        val () = List.foreach (IFunc.getIFuncs imil, doIFunc)
+      in ()
+      end
 
   val doUnreachable = doPhase (skipUnreachable, unreachableCode, "unreachable object elimination")
   val doSimplify = 
    fn ws => doPhase (skipSimplify, fn (d, imil) => simplify (d, imil, ws), "simplification")
-(*val doCfgSimplify = 
+  val doCfgSimplify = 
    fn ws => doPhase (skipCfg, fn (d, imil) => trimCfgs (d, imil, ws), "cfg simplification")
-  val doEscape = doPhase (skipEscape, SimpleEscape.optimize, "closure escape analysis")
+(*  val doEscape = doPhase (skipEscape, SimpleEscape.optimize, "closure escape analysis")
   val doRecursive = doPhase (skipRecursive, analyizeRecursive, "recursive function analysis") *)
 
-  val doCfgSimplify = fn ws => skip "cfg simplification"
   val doEscape = skip "closure escape analysis"
   val doRecursive = skip "recursive function analysis"
       
