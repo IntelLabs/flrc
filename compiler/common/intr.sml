@@ -26,6 +26,9 @@ sig
   val all : t
   val single : IntInf.t -> t
 
+  val fromInt : int -> t
+  val toInt : t -> int option
+
   val check : t -> bool
   val isEmpty : t -> bool
 
@@ -48,6 +51,20 @@ struct
   val all = IR {neginf = true, flips = Vector.new0 ()}
 
   fun single i = IR {neginf = false, flips = Vector.new2 (i, i + 1)}
+
+  fun fromInt i = single (IntInf.fromInt i)
+
+  fun toIntInf (IR {neginf, flips}) =
+      if neginf orelse Vector.length flips <> 2 then
+        NONE
+      else
+        let
+          val i = Vector.sub (flips, 0)
+        in
+          if equals (i + 1, Vector.sub (flips, 1)) then SOME i else NONE
+        end
+
+  fun toInt ir = Option.map (toIntInf ir, IntInf.toInt)
 
   fun check (IR {neginf, flips}) =
       let
