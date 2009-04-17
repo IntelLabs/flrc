@@ -29,6 +29,20 @@ structure Utils = struct
       (* infix 3 *)
       val @@ : ('a -> 'b) * 'a -> 'b = 
        fn (f, a) => f a
+
+      (* MLton sectioning and application operators *)
+      (* infix 3*)
+      val <\ = fn (x, f) => fn y => f (x, y)
+      val \> = fn (f, y) => f y
+      (* infixr 3*)    
+      val /> = fn (f, y) => fn x => f (x, y)
+      val </ = fn (x, f) => f x
+
+     (* infix 1 *)
+      val >| = </
+     (* infixr 1*)
+      val |< = \>
+      val ` = fn f => fn x => fn () => f x
     end (* structure Function *)
 
     structure Vector = 

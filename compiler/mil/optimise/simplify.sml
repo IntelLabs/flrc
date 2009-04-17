@@ -24,6 +24,7 @@ struct
   structure MU = MilUtils
   structure POM = PObjectModelCommon
   structure I = IMil
+  structure IML = I.Layout
   structure IInstr = I.IInstr
   structure IGlobal = I.IGlobal
   structure IFunc = I.IFunc
@@ -57,7 +58,9 @@ struct
   val or = Try.or
   val || = Try.||
   val @@ = Utils.Function.@@
-  infix 3 << @@ oo om <!
+
+  infix 3 << @@ oo om <! <\ 
+  infixr 3 />
   infix 4 or || 
 
  (* Reports a fail message and exit the program.
@@ -163,6 +166,7 @@ struct
     val localNms = 
         [
          ("BetaSwitch",       "Cases beta reduced"             ),
+         ("BlockKill",        "Blocks killed"                  ),
          ("CallInline",       "Calls inlined"                  ),
          ("CollapseSwitch",   "Cases collapsed"                ),
          ("DCE",              "Dead instrs/globals eliminated" ),
@@ -234,6 +238,7 @@ struct
     val stats = List.map (localNms, fn (nm, info) => (globalNm nm, info))
 
     val betaSwitch = clicker "BetaSwitch"
+    val blockKill = clicker "BlockKill"
     val callInline = clicker "CallInline"
     val collapseSwitch = clicker "CollapseSwitch"
     val dce = clicker "DCE"
@@ -958,7 +963,8 @@ struct
              fn ((d, imil, ws), (i, (l, parms), (preds, pcount))) => 
                 let
                   (* This is mostly straightforward: just look for parameters
-                   * that are either unused, or are constant.  Most of the 
+                   * that are either unused, or are the same on all in-edges.  
+                   * Most of the 
                    * ugliness arises because of the possibility that a single 
                    * predecessor block targets this block via multiple paths 
                    * in a switch, e.g.
@@ -982,7 +988,18 @@ struct
                   val inargsT = Utils.Vector.transpose inargs                              
                   val () = assert ("killParameters", "Bad phi", Vector.length inargsT = pcount)
                   val phis = Vector.zip (parms, inargsT)
-
+                  val () = 
+                      let
+                        val oper = fn oper => MilLayout.layoutOperand (PD.getConfig d, I.T.getSi imil, oper)
+                        val lf = fn (pv, args) => 
+                                   Layout.seq[IML.var (imil, pv),
+                                              Layout.str " = Phi",
+                                              Vector.layout oper args]
+                        val l = Vector.toListMap (phis, lf)
+                        val l = Layout.align l
+                        val () = LayoutUtils.printLayout l
+                      in ()
+                      end
                   (* Trace back the SSA edges before rewriting to capture potentially
                    * newly dead instructions *)
                   val usedBy = Utils.Vector.concatToList (List.map (ts, fn t => IInstr.getUsedBy (imil, t)))
@@ -1029,10 +1046,10 @@ struct
                         in ()
                         end
                   val () = Vector.foreachi (phis, doPhi)
-
+                  val () = print "Got here\n"
                   (* If no progress has been made, bail out *)
                   val () = Try.require (!progress)
-
+                  val () = print "Got here2\n"
                   val killVector = 
                    fn v => Vector.keepAllMapi (v, 
                                             fn (i, elt) => if Array.sub (kill, i) then NONE else SOME elt)
@@ -1282,7 +1299,7 @@ struct
                    | SOME (OThunk t) => 
                      let
                        val vnew = Var.clone (imil, v)
-                       val vval = Var.related (imil, v, "contents", t, false)
+                       val vval = Var.related (imil, v, "cnts", t, false)
                        val a = M.SVariable vval
                        val fk = MU.FieldKind.fromTyp (config, t)
                        val mi = M.I {dest = SOME vnew, 
@@ -2245,17 +2262,44 @@ struct
         Chat.log1 (d, "Skipping "^name)
 
 
-  val trimCfgs = fn (d, imil, ws) => ()
+  val trimCfgs = 
+   fn (d, imil, ws) =>
+      let
+        val addUsedBy = 
+         fn b => 
+            let
+              val used = IBlock.getUsedBy (imil, b)
+              val () = WS.addItems (ws, used)
+            in ()
+            end
+        val kill = 
+         fn b => 
+            let
+              val () = IBlock.delete (imil, b)
+              val () = Click.blockKill d
+            in ()
+            end
+        val doIFunc = 
+         fn (v, iFunc) =>
+            let
+(*              val () = MilCFGSimplify.function' (d, imil, ws, cfg)*)
+              val dead = IFunc.unreachable (imil, iFunc)
+              val () = List.foreach (dead, addUsedBy)
+              val () = List.foreach (dead, kill)
+            in ()
+            end
+        val () = List.foreach (IFunc.getIFuncs imil, doIFunc)
+      in ()
+      end
 
   val doUnreachable = doPhase (skipUnreachable, unreachableCode, "unreachable object elimination")
   val doSimplify = 
    fn ws => doPhase (skipSimplify, fn (d, imil) => simplify (d, imil, ws), "simplification")
-(*val doCfgSimplify = 
+  val doCfgSimplify = 
    fn ws => doPhase (skipCfg, fn (d, imil) => trimCfgs (d, imil, ws), "cfg simplification")
-  val doEscape = doPhase (skipEscape, SimpleEscape.optimize, "closure escape analysis")
+(*  val doEscape = doPhase (skipEscape, SimpleEscape.optimize, "closure escape analysis")
   val doRecursive = doPhase (skipRecursive, analyizeRecursive, "recursive function analysis") *)
 
-  val doCfgSimplify = fn ws => skip "cfg simplification"
   val doEscape = skip "closure escape analysis"
   val doRecursive = skip "recursive function analysis"
       
