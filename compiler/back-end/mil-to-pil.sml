@@ -1634,7 +1634,7 @@ struct
                   val blk = Pil.S.block (vds, agsns)
                 in blk
                 end
-        val moves = List.map (scc, doOne)
+        val moves = List.revMap (scc, doOne)
       in moves
       end
 
