@@ -1749,10 +1749,13 @@ struct
                        val call = Pil.E.call (f, args)
                        val rt = MU.Code.thunkTyp (getFunc env)
                        val typ = typToFieldKind (env, rt)
+                       val stm = getStm state
+                       val vret = MSTM.variableFresh (stm, "ret", rt, false)
+                       val vret = genVarE (state, env, vret)
+                       val calls = Pil.S.expr (Pil.E.assign (vret, call))
                        val ret = Pil.E.namedConstant (RT.Thunk.return typ)
-                       val ret =
-                           Pil.E.call (ret, [genVarE (state, env, t), call])
-                     in Pil.S.expr ret
+                       val rets = Pil.S.call (ret, [genVarE (state, env, t), vret])
+                     in Pil.S.sequence [calls, rets]
                      end
                    | NONE => Pil.S.tailCall (env, f, args))
       in s
@@ -1765,10 +1768,6 @@ struct
              of M.EThunk {thunk, ...} => (thunk, RT.Thunk.eval fk, [thunk])
               | M.EDirectThunk {thunk, code, ...} =>
                 (thunk, RT.Thunk.evalDirect fk, [code, thunk])
-        fun tailRewrite t e =
-            Pil.S.expr (Pil.E.call (Pil.E.namedConstant (RT.Thunk.return fk),
-                                    [genVarE (state, env, t), e]))
-        fun getRetTyp () = MU.Code.thunkTyp (getFunc env)
         val (cuts, t, cont, g) =
             case ret
              of M.RNormal {rets, block, cuts} =>
@@ -1785,17 +1784,27 @@ struct
                      end
                    | _ => Fail.fail ("MilToPil", "genEval", "rets must be 1"))
               | M.RTail =>
-                (case rewriteThunks (env, cc)
-                  of SOME t =>
-                     (MU.Cuts.none,
-                      getRetTyp (),
-                      tailRewrite t,
-                      Pil.S.empty)
-                   | NONE =>
-                     (MU.Cuts.none,
-                      getRetTyp (),
-                      fn e => Pil.S.returnExpr e,
-                      Pil.S.empty))
+                let
+                  val cuts = MU.Cuts.justExits
+                  val rtyp = MU.Code.thunkTyp (getFunc env)
+                  val cont = 
+                      (case rewriteThunks (env, cc)
+                        of SOME t => 
+                           (fn e =>
+                               let
+                                 val stm = getStm state
+                                 val vret = MSTM.variableFresh (stm, "ret", rtyp, false)
+                                 val vret = genVarE (state, env, vret)
+                                 val evals = Pil.S.expr (Pil.E.assign (vret, e))
+                                 val rets = 
+                                     Pil.S.call (Pil.E.namedConstant (RT.Thunk.return fk),
+                                                 [genVarE (state, env, t), vret])
+                               in Pil.S.sequence [evals, rets]
+                               end)
+                         | NONE   => fn e => Pil.S.returnExpr e)
+                  val g = Pil.S.empty
+                in (cuts, rtyp, cont, g)
+                end
         val thunk = genVarE (state, env, thunk)
         val slowf = Pil.E.namedConstant slowf
         val slowargs = List.map (slowargs, fn v => genVarE (state, env, v))
@@ -1840,7 +1849,7 @@ struct
                          val typ = typToFieldKind (env, rt)
                          val ret = Pil.E.namedConstant (RT.Thunk.return typ)
                          val args = [genVarE (state, env, t), opnd]
-                         val s = Pil.S.expr (Pil.E.call (ret, args))
+                         val s = Pil.S.call (ret, args)
                        in s
                        end
                      | NONE => Pil.S.returnExpr opnd
@@ -2086,10 +2095,10 @@ struct
                     val rt = MU.Code.thunkTyp func
                     val typ = typToFieldKind (env, rt)
                     val setcut =
-                        Pil.S.expr (Pil.E.call (Pil.E.namedConstant
-                                                  (RT.Thunk.cut typ),
-                                                [genVarE (state, env, thunk),
-                                                 Pil.E.variable arg]))
+                        Pil.S.call (Pil.E.namedConstant
+                                      (RT.Thunk.cut typ),
+                                    [genVarE (state, env, thunk),
+                                     Pil.E.variable arg])
                     val b = [Pil.S.vse (cont,
                                         Pil.S.sequence (b @ [conts, setcut]))]
                   in (ls, b)

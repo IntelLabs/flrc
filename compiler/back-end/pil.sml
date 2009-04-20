@@ -84,6 +84,7 @@ signature PIL = sig
     val return : t
     val returnExpr : E.t -> t
     val tailCall : env * E.t * E.t list -> t
+    val call : E.t * E.t list -> t
     val sequence : t list -> t
     val block : varDecInit list * t list -> t
     val contMake : E.t * identifier * identifier -> t
@@ -461,6 +462,8 @@ struct
         [addSemi (L.mayAlign [L.str "TAILCALL",
                               LU.indent (E.inPrec (e, 15)),
                               LU.indent (E.callArgs es)])]
+
+    fun call (e, es) = expr (E.call (e, es))
 
     fun sequence ss = List.concat ss
 
