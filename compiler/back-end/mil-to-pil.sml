@@ -1751,6 +1751,7 @@ struct
                        val typ = typToFieldKind (env, rt)
                        val stm = getStm state
                        val vret = MSTM.variableFresh (stm, "ret", rt, false)
+                       val () = addLocal (state, vret)
                        val vret = genVarE (state, env, vret)
                        val calls = Pil.S.expr (Pil.E.assign (vret, call))
                        val ret = Pil.E.namedConstant (RT.Thunk.return typ)
@@ -1794,6 +1795,7 @@ struct
                                let
                                  val stm = getStm state
                                  val vret = MSTM.variableFresh (stm, "ret", rtyp, false)
+                                 val () = addLocal (state, vret)
                                  val vret = genVarE (state, env, vret)
                                  val evals = Pil.S.expr (Pil.E.assign (vret, e))
                                  val rets = 

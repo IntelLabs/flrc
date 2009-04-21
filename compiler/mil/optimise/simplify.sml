@@ -39,7 +39,7 @@ struct
   structure IPLG = ImpPolyLabeledGraph
   structure IVD = Identifier.ImpVariableDict
   structure PD = PassData
-  structure SD = StringDict
+  structure SS = StringSet
   structure VS = M.VS
 
   structure Chat = ChatF (struct 
@@ -168,7 +168,6 @@ struct
          ("BetaSwitch",       "Cases beta reduced"             ),
          ("BlockKill",        "Blocks killed"                  ),
          ("CallInline",       "Calls inlined"                  ),
-         ("CollapseSwitch",   "Cases collapsed"                ),
          ("DCE",              "Dead instrs/globals eliminated" ),
          ("EtaSwitch",        "Cases eta reduced"              ),
          ("Globalized",       "Objects globalized"             ),
@@ -208,21 +207,27 @@ struct
     val globalNm = 
      fn s => passname ^ ":" ^ s
 
-    val nmMap = 
+    val nmSet = 
         let
           val check = 
-           fn ((nm, info), d) => 
-              if SD.contains (d, nm) then
+           fn ((nm, info), s) => 
+              if SS.member (s, nm) then
                 fail ("LocalStats", "Duplicate stat")
               else
-                SD.insert (d, nm, globalNm nm)
-          val _ = List.fold (localNms, SD.empty, check)
-        in ()
+                SS.insert (s, nm)
+          val s = List.fold (localNms, SS.empty, check)
+        in s
         end
 
     val clicker = 
      fn s => 
         let
+          val () = 
+              if SS.member (nmSet, s) then 
+                ()
+              else
+                fail ("clicker", "Unknown stat")
+
           val nm = globalNm s
           val click = 
            fn pd => 
@@ -240,7 +245,6 @@ struct
     val betaSwitch = clicker "BetaSwitch"
     val blockKill = clicker "BlockKill"
     val callInline = clicker "CallInline"
-    val collapseSwitch = clicker "CollapseSwitch"
     val dce = clicker "DCE"
     val etaSwitch = clicker "EtaSwitch"
     val globalized = clicker "Globalized"
@@ -509,36 +513,7 @@ struct
           in try (Click.betaSwitch, f)
           end
 
-     (* XXX This has a bug in it - can loop -leaf *)
-      val collapseSwitch = 
-       fn {get, eq, dec, con} => 
-          let
-            val f = 
-             fn ((d, imil, ws), (i, {on, cases, default})) =>
-                let
-                  val {block, arguments} = MU.Target.Dec.t (<- default)
-                  val () = Try.V.isEmpty arguments
-                  val iFunc = IInstr.getIFunc (imil, i)
-                  val fallthruBlock = IFunc.getBlockByLabel (imil, iFunc, block)
-                  val params = IBlock.getParameters (imil, fallthruBlock)
-                  val () = Try.V.isEmpty params
-                  val () = Try.require (IBlock.isEmpty (imil, fallthruBlock))
-                  val t = IBlock.getTransfer' (imil, fallthruBlock)
-                  val {on = on2, cases = cases2, default = default2} = <@ dec t
-                  val () = Try.require (MU.Operand.eq (on, on2))
-                  val check = fn x => (fn (y, _) => not (eq (x, y)))
-                  val notAnArmInFirst = 
-                   fn (x, _) => Vector.forall (cases, check x)
-                  val cases2 = Vector.keepAll (cases2, notAnArmInFirst)
-                  val cases = Vector.concat [cases, cases2]
-                  val t = con {on = on, cases = cases, default = default2}
-                  val () = IInstr.replaceTransfer (imil, i, t)
-                in [I.ItemInstr i]
-                end
-          in try (Click.collapseSwitch, f)
-          end
-
-      val switch = fn ops => (betaSwitch ops) or (collapseSwitch ops)
+      val switch = betaSwitch
                              
       val tCase1 = 
           let
@@ -988,18 +963,7 @@ struct
                   val inargsT = Utils.Vector.transpose inargs                              
                   val () = assert ("killParameters", "Bad phi", Vector.length inargsT = pcount)
                   val phis = Vector.zip (parms, inargsT)
-                  val () = 
-                      let
-                        val oper = fn oper => MilLayout.layoutOperand (PD.getConfig d, I.T.getSi imil, oper)
-                        val lf = fn (pv, args) => 
-                                   Layout.seq[IML.var (imil, pv),
-                                              Layout.str " = Phi",
-                                              Vector.layout oper args]
-                        val l = Vector.toListMap (phis, lf)
-                        val l = Layout.align l
-                        val () = LayoutUtils.printLayout l
-                      in ()
-                      end
+
                   (* Trace back the SSA edges before rewriting to capture potentially
                    * newly dead instructions *)
                   val usedBy = Utils.Vector.concatToList (List.map (ts, fn t => IInstr.getUsedBy (imil, t)))
@@ -1046,10 +1010,8 @@ struct
                         in ()
                         end
                   val () = Vector.foreachi (phis, doPhi)
-                  val () = print "Got here\n"
                   (* If no progress has been made, bail out *)
                   val () = Try.require (!progress)
-                  val () = print "Got here2\n"
                   val killVector = 
                    fn v => Vector.keepAllMapi (v, 
                                             fn (i, elt) => if Array.sub (kill, i) then NONE else SOME elt)
@@ -2040,7 +2002,7 @@ struct
 
          val res = 
              case i
-              of IMil.ItemGlobal g    => doOne (IGlobal.getUsedBy, GlobalR.reduce) g
+              of IMil.ItemGlobal g => doOne (IGlobal.getUsedBy, GlobalR.reduce) g
                | IMil.ItemInstr i  => doOne (IInstr.getUsedBy, InstrR.reduce) i
                | IMil.ItemFunc f   => doOne (IFunc.getUsedBy, FuncR.reduce) f
        in res
@@ -2249,6 +2211,7 @@ struct
         Chat.log1 (d, "Skipping "^name)
       else
         let
+          val d = PD.push d
           val () = Chat.log1 (d, "Doing "^name)
           val () = f (d, imil)
           val () = Chat.log1 (d, "Done with "^name)
@@ -2282,7 +2245,7 @@ struct
         val doIFunc = 
          fn (v, iFunc) =>
             let
-(*              val () = MilCFGSimplify.function' (d, imil, ws, cfg)*)
+              val () = MilCfgSimplify.function' (d, imil, ws, iFunc)
               val dead = IFunc.unreachable (imil, iFunc)
               val () = List.foreach (dead, addUsedBy)
               val () = List.foreach (dead, kill)
@@ -2343,14 +2306,15 @@ struct
       in ()
       end
 
-  val stats = Click.stats (*@ MilFunKnown.stats @ SimpleEscape.stats*)
+  val stats = Click.stats @ MilCfgSimplify.stats (*@ MilFunKnown.stats @ SimpleEscape.stats*)
+
   val description =
       {name        = passname,
        description = "Mil simplifier",
        inIr        = BothMil.irHelpers,
        outIr       = BothMil.irHelpers,
        mustBeAfter = [],
-       stats       = Click.stats}
+       stats       = stats}
 
   val associates = {controls  = [],
                     debugs    = debugs (*@ MilFunKnown.debugs*),
