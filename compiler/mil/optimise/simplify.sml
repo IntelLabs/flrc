@@ -37,6 +37,7 @@ struct
   structure WS = I.WorkSet
   structure MCG = MilCallGraph
   structure IPLG = ImpPolyLabeledGraph
+  structure PLG = PolyLabeledGraph
   structure IVD = Identifier.ImpVariableDict
   structure PD = PassData
   structure SS = StringSet
@@ -172,10 +173,12 @@ struct
          ("EtaSwitch",        "Cases eta reduced"              ),
          ("Globalized",       "Objects globalized"             ),
          ("IdxGet",           "Index gets reduced"             ),
+         ("KillInterProc",    "Calls/Evals killed"             ),
          ("KillParameters",   "Block parameter lists trimmed"  ),
          ("LoopFlatten",      "Loop arguments flattened"       ),
-         ("MakeDirect",       "Call/Evals made direct"         ),
+         ("MakeDirect",       "Calls/Evals made direct"        ),
          ("MergeBlocks",      "Blocks merged"                  ),
+         ("NonRecursive",     "Functions marked non-recursive" ),
          ("ObjectGetKind",    "ObjectGetKinds reduced"         ),
          ("OptInteger",       "Integers represented as ints"   ),
          ("OptRational",      "Rationals represented as ints"  ),
@@ -249,10 +252,12 @@ struct
     val etaSwitch = clicker "EtaSwitch"
     val globalized = clicker "Globalized"
     val idxGet = clicker "IdxGet"
+    val killInterProc = clicker "KillInterProc"
     val killParameters = clicker "KillParameters"
     val loopFlatten = clicker "LoopFlatten"
     val makeDirect = clicker "MakeDirect"
     val mergeBlocks = clicker "MergeBlocks"
+    val nonRecursive = clicker "NonRecursive"
     val objectGetKind = clicker "ObjectGetKind"
     val optInteger = clicker "OptInteger"
     val optRational = clicker "OptRational"
@@ -639,7 +644,11 @@ struct
                   val uses = Use.getUses (imil, fname)
                   val use = Try.V.singleton uses
                   val iFunc = IFunc.getIFuncByName (imil, fname)
-                  val () = Try.require (not (IFunc.getRecursive (imil, iFunc)))
+                  (* We allow inlining of "recursive" functions,
+                   * as long as all uses are known, there is only
+                   * one call, and that call is not a recursive call. *)
+                  val () = Try.require (not (IInstr.isRec (imil, i)))
+                  val () = Try.require (not (IFunc.getEscapes (imil, iFunc)))
                   val is = IFunc.inline (imil, fname, i)
                 in is
                 end)
@@ -846,11 +855,34 @@ struct
           in try (Click.pruneFx, f)
           end
 
+      val killInterProc = 
+          let
+            val f = 
+             fn ((d, imil, ws), (i, {callee, ret, fx})) =>
+                 let
+                   val () = Try.require (Effect.subset (fx, Effect.ReadOnly))
+                   val {rets, block, cuts} = <@ MU.Return.Dec.rNormal ret
+                   val uses = IInstr.getUses (imil, i)
+                   val () = 
+                       (case Vector.length uses
+                         of 0 => ()
+                          | 1 => (case Vector.sub (uses, 0)
+                                   of IMil.Used => ()
+                                    | _ => Try.fail ())
+                          | _ => Try.fail ())
+                   val t = M.TGoto (M.T {block = block, arguments = Vector.new0 ()})
+                   val () = IInstr.replaceTransfer (imil, i, t)
+                 in [I.ItemInstr i]
+                 end
+          in try (Click.killInterProc, f)
+          end
+
       val reduce = callInline
                      or thunkValueBeta
                      or makeDirect 
                      or pruneCuts
                      or pruneFx
+                     or killInterProc
 
     end (* structure TInterProc *)
 
@@ -2260,6 +2292,30 @@ struct
                                                val simplify = simplify
                                              end)
 
+   val analyzeRecursive = 
+    fn (d, imil) =>
+       let
+         val MCG.Graph.G {unknown, graph} = IMil.T.callGraph imil
+         val scc = PLG.scc graph
+         val isSelfRecursive =
+          fn n => List.contains (PLG.Node.succs n, n, PLG.Node.equal)
+         val doScc =
+          fn c => 
+             (case c 
+               of [f] =>
+                  (case (PLG.Node.getLabel f, isSelfRecursive f)
+                    of (MCG.Graph.NFun var, false) =>
+                       let
+                         val iFunc = IFunc.getIFuncByName (imil, var)
+                         val () = IFunc.markNonRecursive (imil, iFunc)
+                         val () = Click.nonRecursive d
+                       in ()
+                       end
+                     | _ => ())
+                | _ => ())
+       in
+         List.foreach (scc, doScc)
+       end
 
   val doUnreachable = doPhase (skipUnreachable, unreachableCode, "unreachable object elimination")
   val doSimplify = 
@@ -2267,10 +2323,8 @@ struct
   val doCfgSimplify = 
    fn ws => doPhase (skipCfg, fn (d, imil) => trimCfgs (d, imil, ws), "cfg simplification")
   val doEscape = doPhase (skipEscape, SimpleEscape.optimize, "closure escape analysis")
-(*  val doRecursive = doPhase (skipRecursive, analyzeRecursive, "recursive function analysis") *)
+  val doRecursive = doPhase (skipRecursive, analyzeRecursive, "recursive function analysis") 
 
-  val doRecursive = skip "recursive function analysis"
-      
   val doIterate = 
    fn (d, imil) => 
       let
