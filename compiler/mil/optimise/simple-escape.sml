@@ -7,8 +7,7 @@ sig
   val optimize : PassData.t * IMil.t -> unit
 end
 
-functor MilSimpleEscapeF (structure Chat : CHAT 
-                                             where type env = PassData.t
+functor MilSimpleEscapeF (structure Chat : CHAT where type env = PassData.t
                           val simplify : PassData.t 
                                          * IMil.t
                                          * IMil.WorkSet.ws
@@ -17,165 +16,203 @@ functor MilSimpleEscapeF (structure Chat : CHAT
 struct
 
 
-  val stats = [("NonEscape",    "Functions marked non-escaping" ),
-               ("NonRecursive", "Functions marked non-recursive")]
+  val <- = Try.<-
+  val <@ = Try.<@
+  val <! = Try.<!
+  val << = Try.<<
+  val oo = Try.oo
+  val om = Try.om
+  val or = Try.or
+  val || = Try.||
+  val @@ = Utils.Function.@@
+
+  infix 3 << @@ oo om <! <\ 
+  infixr 3 />
+  infix 4 or || 
+
+  val stats = [("NonEscape",    "Functions marked non-escaping" )]
 
   structure M = Mil
+  structure MU = MilUtils
+  structure MCG = MilCallGraph
   structure PD = PassData
-  structure Cfg = IMil.Cfg
-  structure Instr = IMil.Instr
+  structure PLG = PolyLabeledGraph
+  structure IFunc = IMil.IFunc
+  structure IInstr = IMil.IInstr
+  structure IGlobal = IMil.IGlobal
   structure Use = IMil.Use
-  structure MOU = MilOptUtils
   structure WS = IMil.WorkSet
-
   structure L = Layout
 
-  fun useUsesOnlyAsClosure (d, imil, c, u) = 
+
+  val closureUseIsNonEscaping = 
+   fn (d, imil, c, u) =>
       let
         val cOp = M.SVariable c
-        fun isClosOp oper = MOU.eqOperand (imil, oper, cOp)
-        fun cNotIn ops = Vector.forall (ops, not o isClosOp)
+        val isThisClosure = 
+         fn oper => MU.Operand.eq (oper, cOp)
+        val closureNotIn = 
+            fn ops => Vector.forall (ops, not o isThisClosure)
+        val closureNotIn2nd = 
+            fn ops => Vector.forall (ops, not o isThisClosure o #2)
 
-        fun doTransfer t = 
-            case t
-             of M.TCall (M.CDirectClosure _, args, _, _, _)  => cNotIn args
-              | M.TTailCall (M.CDirectClosure _, args, _)    => cNotIn args
-              | M.TEvalThunk (M.EDirectThunk _, _, _, _)     => true
-              | _ => false
+        val doTransfer = 
+         fn t => 
+            (case t
+              of M.TInterProc {callee, ...} => 
+                 (case callee 
+                   of M.IpCall {args, ...} => closureNotIn args
+                    | M.IpEval _ => true)
+               | _ => false)
 
-        fun doRhs rhs = 
-            case rhs
-             of M.RhsPFunctionInit (clos, _, fvs) => cNotIn fvs
-              | M.RhsPFunctionGetFv (v, i) => true
-              | M.RhsThunkInit {thunk, freeVars, ...} => cNotIn freeVars
-              | M.RhsThunkGetFv (v, i) => true
-              | _ => false
+        val doRhs = 
+         fn rhs =>
+            (case rhs
+              of M.RhsPFunctionInit {fvs, ...} => closureNotIn2nd fvs
+               | M.RhsPFunctionGetFv _ => true
+               | M.RhsThunkInit {fvs, ...} => closureNotIn2nd fvs
+               | M.RhsThunkGetFv _ => true
+               | M.RhsObjectGetKind _ => true
+               | _ => false)
 
-        fun doGlobal g = 
-            case MOU.iglobalToGlobal (imil, g)
-             of SOME (_, g) => 
-                (case g
-                  of M.GPFunction _ => true
-                   | _ => false)
-              | _ => false
+        val doIGlobal =
+            isSome o (MU.Global.Dec.gPFunction oo (#2 om IGlobal.toGlobal))
 
-        fun doIInstr i =
-            case Instr.getMil (imil, i)
-             of IMil.MInstr (M.I {rhs, ...}) => doRhs rhs
-              | IMil.MTransfer t => doTransfer t
-              | IMil.MLabel _ => false
-              | IMil.MDead => false
+        val doIInstr =
+            fn i =>
+               (case IInstr.getMil (imil, i)
+                 of IMil.MInstr (M.I {rhs, ...}) => doRhs rhs
+                  | IMil.MTransfer t => doTransfer t
+                  | IMil.MLabel _ => false
+                  | IMil.MDead => false)
 
         val res = 
             (case u
-              of IMil.UseGlobal g => doGlobal g
+              of IMil.UseGlobal g => doIGlobal g
                | IMil.UseInstr i => doIInstr i
                | IMil.Used => false)
       in res
       end 
 
-  fun usedOnlyAsClosure (d, imil, c) = 
+  val closureIsNonEscaping = 
+   fn (d, imil, c) =>
       let
         val uses = Use.getUses (imil, c)
-        val res = 
-            Vector.forall (uses, fn u => useUsesOnlyAsClosure (d, imil, c, u))
+        val res = Vector.forall (uses, fn u => closureUseIsNonEscaping (d, imil, c, u))
       in res
       end
 
-  fun hasInternalEscapes (d, imil, fname, cfg) = 
+  val noInternalEscapes =
+   fn (d, imil, fname, iFunc) =>
       let
-        val conv = Cfg.getCallConv (imil, cfg)
-        fun getClosure conv = 
-            case conv
-             of M.CcClosure (c, _) => SOME c
-              | M.CcThunk (c, _)   => SOME c
-              | _ => NONE
+        val conv = IFunc.getCallConv (imil, iFunc)
         val res = 
-            case getClosure conv
-             of SOME c => not (usedOnlyAsClosure (d, imil, c))
-              | NONE => false
+            case conv
+             of M.CcClosure {cls, ...} => closureIsNonEscaping (d, imil, cls)
+              | M.CcThunk {thunk, ...} => closureIsNonEscaping (d, imil, thunk)
+              | M.CcCode => true
       in res
       end
 
-  fun useIsNotEscapingClosure (d, imil, u) = 
+  val codePtrUseIsNonEscaping =
+   fn (d, imil, fname, u) =>
       let
         fun warn () = 
             let
-              val () = Chat.warn0 (d, "Unexpected use of function pointer")
+              val () = Chat.warn2 (d, "Unexpected use of function pointer (unless lowered)")
             in false
             end
         val nonEscaping = 
             case u
              of IMil.UseInstr i => 
-                (case MOU.iinstrToRhs (imil, i)
-                  of SOME rhs => 
+                (case IInstr.getMil (imil, i)
+                  of IMil.MInstr (M.I {rhs, ...}) => 
                      (case rhs
-                       of M.RhsPFunctionInit (c , _, _) => 
-                          usedOnlyAsClosure (d, imil, c)
-                        | M.RhsThunkInit {thunk, ...} => 
-                          usedOnlyAsClosure (d, imil, thunk)
-                        | _ => warn())
-                   | NONE => true)
-                  (* Any other use of a function pointer 
-                   * should not induce unknown calls *)
+                       of M.RhsPFunctionInit {cls = SOME cls, ...} => closureIsNonEscaping (d, imil, cls)
+                        | M.RhsPFunctionInit {cls = NONE, ...}     => false
+                        | M.RhsThunkInit {thunk = SOME thunk, ...} => closureIsNonEscaping (d, imil, thunk)
+                        | M.RhsThunkInit {thunk = NONE, ...}       => false
+                        | _ => warn ())
+                   | IMil.MTransfer (M.TInterProc {callee, ...}) => 
+                     (case callee
+                       of M.IpCall {args, ...} => 
+                          not (Vector.contains (args, M.SVariable fname, MU.Operand.eq))
+                        | M.IpEval _ => true)
+                   | IMil.MTransfer _ => false
+                   | IMil.MLabel _ => warn ()
+                   | IMil.MDead => warn ())
               | IMil.UseGlobal g =>
-                (case MOU.iglobalToGlobal (imil, g)
+                (case IGlobal.toGlobal g
                   of SOME (clos, M.GPFunction _) => 
-                     usedOnlyAsClosure (d, imil, clos)
+                     closureIsNonEscaping (d, imil, clos)
                    | _ => warn())
               | IMil.Used => false
       in nonEscaping
       end
 
-  fun hasExternalEscapes (d, imil, fname, cfg) = 
+  val noExternalEscapes = 
+   fn (d, imil, fname) =>
       let
         val uses = Use.getUses (imil, fname)
-        val ok = Vector.forall (uses, 
-                             fn u => useIsNotEscapingClosure (d, imil, u))
-      in not ok
+        val ok = Vector.forall (uses, fn u => codePtrUseIsNonEscaping (d, imil, fname, u))
+      in ok
       end
 
-  fun analyzeCfg (d : PD.t, imil, w, fname, cfg) = 
+  val doFunction = 
+   Try.lift 
+     (fn ((d, imil), fname) =>
+         let
+           val iFunc = IFunc.getIFuncByName (imil, fname)
+           val () = Try.require (IFunc.getEscapes (imil, iFunc))
+           val () = Try.require (not (IFunc.isProgramEntry (imil, iFunc)))
+           val () = Try.require (noInternalEscapes (d, imil, fname, iFunc))
+           val () = Try.require (noExternalEscapes (d, imil, fname))
+           val () = PD.click (d, "NonEscape")
+           val () = IFunc.markNonEscaping (imil, iFunc)
+           val w = WS.new ()
+           val () = WS.addUses (w, IMil.Use.getUses (imil, fname))
+           val () = WS.addItem (w, IMil.ItemFunc iFunc)
+           val () = simplify (d, imil, w)
+         in ()
+         end)
+
+  val doConnectedComponent = 
+   fn ((d, imil), nodes) =>
       let
+        val doOne = 
+         fn (node, changed) => 
+            (case PLG.Node.getLabel node
+              of MCG.Graph.NUnknown => changed
+               | MCG.Graph.NFun f => isSome (doFunction ((d, imil), f)))
+
+        val rec loop = 
+         fn changed => 
+            if List.fold (nodes, false, doOne) then 
+              loop true
+            else changed
+
         val changed = 
-            if Cfg.getEscapes (imil, cfg) andalso 
-               not (Cfg.isProgramEntry (imil, cfg)) then
-              let
-                val iEscapes = hasInternalEscapes (d, imil, fname, cfg)
-                val eEscapes = hasExternalEscapes (d, imil, fname, cfg)
-                val changed = 
-                    if not iEscapes andalso not eEscapes then
-                      let
-                        val () = Cfg.markNonEscaping (imil, cfg)
-                        val () = PD.click (d, "NonEscape")
-                        val () = WS.addUses (w, IMil.Use.getUses (imil, fname))
-                        val () = WS.addItem (w, IMil.ICode cfg)
-                        val () = simplify (d, imil, w)
-                      in true
-                      end
-                    else 
-                      false
-              in changed
-              end
-            else false
-      in changed
+            (case nodes
+              of [f] => doOne (f, false)
+               | _ => loop false)
+            
+      in ()
       end
 
-  fun optimize (d, imil) = 
+  val optimize = 
+   fn (d, imil) =>
       let
-        fun loop () = 
-            let
-              val cfgs = IMil.Cfg.getCfgs imil
-              val w = WS.new ()
-              val help = 
-               fn (f, c) => analyzeCfg (d, imil, w, f, c)
-              val changed = List.exists (cfgs, help)
-            in 
-              if changed then
-                loop()
-              else ()
-            end
-      in loop()
+        val config = PD.getConfig d
+        val si = IMil.T.getSi imil
+        val p  = IMil.T.unBuild imil
+        val cg = MCG.program (config, si, p)
+        val MCG.Graph.G {unknown, graph} = MCG.Graph.make cg
+        (* Process callees before callers, since escape analysis may enable
+         * inlining in the caller. *)
+        val components = List.rev (PLG.scc graph)
+        val doOne = fn comp => doConnectedComponent ((d, imil), comp)
+        val () = List.foreach (components, doOne)
+      in ()
       end
 
 end

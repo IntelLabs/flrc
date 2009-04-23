@@ -11,32 +11,32 @@
  *     * What callees are known to be called from it
  *)
 
-signature MilCallGraph =
+signature MIL_CALL_GRAPH =
 sig
 
   datatype funInfo = FI of {
-    knownCallers   : Identifier.LabelSet.t,
-    unknownCallers : bool
+           knownCallers   : Identifier.LabelSet.t,
+           unknownCallers : bool
   }
 
   datatype callInfo = CI of {
-    knownCallees   : Identifier.VariableSet.t,
-    unknownCallees : bool
+           knownCallees   : Identifier.VariableSet.t,
+           unknownCallees : bool
   }
 
   datatype callGraph = CG of {
     funs  : funInfo Identifier.VariableDict.t,
-    calls : callInfo Identifier.LabelDict.t
+    calls : callInfo Identifier.LabelDict.t,
+    callMap : Mil.variable Identifier.LabelDict.t
   }
 
   val program : Config.t * Mil.symbolInfo * Mil.t -> callGraph
 
   val layout : Config.t * Mil.symbolInfo * callGraph -> Layout.t
   val layoutDot : callGraph *
-                  FMil.t *
-                  {nodeOptions : Mil.variable * bool (* unknown callers *) -> Layout.t,
-                   edgeOptions : Mil.label * Mil.variable option (* target *) * bool (* virtual *) -> Layout.t,
-                   graphTitle : Layout.t}
+                  {nodeOptions : Mil.variable * bool (* unknown callers *) -> Layout.t list,
+                   edgeOptions : Mil.label * Mil.variable option (* target *) * bool (* virtual *) -> Layout.t list,
+                   graphTitle : string}
                   -> Layout.t
 
   structure Graph :
@@ -49,14 +49,15 @@ sig
       graph   : (node, unit) PolyLabeledGraph.t
     }
 
-    val make : callGraph * FMil.t -> t
+    (* Directed multi-graph.  Edges point from callers to callees *)
+    val make : callGraph -> t
     val layoutDot : Config.t * Mil.symbolInfo * t -> Layout.t
 
   end
 
 end;
 
-structure MilCallGraph =
+structure MilCallGraph :> MIL_CALL_GRAPH =
 struct
 
   structure I = Identifier
@@ -67,87 +68,65 @@ struct
   structure M = Mil
   structure MU = MilUtils
 
-  datatype env = E of {
-    config   : Config.t,
-    si       : M.symbolInfo,
-    code     : VS.t,
-    curFun   : M.variable option,
-    curBlock : M.label option
-  }
-
-  fun envInit (config, si, code) =
-      E {config = config, si = si, code = code, curFun = NONE, curBlock = NONE}
-
-  fun getConfig (E {config, ...}) = config
-
-  fun isCode (E {code, ...}, v) = VS.member (code, v)
-
-  fun getFun (E {curFun, ...}) =
-      case curFun
-       of NONE => Fail.fail ("MilCallGraph", "getFun", "not in a function")
-        | SOME f => f
-
-  fun getBlock (E {curBlock, ...}) =
-      case curBlock
-       of NONE => Fail.fail ("MilCallGraph", "getBlock", "not in a block")
-        | SOME l => l
-
-  fun setFun (E {config, si, code, curFun = _, curBlock}, f) =
-      E {config = config, si = si, code = code, curFun = SOME f,
-         curBlock = curBlock}
-
-  fun setBlock (E {config, si, code, curFun, curBlock = _}, l) =
-      E {config = config, si = si, code = code, curFun = curFun,
-         curBlock = SOME l}
-
-  structure Chat = ChatF (type env = env
-                          val extract = getConfig
-                          val name = "MilCallGraph"
-                          val indent = 0)
+  val passname = "MilCallGraph"
+  val fail = 
+   fn (f, msg) => Fail.fail (passname, f, msg)
 
   datatype funInfo = FI of {
-    knownCallers   : Identifier.LabelSet.t,
-    unknownCallers : bool
+           knownCallers   : Identifier.LabelSet.t,
+           unknownCallers : bool
   }
 
   datatype callInfo = CI of {
-    knownCallees   : Identifier.VariableSet.t,
-    unknownCallees : bool
+           knownCallees   : Identifier.VariableSet.t,
+           unknownCallees : bool
   }
 
   datatype callGraph = CG of {
-    funs  : funInfo Identifier.VariableDict.t,
-    calls : callInfo Identifier.LabelDict.t
+    funs    : funInfo Identifier.VariableDict.t,
+    calls   : callInfo Identifier.LabelDict.t, 
+    callMap : Mil.variable Identifier.LabelDict.t
   }
 
   local
     open Layout
     structure LU = LayoutUtils
     val layoutVariable = MilLayout.layoutVariable
+    val layoutLabel = MilLayout.layoutLabel
   in
 
-  fun layoutFunInfo (FI {knownCallers, unknownCallers, ...}) =
+  fun layoutCallName (config, si, callMap, l) = 
+      (case LD.lookup (callMap, l)
+        of SOME f => seq [layoutVariable (config, si, f), str ".", layoutLabel (config, si, l)]
+         | NONE => seq [str "BAD FUNCTION NAME", str ".", layoutLabel (config, si, l)])
+
+  fun layoutFunEntry (config, si, callMap, (f, FI {knownCallers, unknownCallers})) =
       let
-        val known = List.map (LS.toList knownCallers, I.labelString)
-        val all = if unknownCallers then "unknown"::known else known
-        val l = sequence ("{", "}", ",") (List.map (all, str))
+        val caller = fn l => layoutCallName (config, si, callMap, l)
+        val callee = layoutVariable (config, si, f)
+        val known = List.map (LS.toList knownCallers, caller)
+        val all = if unknownCallers then str "unknown"::known else known
+        val calls = sequence ("{", "}", ",") all
+        val l = mayAlign [seq [callee, str " is called by "], LU.indent calls]
       in l
       end
 
-  fun layoutCallInfo (c, si, CI {knownCallees, unknownCallees, ...}) =
+  fun layoutCallEntry (config, si, callMap, (l, CI {knownCallees, unknownCallees})) =
       let
-        val var = fn v => Layout.toString (layoutVariable (c, si, v))
-        val known = List.map (VS.toList knownCallees, var)
-        val all = if unknownCallees then "unknown"::known else known
-        val l = sequence ("{", "}", ",") (List.map (all, str))
+        val caller = layoutCallName (config, si, callMap, l)
+        val callee = fn v => layoutVariable (config, si, v)
+        val known = List.map (VS.toList knownCallees, callee)
+        val all = if unknownCallees then str "unknown"::known else known
+        val calls = sequence ("{", "}", ",") all
+        val l = mayAlign [seq [caller, str " calls "], LU.indent calls]
       in l
       end
 
-  fun layout (c, si, CG {funs, calls, ...}) =
+  fun layout (config, si, CG {funs, calls, callMap}) =
       let
-        val var = fn v => Layout.toString (layoutVariable (c, si, v))
-        fun doFun (f, fi) = mayAlign [seq [str (var f), str ":"], LU.indent (layoutFunInfo fi)]
-        fun doCall (cl, ci) = mayAlign [seq [str (I.labelString cl), str ":"], LU.indent (layoutCallInfo (c, si, ci))]
+        val var = fn v => Layout.toString (layoutVariable (config, si, v))
+        fun doFun entry = layoutFunEntry (config, si, callMap, entry)
+        fun doCall entry = layoutCallEntry (config, si, callMap, entry)
       in
         align [str "Funs:",
                LU.indent (align (List.map (VD.toList funs, doFun))),
@@ -157,7 +136,7 @@ struct
 
   (* Layout the call graph in the dot format. 
    * EB XXX: I'm still changing this function. Please, do not rely on it. *)
-  fun layoutAnnotatedDot (CG {funs, calls, ...}, fmil, {nodeOptions, edgeOptions, graphTitle}) =
+  fun layoutDot (CG {funs, calls, callMap}, {nodeOptions, edgeOptions, graphTitle}) =
       let
         (* Convert calls to edges.  An edge consistes of callsite, target funtion option, 
          * and virtual call - true if call more than one function.
@@ -178,8 +157,9 @@ struct
         (* Layout the Edges *)
         fun layoutAnnotatedEdge (call, tgtFun, virtualCall) = 
             let
-              val srcFun = FMil.getLabelFun (fmil, call)
-              val srcFun' = I.variableString' srcFun
+              val srcFun' = (case LD.lookup (callMap, call)
+                             of SOME f => I.variableString' f
+                              | NONE => "BAD FUNCTION NAME")
               val tgtFun' = case tgtFun
                              of SOME f => I.variableString' f
                               | NODE => "unknown"
@@ -215,12 +195,55 @@ struct
 
   end
 
-  datatype state = S of {
-    funs  : (LS.t ref * bool) VD.t ref,
-    calls : callInfo LD.t ref
+
+  datatype env = E of {
+    config   : Config.t,
+    si       : M.symbolInfo,
+    code     : VS.t,
+    curFun   : M.variable option,
+    curBlock : M.label option
   }
 
-  fun mkState () = S {funs = ref VD.empty, calls = ref LD.empty}
+  fun envInit (config, si, code) =
+      E {config = config, si = si, code = code, curFun = NONE, curBlock = NONE}
+
+  fun getConfig (E {config, ...}) = config
+
+  fun isCode (E {code, ...}, v) = VS.member (code, v)
+
+  fun getFun (E {curFun, ...}) =
+      case curFun
+       of NONE => fail ("getFun", "not in a function")
+        | SOME f => f
+
+  fun getBlock (E {curBlock, ...}) =
+      case curBlock
+       of NONE => fail ("getBlock", "not in a block")
+        | SOME l => l
+
+  fun setFun (E {config, si, code, curFun = _, curBlock}, f) =
+      E {config = config, si = si, code = code, curFun = SOME f,
+         curBlock = curBlock}
+
+  fun setBlock (E {config, si, code, curFun, curBlock = _}, l) =
+      E {config = config, si = si, code = code, curFun = curFun,
+         curBlock = SOME l}
+
+
+  datatype state = S of {
+    funs  : (LS.t ref * bool) VD.t ref,  (* (callers, escapes) *)
+    calls : callInfo LD.t ref,
+    callMap : M.variable LD.t ref
+  }
+
+  fun mkState () = S {funs = ref VD.empty, calls = ref LD.empty, callMap = ref LD.empty}
+
+  fun addCallToCallMap (S {callMap, ...}, e, cl) = 
+      let
+        val fv = getFun e
+        val () = callMap := LD.insert (!callMap, cl, fv)
+      in ()
+      end
 
   fun addFun (S {funs, ...}, f, escapes) =
       case VD.lookup (!funs, f)
@@ -230,58 +253,64 @@ struct
             val () = funs := VD.insert (!funs, f, fi)
           in ()
           end
-        | SOME (callees, escapes') =>
+        | SOME (callers, escapes') =>
           let
             val escapes = escapes' orelse escapes
-            val () = funs := VD.insert (!funs, f, (callees, escapes))
+            val () = funs := VD.insert (!funs, f, (callers, escapes))
           in ()
           end
 
-  fun addKnownCall (S {funs, calls, ...}, c, f) =
+  fun addCallerCalleeInfo (S {funs, calls, ...}, label, knownCallees, unknownCallees) = 
       let
-        val ci = CI {knownCallees = VS.singleton f, unknownCallees = false}
-        val () = calls := LD.insert (!calls, c, ci)
-        val () =
-            case VD.lookup (!funs, f)
-             of NONE =>
-                let
-                  val fi = (ref (LS.singleton c), false)
-                  val () = funs := VD.insert (!funs, f, fi)
-                in ()
-                end
-              | SOME (callers, _) => callers := LS.insert (!callers, c)
+        val ci = CI {knownCallees = knownCallees, unknownCallees = unknownCallees}
+        val () = calls := LD.insert (!calls, label, ci)
+        val addCaller = 
+         fn f => 
+            (case VD.lookup (!funs, f)
+              of NONE =>
+                 let
+                   val fi = (ref (LS.singleton label), false)
+                   val () = funs := VD.insert (!funs, f, fi)
+                 in ()
+                 end
+               | SOME (callers, _) => callers := LS.insert (!callers, label))
+        val () = VS.foreach (knownCallees, addCaller)
       in ()
       end
 
-  fun addUnknownCall (S {calls, ...}, c) =
-      let
-        val ci = CI {knownCallees = VS.empty, unknownCallees = true}
-        val () = calls := LD.insert (!calls, c, ci)
-      in ()
-      end
+  fun addKnownCall (s, c, f) = addCallerCalleeInfo (s, c, VS.singleton f, false)
+  fun addUnknownCall (s, c) = addCallerCalleeInfo (s, c, VS.empty, false)
+  fun addCodes (s, c, {possible, exhaustive}) = addCallerCalleeInfo (s, c, possible, not exhaustive)
 
-  fun analyseCodeCall (s, e, call, codeVar) =
+  fun analyseCodeCall (s, e, cl, codeVar) =
       if isCode (e, codeVar) then
-        addKnownCall (s, call, codeVar)
+        addKnownCall (s, cl, codeVar)
       else
-        addUnknownCall (s, call)
+        addUnknownCall (s, cl)
+
+  fun analyseCall (s, e, cl, call) = 
+      (case call
+        of M.CCode cv => analyseCodeCall (s, e, cl, cv)
+         | M.CClosure {code, ...} => addCodes (s, cl, code)
+         | M.CDirectClosure {code, ...} => addKnownCall (s, cl, code))
+
+  fun analyseEval (s, e, cl, eval) = 
+      (case eval
+        of M.EThunk {code, ...} => addCodes (s, cl, code)
+         | M.EDirectThunk {code, ...} => addKnownCall (s, cl, code))
+
+  fun analyseInterProc (s, e, cl, callee) = 
+      (case callee
+        of M.IpCall {call, ...} => analyseCall (s, e, cl, call)
+         | M.IpEval {typ, eval} => analyseEval (s, e, cl, eval))
 
   fun analyseTransfer (s, e, t) =
       case t
        of M.TInterProc {callee, ret, fx} =>
           let
             val cl = getBlock e
-            val () =
-                case callee
-                 of M.IpCall {call, ...} =>
-                    (case call
-                      of M.CCode cv => analyseCodeCall (s, e, cl, cv)
-                       | M.CClosure _ => addUnknownCall (s, cl)
-                       | M.CDirectClosure {code, ...} => analyseCodeCall (s, e, cl, code))
-                  | M.IpEval {typ, eval} =>
-                    (case eval
-                      of M.EThunk _ => addUnknownCall (s, cl)
-                       | M.EDirectThunk {code, ...} => analyseCodeCall (s, e, cl, code))
+            val () = addCallToCallMap (s, e, cl)
+            val () = analyseInterProc (s, e, cl, callee)
           in e
           end
         | _ => e
@@ -311,13 +340,13 @@ struct
                               val analyseBlock = SOME analyseBlock
                               val analyseGlobal = SOME analyseGlobal)
 
-  fun finish (S {funs, calls, ...}) =
+  fun finish (S {funs, calls, callMap}) =
       let
         fun doOne (_, (cs, e)) =
             FI {knownCallers = !cs, unknownCallers = e}
         val funs = VD.map (!funs, doOne)
       in
-        CG {funs = funs, calls = !calls}
+        CG {funs = funs, calls = !calls, callMap = !callMap}
       end
 
   fun program (config, si, p as M.P {globals, ...}) =
@@ -346,7 +375,7 @@ struct
       graph   : (node, unit) PLG.t
     }
 
-    fun make (CG {funs, calls}, fmil) =
+    fun make (CG {funs, calls, callMap}) =
         let
           val nodes = NUnknown::(List.map (VD.toList funs, fn (f, _) => NFun f))
           fun node (l, n, (unknown, funMap)) =
@@ -363,9 +392,9 @@ struct
                     else
                       NONE
                 val es1 = List.keepAllMap (VD.toList funs, doFun)
-                fun doCall (c, CI {knownCallees, unknownCallees, ...}) =
+                fun doCall (c, CI {knownCallees, unknownCallees}) =
                     let
-                      val inFun = FMil.getLabelFun (fmil, c)
+                      val inFun = Option.valOf (LD.lookup (callMap, c))
                       val inFun = funNode inFun
                       fun doOne f = (inFun, funNode f, ())
                       val es = List.map (VS.toList knownCallees, doOne)

@@ -162,11 +162,16 @@ sig
     (* Returns the full unique string *)
     val variableString : 'a symbolTable * variable -> string
 
-    (* Topologically sorting variables subject to dependencies is coming up in a number of places,
-     * so I'm putting this function here to code it once.
-     * The second argument returns the variables that each variable depends upon, variables not in the first
-     * argument are ignored.
-     * The result is the strongly connected components in dependency order.
+    (* Topological sort of variable/data pairs based on a dependency function.
+     * variableTopoSort (l, f) returns L, where L is a list of lists of elements
+     * of l. Informally, f(v) returns things that v depends on, and hence that
+     * should come before it if possible.
+     * 
+     * More precisely, L is the topologically sorted list of strongly connected 
+     * components of the graph induced by adding edges from x to v for each x 
+     * in f(v).  Consequently, if x is in f(v), then x is not after v in L.  
+     * 
+     * Note: if x is in f(v), but x is not in l, then x will be ignored.
      *)
     val variableToposort : (variable * 'a) list * (variable * 'a -> VariableSet.t) -> (variable * 'a) list list
 
@@ -397,7 +402,7 @@ struct
                     let
                       val n = Option.valOf (VD.lookup (map, v))
                       val deps = VariableSet.toList (df (v, x))
-                      fun doOne v = Option.map (VD.lookup (map, v), fn n' => (n, n', ()))
+                      fun doOne v = Option.map (VD.lookup (map, v), fn n' => (n', n, ()))
                       val es = List.keepAllMap (deps, doOne)
                     in es
                     end

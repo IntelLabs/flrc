@@ -1148,7 +1148,7 @@ sig
    * push s =>
    *   Return a new statistics sets with every statistic of s but with count 0
    *   Any subsequent increment of new stat also increments old stat
-   *   (But no vice versa.)
+   *   (But not vice versa.)
    * Currently, new statistics subsequently added to the new set will not be
    * added to the old set.  This functionality can be added if desired.
    *)

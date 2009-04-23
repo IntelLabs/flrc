@@ -59,7 +59,9 @@ sig
                       -> ('c, 'd) t * 
                          (('a, 'b) node -> ('c, 'd) node) *
                          (('a, 'b) edge -> ('c, 'd) edge)
-                        
+         
+  (* List of strongly connected components, topologically sorted.  No 
+   * edges in the graph point backward in the list *)
   val scc          : ('a, 'b) t -> ('a, 'b) node list list
   val dfsTree      : ('a, 'b) t * ('a, 'b) node -> ('a, 'b) node Tree.t
   val postOrderDfs : ('a, 'b) t * ('a, 'b) node -> ('a, 'b) node List.t
@@ -371,7 +373,7 @@ struct
         val {dg, getIPLGNode, ...} = buildDG (G g)
         val dgSccList = DG.stronglyConnectedComponents (dg)
       in
-        List.revMap (dgSccList, fn l => List.map (l, getIPLGNode))
+        List.map (dgSccList, fn l => List.map (l, getIPLGNode))
       end
 
   val dfsTree =
@@ -520,6 +522,8 @@ sig
   val map : ('a, 'b) t * ('a -> 'c) * ('b -> 'd)
             -> ('c, 'd) t * (('a, 'b) node -> ('c, 'd) node) * (('a, 'b) edge -> ('c, 'd) edge)
 
+  (* List of strongly connected components, topologically sorted.  No 
+   * edges in the graph point backward in the list *)
   val scc          : ('a, 'b) t -> ('a, 'b) node list list
   val dfsTree      : ('a, 'b) t * ('a, 'b) node -> ('a, 'b) node Tree.t
   val postOrderDfs : ('a, 'b) t * ('a, 'b) node -> ('a, 'b) node list
