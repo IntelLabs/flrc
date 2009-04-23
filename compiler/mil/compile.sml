@@ -69,8 +69,8 @@ struct
   val o2String = "SVSISVSIHFNOT"
   val o3String = "VSCSVSIRDSCSVLSRSIKHFNOT"*)
   val o0String = "fst"
-  val o1String = "VSfst"   (* deleted CS before fst*)
-  val o2String = "SVSfst"  (* deleted CS before fst*)
+  val o1String = "VSCSfst"
+  val o2String = "SVSCSfst"
   val o3String = o2String
 
   val o0Control = Option.valOf (parseControl o0String)
