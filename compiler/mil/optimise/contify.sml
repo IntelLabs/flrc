@@ -27,6 +27,7 @@ struct
   structure LS = I.LabelSet
   structure M = Mil
   structure MU = MilUtils
+  structure MSTM = MU.SymbolTableManager
   structure MCG = MilCallGraph
   structure MFV = MilFreeVars
 
@@ -111,8 +112,8 @@ struct
     datatype return =
         RUncalled
       | RUnknown
-      | RCont of M.variable Vector.t * M.label * M.cuts
-                 (* The return variables for the calls, if not unique it we pick one arbitrarily (it doesn't matter)
+      | RCont of M.variable Vector.t option * M.label * M.cuts
+                 (* The return variables for the calls, if unique
                   * The returned to label
                   * An upperbound on the cuts the calls can make
                   *)
@@ -153,15 +154,11 @@ struct
               case getReturn (env, c)
                of M.RNormal {rets, block, cuts, ...} =>
                   let
-                    val cuts1 =
+                    val (rvso, cuts) =
                         case LD.lookup (map, block)
-                         of NONE           => MU.Cuts.none
-                          | SOME (_, cuts) => cuts
-                    val cuts = MU.Cuts.union (cuts1, cuts)
-                    (* Note if there are multiple return vars then there are multiple calls that use the return
-                     * label, so none of the return vars are in scope.  Thus we pick one set arbitrarily.
-                     *)
-                    val map = LD.insert (map, block, (rets, cuts))
+                         of NONE            => (SOME rets, cuts)
+                          | SOME (_, cuts') => (NONE, MU.Cuts.union (cuts', cuts))
+                    val map = LD.insert (map, block, (rvso, cuts))
                   in map
                   end
                 | M.RTail => map
@@ -270,7 +267,6 @@ struct
                 val a = Vector.fold (children, a, doRest r)
               in a
               end
-          fun getCuts r = #2 (Option.valOf (LD.lookup (rvCuts, r)))
           fun doTop (Tree.T (n, children), a) =
               let
                 val (r, a) =
@@ -279,9 +275,8 @@ struct
                       | NlFun f => (RFunc f, VD.insert (a, f, if VS.member (r, f) then RUnknown else RUncalled))
                       | NlRet r =>
                         let
-                          val (rvs, cuts) = Option.valOf (LD.lookup (rvCuts, r))
-                        in
-                          (RCont (rvs, r, cuts), a)
+                          val (rvso, cuts) = Option.valOf (LD.lookup (rvCuts, r))
+                        in (RCont (rvso, r, cuts), a)
                         end
                 val a = Vector.fold (children, a, doRest r)
               in a
@@ -376,8 +371,9 @@ struct
 
     fun click (S {pd, ...}, s) = PassData.click (pd, s)
 
-    fun newLabel s      = IM.labelFresh (getStm s)
-    fun cloneVar (s, x) = IM.variableClone (getStm s, x)
+    fun newLabel s                 = MSTM.labelFresh (getStm s)
+    fun cloneVar (s, x)            = MSTM.variableClone (getStm s, x)
+    fun variableFresh (s, h, t, g) = MSTM.variableFresh (getStm s, "m" ^ h, t, g)
 
     fun getSelfEntry (S {self, ...}) = #2 (!self)
 
@@ -420,7 +416,7 @@ struct
      * return to the label or return from the code.  The codes to include
      * is the transitive closure of this information.
      *)
-    datatype funInfo = FI of (M.variable * M.cuts * (M.variable Vector.t * M.label) option) list
+    datatype funInfo = FI of (M.variable * M.cuts * (M.variable Vector.t option * M.label) option) list
 
     (* The environment records:
      *   config:     The configuration.
@@ -725,8 +721,13 @@ struct
     fun transformCode (state, env, x, f) =
         let
           (* Compute the code globals to include *)
-          (* For each one make a label to jump to to call it *)
-          (* For each return label, we transform rvs.l => l'(rvs): goto l(), so make l' *)
+          (* For each one make a label to jump to to call it,
+           * and if it returns to a return label (which takes no parameters) make a new return label that takes
+           * parameters for it to jump to.  If that return label had unique return variables then make a single
+           * label using those return variables as parameters; otherwise make a return label per function using
+           * the return types of the function to generate fresh parameters.
+           *)
+          (* Accumulate all the newly generated return labels so that they can be added into the code body. *)
           (* Note that here we use the fact that if A(f) = Func g then
            * A(g) = Unknown/Uncalled and never Ret l.  This is true of the
            * dominator analysis but not of an arbitrary safe analysis (as
@@ -734,32 +735,51 @@ struct
            * have to adjust the return labels when computing the transitive
            * closure.
            *)
-          fun doOneA cuts ((f, cuts', ro), (fs, fes, retMap)) =
+          fun doOneA cuts ((f, cuts', ro), (fs, fes, retMap, retBlks)) =
               let
                 val () = click (state, "inlines")
                 val l = newLabel state
                 val fes = VD.insert (fes, f, l)
                 val cuts = MU.Cuts.inlineCall (cuts', cuts)
-                val (ro, retMap) =
+                val (ro, retMap, retBlks) =
                     case ro
-                     of NONE => (NONE, retMap)
-                      | SOME (rvs, l) =>
-                        case LD.lookup (retMap, l)
+                     of NONE => (NONE, retMap, retBlks)
+                      | SOME (rvso, l) =>
+                        case rvso
+                          (* The return label did not have unique variables binding the return values
+                           * so the return values are dead.  Therefore, for this function generate a new
+                           * return label based on the return types of the function.
+                           *)
                          of NONE =>
                             let
                               val l' = newLabel state
-                              val retMap = LD.insert (retMap, l, (l', rvs))
-                            in (SOME l', retMap)
+                              val retTyps = MU.Code.rtyps (FMil.getCode (getFMil env, f))
+                              val rvs = Vector.map (retTyps, fn t => variableFresh (state, "ret", t, false))
+                              val retBlks = (l', rvs, l)::retBlks
+                            in (SOME l', retMap, retBlks)
                             end
-                          | SOME (l', _) => (SOME l', retMap)
-                val x = doOneB (f, cuts, ((f, cuts, ro)::fs, fes, retMap))
+                          (* The return label had unqiue variables binding the return values.  Use these
+                           * variables to generate a new label to return to for all functions returning to
+                           * that return label.
+                           *)
+                          | SOME rvs =>
+                            case LD.lookup (retMap, l)
+                             of NONE =>
+                                let
+                                  val l' = newLabel state
+                                  val retMap = LD.insert (retMap, l, l')
+                                  val retBlks = (l', rvs, l)::retBlks
+                                in (SOME l', retMap, retBlks)
+                                end
+                              | SOME l' => (SOME l', retMap, retBlks)
+                val x = doOneB (f, cuts, ((f, cuts, ro)::fs, fes, retMap, retBlks))
               in x
               end
           and doOneB (f, cuts, x) =
               case getFun (env, f)
                of NONE => x
                 | SOME (FI fs) => List.fold (fs, x, doOneA cuts)
-          val (fs, funEntries, retMap) = doOneB (x, MU.Cuts.none, ([], VD.empty, LD.empty))
+          val (fs, funEntries, retMap, retBlks) = doOneB (x, MU.Cuts.none, ([], VD.empty, LD.empty, []))
           (* Deconstruct the code *)
           val M.F {fx, escapes, recursive, cc, args, rtyps, body} = f
           val M.CB {entry, blocks} = body
@@ -774,14 +794,14 @@ struct
           (* Transform this global's cb *)
           val () = transformCB (state, env, body)
           (* Add in the return labels - do this before inlining as these blocks are looked up *)
-          fun doOne (l1, (l2, rvs)) =
+          fun doOne (l1, rvs, l2) =
               let
-                val t = M.TGoto (M.T {block = l1, arguments = Vector.new0 ()})
+                val t = M.TGoto (M.T {block = l2, arguments = Vector.new0 ()})
                 val blk = M.B {parameters = rvs, instructions = Vector.new0 (), transfer = t}
-                val () = addBlock (state, l2, blk)
+                val () = addBlock (state, l1, blk)
               in ()
               end
-          val () = LD.foreach (retMap, doOne)
+          val () = List.foreach (retBlks, doOne)
           (* Inline and transform the included cbs *)
           val () = List.foreach (List.rev fs, fn x => addCode (state, env, x))
           (* Create the self entry if necessary *)
