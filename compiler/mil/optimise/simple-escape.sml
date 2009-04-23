@@ -202,11 +202,7 @@ struct
   val optimize = 
    fn (d, imil) =>
       let
-        val config = PD.getConfig d
-        val si = IMil.T.getSi imil
-        val p  = IMil.T.unBuild imil
-        val cg = MCG.program (config, si, p)
-        val MCG.Graph.G {unknown, graph} = MCG.Graph.make cg
+        val MCG.Graph.G {unknown, graph} = IMil.T.callGraph imil
         (* Process callees before callers, since escape analysis may enable
          * inlining in the caller. *)
         val components = List.rev (PLG.scc graph)
