@@ -2255,15 +2255,20 @@ struct
       in ()
       end
 
+  structure SimpleEscape = MilSimpleEscapeF (struct
+                                               structure Chat = Chat
+                                               val simplify = simplify
+                                             end)
+
+
   val doUnreachable = doPhase (skipUnreachable, unreachableCode, "unreachable object elimination")
   val doSimplify = 
    fn ws => doPhase (skipSimplify, fn (d, imil) => simplify (d, imil, ws), "simplification")
   val doCfgSimplify = 
    fn ws => doPhase (skipCfg, fn (d, imil) => trimCfgs (d, imil, ws), "cfg simplification")
-(*  val doEscape = doPhase (skipEscape, SimpleEscape.optimize, "closure escape analysis")
-  val doRecursive = doPhase (skipRecursive, analyizeRecursive, "recursive function analysis") *)
+  val doEscape = doPhase (skipEscape, SimpleEscape.optimize, "closure escape analysis")
+(*  val doRecursive = doPhase (skipRecursive, analyzeRecursive, "recursive function analysis") *)
 
-  val doEscape = skip "closure escape analysis"
   val doRecursive = skip "recursive function analysis"
       
   val doIterate = 
@@ -2306,7 +2311,7 @@ struct
       in ()
       end
 
-  val stats = Click.stats @ MilCfgSimplify.stats (*@ MilFunKnown.stats @ SimpleEscape.stats*)
+  val stats = Click.stats @ MilCfgSimplify.stats @ SimpleEscape.stats (*@ MilFunKnown.stats @ *)
 
   val description =
       {name        = passname,

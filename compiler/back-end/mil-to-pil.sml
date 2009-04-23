@@ -1602,10 +1602,17 @@ struct
                                          Vector.length arguments)))
         val parametersl = Vector.toList parameters
         val pi = List.mapi (parametersl, Utils.flip2)
+
+        (* Find any variables that parameter i reads from *)
         fun depsOf (v, i) =
             case Vector.sub (arguments, i)
              of M.SVariable v' => VS.singleton v'
               | _              => VS.empty
+        (* Topo sort such that things that parameter i reads from don't follow it,
+         * then emit SSA moves in reverse order such that parameter i gets written
+         * before anything that it reads from does.  For parameters involved in 
+         * a strongly connected component, add temporaries.
+         *)
         val scc = I.variableToposort (pi, depsOf)
         fun doOne vis =
             case vis

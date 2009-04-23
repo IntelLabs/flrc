@@ -9,9 +9,9 @@ local
         contify.sml
         
         cfg-simplify.sml
-(*        fun-known.sml
+(*        fun-known.sml *)
         simple-escape.sml
-*)
+
         simplify.sml
 (*
         inline-rewrite.sml

@@ -188,7 +188,7 @@ struct
 
     fun buildGraph (env, entry, cg, r) =
         let
-          val MCG.CG {funs, calls} = cg
+          val MCG.CG {funs, calls, callMap} = cg
           fun escapesOrNotInlinable v =
               case Option.valOf (VD.lookup (funs, v))
                of MCG.FI {unknownCallers, ...} =>
