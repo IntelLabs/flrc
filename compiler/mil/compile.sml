@@ -15,10 +15,11 @@ struct
   structure LU = LayoutUtils
 
   val passes =
-      [(#"C", MilContify.pass         ),
-       (*(#"D", MilDblDiamond.pass      ),*)
+      [
+       (#"C", MilContify.pass         ),
+(*       (#"D", MilDblDiamond.pass      ),*)
        (#"f", MilLowerPFunctions.pass ),
-       (*(#"I", MilInlineLeaves.pass    ),  
+(*     (#"I", MilInlineLeaves.pass    ),  
        (#"J", MilInlineAggressive.pass),
        (#"K", MilInlineProfile.pass   ),
        (#"L", MilLicm.pass            ),

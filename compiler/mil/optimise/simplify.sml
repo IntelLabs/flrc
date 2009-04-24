@@ -24,6 +24,7 @@ struct
   structure MU = MilUtils
   structure POM = PObjectModelCommon
   structure I = IMil
+  structure IML = I.Layout
   structure IInstr = I.IInstr
   structure IGlobal = I.IGlobal
   structure IFunc = I.IFunc
@@ -36,9 +37,10 @@ struct
   structure WS = I.WorkSet
   structure MCG = MilCallGraph
   structure IPLG = ImpPolyLabeledGraph
+  structure PLG = PolyLabeledGraph
   structure IVD = Identifier.ImpVariableDict
   structure PD = PassData
-  structure SD = StringDict
+  structure SS = StringSet
   structure VS = M.VS
 
   structure Chat = ChatF (struct 
@@ -57,7 +59,9 @@ struct
   val or = Try.or
   val || = Try.||
   val @@ = Utils.Function.@@
-  infix 3 << @@ oo om <!
+
+  infix 3 << @@ oo om <! <\ 
+  infixr 3 />
   infix 4 or || 
 
  (* Reports a fail message and exit the program.
@@ -94,7 +98,7 @@ struct
       mkDebug ("check-phase", "Check IR between each phase", 0)
 
   val (showPhaseD, showPhase) =
-      mkDebug ("show-phase", "Show IR between each phase", 1)
+      mkDebug ("show-phase", "Show IR between each phase", 0)
 
   val (showReductionsD, showReductions) = 
       mkDebug ("show", "Show each successful reduction attempt", 1)
@@ -160,61 +164,33 @@ struct
 
   structure Click = 
   struct
-    val localNms =
-        [("BlockKill",       "Blocks killed"                  ),
-         ("BlockMerge",      "Blocks merged"                  ),
-         ("CallDirect",      "Calls made direct"              ),
-         ("CaseCollapse",    "Cases collapsed"                ),
-         ("CaseReduce",      "Cases reduced"                  ),
-         ("CopyProp",        "Copies/Constants propagated"    ),
-         ("CutReduce",       "Cuts reduced"                   ),
-         ("DoubleArith",     "Double arith ops reduced"       ),
-         ("DoubleCmp",       "Double cmp ops reduced"         ),
-         ("EvalDirect",      "Evals made direct"              ),
-         ("FloatArith",      "Float arith ops reduced"        ),
-         ("FloatCmp",        "Float cmp ops reduced"          ),
-         ("FunctionGetFv",   "Function fv projections reduced"),
-         ("IdxGet",          "Index Get operations reduced"   ),
-         ("InlineOnce",      "Functions inlined once"         ),
-         ("TInlineOnce",     "Thunks inlined once"            ),
-         ("LoopFlatten",     "Loop tuple args flattened"      ),
-         ("NumConv",         "Numeric conversions reduced"    ),
-         ("PhiReduce",       "Phi transfers reduced"          ),
-         ("Prim",            "Primitives reduced"             ),
-
-
-         ("SwitchToSetCond", "Switches converted to SetCond"  ),
-         ("SwitchETAReduce", "Case switches converted to Goto"),
-         ("ThunkGetFv",      "Thunk fv projections reduced"   ),
-         ("ThunkVal",        "ThunkValues reduced"            ),
-         ("ThunkToThunkVal", "Thunks made ThunkValues"        ),
-         ("TupleSub",        "Tuple subscripts reduced"       )
-
-        ]
-
     val localNms = 
         [
          ("BetaSwitch",       "Cases beta reduced"             ),
+         ("BlockKill",        "Blocks killed"                  ),
          ("CallInline",       "Calls inlined"                  ),
-         ("CollapseSwitch",   "Cases collapsed"                ),
          ("DCE",              "Dead instrs/globals eliminated" ),
          ("EtaSwitch",        "Cases eta reduced"              ),
          ("Globalized",       "Objects globalized"             ),
          ("IdxGet",           "Index gets reduced"             ),
+         ("KillInterProc",    "Calls/Evals killed"             ),
          ("KillParameters",   "Block parameter lists trimmed"  ),
          ("LoopFlatten",      "Loop arguments flattened"       ),
-         ("MakeDirect",       "Call/Evals made direct"         ),
+         ("MakeDirect",       "Calls/Evals made direct"        ),
          ("MergeBlocks",      "Blocks merged"                  ),
+         ("NonRecursive",     "Functions marked non-recursive" ),
          ("ObjectGetKind",    "ObjectGetKinds reduced"         ),
+         ("OptInteger",       "Integers represented as ints"   ),
+         ("OptRational",      "Rationals represented as ints"  ),
          ("PFunctionGetFv",   "Closure fv projections reduced" ),
          ("PFunctionInitCode","Closure code ptrs killed"       ),
-         ("PrimPrim",         "Primitives reduced"             ),
-         ("PrimToLen",        "P Nom/Dub -> length reductions" ),
+         ("PSetCond",         "SetCond ops reduced"            ),
          ("PSetGet",          "SetGet ops reduced"             ),
          ("PSetNewEta",       "SetNew ops eta reduced"         ),
-         ("PSumProj",         "Sum projections reduced"        ),
          ("PSetQuery",        "SetQuery ops reduced"           ),
-         ("PSetCond",         "SetCond ops reduced"            ),
+         ("PSumProj",         "Sum projections reduced"        ),
+         ("PrimPrim",         "Primitives reduced"             ),
+         ("PrimToLen",        "P Nom/Dub -> length reductions" ),
          ("PruneCuts",        "Cut sets pruned"                ),
          ("PruneFx",          "Fx sets pruned"                 ),
          ("Simple",           "Simple moves eliminated"        ),
@@ -225,6 +201,7 @@ struct
          ("ThunkGetValue",    "ThunkGetValue ops reduced"      ),
          ("ThunkInitCode",    "Thunk code ptrs killed"         ), 
          ("ThunkSpawnFX",     "Spawn fx pruned"                ),
+         ("ThunkToThunkVal",  "Thunks made Thunk Values"       ),
          ("ThunkValueBeta",    "ThunkValues beta reduced"      ),
          ("ThunkValueEta",    "ThunkValues eta reduced"        ),
          ("TupleSub",         "Tuple subscripts reduced"       ),
@@ -233,21 +210,27 @@ struct
     val globalNm = 
      fn s => passname ^ ":" ^ s
 
-    val nmMap = 
+    val nmSet = 
         let
           val check = 
-           fn ((nm, info), d) => 
-              if SD.contains (d, nm) then
+           fn ((nm, info), s) => 
+              if SS.member (s, nm) then
                 fail ("LocalStats", "Duplicate stat")
               else
-                SD.insert (d, nm, globalNm nm)
-          val _ = List.fold (localNms, SD.empty, check)
-        in ()
+                SS.insert (s, nm)
+          val s = List.fold (localNms, SS.empty, check)
+        in s
         end
 
     val clicker = 
      fn s => 
         let
+          val () = 
+              if SS.member (nmSet, s) then 
+                ()
+              else
+                fail ("clicker", "Unknown stat")
+
           val nm = globalNm s
           val click = 
            fn pd => 
@@ -263,26 +246,28 @@ struct
     val stats = List.map (localNms, fn (nm, info) => (globalNm nm, info))
 
     val betaSwitch = clicker "BetaSwitch"
+    val blockKill = clicker "BlockKill"
     val callInline = clicker "CallInline"
-    val collapseSwitch = clicker "CollapseSwitch"
     val dce = clicker "DCE"
     val etaSwitch = clicker "EtaSwitch"
-    val killParameters = clicker "KillParameters"
-    val unreachable = clicker "Unreachable"
     val globalized = clicker "Globalized"
     val idxGet = clicker "IdxGet"
+    val killInterProc = clicker "KillInterProc"
+    val killParameters = clicker "KillParameters"
     val loopFlatten = clicker "LoopFlatten"
     val makeDirect = clicker "MakeDirect"
     val mergeBlocks = clicker "MergeBlocks"
-    val pSumProj = clicker  "PSumProj"
-    val pSetQuery = clicker  "PSetQuery"
+    val nonRecursive = clicker "NonRecursive"
+    val objectGetKind = clicker "ObjectGetKind"
+    val optInteger = clicker "OptInteger"
+    val optRational = clicker "OptRational"
+    val pFunctionGetFv = clicker "PFunctionGetFv"
+    val pFunctionInitCode = clicker "PFunctionInitCode"
     val pSetCond = clicker  "PSetCond"
     val pSetGet = clicker  "PSetGet"
     val pSetNewEta = clicker "PSetNewEta"
-    val thunkSpawnFx = clicker "ThunkSpawnFX"
-    val objectGetKind = clicker "ObjectGetKind"
-    val pFunctionInitCode = clicker "PFunctionInitCode"
-    val pFunctionGetFv = clicker "PFunctionGetFv"
+    val pSetQuery = clicker  "PSetQuery"
+    val pSumProj = clicker  "PSumProj"
     val primPrim = clicker "PrimPrim"
     val primToLen = clicker "PrimToLen"
     val pruneCuts = clicker "PruneCuts"
@@ -294,9 +279,12 @@ struct
     val thunkGetFv = clicker "ThunkGetFv"
     val thunkGetValue = clicker "ThunkGetValue"
     val thunkInitCode = clicker "ThunkInitCode"
+    val thunkSpawnFx = clicker "ThunkSpawnFX"
+    val thunkToThunkVal = clicker "ThunkToThunkVal"
     val thunkValueBeta = clicker "ThunkValueBeta"
     val thunkValueEta = clicker "ThunkValueEta"
     val tupleSub = clicker "TupleSub"
+    val unreachable = clicker "Unreachable"
 
     val wrap : (PD.t -> unit) * ((PD.t * I.t * WS.ws) * 'a -> 'b option) 
                -> ((PD.t * I.t * WS.ws) * 'a -> 'b option) =
@@ -329,8 +317,102 @@ struct
   struct
     type t = I.iFunc
 
-    val reduce = 
-     fn _ => NONE
+    val thunkToThunkVal = 
+        let
+          val f = 
+           fn ((d, imil, ws), c) => 
+              let
+                val config = PD.getConfig d
+                val fname = IFunc.getFName (imil, c)
+                val fvs = #fvs <! MU.CallConv.Dec.ccThunk o IFunc.getCallConv @@ (imil, c)
+                val instrs = IMil.Enumerate.IFunc.instructions (imil, c)
+                val total = fn i => (IInstr.fx (imil, i)) = Effect.Total
+                val () = Try.require (List.forall (instrs, total))
+                val transfers = IMil.Enumerate.IFunc.transfers (imil, c)
+                val retVal = 
+                    case transfers
+                     of [t] => Try.V.singleton <! MU.Transfer.Dec.tReturn <! IInstr.toTransfer @@ t
+                      | _ => Try.fail ()
+                datatype action = Globalize of (M.variable * M.operand * I.iGlobal) | Reduce of int
+                val globalize = 
+                 fn () =>
+                    let
+                      val t = M.TThunk (MilType.Typer.operand (config, IMil.T.getSi imil, retVal))
+                      val gv = Var.related (imil, fname, "tval", t, true)
+                      val fk = MU.FieldKind.fromTyp (config, t)
+                      val g = IGlobal.build (imil, (gv, M.GThunkValue {typ = fk, ofVal = retVal}))
+                    in Globalize (gv, retVal, g)
+                    end
+                val action = 
+                    (case retVal
+                      of M.SConstant c => globalize ()
+                       | M.SVariable v => 
+                         if Var.isGlobal (imil, v) then
+                           globalize ()
+                         else 
+                           Reduce (<@ Vector.index (fvs, fn v' => v = v')))
+                val changed = ref false
+                val fix = 
+                    Try.lift
+                      (fn u => 
+                          let
+                            val i = <@ Use.toIInstr u
+                            val () = 
+                                case IInstr.getMil (imil, i)
+                                 of IMil.MTransfer t => 
+                                    let
+                                      val {callee, ret, fx} = <@ MU.Transfer.Dec.tInterProc t
+                                      val {typ, eval} = <@ MU.InterProc.Dec.ipEval callee
+                                      val {thunk, code} = <@ MU.Eval.Dec.eDirectThunk eval
+                                      val () = Try.require (fname = code)
+                                      val eval = 
+                                          (case action
+                                            of Globalize (gv, oper, iGlobal) => 
+                                               M.EThunk {thunk = gv, code = MU.Codes.none}
+                                             | Reduce i => 
+                                               M.EThunk {thunk = thunk, code = MU.Codes.none})
+                                      val callee = M.IpEval {typ = typ, eval = eval}
+                                      val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                                      val () = IInstr.replaceTransfer (imil, i, t)
+                                      val () = changed := true
+                                    in ()
+                                    end
+                                  | IMil.MInstr m => 
+                                    let
+                                      val M.I {dest, rhs} = m
+                                      val {thunk, code, fvs, typ, ...} = <@ MU.Rhs.Dec.rhsThunkInit rhs
+                                      val code = <- code
+                                      val () = Try.require (code = fname)
+                                      val rhs = 
+                                          (case action
+                                            of Globalize (gv, oper, iGlobal) => 
+                                               M.RhsThunkValue {ofVal = oper, thunk = thunk, typ = typ}
+                                             | Reduce i => 
+                                               M.RhsThunkValue {ofVal = #2 o Vector.sub @@ (fvs, i), 
+                                                                thunk = thunk, 
+                                                                typ = typ})
+                                      val m = M.I {dest = dest, rhs = rhs}
+                                      val () = IInstr.replaceInstruction (imil, i, m)
+                                      val () = changed := true
+                                    in ()
+                                    end
+                                  | _ => Try.fail ()
+                          in I.ItemInstr i
+                          end)
+                val uses = Use.getUses (imil, fname)
+                val is = Vector.keepAllMap (uses, fix)
+                val () = Try.require (!changed)
+                val l = (I.ItemFunc c)::(Vector.toList is)
+                val l = 
+                    case action
+                     of Globalize (_, _, ig) => I.ItemGlobal ig :: l
+                      | _ => l
+              in l
+              end
+        in try (Click.thunkToThunkVal, f)
+        end
+
+    val reduce = thunkToThunkVal
 
   end (* structure FuncR *)
 
@@ -350,6 +432,27 @@ struct
         in try (Click.simple, f)
         end
 
+    val optNumeric = 
+     fn (from, click) => 
+        let
+          val f = 
+           fn ((d, imil, ws), (g, v, r)) => 
+              let
+                val () = Try.require (not (Globals.disableOptimizedRationals (PD.getConfig d)))
+                val c = <@ from r
+                val () = Use.replaceUses (imil, v, (M.SConstant c))
+                val () = IGlobal.delete (imil, g)
+              in []
+              end
+        in try (click, f)
+        end
+
+    val optRational = optNumeric (MU.Rational.Opt.fromRational, Click.optRational)
+    val optInteger = optNumeric (MU.Integer.Opt.fromInteger, Click.optInteger)
+
+    val rat = optRational
+    val integer = optInteger 
+
     val reduce = 
         Try.lift 
           (fn (s as (d, imil, ws), g) => 
@@ -357,6 +460,8 @@ struct
                 val t = 
                     (case <@ IGlobal.toGlobal g
                       of (v, M.GSimple oper) => <@ simple (s, (g, v, oper))
+                       | (v, M.GRat r) => <@ rat (s, (g, v, r))
+                       | (v, M.GInteger i) => <@ integer (s, (g, v, i))
                        | _ => Try.fail ())
               in t
               end)
@@ -413,36 +518,7 @@ struct
           in try (Click.betaSwitch, f)
           end
 
-     (* XXX This has a bug in it - can loop -leaf *)
-      val collapseSwitch = 
-       fn {get, eq, dec, con} => 
-          let
-            val f = 
-             fn ((d, imil, ws), (i, {on, cases, default})) =>
-                let
-                  val {block, arguments} = MU.Target.Dec.t (<- default)
-                  val () = Try.V.isEmpty arguments
-                  val iFunc = IInstr.getIFunc (imil, i)
-                  val fallthruBlock = IFunc.getBlockByLabel (imil, iFunc, block)
-                  val params = IBlock.getParameters (imil, fallthruBlock)
-                  val () = Try.V.isEmpty params
-                  val () = Try.require (IBlock.isEmpty (imil, fallthruBlock))
-                  val t = IBlock.getTransfer' (imil, fallthruBlock)
-                  val {on = on2, cases = cases2, default = default2} = <@ dec t
-                  val () = Try.require (MU.Operand.eq (on, on2))
-                  val check = fn x => (fn (y, _) => not (eq (x, y)))
-                  val notAnArmInFirst = 
-                   fn (x, _) => Vector.forall (cases, check x)
-                  val cases2 = Vector.keepAll (cases2, notAnArmInFirst)
-                  val cases = Vector.concat [cases, cases2]
-                  val t = con {on = on, cases = cases, default = default2}
-                  val () = IInstr.replaceTransfer (imil, i, t)
-                in [I.ItemInstr i]
-                end
-          in try (Click.collapseSwitch, f)
-          end
-
-      val switch = fn ops => (betaSwitch ops) or (collapseSwitch ops)
+      val switch = betaSwitch
                              
       val tCase1 = 
           let
@@ -568,7 +644,11 @@ struct
                   val uses = Use.getUses (imil, fname)
                   val use = Try.V.singleton uses
                   val iFunc = IFunc.getIFuncByName (imil, fname)
-                  val () = Try.require (not (IFunc.getRecursive (imil, iFunc)))
+                  (* We allow inlining of "recursive" functions,
+                   * as long as all uses are known, there is only
+                   * one call, and that call is not a recursive call. *)
+                  val () = Try.require (not (IInstr.isRec (imil, i)))
+                  val () = Try.require (not (IFunc.getEscapes (imil, iFunc)))
                   val is = IFunc.inline (imil, fname, i)
                 in is
                 end)
@@ -775,11 +855,34 @@ struct
           in try (Click.pruneFx, f)
           end
 
+      val killInterProc = 
+          let
+            val f = 
+             fn ((d, imil, ws), (i, {callee, ret, fx})) =>
+                 let
+                   val () = Try.require (Effect.subset (fx, Effect.ReadOnly))
+                   val {rets, block, cuts} = <@ MU.Return.Dec.rNormal ret
+                   val uses = IInstr.getUses (imil, i)
+                   val () = 
+                       (case Vector.length uses
+                         of 0 => ()
+                          | 1 => (case Vector.sub (uses, 0)
+                                   of IMil.Used => ()
+                                    | _ => Try.fail ())
+                          | _ => Try.fail ())
+                   val t = M.TGoto (M.T {block = block, arguments = Vector.new0 ()})
+                   val () = IInstr.replaceTransfer (imil, i, t)
+                 in [I.ItemInstr i]
+                 end
+          in try (Click.killInterProc, f)
+          end
+
       val reduce = callInline
                      or thunkValueBeta
                      or makeDirect 
                      or pruneCuts
                      or pruneFx
+                     or killInterProc
 
     end (* structure TInterProc *)
 
@@ -867,7 +970,8 @@ struct
              fn ((d, imil, ws), (i, (l, parms), (preds, pcount))) => 
                 let
                   (* This is mostly straightforward: just look for parameters
-                   * that are either unused, or are constant.  Most of the 
+                   * that are either unused, or are the same on all in-edges.  
+                   * Most of the 
                    * ugliness arises because of the possibility that a single 
                    * predecessor block targets this block via multiple paths 
                    * in a switch, e.g.
@@ -938,10 +1042,8 @@ struct
                         in ()
                         end
                   val () = Vector.foreachi (phis, doPhi)
-
                   (* If no progress has been made, bail out *)
                   val () = Try.require (!progress)
-
                   val killVector = 
                    fn v => Vector.keepAllMapi (v, 
                                             fn (i, elt) => if Array.sub (kill, i) then NONE else SOME elt)
@@ -1191,7 +1293,7 @@ struct
                    | SOME (OThunk t) => 
                      let
                        val vnew = Var.clone (imil, v)
-                       val vval = Var.related (imil, v, "contents", t, false)
+                       val vval = Var.related (imil, v, "cnts", t, false)
                        val a = M.SVariable vval
                        val fk = MU.FieldKind.fromTyp (config, t)
                        val mi = M.I {dest = SOME vnew, 
@@ -1351,7 +1453,7 @@ struct
                     let
                       val gv = Var.related (imil, v, "", Var.typ (imil, v), true)
                       val () = IInstr.delete (imil, i)
-                      val g = IGlobal.build (imil, gv, g)
+                      val g = IGlobal.build (imil, (gv, g))
                       val () = WS.addGlobal (ws, g)
                       val () = Use.replaceUses (imil, v, M.SVariable gv)
                     in ()
@@ -1450,7 +1552,7 @@ struct
                 val () = Try.require (p = Prims.PDom)
                 val arrv = <@ MU.Simple.Dec.sVariable o Try.V.singleton @@ args
                 val config = PD.getConfig d
-                val uintv = IMil.Var.related (imil, dv, "uint", MU.UIntp.t config, false)
+                val uintv = IMil.Var.related (imil, dv, "uint", MU.Uintp.t config, false)
                 val ni = 
                     let
                       val rhs = POM.OrdinalArray.length (config, arrv)
@@ -1460,7 +1562,7 @@ struct
                     end
                 val () = 
                     let
-                      val rhs = MU.Rational.fromUIntp (config, M.SVariable uintv)
+                      val rhs = MU.Rational.fromUintp (config, M.SVariable uintv)
                       val mi = M.I {dest = SOME dv, rhs = rhs}
                       val () = IInstr.replaceInstruction (imil, i, mi)
                     in ()
@@ -1505,7 +1607,7 @@ struct
                          let
                            val gv = Var.new (imil, "mrt", MU.Rational.t, true)
                            val mg = MU.Prims.Constant.toMilGlobal (PD.getConfig d, c)
-                           val g = IGlobal.build (imil, gv, mg)
+                           val g = IGlobal.build (imil, (gv, mg))
                            val () = Use.replaceUses (imil, dv, M.SVariable gv)
                            val () = IInstr.delete (imil, i)
                          in [I.ItemGlobal g]
@@ -1569,7 +1671,7 @@ struct
                 val nm = <@ MU.Constant.Dec.cName <! MU.Simple.Dec.sConstant @@ ofVal
                 val idx = <@ MU.Global.Dec.gIdx o #2 <! Def.toGlobal o Def.get @@ (imil, idx)
                 val offset = <@ M.ND.lookup (idx, nm)
-                val p = M.SConstant (MU.UIntp.int (PD.getConfig d, offset))
+                val p = M.SConstant (MU.Uintp.int (PD.getConfig d, offset))
                 val () = Use.replaceUses (imil, dv, p)
                 val () = IInstr.delete (imil, i)
               in []
@@ -1932,7 +2034,7 @@ struct
 
          val res = 
              case i
-              of IMil.ItemGlobal g    => doOne (IGlobal.getUsedBy, GlobalR.reduce) g
+              of IMil.ItemGlobal g => doOne (IGlobal.getUsedBy, GlobalR.reduce) g
                | IMil.ItemInstr i  => doOne (IInstr.getUsedBy, InstrR.reduce) i
                | IMil.ItemFunc f   => doOne (IFunc.getUsedBy, FuncR.reduce) f
        in res
@@ -2141,6 +2243,7 @@ struct
         Chat.log1 (d, "Skipping "^name)
       else
         let
+          val d = PD.push d
           val () = Chat.log1 (d, "Doing "^name)
           val () = f (d, imil)
           val () = Chat.log1 (d, "Done with "^name)
@@ -2154,20 +2257,74 @@ struct
         Chat.log1 (d, "Skipping "^name)
 
 
-  val trimCfgs = fn (d, imil, ws) => ()
+  val trimCfgs = 
+   fn (d, imil, ws) =>
+      let
+        val addUsedBy = 
+         fn b => 
+            let
+              val used = IBlock.getUsedBy (imil, b)
+              val () = WS.addItems (ws, used)
+            in ()
+            end
+        val kill = 
+         fn b => 
+            let
+              val () = IBlock.delete (imil, b)
+              val () = Click.blockKill d
+            in ()
+            end
+        val doIFunc = 
+         fn (v, iFunc) =>
+            let
+              val () = MilCfgSimplify.function' (d, imil, ws, iFunc)
+              val dead = IFunc.unreachable (imil, iFunc)
+              val () = List.foreach (dead, addUsedBy)
+              val () = List.foreach (dead, kill)
+            in ()
+            end
+        val () = List.foreach (IFunc.getIFuncs imil, doIFunc)
+      in ()
+      end
+
+  structure SimpleEscape = MilSimpleEscapeF (struct
+                                               structure Chat = Chat
+                                               val simplify = simplify
+                                             end)
+
+   val analyzeRecursive = 
+    fn (d, imil) =>
+       let
+         val MCG.Graph.G {unknown, graph} = IMil.T.callGraph imil
+         val scc = PLG.scc graph
+         val isSelfRecursive =
+          fn n => List.contains (PLG.Node.succs n, n, PLG.Node.equal)
+         val doScc =
+          fn c => 
+             (case c 
+               of [f] =>
+                  (case (PLG.Node.getLabel f, isSelfRecursive f)
+                    of (MCG.Graph.NFun var, false) =>
+                       let
+                         val iFunc = IFunc.getIFuncByName (imil, var)
+                         val () = IFunc.markNonRecursive (imil, iFunc)
+                         val () = Click.nonRecursive d
+                       in ()
+                       end
+                     | _ => ())
+                | _ => ())
+       in
+         List.foreach (scc, doScc)
+       end
 
   val doUnreachable = doPhase (skipUnreachable, unreachableCode, "unreachable object elimination")
   val doSimplify = 
    fn ws => doPhase (skipSimplify, fn (d, imil) => simplify (d, imil, ws), "simplification")
-(*val doCfgSimplify = 
+  val doCfgSimplify = 
    fn ws => doPhase (skipCfg, fn (d, imil) => trimCfgs (d, imil, ws), "cfg simplification")
   val doEscape = doPhase (skipEscape, SimpleEscape.optimize, "closure escape analysis")
-  val doRecursive = doPhase (skipRecursive, analyizeRecursive, "recursive function analysis") *)
+  val doRecursive = doPhase (skipRecursive, analyzeRecursive, "recursive function analysis") 
 
-  val doCfgSimplify = fn ws => skip "cfg simplification"
-  val doEscape = skip "closure escape analysis"
-  val doRecursive = skip "recursive function analysis"
-      
   val doIterate = 
    fn (d, imil) => 
       let
@@ -2208,14 +2365,15 @@ struct
       in ()
       end
 
-  val stats = Click.stats (*@ MilFunKnown.stats @ SimpleEscape.stats*)
+  val stats = Click.stats @ MilCfgSimplify.stats @ SimpleEscape.stats (*@ MilFunKnown.stats @ *)
+
   val description =
       {name        = passname,
        description = "Mil simplifier",
        inIr        = BothMil.irHelpers,
        outIr       = BothMil.irHelpers,
        mustBeAfter = [],
-       stats       = Click.stats}
+       stats       = stats}
 
   val associates = {controls  = [],
                     debugs    = debugs (*@ MilFunKnown.debugs*),

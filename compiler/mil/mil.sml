@@ -205,8 +205,13 @@ struct
     default : target option
   }
 
+  (* The variables in "possible" are always function names *)
   type codes = {possible : VS.t, exhaustive : bool}
 
+  (* The variable in CCode must be a function name pre-lowering,
+   * but after lowering it may be bound to an arbitary instruction. 
+   * The code variable in CDirectThunk and in EDirectThunk must be
+   * a function name. *) 
   datatype call =
       CCode          of variable
     | CClosure       of {cls : variable, code : codes}

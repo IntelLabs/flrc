@@ -29,6 +29,20 @@ structure Utils = struct
       (* infix 3 *)
       val @@ : ('a -> 'b) * 'a -> 'b = 
        fn (f, a) => f a
+
+      (* MLton sectioning and application operators *)
+      (* infix 3*)
+      val <\ = fn (x, f) => fn y => f (x, y)
+      val \> = fn (f, y) => f y
+      (* infixr 3*)    
+      val /> = fn (f, y) => fn x => f (x, y)
+      val </ = fn (x, f) => f x
+
+     (* infix 1 *)
+      val >| = </
+     (* infixr 1*)
+      val |< = \>
+      val ` = fn f => fn x => fn () => f x
     end (* structure Function *)
 
     structure Vector = 
@@ -275,26 +289,20 @@ structure LayoutUtils = struct
     fun brace        b = L.seq [L.str "{", b, L.str "}"]
     fun angleBracket b = L.seq [L.str "<", b, L.str ">"]
 
-    fun printLayoutToStream (l, s) = 
-        Layout.outputWidth (Layout.seq [l, Layout.str "\n"],
-                            78, s)
+    fun printLayoutToStream (l, s) = Layout.outputWidth (Layout.seq [l, Layout.str "\n"], 115, s)
 
-    fun printLayout l = (printLayoutToStream(l, Pervasive.TextIO.stdOut);
-                         Pervasive.TextIO.flushOut Pervasive.TextIO.stdOut)
+    fun printLayout l =
+        (printLayoutToStream(l, Pervasive.TextIO.stdOut); Pervasive.TextIO.flushOut Pervasive.TextIO.stdOut)
 
     fun writeLayout' (l: Layout.t, fname: string, append: bool) =
         let
-          val os = if append then
-                     Pervasive.TextIO.openAppend fname
-                   else
-                     Pervasive.TextIO.openOut fname
+          val os = if append then Pervasive.TextIO.openAppend fname else Pervasive.TextIO.openOut fname
           val () = printLayoutToStream(l, os)
 	  val () = Pervasive.TextIO.closeOut os
         in ()
         end
 
-    fun writeLayout (l: Layout.t, fname: string) = 
-        writeLayout' (l, fname, false)
+    fun writeLayout (l: Layout.t, fname: string) = writeLayout' (l, fname, false)
 
     fun toString l =
         let
@@ -1140,7 +1148,7 @@ sig
    * push s =>
    *   Return a new statistics sets with every statistic of s but with count 0
    *   Any subsequent increment of new stat also increments old stat
-   *   (But no vice versa.)
+   *   (But not vice versa.)
    * Currently, new statistics subsequently added to the new set will not be
    * added to the old set.  This functionality can be added if desired.
    *)

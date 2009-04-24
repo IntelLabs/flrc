@@ -248,7 +248,7 @@ struct
                 val str = OA.varTyp (c, M.PokOArray, char)
               in str
               end
-            | P.TBool => MU.UIntp.t c
+            | P.TBool => MU.Uintp.t c
             | P.TArrayF ts =>
               let
                 fun doOne t =  typToMilTyp (c, ord, t)
@@ -310,7 +310,7 @@ struct
            | M.CDouble _       => M.TDouble
            | M.CViVector x     => M.TViVector (#typ x)
            | M.CViMask x       => M.TViMask (#typ x)
-           | M.CPok _          => MU.UIntp.t config
+           | M.CPok _          => MU.Uintp.t config
            | M.COptionSetEmpty => M.TPType {kind = M.TkE, over = M.TNone}
            | M.CTypePH         => M.TPType {kind = M.TkI, over = M.TNone}
 

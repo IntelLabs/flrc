@@ -464,6 +464,7 @@ sig
     val compare : t Compare.t
     val eq : t * t -> bool
     val all : t
+    val none : t
   end
 
   structure Call :
@@ -745,9 +746,9 @@ sig
     val entry : t -> Mil.variable
   end
 
-  structure UIntp : MACHINE_INT
+  structure Uintp : MACHINE_INT
 
-  structure SIntp : MACHINE_INT
+  structure Sintp : MACHINE_INT
 
   structure Bool :
   sig
@@ -842,8 +843,8 @@ sig
     val t : Mil.typ
     val from : Prims.numTyp * Mil.operand -> Mil.rhs
     val fromIntegral : IntArb.typ * Mil.operand -> Mil.rhs
-    val fromUIntp : Config.t * Mil.operand -> Mil.rhs
-    val fromSIntp : Config.t * Mil.operand -> Mil.rhs
+    val fromUintp : Config.t * Mil.operand -> Mil.rhs
+    val fromSintp : Config.t * Mil.operand -> Mil.rhs
     structure Opt :
     sig
       val max : IntInf.t
@@ -861,8 +862,8 @@ sig
     val t : Mil.typ
     val from : Prims.numTyp * Mil.operand -> Mil.rhs
     val fromIntegral : IntArb.typ * Mil.operand -> Mil.rhs
-    val fromUIntp : Config.t * Mil.operand -> Mil.rhs
-    val fromSIntp : Config.t * Mil.operand -> Mil.rhs
+    val fromUintp : Config.t * Mil.operand -> Mil.rhs
+    val fromSintp : Config.t * Mil.operand -> Mil.rhs
     structure Opt :
     sig
       val max : IntInf.t
@@ -2605,6 +2606,7 @@ struct
     val eq = Compare.C.equal compare
 
     val all = {possible = VS.empty, exhaustive = false}
+    val none = {possible = VS.empty, exhaustive = true}
 
   end
 
@@ -3357,19 +3359,19 @@ struct
 
   end
 
-  structure UIntp = Intp(val sgn = IntArb.Unsigned
+  structure Uintp = Intp(val sgn = IntArb.Unsigned
                          val ptrSize = FieldSize.ptrSize)
-  structure SIntp = Intp(val sgn = IntArb.Signed
+  structure Sintp = Intp(val sgn = IntArb.Signed
                          val ptrSize = FieldSize.ptrSize)
 
   structure Bool =
   struct
 
-    fun t config = UIntp.t config
+    fun t config = Uintp.t config
 
-    fun T config = UIntp.one config
+    fun T config = Uintp.one config
 
-    fun F config = UIntp.zero config
+    fun F config = Uintp.zero config
 
     fun fromBool (config, b) = if b then T config else F config
 
@@ -3482,14 +3484,14 @@ struct
     fun fixedTyp (c, pok, ts) =
         let
           fun addVar t = (t, M.FvReadOnly)
-          val tvs = Vector.map (Utils.Vector.cons (UIntp.t c, ts), addVar)
+          val tvs = Vector.map (Utils.Vector.cons (Uintp.t c, ts), addVar)
         in
           M.TTuple {pok = pok, fixed = tvs, array = NONE}
         end
 
     fun varTyp (c, pok, t) =
         M.TTuple {pok = pok,
-                  fixed = Vector.new1 (UIntp.t c, M.FvReadOnly),
+                  fixed = Vector.new1 (Uintp.t c, M.FvReadOnly),
                   array = SOME (t, M.FvReadOnly)}
 
     datatype typ = TNot | TFixed of Typ.t Vector.t | TVar of Typ.t
@@ -3499,7 +3501,7 @@ struct
           fun checkLen tvs =
               Vector.length tvs >= 1 andalso
               (case Vector.sub (tvs, 0)
-                of (t, M.FvReadOnly) => Compare.typ (t, UIntp.t c) = EQUAL
+                of (t, M.FvReadOnly) => Compare.typ (t, Uintp.t c) = EQUAL
                  | _ => false)
           fun checkRO tvs = Vector.forall (tvs, FieldVariance.immutable o #2)
           fun stripLen tvs = Vector.map (Vector.dropPrefix (tvs, 1), #1)
@@ -3518,7 +3520,7 @@ struct
             
     fun tdFixed (c, fks) =
         let
-          val lenFd = M.FD {kind = UIntp.fieldKind c, var = M.FvReadOnly}
+          val lenFd = M.FD {kind = Uintp.fieldKind c, var = M.FvReadOnly}
           fun doOne fk = M.FD {kind = fk, var = M.FvReadOnly}
           val fks = Utils.Vector.cons (lenFd, Vector.map (fks, doOne))
         in
@@ -3527,7 +3529,7 @@ struct
 
     fun tdVar (c, fk) =
         let
-          val lenFd = M.FD {kind = UIntp.fieldKind c, var = M.FvReadOnly}
+          val lenFd = M.FD {kind = Uintp.fieldKind c, var = M.FvReadOnly}
           val eltFd = M.FD {kind = fk, var = M.FvReadOnly}
         in
           M.TD {fixed = Vector.new1 lenFd, array = SOME eltFd}
@@ -3535,7 +3537,7 @@ struct
 
     fun vtdFixed (c, pok, fks) =
         let
-          val lenFd = M.FD {kind = UIntp.fieldKind c, var = M.FvReadOnly}
+          val lenFd = M.FD {kind = Uintp.fieldKind c, var = M.FvReadOnly}
           fun doOne fk = M.FD {kind = fk, var = M.FvReadOnly}
           val fks = Utils.Vector.cons (lenFd, Vector.map (fks, doOne))
         in
@@ -3546,7 +3548,7 @@ struct
 
     fun vtdVar (c, pok, fk) =
         let
-          val lenFd = M.FD {kind = UIntp.fieldKind c, var = M.FvReadOnly}
+          val lenFd = M.FD {kind = Uintp.fieldKind c, var = M.FvReadOnly}
           val eltFd = M.FD {kind = fk, var = M.FvReadOnly}
           val f = Vector.new1 lenFd
           val a = SOME (lenIndex, eltFd)
@@ -3557,7 +3559,7 @@ struct
         let
           val vtd = vtdFixed (c, pok, fks)
           val inits =
-              Utils.Vector.cons (M.SConstant (UIntp.int (c, Vector.length fks)), os)
+              Utils.Vector.cons (M.SConstant (Uintp.int (c, Vector.length fks)), os)
           val rhs = M.RhsTuple {vtDesc = vtd, inits = inits}
         in rhs
         end
@@ -3591,20 +3593,20 @@ struct
 
     fun fixedTyp (c, pok, d, ts) =
         let
-          val f = Vector.concat [Vector.new2 (UIntp.t c, M.TIdx), ts]
+          val f = Vector.concat [Vector.new2 (Uintp.t c, M.TIdx), ts]
           val f = Vector.map (f, fn t => (t, M.FvReadOnly))
         in M.TTuple {pok = pok, fixed = f, array = NONE}
         end
 
     fun varTyp (c, pok, t) =
         M.TTuple {pok = pok,
-                  fixed = Vector.new2 ((UIntp.t c, M.FvReadOnly),
+                  fixed = Vector.new2 ((Uintp.t c, M.FvReadOnly),
                                        (M.TIdx, M.FvReadOnly)),
                   array = SOME (t, M.FvReadOnly)}
 
     fun tdFixed (c, fks) =
         let
-          val lenFd = M.FD {kind = UIntp.fieldKind c, var = M.FvReadOnly}
+          val lenFd = M.FD {kind = Uintp.fieldKind c, var = M.FvReadOnly}
           val idxFd = M.FD {kind = M.FkRef, var = M.FvReadOnly}
           fun doOne fk = M.FD {kind = fk, var = M.FvReadOnly}
           val fks = Vector.concat [Vector.new2 (lenFd, idxFd),
@@ -3615,7 +3617,7 @@ struct
 
     fun tdVar (c, fk) =
         let
-          val lenFd = M.FD {kind = UIntp.fieldKind c, var = M.FvReadOnly}
+          val lenFd = M.FD {kind = Uintp.fieldKind c, var = M.FvReadOnly}
           val idxFd = M.FD {kind = M.FkRef, var = M.FvReadOnly}
           val eltFd = M.FD {kind = fk, var = M.FvReadOnly}
         in
@@ -3624,7 +3626,7 @@ struct
 
     fun vtdFixed (c, pok, fks) =
         let
-          val lenFd = M.FD {kind = UIntp.fieldKind c, var = M.FvReadOnly}
+          val lenFd = M.FD {kind = Uintp.fieldKind c, var = M.FvReadOnly}
           val idxFd = M.FD {kind = M.FkRef, var = M.FvReadOnly}
           fun doOne fk = M.FD {kind = fk, var = M.FvReadOnly}
           val fks = Vector.concat [Vector.new2 (lenFd, idxFd),
@@ -3638,7 +3640,7 @@ struct
 
     fun vtdVar (c, pok, fk) =
         let
-          val lenFd = M.FD {kind = UIntp.fieldKind c, var = M.FvReadOnly}
+          val lenFd = M.FD {kind = Uintp.fieldKind c, var = M.FvReadOnly}
           val idxFd = M.FD {kind = M.FkRef, var = M.FvReadOnly}
           val eltFd = M.FD {kind = fk, var = M.FvReadOnly}
         in
@@ -3650,7 +3652,7 @@ struct
     fun newFixed (c, pok, d, fks, idxVar, os) =
         let
           val vtd = vtdFixed (c, pok, fks)
-          val leni = M.SConstant (UIntp.int (c, Vector.length fks))
+          val leni = M.SConstant (Uintp.int (c, Vector.length fks))
           val inits =
               Vector.concat [Vector.new2 (leni, M.SVariable idxVar), os]
           val rhs = M.RhsTuple {vtDesc = vtd, inits = inits}
@@ -3686,11 +3688,11 @@ struct
     val fromIntegral = 
         fn (iat, p) => from (Prims.NtIntegral iat, p)
 
-    val fromUIntp = 
-        fn (config, p) => fromIntegral (UIntp.intArbTyp config, p)
+    val fromUintp = 
+        fn (config, p) => fromIntegral (Uintp.intArbTyp config, p)
 
-    val fromSIntp = 
-        fn (config, p) => fromIntegral (SIntp.intArbTyp config, p)
+    val fromSintp = 
+        fn (config, p) => fromIntegral (Sintp.intArbTyp config, p)
 
     structure Opt = 
     struct
@@ -3724,11 +3726,11 @@ struct
     val fromIntegral = 
         fn (iat, p) => from (Prims.NtIntegral iat, p)
 
-    val fromUIntp = 
-        fn (config, p) => fromIntegral (UIntp.intArbTyp config, p)
+    val fromUintp = 
+        fn (config, p) => fromIntegral (Uintp.intArbTyp config, p)
 
-    val fromSIntp = 
-        fn (config, p) => fromIntegral (SIntp.intArbTyp config, p)
+    val fromSintp = 
+        fn (config, p) => fromIntegral (Sintp.intArbTyp config, p)
 
     structure Opt = 
     struct
