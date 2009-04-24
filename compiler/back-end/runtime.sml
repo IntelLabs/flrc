@@ -21,7 +21,7 @@ struct
     fun loadV et   = Pil.identifier ("pLsrViLoad"    ^ elemType et ^ "Extra")
     fun gather et  = Pil.identifier ("pLsrViGather"  ^ elemType et ^ "Extra")
     fun storeF et  = Pil.identifier ("pLsrViStore"   ^ elemType et ^ "Field")
-    fun storeV et  = Pil.identifier ("pLsrViLoad"    ^ elemType et ^ "Extra")
+    fun storeV et  = Pil.identifier ("pLsrViStore"   ^ elemType et ^ "Extra")
     fun scatter et = Pil.identifier ("pLsrViScatter" ^ elemType et ^ "Extra")
 
   end

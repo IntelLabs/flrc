@@ -67,6 +67,7 @@ signature PIL = sig
     val strctInit : t list -> t
     (* NG: want to pass types to macros, this is for that *)
     val hackTyp : T.t -> t
+    val layout : t -> Layout.t
   end
   type varDecInit = varDec * E.t option
   (* Statements *)
@@ -91,6 +92,7 @@ signature PIL = sig
     (* Pillar only *)
     val continuation : identifier * identifier list -> t
     val vse : identifier * t -> t
+    val layout : t -> Layout.t list
   end
   (* Top-level declarations *)
   structure D : sig
@@ -493,6 +495,7 @@ struct
                      (List.map (s, LU.indent)) @
                      [L.str "}"])]
 
+    fun layout s = List.map (s, fn x => x)
   end
 
   (* Top-level declarations *)
