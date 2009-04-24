@@ -25,7 +25,7 @@ struct
   structure MU = MilUtils
   structure MSTM = MU.SymbolTableManager
   structure MTT = MilType.Typer
-  structure POM = PObjectModel
+  structure POM = PObjectModelLow
 
   datatype state = S of {stm : M.symbolTableManager}
 
@@ -182,7 +182,7 @@ struct
                   val nts = ND.map (nts, fn (_, t) => typ t)
                   val t =
                       if lowerPSums then
-                        POM.Sum.loweredTyp nts
+                        POM.Sum.typ nts
                       else
                         M.TPSum nts
                 in t
@@ -193,8 +193,8 @@ struct
                   val t =
                       if lowerPTypes then
                         case kind
-                         of M.TkI => POM.Type.loweredTyp over
-                          | M.TkE => POM.OptionSet.loweredTyp over
+                         of M.TkI => POM.Type.typ over
+                          | M.TkE => POM.OptionSet.typ over
                       else
                         M.TPType {kind = kind, over = over}
                 in t
@@ -204,7 +204,7 @@ struct
                   val t = typ t
                   val t =
                       if lowerPRefs then
-                        POM.Ref.loweredTyp t
+                        POM.Ref.typ t
                       else
                         M.TPRef (typ t)
                 in t
@@ -223,7 +223,7 @@ struct
   val doPSetEmpty =  
    fn (state, env, ()) => POM.OptionSet.empty (envGetConfig env)
 
-  fun doPTypePH (state, env, ()) = POM.Type.placeHolder
+  fun doPTypePH (state, env, ()) = POM.Type.mk ()
 
   fun doPFunMk (state, env, fks) =
       POM.Function.mkUninit (envGetConfig env, fks)
@@ -231,10 +231,6 @@ struct
   fun doPFunInit (state, env, dest, cls, code, fvs) =
       let
         val c = envGetConfig env
-        val code =
-            case code
-             of NONE => M.SConstant (MU.UIntp.zero c)
-              | SOME v => M.SVariable v
       in
         case cls
          of NONE =>
@@ -302,8 +298,8 @@ struct
    fn (state, env, (nm, fk, oper)) =>
       POM.Sum.mk (envGetConfig env, nm, fk, oper)
 
-  fun doPSumProj (state, env, (fk, v, _)) =
-      POM.Sum.getVal (envGetConfig env, v, fk)
+  fun doPSumProj (state, env, (fk, v, tag)) =
+      POM.Sum.getVal (envGetConfig env, v, fk, tag)
 
   fun lowerToRhs (state, env, lower, doIt, dest, args) =
       if lower then
@@ -519,18 +515,14 @@ struct
               (* name small values ensures this form *)
               | M.GSimple (M.SConstant (M.CTypePH)) => 
                 if lowerPTypes then
-                  SOME (v, POM.Type.placeHolderGlobal)
+                  SOME (v, POM.Type.mkGlobal ())
                 else
                   NONE
               | M.GSimple _ => NONE
               | M.GPFunction vo => 
                 if lowerPFunctions then
                   let
-                    val code = 
-                        case vo
-                         of SOME v => M.SVariable v
-                          | NONE => M.SConstant (MU.UIntp.zero c)
-                    val g = POM.Function.mkGlobal (c, code)
+                    val g = POM.Function.mkGlobal (c, vo)
                   in SOME (v, g)
                   end
                 else

@@ -29,7 +29,7 @@ struct
   structure MSTM = MU.SymbolTableManager
   structure MTT = MilType.Typer
   structure MFV = MilFreeVars
-  structure POM = PObjectModel
+  structure POM = PObjectModelLow
 
   (*** The pass environment ***)
 
@@ -1505,7 +1505,14 @@ struct
           | M.RhsTupleSub tf =>
             bind (fn v => genTupleSub (state, env, v, tf))
           | M.RhsTupleSet {tupField, ofVal} => 
-            assign (genTupleSet (state, env, tupField, ofVal))
+            let
+              val () = print ("zying1 genRhs\n")
+              val code = assign (genTupleSet (state, env, tupField, ofVal))
+              val cl = Pil.S.layout code
+              val () = List.foreach (cl, LayoutUtils.printLayout)
+            in
+              code
+            end
           | M.RhsTupleInited {vtDesc, tup} =>
             let
               val () = Fail.assert ("MilToPil",
@@ -1589,7 +1596,7 @@ struct
                   SOME v
                 end
               | NONE => NONE
-        val code = genRhs (state, env, dest, rhs)
+        val code : Pil.S.t = genRhs (state, env, dest, rhs)
       in
         code
       end

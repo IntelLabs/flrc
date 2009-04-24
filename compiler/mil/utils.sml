@@ -781,6 +781,7 @@ sig
 
     (* These assume PokNone *)
     val vtdImmutable     : Mil.fieldKind Vector.t -> Mil.vtableDescriptor
+    val vtdImmutableTyps : Config.t * Mil.typ Vector.t -> Mil.vtableDescriptor
     val vtdImmutableRefs : int -> Mil.vtableDescriptor
     val vtdImmutableBits : int * Mil.fieldSize -> Mil.vtableDescriptor
 
@@ -3439,6 +3440,8 @@ struct
 
     val vtdImmutable = 
      fn fks => vtd (M.PokNone, Vector.map (fks, fn fk => M.FD {kind = fk, var = M.FvReadOnly}))
+    val vtdImmutableTyps = 
+     fn (config, typs) => vtdImmutable (Vector.map (typs, fn t => FieldKind.fromTyp (config, t)))
     val vtdImmutableRefs = 
      fn i => vtdImmutable (Vector.new (i, M.FkRef))
     val vtdImmutableBits = 
