@@ -17,7 +17,7 @@ struct
   val passes =
       [
        (#"C", MilContify.pass         ),
-(*       (#"D", MilDblDiamond.pass      ),*)
+       (#"D", MilDblDiamond.pass      ),
        (#"f", MilLowerPFunctions.pass ),
 (*     (#"I", MilInlineLeaves.pass    ),  
        (#"J", MilInlineAggressive.pass),
@@ -70,7 +70,7 @@ struct
   val o3String = "VSCSVSIRDSCSVLSRSIKHFNOT"*)
   val o0String = "fst"
   val o1String = "VSCSfst"
-  val o2String = "SVSCSfst"
+  val o2String = "SVSCSDSfst"
   val o3String = o2String
 
   val o0Control = Option.valOf (parseControl o0String)
