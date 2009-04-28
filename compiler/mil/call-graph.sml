@@ -35,7 +35,10 @@ sig
   val layout : Config.t * Mil.symbolInfo * callGraph -> Layout.t
   val layoutDot : callGraph *
                   {nodeOptions : Mil.variable * bool (* unknown callers *) -> Layout.t list,
-                   edgeOptions : Mil.label * Mil.variable option (* target *) * bool (* virtual *) -> Layout.t list,
+                   edgeOptions : Mil.label (* call *) *
+                                 Mil.variable (*src *) *
+                                 Mil.variable option (* target *) * 
+                                 bool (* virtual *) -> Layout.t list,
                    graphTitle : string}
                   -> Layout.t
 
@@ -145,17 +148,18 @@ struct
             let
               val known = VS.toList knownCallees
               val virtualCall = List.length known > 1 orelse unknownCallees
-              fun doOne tgtFun = (c, SOME tgtFun, virtualCall)
+              val srcFun = Option.valOf (LD.lookup (callMap, c))
+              fun doOne tgtFun = (c, srcFun, SOME tgtFun, virtualCall)
               val known = List.map (known, doOne)
             in
               if unknownCallees then
-                (c, NONE, virtualCall)::known
+                (c, srcFun, NONE, virtualCall)::known
               else
                 known
             end
         val edges = List.concatMap (LD.toList calls, callToEdges)
         (* Layout the Edges *)
-        fun layoutAnnotatedEdge (call, tgtFun, virtualCall) = 
+        fun layoutAnnotatedEdge (call, srcFun, tgtFun, virtualCall) = 
             let
               val srcFun' = (case LD.lookup (callMap, call)
                              of SOME f => I.variableString' f
@@ -163,7 +167,7 @@ struct
               val tgtFun' = case tgtFun
                              of SOME f => I.variableString' f
                               | NODE => "unknown"
-              val edgeAttributes = edgeOptions (call, tgtFun, virtualCall)
+              val edgeAttributes = edgeOptions (call, srcFun, tgtFun, virtualCall)
             in
               seq [str (srcFun'), str (" -> "), 
                    str (tgtFun'), str " [", 
