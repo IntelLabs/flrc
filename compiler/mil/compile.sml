@@ -19,7 +19,7 @@ struct
        (#"C", MilContify.pass         ),
        (#"D", MilDblDiamond.pass      ),
        (#"f", MilLowerPFunctions.pass ),
-(*     (#"I", MilInlineLeaves.pass    ),  
+(*       (#"I", MilInlineLeaves.pass    ),  
        (#"J", MilInlineAggressive.pass),
        (#"K", MilInlineProfile.pass   ),
        (#"L", MilLicm.pass            ),
@@ -64,14 +64,13 @@ struct
       in cis
       end
 
-(*  val o0String = "HNOT"
-  val o1String = "SHFNOT"
-  val o2String = "SVSISVSIHFNOT"
-  val o3String = "VSCSVSIRDSCSVLSRSIKHFNOT"*)
-  val o0String = "fst"
-  val o1String = "VSCSfst"
-  val o2String = "SVSCSDSfst"
-  val o3String = o2String
+  val disabled = "IJKLR"
+  val enabled = fn c => not (String.contains (disabled, c))
+  val filter = fn s => String.keepAll (s, enabled)
+  val o0String = filter "fst"
+  val o1String = filter "Sfst"
+  val o2String = filter "SVSISVSIfst"
+  val o3String = filter "VSCSVSIRDSCSVLSRSIKfst"
 
   val o0Control = Option.valOf (parseControl o0String)
   val o1Control = Option.valOf (parseControl o1String)

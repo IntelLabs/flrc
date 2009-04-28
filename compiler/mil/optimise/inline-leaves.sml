@@ -23,8 +23,8 @@ struct
 
   (* Aliases *)
   structure PD   = PassData
-  structure MOU  = MilOptUtils
   structure M    = Mil
+  structure MU   = MilUtils
   structure L    = Layout
   structure ID   = Identifier
   structure IM   = ID.Manager
@@ -149,13 +149,13 @@ struct
   (* Policy functions and types. *)
   type policyInfo = unit
   fun analyze (imil) = Debug.resetOptExec ()
-  type callId = IMil.instr
+  type callId = IMil.iInstr
   fun callIdToCall (info : policyInfo, imil : IMil.t, call : callId) = call
   fun associateCallToCallId (info      : policyInfo, 
                              imil      : IMil.t, 
-                             cp        : IMil.instr,
-                             origBlock : IMil.block, 
-                             newBlock  : IMil.block) = ()
+                             cp        : IMil.iInstr,
+                             origBlock : IMil.iBlock, 
+                             newBlock  : IMil.iBlock) = ()
   fun rewriteOperation (c: callId) = InlineFunctionCopy
 
   val (noOptimizerF, noOptimizer) =
@@ -180,18 +180,18 @@ struct
         Debug.printCallGraphOpt (imil, d)
       end
 
-  (* Collect call sites that call function (fname, cfg). *)
+  (* Collect call sites that call function (fname, ifunc). *)
   fun collectCallSitesForFunc (d     : PD.t, 
                                fname : Mil.variable, 
-                               cfg   : IMil.cfg,
+                               iFunc : IMil.iFunc,
                                imil  : IMil.t) : callId list =
       let
         fun getCandidateCall (u : IMil.use) = 
             Try.try
               (fn () => 
                   let
-                    val i = Try.<- (MOU.useToIInstr (imil, u))
-                    val t = Try.<- (MOU.iinstrToTransfer (imil, i))
+                    val i = Try.<- (IMil.Use.toIInstr u)
+                    val t = Try.<- (IMil.IInstr.toTransfer i)
                     fun warn f = 
                         (* XXX EB: Why is it necessary to check fname? *)
                         if f = fname then
@@ -203,25 +203,24 @@ struct
                           in 
                             Try.fail ()
                           end
-                    fun doConv conv = case conv
-                                       of M.CCode f => warn f
-                                        | M.CDirectClosure (f, c) => warn f
-                                        | _ => Try.fail ()
-                    val () = case t
-                              of M.TCall (conv, _, _, _, _) => doConv conv
-                               | M.TTailCall (conv, _, _) => doConv conv
-                               | _ => Try.fail ()
+                    val {callee, ...} = Try.<- (MU.Transfer.Dec.tInterProc t)
+                    val {call, ...} = Try.<- (MU.InterProc.Dec.ipCall callee)
+                    val () =                     
+                        case call
+                         of M.CCode f => warn f
+                          | M.CDirectClosure {code, ...} => warn code
+                          | _ => Try.fail ()
+
                     val () = PD.click (d, "LeafCallSitesInlined")
-                  in
-                    i
+                  in i
                   end)
-        val uses  = IMil.Cfg.getUses (imil, cfg)
+        val uses  = IMil.IFunc.getUses (imil, iFunc)
         val calls = Vector.keepAllMap (uses, getCandidateCall)
         val () = if not (Vector.isEmpty (calls)) then
                    let
                      (* EB: Debug message. *)
                      val l = [L.str "Function \"", 
-                              ID.layoutVariable (fname, IMil.getST (imil)),
+                              IMil.Layout.var (imil, fname),
                               L.str "\" selected for inlining in ",
                               Int.layout (Vector.length (calls)),
                               L.str " call sites."]
@@ -235,37 +234,36 @@ struct
         Vector.toList (calls)
       end
 
-  fun isSmallFunction (d : PD.t, imil: IMil.t, cfg: IMil.cfg) : bool =
-      (IMil.Cfg.getSize (imil, cfg) < Control.getSmallLimit (PD.getConfig d))
+  fun isSmallFunction (d : PD.t, imil: IMil.t, iFunc : IMil.iFunc) : bool =
+      (IMil.IFunc.getSize (imil, iFunc) < Control.getSmallLimit (PD.getConfig d))
 
   (* Check  if the mil transfer  is a call. Do not consider EvalThunk
    * and BulkSpawn calls. *)
   fun isMilCall (tr: Mil.transfer) : bool = 
       case tr
-       of Mil.TCall _     => true
-        | Mil.TTailCall _ => true
+       of Mil.TInterProc {callee = M.IpCall _, ...} => true
         | _               => false
 
-  fun isCallInstr (imil : IMil.t, i : IMil.instr) : bool = 
-      case MOU.iinstrToTransfer (imil, i)
+  fun isCallInstr (imil : IMil.t, i : IMil.iInstr) : bool = 
+      case IMil.IInstr.toTransfer i
        of NONE    => false
-        | SOME tr => isMilCall (tr)
+        | SOME tr => isMilCall tr
 
-  fun isLeafFunction (imil : IMil.t, cfg : IMil.cfg) : bool =
+  fun isLeafFunction (imil : IMil.t, iFunc : IMil.iFunc) : bool =
       let
-        val transfers = IMil.Enumerate.Cfg.transfers (imil, cfg)
+        val transfers = IMil.Enumerate.IFunc.transfers (imil, iFunc)
       in
         (not (List.exists (transfers, fn (i) => isCallInstr (imil, i))))
       end
 
   (* Collect only call to small leaf functions. *)
-  fun collectCallSites (d : PD.t, (fname : Mil.variable, cfg : IMil.cfg),
+  fun collectCallSites (d : PD.t, (fname : Mil.variable, iFunc : IMil.iFunc),
                         imil : IMil.t) : callId list =
-      if (isSmallFunction (d, imil, cfg) andalso 
-          isLeafFunction  (imil, cfg) andalso
-          not (IMil.Cfg.getRecursive (imil, cfg)))
+      if (isSmallFunction (d, imil, iFunc) andalso 
+          isLeafFunction  (imil, iFunc) andalso
+          not (IMil.IFunc.getRecursive (imil, iFunc)))
       then
-        collectCallSitesForFunc (d, fname, cfg, imil)
+        collectCallSitesForFunc (d, fname, iFunc, imil)
       else 
         nil
 
@@ -275,7 +273,7 @@ struct
   fun policy (info : policyInfo, d : PD.t, imil : IMil.t) =
       let
         fun collect (cfg) = collectCallSites (d, cfg, imil)
-        val calls = List.concat (List.map (IMil.Cfg.getCfgs (imil), collect))
+        val calls = List.concat (List.map (IMil.IFunc.getIFuncs (imil), collect))
         val () = Debug.print (d, "Policy selected " ^
                                  Int.toString (List.length (calls)) ^
                                  " call sites to inline.")

@@ -43,7 +43,7 @@ functor MilInlineRewriterF (
   (* The call instruction identifier. *)
   type callId
   (* Helper function to map a callId to an IMil call instruction. *)
-  val callIdToCall : policyInfo * IMil.t * callId -> IMil.instr
+  val callIdToCall : policyInfo * IMil.t * callId -> IMil.iInstr
   (* Helper function to inform the policyInfo the creation of new
    * blocks during an inline expansion.
    * Example:
@@ -64,8 +64,8 @@ functor MilInlineRewriterF (
   val associateCallToCallId : policyInfo * (* The inline information. *)
                               IMil.t     * (* The imil program. *)
                               callId     * (* Call site being inlined. *)
-                              IMil.block * (* Block being copied. *)
-                              IMil.block   (* The copy. *) -> unit
+                              IMil.iBlock * (* Block being copied. *)
+                              IMil.iBlock   (* The copy. *) -> unit
   (* The inline rewrite operation to be performed: inline or clone.*)
   val rewriteOperation : callId -> inlineOperation
   (* The policy function takes an IMil.t program and returns a list of
@@ -75,7 +75,7 @@ functor MilInlineRewriterF (
   (* The optimizer is an optional function called after the call sites 
    * are inlined. If it is specified as NONE, it is not called. *)
   val optimizer : (policyInfo * PassData.t * IMil.t * 
-                   IMil.instr list -> unit) option
+                   IMil.iInstr list -> unit) option
 
 ) :> MIL_INLINE_REWRITER  = 
 struct 
@@ -90,7 +90,6 @@ struct
   val  optimizer             = optimizer
                        
   (* Short aliases. *)
-  structure MOU = MilOptUtils
   structure PD  = PassData
   structure M   = Mil
 
@@ -101,7 +100,7 @@ struct
 
   (* If an optimizer was provided, call it after inlining. *)
   fun optimizeIMil (info : policyInfo, d : PassData.t, 
-                    imil : IMil.t, ils : IMil.instr list) : unit = 
+                    imil : IMil.t, ils : IMil.iInstr list) : unit = 
       case optimizer
        of NONE => ()
         | SOME optimize => optimize (info, d, imil, ils)
@@ -112,31 +111,27 @@ struct
                       d    : PD.t, 
                       c    : callId, 
                       imil : IMil.t,
-                      dup  : bool) : IMil.instr list =
+                      dup  : bool) : IMil.iInstr list =
       let
-        val callInstr : IMil.instr = callIdToCall (info, imil, c)
-        val milCall = case MOU.iinstrToTransfer (imil, callInstr)
-                       of SOME (M.TCall x) => #1 x
-                        | SOME (M.TTailCall x) => #1 x
+        val callInstr : IMil.iInstr = callIdToCall (info, imil, c)
+        val milCall = case IMil.IInstr.toTransfer callInstr
+                       of SOME (M.TInterProc {callee = M.IpCall {call, ...}, ...}) => call
                         | _ => fail ("inlineCallSite", 
                                      "Invalid IMil call instruction.")
         val fname = case milCall
                      of M.CCode v => v
-                      | M.CDirectClosure (v, c) => v
+                      | M.CDirectClosure {code, ...} => code
                       | M.CClosure _ => 
                         fail ("inlineCallSite", 
                               "Cannot inline calls to CClosure.")
-                      | M.CExtern _ => 
-                        fail ("inlineCallSite", 
-                              "Cannot inline calls to extern.")
 
-        fun mapBlk (old : IMil.block, new : IMil.block) : unit = 
+        fun mapBlk (old : IMil.iBlock, new : IMil.iBlock) : unit = 
             associateCallToCallId (info, imil, c, old, new)
       in
         if dup then
-          IMil.Cfg.inlineMap (imil, fname, callInstr, SOME mapBlk, NONE)
+          IMil.IFunc.inlineMap (imil, fname, callInstr, SOME mapBlk, NONE)
         else
-          IMil.Cfg.inline (imil, fname, callInstr)
+          IMil.IFunc.inline (imil, fname, callInstr)
       end
 
   (* Inline the call site "c".  Find F (than contains c), G (called by
@@ -144,7 +139,7 @@ struct
   fun cloneCallSite (info : policyInfo, 
                      d    : PD.t, 
                      c    : callId, 
-                     imil : IMil.t) : IMil.instr list =
+                     imil : IMil.t) : IMil.iInstr list =
       fail ("cloneCallSite", "Function not implemented yet.")
       
   (*  Rewrite the call  site "c".  Check the  operation and  inline or
@@ -152,7 +147,7 @@ struct
   fun rewriteCallSite (info : policyInfo, 
                        d    : PD.t, 
                        c    : callId, 
-                       imil : IMil.t) : IMil.instr list =
+                       imil : IMil.t) : IMil.iInstr list =
       case rewriteOperation (c)
        of InlineFunction => inlineCallSite (info, d, c, imil, false)
         | InlineFunctionCopy => inlineCallSite (info, d, c, imil, true)
@@ -163,7 +158,7 @@ struct
   fun rewriteCallSites (info          : policyInfo,
                         d             : PD.t, 
                         callsToInline : callId list, 
-                        imil          : IMil.t) : IMil.instr list =
+                        imil          : IMil.t) : IMil.iInstr list =
       let
         val ils = List.map (callsToInline, 
                          fn c => rewriteCallSite (info, d, c, imil))
