@@ -21,9 +21,9 @@ struct
        (#"f", MilLowerPFunctions.pass ),
 (*     (#"I", MilInlineLeaves.pass    ),  
        (#"J", MilInlineAggressive.pass),
-       (#"K", MilInlineProfile.pass   ),
+       (#"K", MilInlineProfile.pass   ),*)
        (#"L", MilLicm.pass            ),
-       (#"R", MilRep.pass             ), *)
+(*       (#"R", MilRep.pass             ), *)
        (#"S", MilSimplify.pass        ),
        (#"s", MilLowerPSums.pass      ),
        (#"t", MilLowerPTypes.pass     ),
@@ -70,8 +70,8 @@ struct
   val o3String = "VSCSVSIRDSCSVLSRSIKHFNOT"*)
   val o0String = "fst"
   val o1String = "VSCSfst"
-  val o2String = "SVSCSDSfst"
-  val o3String = o2String
+  val o2String = "VSCSDSLSfst"
+  val o3String = "VSCSDSLSCSVSfst"
 
   val o0Control = Option.valOf (parseControl o0String)
   val o1Control = Option.valOf (parseControl o1String)
