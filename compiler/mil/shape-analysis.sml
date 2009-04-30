@@ -186,26 +186,25 @@ struct
    * The pObj and typ option seem somewhat redundant. I
    * guess it's safe to assume the glb of all of them.
    *)
-  and typToShape (t) =
+  and typToShape (t : M.typ) =
       case t
        of M.TIntegral _ => (SScalar, SUnknown)
         | M.TFloat => (SScalar, SUnknown)
         | M.TDouble => (SScalar, SUnknown)
         | M.TTuple {pok, fixed, array} => 
           let
-(*
-            val b = Utils.Option.get (Option.map (array, typToShape), 
-                                      (SAny, SUnknown))
-            val tshp = Utils.Option.get (Option.map (array, typToShape),
+            val b = pObjToShape pok
+            val arraytyp = (case array 
+                             of SOME (typ, _) => SOME typ 
+                              | NONE => NONE)
+            val tshp = Utils.Option.get (Option.map (arraytyp, typToShape),
                                          (SAny, SUnknown))
             val a = (SDynamic (sMax (tshp)), SUnknown)
-          in merge (a, b)
-*)
-          in (SAny, SUnknown)
+          in 
+            merge (a, b)
           end
-(* 
-       | M.TPObj pobj => pObjToShape (pobj)
-*)
+        | M.TPRef typ => typToShape typ
+(*      | M.TPObj pobj => pObjToShape (pobj) *)
         | _ => (SAny, SUnknown)
 
   (*
@@ -242,14 +241,14 @@ struct
    * given the length as an operand and the element shape, returns 
    * the shape of the resulting array
    *)
-  fun nestShape (len, nest) =
+  fun nestShape (len : M.simple, nest : shape) =
       case len
        of M.SConstant (M.CIntegral i) => 
           SKnown (VInt (Int32.fromIntInf (IntArb.toIntInf i)), nest)
         | M.SVariable v => SKnown (VSymb v, nest)
         | _ => SDynamic nest
 
-  fun nestShapeP (len, (s1, s2)) = 
+  fun nestShapeP (len : M.simple, (s1 : shape, s2 : shape)) = 
       (nestShape (len, s1), nestShape (len, s2))
 
   (*
@@ -286,33 +285,36 @@ struct
   fun deriveInstr (env, st, v, rhs) = 
       case rhs 
        of M.RhsSimple s => SOME (Option.valOf v, (simpleToShape (st, s)))
-(*        | M.RhsPrim (p, _, ops) => 
-            Option.map (v, fn (vv) => (vv, derivePrim (env, st, vv, p, ops)))
-        | M.RhsPRat _ => SOME (Option.valOf v, (SScalar, SScalar))
-        | M.RhsTuple (pobj, ops, dyn) =>
+        | M.RhsPrim {prim, createThunks, args} => 
+          Option.map (v, fn (vv) => (vv, derivePrim (env, st, vv, prim, args)))
+(*        | M.RhsPRat _ => SOME (Option.valOf v, (SScalar, SScalar))*)
+        | M.RhsTuple {vtDesc, inits} =>
           let 
+            val vtd as M.VTD {pok, fixed, array} = vtDesc
+
             val () = dbgPrint (env, "TUPLE ->")
-            val pshp = case pobj 
-                        of SOME po => pObjToShape (po)
-                         | NONE => (SAny, SUnknown)
+            val pshp = pObjToShape (pok)
             val () = dbgPrint (env, "PSHP: " ^ shapeToString (pshp))
-            val tshp = case dyn 
-                        of SOME (i, t) => nestShapeP (Vector.sub (ops, i), 
-                                                      typToShape (t))
-                         | NONE => (SAny, SUnknown)
+            fun simpleToShape' s = simpleToShape (st, s)
+            val tshp = (Vector.fold (inits, 
+                                    SUnknown,
+                                    fn (a, b) => lub (sMax (simpleToShape' a), b)),
+                        SUnknown)
             val () = dbgPrint (env, "TSHP: " ^ shapeToString (tshp))
           in 
             SOME (Option.valOf v, (merge (pshp, tshp)))
           end
-        | M.RhsTupleSub (s, f, dyn) =>
+(*        | M.RhsTupleSub tf =>
           let
+            val tfs as M.TF {tupDesc, tup, field} = tf
+
             val () = dbgPrint (env, "TUPLESUB ->")
             val shp = case dyn
                        of SOME _ => denestShapeP (st (s), (SAny, SUnknown))
                         | NONE => (SAny, SUnknown)
           in SOME (Option.valOf v, shp)
-          end
-        | M.RhsTupleSet (v, f, dyn, s) =>
+          end*)
+(*        | M.RhsTupleSet (v, f, dyn, s) =>
           let
             val () = dbgPrint (env, "TUPLESET ->")
             val min = SDynamic (sMin (simpleToShape (st, s)))

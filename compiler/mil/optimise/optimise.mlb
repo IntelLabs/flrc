@@ -15,13 +15,14 @@ local
         simplify.sml
         double-diamond.sml
         licm.sml
-(*
         inline-rewrite.sml
         annotated-cg-printer.sml
+(*
         inline-aggressive.sml
         inline-profile.sml
+*)
         inline-leaves.sml
-        inline-small.sml  (* XXX EB: Deprecated. Remove it. *)
+(*
         rep-seq.sml
         rep.sml
 *)
@@ -29,13 +30,15 @@ local
 in
         structure MilCse
         structure MilContify
-        structure MilSimplify
         structure MilDblDiamond
         structure MilLicm
-(*        structure MilInlineAggressive   
-        structure MilInlineProfile   
         structure MilInlineLeaves
-        structure MilInlineSmall (* XXX EB: Deprecated. Remove it. *)
-        structure MilRep *)
+        structure MilSimplify
         structure MilVectorize
+(*
+        structure MilInlineAggressive   
+        structure MilInlineProfile   
+        structure MilRep
+*)
+
 end

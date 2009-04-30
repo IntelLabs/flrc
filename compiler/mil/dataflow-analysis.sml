@@ -287,31 +287,36 @@ functor MilDataFlowAnalysisF (
   fun projectArgs (E env, 
                    st : info VD.t ref, 
                    l : Identifier.label, 
-                   info : info vector) =
+                   info : info vector,
+                   m : Mil.t) =
       let
         val M.B {parameters, ...} = envGetBlock (E env, l)
+
+        val paramlen = Vector.length parameters
       in
-        Vector.foreach2 (parameters, 
-                         info,
-                         fn (p, i) => updateStateInfo (E env, st, p, i))
+        if paramlen > 0 then
+          Vector.foreach2 (parameters, 
+                           info,
+                        fn (p, i) => updateStateInfo (E env, st, p, i))
+        else ()
       end
 
-  fun goBlock (E env, st, l) =
+  fun goBlock (E env, st, l, m) =
       let
         fun fix (l, b as M.B {parameters, ...}) = 
             let
               val i = Vector.map (parameters, 
                                   fn (p) => getStateInfoDef (#env env, st, p))
-              val () = inferBlock (E env, st, b)
+              val () = inferBlock (E env, st, b, m)
               fun processTodos (todos : LS.t) =
                   let 
                     fun doOne (l : I.label) = 
                         let
                           val () = 
                               Option.app (envGetDeferred (E env, l),
-                                          fn x => projectArgs (E env, st, l, x))
+                                          fn x => projectArgs (E env, st, l, x, m))
                         in
-                          goLabel (E env, st, l)
+                          goLabel (E env, st, l, m)
                         end
                     val () = LS.foreach (todos, doOne)
                     val next = envGetTodos (E env)
@@ -321,7 +326,7 @@ functor MilDataFlowAnalysisF (
                   end
               val () = processTodos (envGetTodos (E env))
               val nt = envGetDeferred (E env, l)
-              val () = Option.app (nt, fn (x) => projectArgs (E env, st, l, x))
+              val () = Option.app (nt, fn (x) => projectArgs (E env, st, l, x, m))
               val p = 
                 case nt
                  of SOME ni => 
@@ -349,23 +354,31 @@ functor MilDataFlowAnalysisF (
       in ()
       end
 
-  and goLabel (E env, st, l) = 
+  and goLabel (E env, st, l, m) = 
       if envValidTarget (E env, l) then 
-        goBlock (E env, st, l)
+        goBlock (E env, st, l, m)
       else 
         envRememberJump (E env, l)
 
-  and inferTransfer (E env, st, transfer) = 
+  and inferTransfer (E env, st, transfer : M.transfer, m) = 
       let
+        val config = getConfig (#env env)
+        val mp as Mil.P {symbolTable, ...} = m
+        val si = I.SymbolInfo.SiTable symbolTable
+        val tl = MilLayout.layoutTransfer (config, si, transfer)
+        val () = LU.printLayout tl
+
         fun goTarget (E env, st, M.T {block, arguments}) =
             let
+              val () = dbgPrint (E env, "goTarget\n")
+
               val argnfo = deriveBlock (#env env, stateDict (#env env, st), 
                                         block, arguments)
               val () = if envValidTarget (E env, block) then 
                          let
-                           val () = projectArgs (E env, st, block, argnfo)
+                           val () = projectArgs (E env, st, block, argnfo, m)
                          in
-                           goBlock (E env, st, block)
+                           goBlock (E env, st, block, m)
                          end
                        else 
                          let
@@ -377,6 +390,8 @@ functor MilDataFlowAnalysisF (
             end 
         fun goSwitch (E env, st, {on, cases, default}) =
             let
+              val () = dbgPrint (E env, "goSwitch\n")
+
               val () = Vector.foreach (cases, 
                                        fn (_, t) => goTarget (E env, st, t))
               val () = Option.app (default, fn (t) => goTarget (E env, st, t))
@@ -384,11 +399,11 @@ functor MilDataFlowAnalysisF (
             end
       in
         case transfer
-          of M.TGoto t => goTarget (E env, st, t)
-           | M.TCase s => goSwitch (E env, st, s)
-           | M.TPSumCase s => goSwitch (E env, st, s)
-           | M.TInterProc {callee, ret, fx} => (
-             case callee
+         of M.TGoto t => goTarget (E env, st, t)
+          | M.TCase s => goSwitch (E env, st, s)
+          | M.TPSumCase s => goSwitch (E env, st, s)
+          | M.TInterProc {callee, ret, fx} => 
+            (case callee
               of M.IpCall {call, args} => (
                  case ret
                   of M.RNormal {rets, block, cuts} =>
@@ -397,15 +412,15 @@ functor MilDataFlowAnalysisF (
                        val a = deriveFunction (#env env, stateDict (#env env, st),
                                                args, Vector.length (rets), cuts, fx)
                        val () = if envValidTarget (E env, block) then
-                                  projectArgs (E env, st, block, a)
+                                  projectArgs (E env, st, block, a, m)
                                 else
                                   envDefer (E env, block, a)
                      in 
-                       goLabel (E env, st, block)
+                       goLabel (E env, st, block, m)
                      end
                    | M.RTail => ())
                | M.IpEval _ => ())
-           | _ => () (* all others terminate the function *)
+          | _ => () (* all others terminate the function *)
       end
   
   and inferInstruction (E env, st, M.I {dest, rhs}) = 
@@ -413,11 +428,11 @@ functor MilDataFlowAnalysisF (
        of SOME (v, i) => updateStateInfo (E env, st, v, i)
         | NONE => ()
     
-  and inferBlock (env, st, M.B {instructions, transfer, ...}) = 
+  and inferBlock (env, st, M.B {instructions, transfer, ...}, m) = 
       let
         val () = Vector.foreach (instructions, 
                                  fn i => inferInstruction (env, st, i))
-        val () = inferTransfer (env, st, transfer)
+        val () = inferTransfer (env, st, transfer, m)
       in () 
       end
 
@@ -435,8 +450,8 @@ functor MilDataFlowAnalysisF (
         val () = doGlobals (env, st, m)
         val le = mkLocalEnv (env, body, SOME blocks, m)
         val infos = initf (env, stateDict (env, st), e)
-        val () = projectArgs (le, st, e, infos)
-        val () = goLabel (le, st, e)
+        val () = projectArgs (le, st, e, infos, m)
+        val () = goLabel (le, st, e, m)
       in !st
       end
 
@@ -453,8 +468,8 @@ functor MilDataFlowAnalysisF (
 
         val le = mkLocalEnv' (env, body, SOME blocks, dominfo)
         val infos = initf (env, stateDict (env, st), e)
-        val () = projectArgs (le, st, e, infos)
-        val () = goLabel (le, st, e)
+        val () = projectArgs (le, st, e, infos, m)
+        val () = goLabel (le, st, e, m)
       in !st
       end
 
@@ -466,7 +481,7 @@ functor MilDataFlowAnalysisF (
         val M.CB {entry, blocks} = body
         val () = doGlobals (env, st, m)
         val le = mkLocalEnv (env, body, NONE, m)
-        val () = goLabel (le, st, entry)
+        val () = goLabel (le, st, entry, m)
       in !st
       end
       
@@ -479,7 +494,7 @@ functor MilDataFlowAnalysisF (
         val M.CB {entry, blocks} = body
         val () = doGlobals (env, st, m)
         val le = mkLocalEnv' (env, body, NONE, dominfo)
-        val () = goLabel (le, st, entry)
+        val () = goLabel (le, st, entry, m)
       in !st
       end
       
@@ -494,7 +509,7 @@ functor MilDataFlowAnalysisF (
                   val M.CB {entry, blocks} = body
 
                   val le = mkLocalEnv (env, body, NONE, m)
-                  val () = goLabel (le, st, entry)
+                  val () = goLabel (le, st, entry, m)
                 in ()
                 end
               | _ => ()
