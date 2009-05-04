@@ -24,10 +24,10 @@ struct
 
   structure M = Mil
   structure PD = PassData
-  structure MOU = MilOptUtils
   structure LU  = LayoutUtils
   structure ID  = Identifier
   structure LD = ID.LabelDict
+  structure IMT = IMilTypes
 
   datatype psCond =
            rcons of M.constant
@@ -85,7 +85,7 @@ struct
                             val indent = 0
                           end)
 
-  type edge = IMil.block * IMil.block
+  type edge = IMil.iBlock * IMil.iBlock
 
   datatype psState =
            Redundant  (* a->b while c=x and ps (c=x, ...)*)
@@ -103,14 +103,14 @@ struct
         if (Config.debugLevel (PD.getConfig d, passname)) > 0 then 
           let
             val () = print ("before branch removal:\n")
-            val () = IMil.printCfg (imil, IMil.Cfg.getCfgByName (imil, fname))
+(*            val () = IMil.printCfg (imil, IMil.Cfg.getCfgByName (imil, fname))*)
             val () = print "\n"
           in ()
           end
         else 
           let
             val () = print ("Branch removal: ")
-            val () = IMil.printVar (imil, fname)
+(*            val () = IMil.printVar (imil, fname)*)
             val () = print "\n"
           in ()
           end
@@ -122,8 +122,8 @@ struct
          (Config.debugLevel (PD.getConfig d, passname)) > 1 then 
         let
           val () = print ("after branch removal:\n")
-          val mil = IMil.unBuild imil
-          val () = MilLayout.printGlobalsOnly (PD.getConfig d, mil)
+(*          val mil = IMil.unBuild imil
+          val () = MilLayout.printGlobalsOnly (PD.getConfig d, mil)*)
           val () = print "\n"
         in ()
         end
@@ -131,12 +131,12 @@ struct
 
   fun debugPrint () = true
 
-  fun getLabel (imil, b) = #1 (IMil.Block.getLabel' (imil, b))
+  fun getLabel (imil, b) = #1 (IMil.IBlock.getLabel' (imil, b))
 
   fun printEdge (imil, (a, b)) =
       if debugPrint() then
         let
-          val e = IMil.Block.getTransfer (imil, a)
+          val e = IMil.IBlock.getTransfer (imil, a)
           val la = getLabel (imil, a)
           val lb = getLabel (imil, b)
           val sa = ID.labelString la
@@ -206,8 +206,8 @@ struct
         val () = printEdge (imil, e)
         val () = printPSSet (getLabel(imil, a), ps)
                  
-        val instr = IMil.Block.getTransfer(imil, a)
-        val () = LU.printLayout (IMil.Instr.layout (imil, instr))
+        val instr = IMil.IBlock.getTransfer(imil, a)
+        val () = LU.printLayout (IMil.IInstr.layout (imil, instr))
         val () = print("\n")
       in ()
       end
@@ -219,7 +219,7 @@ struct
           val tl = ID.labelString(getLabel(imil, b))
           val sl = ID.labelString(getLabel(imil, a))
           val () = print ("remove target " ^ tl ^ " in " ^ sl ^ "\n")
-          val () = LU.printLayout (IMil.Instr.layout (imil, instr))
+          val () = LU.printLayout (IMil.IInstr.layout (imil, instr))
         in ()
         end
       else ()
@@ -228,7 +228,7 @@ struct
       if debugPrint() then
         let
           val () = print ("replace with new PSumCase instruction\n")
-          val () = LU.printLayout (IMil.Instr.layout (imil, newinstr))
+          val () = LU.printLayout (IMil.IInstr.layout (imil, newinstr))
           val () = print ("\n")
         in ()
         end
@@ -237,6 +237,7 @@ struct
   fun layoutCfg (imil, cfg) =
       if debugPrint() then
         let
+(*
           val cfgId = IMil.Cfg.getId (imil, cfg)
           val () = print ("Cfg ID:" ^ Int.toString(cfgId) ^ "\n")
           val () = IMil.printCfg (imil, cfg)
@@ -244,6 +245,7 @@ struct
           val ld = IMil.Cfg.layoutDot (imil, cfg)
           val fname = "cfg" ^ Int.toString(cfgId) ^ ".dot" 
           val ()  = LU.writeLayout (valOf(ld), fname)
+*)
         in ()
         end
       else ()
@@ -259,18 +261,19 @@ struct
       let
         fun isCritical (imil, e as (a, b)) =
             let 
-              val oe = IMil.Block.outEdges (imil, a)
-              val ie = IMil.Block.inEdges (imil, b)
+              val oe = IMil.IBlock.outEdges (imil, a)
+              val ie = IMil.IBlock.inEdges (imil, b)
             in (List.length(oe) > 1) andalso (List.length(ie) > 1)
             end
 
         fun findCE (imil, b) =
             let
-              val es = IMil.Block.outEdges (imil, b)
+              val es = IMil.IBlock.outEdges (imil, b)
             in 
               List.keepAll (es, fn e => isCritical (imil, e))
             end
-        val bl = IMil.Cfg.getBlockList (imil, cfg)
+(*        val bl = IMil.Cfg.getBlockList (imil, cfg)*)
+        val bl = ILD.fold (IMT.iFuncGetIBlocks c, [], fn (l, _, ll) => l::ll)
       in 
         List.fold (bl, [], fn (b, l) => findCE (imil, b) @ l)
       end
@@ -278,7 +281,7 @@ struct
   fun splitCriticalEdge (imil, cfg) =
       let
         val ces = findCriticalEdges (imil, cfg)
-        fun splitEdge e = IMil.Block.splitEdge (imil, e)
+        fun splitEdge e = IMil.IBlock.splitEdge (imil, e)
       in 
         List.foreach(ces, splitEdge)
       end
@@ -286,7 +289,7 @@ struct
   (* WL: CODE REVIE HERE *)
   (* redundant conditional branch removal *)
   fun getTransMil (imil, b) 
-    = IMil.Instr.getMil (imil, IMil.Block.getTransfer (imil, b))
+    = IMil.IInstr.getMil (imil, IMil.IBlock.getTransfer (imil, b))
               
   fun getPSumCase (imil, e as (a, b)) =
       case getTransMil(imil, a)
@@ -382,7 +385,7 @@ struct
         fun travNode (a) =
             let
               val label = getLabel(imil, a)
-              val inEdges = IMil.Block.inEdges(imil, a)
+              val inEdges = IMil.IBlock.inEdges(imil, a)
               fun foldf (e as (p, a), ps) =
                   let
                     val parentSet = LD.lookup(!gDict, getLabel(imil, p))
@@ -459,7 +462,7 @@ struct
 
         fun replacePSumCaseInstr (imil, e as (a, b), ns as (opnd, arms, defo)) =
             let
-              val instr = IMil.Block.getTransfer (imil, a)             
+              val instr = IMil.IBlock.getTransfer (imil, a)             
 
               val () = printOrigInstr (imil, e, instr)
 
@@ -467,9 +470,9 @@ struct
               val nt = M.TPSumCase (newns)
              
               val nmt = IMil.MTransfer nt
-              val ni = IMil.Instr.new' (imil, nmt)
-              val nmi = IMil.Instr.getMil (imil, ni)
-              val newinstr = IMil.Instr.replaceMil' (imil, instr, nmi)
+              val ni = IMil.IInstr.new' (imil, nmt)
+              val nmi = IMil.IInstr.getMil (imil, ni)
+              val newinstr = IMil.IInstr.replaceMil' (imil, instr, nmi)
         
               val () = printNewInstr (imil, newinstr)
             in ()
@@ -478,7 +481,7 @@ struct
         fun replaceTCaseInstr (imil, e as (a, b), cs as (opnd, arms, defo)) =
             let
               val () = print ("find redundant tcase instruction\n")
-              val instr = IMil.Block.getTransfer (imil, a)             
+              val instr = IMil.IBlock.getTransfer (imil, a)             
 
               val () = printOrigInstr (imil, e, instr)
 
@@ -486,9 +489,9 @@ struct
               val nt = M.TCase (newns)
              
               val nmt = IMil.MTransfer nt
-              val ni = IMil.Instr.new' (imil, nmt)
-              val nmi = IMil.Instr.getMil (imil, ni)
-              val newinstr = IMil.Instr.replaceMil' (imil, instr, nmi)
+              val ni = IMil.IInstr.new' (imil, nmt)
+              val nmi = IMil.IInstr.getMil (imil, ni)
+              val newinstr = IMil.IInstr.replaceMil' (imil, instr, nmi)
         
               val () = printNewInstr (imil, newinstr)
             in ()
@@ -517,7 +520,7 @@ struct
       let
         fun checkEdgePS' e = checkEdgePS (imil, dict, e)
 
-        val outEdges = List.map(IMil.Block.succs (imil, a), fn b => (a, b))
+        val outEdges = List.map(IMil.IBlock.succs (imil, a), fn b => (a, b))
       in 
         List.foreach (outEdges, checkEdgePS')
       end

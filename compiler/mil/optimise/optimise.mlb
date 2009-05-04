@@ -26,6 +26,7 @@ local
         rep.sml
 *)
         vectorize.sml
+        branch-remove.sml
 in
         structure MilCse
         structure MilContify
@@ -38,4 +39,5 @@ in
         structure MilLicm
         structure MilRep *)
         structure MilVectorize
+        structure MilRemoveBranch
 end
