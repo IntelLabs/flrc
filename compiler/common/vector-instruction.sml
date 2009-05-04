@@ -68,6 +68,9 @@ sig
          | ViSelect of elemType
          | ViPermute of elemType * int Vector.t
 
+  datatype t = TVector of elemType | TMask of elemType
+  val typeOf : prim -> t list * t
+
   val numElemTypeBits : elemType -> int
   val numElemTypeBytes : elemType -> int
 
@@ -160,6 +163,58 @@ struct
          (* misc *)
          | ViSelect of elemType
          | ViPermute of elemType * int Vector.t
+
+  datatype t = TVector of elemType | TMask of elemType
+
+  fun typeOf prim = 
+      case prim
+       of  ViShiftL et  => ([TVector et, TVector et], TVector et)
+         | ViShiftA et  => ([TVector et, TVector et], TVector et)
+         | ViRotateL et => ([TVector et, TVector et], TVector et)
+         | ViRotateR et => ([TVector et, TVector et], TVector et)
+         | ViBitNot et  => ([TVector et, TVector et], TVector et)
+         | ViBitAnd et  => ([TVector et, TVector et], TVector et)
+         | ViBitXor et  => ([TVector et, TVector et], TVector et)
+         | ViBitOr et   => ([TVector et, TVector et], TVector et) 
+         | ViNot et     => ([TVector et, TVector et], TVector et)
+         | ViAnd et     => ([TVector et, TVector et], TVector et)
+         | ViOr et      => ([TVector et, TVector et], TVector et)
+         | ViMaskNot et => ([TVector et, TVector et], TVector et)
+         | ViMaskAnd et => ([TVector et, TVector et], TVector et)  
+         | ViMaskOr et  => ([TVector et, TVector et], TVector et)  
+         | ViAdd et     => ([TVector et, TVector et], TVector et) 
+         | ViSub et     => ([TVector et, TVector et], TVector et)
+         | ViMul et     => ([TVector et, TVector et], TVector et)
+         | ViDiv et     => ([TVector et, TVector et], TVector et)
+         | ViMod et     => ([TVector et, TVector et], TVector et)
+         | ViFma et     => ([TVector et, TVector et], TVector et)
+         | ViFms et     => ([TVector et, TVector et], TVector et)
+         | ViMax et     => ([TVector et, TVector et], TVector et)
+         | ViMin et     => ([TVector et, TVector et], TVector et)
+         | ViNeg et     => ([TVector et            ], TVector et)
+         | ViSqrt et    => ([TVector et, TVector et], TVector et)
+         | ViSqrtRcp et => ([TVector et, TVector et], TVector et)
+         | ViRcp et     => ([TVector et, TVector et], TVector et)
+         | ViExp2 et    => ([TVector et, TVector et], TVector et)
+         | ViExp2m1 et  => ([TVector et, TVector et], TVector et)
+         | ViLog2 et    => ([TVector et, TVector et], TVector et)
+         | ViLog2p1 et  => ([TVector et, TVector et], TVector et)
+         | ViSin et     => ([TVector et, TVector et], TVector et)
+         | ViAsin et    => ([TVector et, TVector et], TVector et)
+         | ViCos et     => ([TVector et, TVector et], TVector et)
+         | ViAcos et    => ([TVector et, TVector et], TVector et)
+         | ViTan et     => ([TVector et, TVector et], TVector et)
+         | ViAtan et    => ([TVector et, TVector et], TVector et)
+         | ViSign et    => ([TVector et, TVector et], TVector et)
+         | ViAbs et     => ([TVector et, TVector et], TVector et)
+         | ViEq et      => ([TVector et, TVector et], TVector et)
+         | ViNe et      => ([TVector et, TVector et], TVector et)
+         | ViGt et      => ([TVector et, TVector et], TVector et)
+         | ViGe et      => ([TVector et, TVector et], TVector et)
+         | ViLt et      => ([TVector et, TVector et], TVector et)
+         | ViLe et      => ([TVector et, TVector et], TVector et)
+         | ViSelect et  => ([TVector et, TVector et], TVector et)
+         | ViPermute (et,  _) => ([TVector et, TVector et], TVector et)
 
   fun numElemTypeBytes vet =
       case vet
