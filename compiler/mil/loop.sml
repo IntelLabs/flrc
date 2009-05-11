@@ -22,6 +22,12 @@ sig
    *)
   val build : Config.t * Mil.symbolInfo * MilCfg.t * (Mil.label * Mil.block) Tree.t -> t
 
+  (* Build the loop information from existing loop structure.
+   * Does not compute all nodes, exits, preheaders, induction variables, or trip counts
+   *   - these must be added with other calls.
+   *)
+  val fromLoops : Config.t * Mil.symbolInfo * {entry : Mil.label, loops : loopForest, blocksNotInLoops : blocks} -> t
+
   val unbuild : t -> Mil.codeBody
 
   val layout : t -> Layout.t
@@ -45,6 +51,7 @@ sig
    *)
   val addPreheaders : t * Mil.symbolTableManager -> t
   val getPreheader : t * Mil.label -> Mil.label option
+  val getPreheaders : t -> Mil.label Identifier.LabelDict.t
 
   (* Let # = 0 on entry to loop and incremented on each iteration.
    * Then IV {variable, init = (r1, opnd, r2), step} means that:
@@ -295,6 +302,10 @@ struct
       in ()
       end
 
+  fun fromLoops (c, si, {entry, loops, blocksNotInLoops}) = 
+      LS {config = c, si = si, entry = entry, loops = loops, blocksNotInLoops = blocksNotInLoops, allNodes = LD.empty,
+          exits = LD.empty, preheaders = LD.empty, inductionVars = LD.empty, tripCounts = LD.empty}
+
   fun build (c, si, cfg, dt) =
       let
         val entry = Cfg.startLabel cfg
@@ -304,9 +315,7 @@ struct
         val () = buildLoops (cfg, state, env, dt, [])
         val loops = getTopLoops state
         val top = getTop state
-        val r =
-            LS {config = c, si = si, entry = entry, loops = loops, blocksNotInLoops = top, allNodes = LD.empty,
-                exits = LD.empty, preheaders = LD.empty, inductionVars = LD.empty, tripCounts = LD.empty}
+        val r = fromLoops (c, si, {entry = entry, loops = loops, blocksNotInLoops = top})
       in r
       end
 
@@ -474,7 +483,11 @@ struct
                   if LS.member (cuts, header) then
                     phs
                   else
-                    LD.insert (phs, header, MSTM.labelFresh stm)
+                    let
+                      val ph = MSTM.labelFresh stm
+                    in
+                      LD.insert (phs, header, ph)
+                    end
               val phs = Vector.fold (children, phs, doOne)
             in phs
             end
@@ -535,7 +548,7 @@ struct
             LS {config = config, si = si, entry = entry, loops = loops, blocksNotInLoops = blks,
                 allNodes = LD.empty, exits = exits, preheaders = phs, inductionVars = inductionVars,
                 tripCounts = tripCounts}
-      in ls
+      in r
       end
 
   (* The actual preheader generation and link in *)
@@ -548,6 +561,8 @@ struct
       end
 
   fun getPreheader (LS {preheaders, ...}, h) = LD.lookup (preheaders, h)
+
+  fun getPreheaders (LS {preheaders, ...}) = preheaders
 
   (*** Induction Variables ***)
 
