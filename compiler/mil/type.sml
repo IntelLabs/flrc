@@ -266,27 +266,37 @@ struct
              in v
              end)
 
-     (* Handle the purely structural rules (i.e. no width subtyping, and only
-      * comparing like to like) which are dual.  The non-structural rules are 
-      * handled by the upLossy/downLossy functions.
-      * N.B.  This code is deliberately written to cover all cases so that 
+     (* The Lub/Glb code is split into three pieces.  The first function handles
+      * the purely structural rules (i.e. no width subtyping, and only
+      * comparing like to like) which are dual.  This function is parameterized
+      * over the full lub/glb functions which are used to compute lubs/glbs of
+      * the sub-components.  By instantiating up/down with lub/glb or glb/lub, 
+      * the structural lub rules/glb rules are obtained.
+      * 
+      * The second two functions implement the non-structural rules for lubs/glbs
+      * respectively.  These functions assume that none of the non-structural rules
+      * apply (that is, that the structural lub/glb has failed).
+      *
+      * N.B.  The structural code is deliberately written to cover all cases so that 
       * exhaustiveness checking will catch any missed cases.  Please preserve 
-      * this. 
+      * this. The other functions are not necessarily of this form, so a match
+      * non-exhaustive warning in the structural code should prompt an inspection
+      * of the non-structural code as well.
       *)
      val rec structural = 
-      fn (upLossy, downLossy) => 
+      fn (up, down) => 
       fn (config, t1, t2) => 
          let
-           val up = fn (t1, t2) => structural (upLossy, downLossy) (config, t1, t2)
-           val down = fn (t1, t2) => structural (downLossy, upLossy) (config, t1, t2)
-          (* Only allow equality here - throw variance subtyping to the tuple case
-           * in the lossy versions. *)
+           val up = fn (t1, t2) => up (config, t1, t2)
+           val down = fn (t1, t2) => down (config, t1, t2)
+
            val eq = 
             fn (t1, t2) => 
                if MU.Typ.eq (t1, t2) then 
                  SOME t1
                else
                  NONE
+
            val cc = (* Not sure what the right thing is here, equality is safe *)
                fn (cc1, cc2) => 
                   if MU.CallConv.eq MU.Typ.eq (cc1, cc2) then
@@ -358,11 +368,7 @@ struct
                       | (M.TPType _, _) => Try.fail ()       | (M.TPRef _, _) => Try.fail ()
                    )
                )
-           val t = 
-               (case to
-                 of NONE => upLossy (config, t1, t2)
-                  | SOME t => t)
-         in t
+         in to
          end
 
      val varianceLub = 
@@ -380,13 +386,22 @@ struct
             | (M.FvReadOnly, M.FvReadOnly) => M.FvReadOnly)
 
 
-     (* partition the exact types into classes based on their immediate supertype *)
+     (* In order to make the non-structural glb/lub code more compact, we partition 
+      * the types into classes which behave identically wrt lub/glb.  There are 
+      * individual partitions for TAny, Mask types, the TAnyS _ types, and TNone. 
+      * The TRef, TPtr, TPAny, and TBits types each define a partition which includes
+      * themselves and their exact immediate sub-types.  So for example, the SRef
+      * class contains TRef, as well as TRat, TInteger, etc; but not TPAny nor any of
+      * its immediate sub-types (e.g. TPFunction, etc).  The boolean argument to these
+      * classes indicate whether or not the summarized type is exact.  So for example,
+      * TRef is classified by SRef false, whereas TRat is classified by SRef true.
+      *)      
      datatype summary = 
               SRef of bool  (* false => TRef, true => An exact immediate subtype of TRef *)
             | SPtr of bool  (* false => TPtr, true => An exact immediate subtype of TPtr *)
             | SPAny of bool (* false => TPAny, true => An exact immediate subtype of TPAny *)
             | SBits of bool (* false => TBits, true => An exact immediate subtype of TBits *)
-            | SMask         (* TMask *)
+            | SMask  (* TMask *)
             | SAny   (* TAny *)
             | SSized (* TAnyS *)
             | SNone  (* TNone *)
@@ -423,7 +438,7 @@ struct
             | M.TPType {kind, over}        => SPAny true
             | M.TPRef t                    => SPAny true)
 
-     (* Handle the non-structural cases *)
+     (* This code handles the non-structural lub cases *)
      val rec lubLossy = 
       fn (config, t1, t2) => 
          let
@@ -434,11 +449,7 @@ struct
             fn ((t1, fv1), (t2, fv2)) => 
                let
                  val t = lub (t1, t2)
-                 val fv = 
-                     (case (fv1, fv2) 
-                       of (M.FvReadOnly, _) => fv2
-                        | (_, M.FvReadOnly) => fv1
-                        | _ => fv1)
+                 val fv = varianceLub (fv1, fv2)
                in (t, fv)
                end
 
@@ -533,7 +544,8 @@ struct
                )
          in t
          end
-     (* Handle the non-structural cases *)
+
+     (* This code handles the non-structural glb cases *)
      and rec glbLossy = 
       fn (config, t1, t2) => 
          let
@@ -544,11 +556,7 @@ struct
             fn ((t1, fv1), (t2, fv2)) => 
                let
                  val t = glb (t1, t2)
-                 val fv = 
-                     (case (fv1, fv2) 
-                       of (M.FvReadOnly, _) => fv1
-                        | (_, M.FvReadOnly) => fv2
-                        | _ => fv1)
+                 val fv = varianceGlb (fv1, fv2)
                in (t, fv)
                end
 
@@ -666,8 +674,16 @@ struct
                )
          in t
          end
-     and rec lub = fn args => structural (lubLossy, glbLossy) args
-     and rec glb = fn args => structural (glbLossy, lubLossy) args
+     and rec lub = 
+      fn args =>           
+         (case structural (lub, glb) args
+           of NONE => lubLossy args
+            | SOME t => t)
+     and rec glb = 
+      fn args => 
+         (case structural (glb, lub) args
+           of NONE => glbLossy args
+            | SOME t => t)
      end (* structure Lub  *)
      val lub = Lub.lub
      val glb = Lub.glb
