@@ -95,7 +95,9 @@ sig
     val prim : prim Compare.t
   end
 
-end;
+  val equalElemTypes : elemType * elemType -> bool
+
+end (* signature VECTOR_INSTRUCTIONS *);
 
 structure VectorInstructions :> VECTOR_INSTRUCTIONS =
 struct
@@ -513,4 +515,5 @@ struct
      
   end
 
+  val equalElemTypes = fn (t1, t2) => Compare.elemType (t1, t2) = EQUAL
 end;
