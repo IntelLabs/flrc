@@ -371,21 +371,6 @@ struct
          in to
          end
 
-     val varianceLub = 
-      fn (v1, v2) => 
-         (case (v1, v2)
-           of (_, M.FvReadOnly) => M.FvReadOnly
-            | (M.FvReadOnly, _) => M.FvReadOnly
-            | (M.FvReadWrite, M.FvReadWrite) => M.FvReadWrite)
-
-     val varianceGlb = 
-      fn (v1, v2) => 
-         (case (v1, v2)
-           of (_, M.FvReadWrite) => M.FvReadWrite
-            | (M.FvReadWrite, _) => M.FvReadWrite
-            | (M.FvReadOnly, M.FvReadOnly) => M.FvReadOnly)
-
-
      (* In order to make the non-structural glb/lub code more compact, we partition 
       * the types into classes which behave identically wrt lub/glb.  There are 
       * individual partitions for TAny, Mask types, the TAnyS _ types, and TNone. 
@@ -445,13 +430,28 @@ struct
            val lub = fn (t1, t2) => lub (config, t1, t2)
            val glb = fn (t1, t2) => glb (config, t1, t2)
 
+           val eq = 
+            fn (t1, t2) => 
+               if MU.Typ.eq (t1, t2) then 
+                 SOME t1
+               else
+                 NONE
+
+           val sub =
+            fn (t1, t2) => 
+               if subtype (config, t1, t2) then 
+                 SOME t2
+               else
+                 NONE
+
            val field = 
-            fn ((t1, fv1), (t2, fv2)) => 
-               let
-                 val t = lub (t1, t2)
-                 val fv = varianceLub (fv1, fv2)
-               in (t, fv)
-               end
+               Try.lift 
+               (fn ((t1, fv1), (t2, fv2)) => 
+                   (case (fv1, fv2)
+                     of (M.FvReadOnly, M.FvReadOnly) => (lub (t1, t2), M.FvReadOnly)
+                      | (M.FvReadOnly, M.FvReadWrite) => (<@ sub (t1, t2), M.FvReadOnly)
+                      | (M.FvReadWrite, M.FvReadOnly) => (<@ sub (t2, t1), M.FvReadOnly)
+                      | (M.FvReadWrite, M.FvReadWrite) => (<@ eq (t1, t2), M.FvReadWrite)))
 
           (*
            * LUB: t1 v t2
@@ -472,13 +472,23 @@ struct
                      val (fixed2, extras2) = Utils.Vector.split (fixed2, len)
                      (* One is empty *)
                      val extras = Vector.concat [extras1, extras2]
-                     val fixed = Vector.map2 (fixed1, fixed2, field)
+                     val help = 
+                      fn (tv1, tv2, truncate) => 
+                         let
+                           val tv = if truncate then NONE else field (tv1, tv2)
+                         in (tv, truncate orelse not (isSome tv))
+                         end
+                     val (fixedO, truncate) = Vector.map2AndFold (fixed1, fixed2, false, help)
+                     val fixed = Vector.keepAllSome fixedO
                      val array = 
-                         (case (array1, array2)
-                           of (NONE, _) => NONE
-                            | (_, NONE) => NONE
-                            | (SOME f1, SOME f2) => 
-                              SOME (Vector.fold (extras, field (f1, f2) , field)))
+                         (case (array1, array2, truncate)
+                           of (NONE, _, _) => NONE
+                            | (_, NONE, _) => NONE
+                            | (_, _, true) => NONE
+                            | (SOME f1, SOME f2, _) => 
+                              Try.try 
+                                (fn () =>
+                                    Vector.fold (extras, <@ field (f1, f2), <@ field)))
                    in M.TTuple {pok = pok, fixed = fixed, array = array}
                    end)
                
@@ -552,13 +562,28 @@ struct
            val lub = fn (t1, t2) => lub (config, t1, t2)
            val glb = fn (t1, t2) => glb (config, t1, t2)
 
+           val eq = 
+            fn (t1, t2) => 
+               if MU.Typ.eq (t1, t2) then 
+                 SOME t1
+               else
+                 NONE
+
+           val sub =
+            fn (t1, t2) => 
+               if subtype (config, t1, t2) then 
+                 SOME t1
+               else
+                 NONE
+
            val field = 
-            fn ((t1, fv1), (t2, fv2)) => 
-               let
-                 val t = glb (t1, t2)
-                 val fv = varianceGlb (fv1, fv2)
-               in (t, fv)
-               end
+               Try.lift 
+               (fn ((t1, fv1), (t2, fv2)) => 
+                   (case (fv1, fv2)
+                     of (M.FvReadOnly, M.FvReadOnly) => (glb (t1, t2), M.FvReadOnly)
+                      | (M.FvReadOnly, M.FvReadWrite) => (<@ sub (t2, t1), M.FvReadWrite)
+                      | (M.FvReadWrite, M.FvReadOnly) => (<@ sub (t1, t2), M.FvReadWrite)
+                      | (M.FvReadWrite, M.FvReadWrite) => (<@ eq (t1, t2), M.FvReadWrite)))
 
            (* GLB: t1 ^ t2
             * <a1, ..., an, R1> ^ <b1, ..., bn, ..., bm, R2> = <a1 ^ b1, ..., an ^ bn, cn+1, ..., cm, R3>
@@ -581,17 +606,17 @@ struct
                        let 
                          val pok = <@ pObjKind (pok1, pok2)
                          val (fixed2, extras2) = Utils.Vector.split (fixed2, Vector.length fixed1)
-                         val fixedA = Vector.map2 (fixed1, fixed2, field)
+                         val fixedA = Vector.map2 (fixed1, fixed2, <@ field)
                          val fixedB = 
                              case array1
-                              of SOME f => Vector.map (extras2, fn f2 => (field (f, f2)))
+                              of SOME f => Vector.map (extras2, fn f2 => (<@ field (f, f2)))
                                | NONE => extras2
                          val fixed = Vector.concat [fixedA, fixedB]
                          val array = 
                              (case (array1, array2)
                                of (NONE, _) => array2
                                 | (_, NONE) => array1
-                                | (SOME f1, SOME f2) => SOME (field (f1, f2)))
+                                | (SOME f1, SOME f2) => SOME (<@ field (f1, f2)))
                        in M.TTuple {pok = pok, fixed = fixed, array = array}
                        end)
                
