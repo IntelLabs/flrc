@@ -19,8 +19,8 @@ struct
        (#"C", MilContify.pass         ),
        (#"D", MilDblDiamond.pass      ),
        (#"f", MilLowerPFunctions.pass ),
-(*       (#"I", MilInlineLeaves.pass    ),  
-       (#"J", MilInlineAggressive.pass),
+       (#"I", MilInlineLeaves.pass    ),  
+(*       (#"J", MilInlineAggressive.pass),
        (#"K", MilInlineProfile.pass   ),*)
        (#"L", MilLicm.pass            ),
 (*       (#"R", MilRep.pass             ), *)
@@ -64,7 +64,7 @@ struct
       in cis
       end
 
-  val disabled = "IJKR"
+  val disabled = "JKR"
   val enabled = fn c => not (String.contains (disabled, c))
   val filter = fn s => String.keepAll (s, enabled)
   val o0String = filter "fst"
