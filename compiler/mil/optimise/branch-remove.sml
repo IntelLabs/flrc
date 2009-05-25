@@ -185,9 +185,18 @@ struct
                          of M.SVariable v => print (ID.variableString' v)
                           | M.SConstant c => 
                             (case c 
-                              of M.CName n => 
-                                 print ("SConstant " ^ID.nameString' n)
-                               | _ => fail ("SConstant", "unknown")))
+                              of M.CName n => print ("SConstant " ^ ID.nameString' n)
+                               | M.CRat n => fail ("SConstant ", "rat" )
+                               | M.CInteger n => fail ("SConstant ", "integer" )
+                               | M.CIntegral n => print ("SConstant " ^ IntArb.stringOf n )
+                               | M.CFloat n => fail ("SConstant ", "float" )
+                               | M.CDouble n => fail ("SConstant ", "double" )
+                               | M.CViVector n => fail ("SConstant ", "vivector" )
+                               | M.CViMask n => fail ("SConstant ", "vimask" )
+                               | M.CPok n => fail ("SConstant ", "pok" )
+                               | M.COptionSetEmpty => fail ("SConstant ", "optionsetempty" )
+                               | CTypePH => fail ("SConstant ", "typeph" )))
+
                      | NONE => print ("others ")
                      
           val () = if b then print (" = ") else print (" <> ")
