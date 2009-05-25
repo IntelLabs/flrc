@@ -355,6 +355,7 @@ struct
 
                val wOpts = ["-W3", "-Qwd 177", "-Qwd 279", "-Qwd 188"]
                val lOpts = ["-TC", "-Qc99", "-c", 
+                            "-mP2OPT_pre=false", (* disable PRE *)
                             "-mCG_opt_mask=0xfffe",
                             "/Qtlsregister:ebx",
                             "/Qoffsetvsh:0", 

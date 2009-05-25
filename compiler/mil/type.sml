@@ -11,8 +11,8 @@ sig
     val isPType : Config.t * Mil.typ -> bool
     val equal : t * t -> bool
     val subtype : Config.t * t * t -> bool
-(*    val lub : Config.t * t * t -> t
-    val glb : Config.t * t * t -> t*)
+    val lub : Config.t * t * t -> t
+    val glb : Config.t * t * t -> t
     val equalVectorElemType :
         Config.t * t * VectorInstructions.elemType -> bool
   end
@@ -54,6 +54,20 @@ struct
    structure ND = I.NameDict
    structure M = Mil
    structure MU = MilUtils
+
+   val <- = Try.<-
+   val <@ = Try.<@
+   val <! = Try.<!
+   val << = Try.<<
+   val oo = Try.oo
+   val om = Try.om
+   val or = Try.or
+   val || = Try.||
+   val @@ = Utils.Function.@@
+
+   infix 3 << @@ oo om <! <\ 
+   infixr 3 />
+   infix 4 or || 
 
    structure Chat = ChatF (type env = Config.t
                            fun extract x = x
@@ -225,6 +239,479 @@ struct
            | (M.TDouble                               , VI.ViFloat64) => true
            | _                                                        => false
 
+
+     structure Lub =
+     struct
+
+     val pObjKind =
+      fn (pok1, pok2) => 
+         if MU.PObjKind.eq (pok1, pok2) then
+           SOME pok1
+         else 
+           NONE
+
+     val typKind = 
+      fn (tk1, tk2) => 
+         if MU.TypKind.eq (tk1, tk2) then
+           SOME tk1
+         else 
+           NONE
+
+     val vector = 
+         Try.lift 
+         (fn (v1, v2, doit) => 
+             let
+               val () = Try.require (Vector.length v1 = Vector.length v2)
+               val v = Vector.map2 (v1, v2, doit)
+             in v
+             end)
+
+     (* The Lub/Glb code is split into three pieces.  The first function handles
+      * the purely structural rules (i.e. no width subtyping, and only
+      * comparing like to like) which are dual.  This function is parameterized
+      * over the full lub/glb functions which are used to compute lubs/glbs of
+      * the sub-components.  By instantiating up/down with lub/glb or glb/lub, 
+      * the structural lub rules/glb rules are obtained.
+      * 
+      * The second two functions implement the non-structural rules for lubs/glbs
+      * respectively.  These functions assume that none of the non-structural rules
+      * apply (that is, that the structural lub/glb has failed).
+      *
+      * N.B.  The structural code is deliberately written to cover all cases so that 
+      * exhaustiveness checking will catch any missed cases.  Please preserve 
+      * this. The other functions are not necessarily of this form, so a match
+      * non-exhaustive warning in the structural code should prompt an inspection
+      * of the non-structural code as well.
+      *)
+     val rec structural = 
+      fn (up, down) => 
+      fn (config, t1, t2) => 
+         let
+           val up = fn (t1, t2) => up (config, t1, t2)
+           val down = fn (t1, t2) => down (config, t1, t2)
+
+           val eq = 
+            fn (t1, t2) => 
+               if MU.Typ.eq (t1, t2) then 
+                 SOME t1
+               else
+                 NONE
+
+           val cc = (* Not sure what the right thing is here, equality is safe *)
+               fn (cc1, cc2) => 
+                  if MU.CallConv.eq MU.Typ.eq (cc1, cc2) then
+                    SOME cc1
+                  else 
+                    NONE
+           val to = 
+               Try.try 
+               (fn () => 
+                   (case (t1, t2)
+                     of (M.TAny, M.TAny) => M.TAny
+                      | (M.TAnyS _, M.TAnyS _) => <@ eq (t1, t2)
+                      | (M.TPtr, M.TPtr) => M.TPtr
+                      | (M.TRef, M.TRef) => M.TRef
+                      | (M.TBits _, M.TBits _) => <@ eq (t1, t2)
+                      | (M.TNone, M.TNone) => M.TNone
+                      | (M.TRat, M.TRat) => M.TRat
+                      | (M.TInteger, M.TInteger) => M.TInteger
+                      | (M.TName, M.TName) => M.TName
+                      | (M.TIntegral _, M.TIntegral _) => <@ eq (t1, t2)
+                      | (M.TFloat, M.TFloat) => M.TFloat
+                      | (M.TDouble, M.TDouble) => M.TDouble
+                      | (M.TViVector vit1, M.TViVector vit2) => <@ eq (t1, t2)
+                      | (M.TViMask vit1, M.TViMask vit2) => <@ eq (t1, t2)
+                      | (M.TCode {cc = cc1, args = args1, ress = ress1},
+                         M.TCode {cc = cc2, args = args2, ress = ress2}) => 
+                        let
+                          val cc = <@ cc (cc1, cc2)
+                          val args = <@ vector (args1, args2, down)
+                          val ress = <@ vector (ress1, ress2, up)
+                        in M.TCode {cc = cc, args = args, ress = ress}
+                        end
+                      | (M.TTuple _, M.TTuple _) => Try.fail () (* handled elsewhere *)
+                      | (M.TIdx, M.TIdx) => M.TIdx
+                      | (M.TContinuation ts1, M.TContinuation ts2) => 
+                       let
+                         val ts = <@ vector (ts1, ts2, up)
+                       in M.TContinuation ts
+                       end
+                      | (M.TThunk t1, M.TThunk t2) => M.TThunk (up (t2, t2))
+                      | (M.TPAny, M.TPAny) => M.TPAny
+                      | (M.TPFunction {args = args1, ress = ress1},
+                         M.TPFunction {args = args2, ress = ress2}) => 
+                        let
+                          val args = <@ vector (args1, args2, down)
+                          val ress = <@ vector (ress1, ress2, up)
+                        in M.TPFunction {args = args, ress = ress}
+                        end
+                      | (M.TPSum ts1, M.TPSum ts2) => Try.fail () (* handled elsewhere *)
+                      | (M.TPType {kind = kind1, over = over1},
+                         M.TPType {kind = kind2, over = over2}) => 
+                        let
+                          val kind = <@ typKind (kind1 ,kind2)
+                          val over = up (over1, over2)
+                        in M.TPType {kind = kind, over = over}
+                        end
+                      | (M.TPRef _, M.TPRef _) => <@ eq (t1, t2)
+                      | (M.TAny, _) => Try.fail ()           | (M.TAnyS _, _) => Try.fail ()
+                      | (M.TPtr, _) => Try.fail ()           | (M.TRef, _) => Try.fail ()
+                      | (M.TBits _, _) => Try.fail ()        | (M.TNone, _) => Try.fail ()
+                      | (M.TRat, _) => Try.fail ()           | (M.TInteger, _) => Try.fail ()
+                      | (M.TName, _) => Try.fail ()          | (M.TIntegral _, _) => Try.fail ()
+                      | (M.TFloat, _) => Try.fail ()         | (M.TDouble, _) => Try.fail ()
+                      | (M.TViVector vit1, _) => Try.fail () | (M.TViMask vit1, _) => Try.fail ()
+                      | (M.TCode _, _) => Try.fail ()        | (M.TTuple _, _) => Try.fail ()
+                      | (M.TIdx, _) => Try.fail ()           | (M.TContinuation _, _) => Try.fail ()
+                      | (M.TThunk _, _) => Try.fail ()       | (M.TPAny, _) => Try.fail ()
+                      | (M.TPFunction _, _) => Try.fail ()   | (M.TPSum _, _) => Try.fail ()
+                      | (M.TPType _, _) => Try.fail ()       | (M.TPRef _, _) => Try.fail ()
+                   )
+               )
+         in to
+         end
+
+     (* In order to make the non-structural glb/lub code more compact, we partition 
+      * the types into classes which behave identically wrt lub/glb.  There are 
+      * individual partitions for TAny, Mask types, the TAnyS _ types, and TNone. 
+      * The TRef, TPtr, TPAny, and TBits types each define a partition which includes
+      * themselves and their exact immediate sub-types.  So for example, the SRef
+      * class contains TRef, as well as TRat, TInteger, etc; but not TPAny nor any of
+      * its immediate sub-types (e.g. TPFunction, etc).  The boolean argument to these
+      * classes indicate whether or not the summarized type is exact.  So for example,
+      * TRef is classified by SRef false, whereas TRat is classified by SRef true.
+      *)      
+     datatype summary = 
+              SRef of bool  (* false => TRef, true => An exact immediate subtype of TRef *)
+            | SPtr of bool  (* false => TPtr, true => An exact immediate subtype of TPtr *)
+            | SPAny of bool (* false => TPAny, true => An exact immediate subtype of TPAny *)
+            | SBits of bool (* false => TBits, true => An exact immediate subtype of TBits *)
+            | SMask  (* TMask *)
+            | SAny   (* TAny *)
+            | SSized (* TAnyS *)
+            | SNone  (* TNone *)
+
+
+     val summarize =
+      fn (config, t) => 
+         (case t
+           of M.TAny                       => SAny
+            | M.TAnyS vs                   => SSized
+            | M.TPtr                       => SPtr false
+            | M.TRef                       => SRef false
+            | M.TBits vs                   => SBits false
+            | M.TNone                      => SNone
+            | M.TRat                       => SRef true
+            | M.TInteger                   => SRef true
+            | M.TName                      => SRef true
+            | M.TIntegral sz               => SBits true
+            | M.TFloat                     => SBits true
+            | M.TDouble                    => SBits true
+            | M.TViVector et               => SBits true
+            | M.TViMask et                 => SMask
+            | M.TCode {cc, args, ress}     => SPtr true
+            | M.TTuple {pok, fixed, array} => if isPType (config, t) then 
+                                                SPAny true
+                                              else
+                                                SRef true
+            | M.TIdx                       => SRef true
+            | M.TContinuation ts           => SPtr true
+            | M.TThunk t                   => SRef true
+            | M.TPAny                      => SPAny false
+            | M.TPFunction {args, ress}    => SPAny true
+            | M.TPSum nts                  => SPAny true
+            | M.TPType {kind, over}        => SPAny true
+            | M.TPRef t                    => SPAny true)
+
+     (* This code handles the non-structural lub cases *)
+     val rec lubLossy = 
+      fn (config, t1, t2) => 
+         let
+           val lub = fn (t1, t2) => lub (config, t1, t2)
+           val glb = fn (t1, t2) => glb (config, t1, t2)
+
+           val eq = 
+            fn (t1, t2) => 
+               if MU.Typ.eq (t1, t2) then 
+                 SOME t1
+               else
+                 NONE
+
+           val sub =
+            fn (t1, t2) => 
+               if subtype (config, t1, t2) then 
+                 SOME t2
+               else
+                 NONE
+
+           val field = 
+               Try.lift 
+               (fn ((t1, fv1), (t2, fv2)) => 
+                   (case (fv1, fv2)
+                     of (M.FvReadOnly, M.FvReadOnly) => (lub (t1, t2), M.FvReadOnly)
+                      | (M.FvReadOnly, M.FvReadWrite) => (<@ sub (t1, t2), M.FvReadOnly)
+                      | (M.FvReadWrite, M.FvReadOnly) => (<@ sub (t2, t1), M.FvReadOnly)
+                      | (M.FvReadWrite, M.FvReadWrite) => (<@ eq (t1, t2), M.FvReadWrite)))
+
+          (*
+           * LUB: t1 v t2
+           *
+           * <a1, ..., an, R1> v <b1, ..., bn, ..., bm, R2> = <a1 v b1, ..., an v bn, R3>
+           * where
+           *  R3 = [] if R1 = [] or R2 = []
+           *     = [ak v bk v bn+1 v ... v bm] if R1 = [ak] and R2 = [bk]
+           *)
+           val tTupleWidth =
+               Try.lift 
+               (fn ({pok = pok1, fixed = fixed1, array = array1},
+                    {pok = pok2, fixed = fixed2, array = array2}) => 
+                   let
+                     val pok = <@ pObjKind (pok1, pok2)
+                     val len = Int.min (Vector.length fixed1, Vector.length fixed2)
+                     val (fixed1, extras1) = Utils.Vector.split (fixed1, len)
+                     val (fixed2, extras2) = Utils.Vector.split (fixed2, len)
+                     (* One is empty *)
+                     val extras = Vector.concat [extras1, extras2]
+                     val help = 
+                      fn (tv1, tv2, truncate) => 
+                         let
+                           val tv = if truncate then NONE else field (tv1, tv2)
+                         in (tv, truncate orelse not (isSome tv))
+                         end
+                     val (fixedO, truncate) = Vector.map2AndFold (fixed1, fixed2, false, help)
+                     val fixed = Vector.keepAllSome fixedO
+                     val array = 
+                         (case (array1, array2, truncate)
+                           of (NONE, _, _) => NONE
+                            | (_, NONE, _) => NONE
+                            | (_, _, true) => NONE
+                            | (SOME f1, SOME f2, _) => 
+                              Try.try 
+                                (fn () =>
+                                    Vector.fold (extras, <@ field (f1, f2), <@ field)))
+                   in M.TTuple {pok = pok, fixed = fixed, array = array}
+                   end)
+               
+           val t = 
+               (case (t1, t2)
+                  (* Width subtyping on tuples *)
+                 of (M.TTuple r1, M.TTuple r2) =>
+                     (case tTupleWidth (r1, r2)
+                       of SOME t => t
+                        | NONE => 
+                          if isPType (config, t1) andalso isPType (config, t2) then 
+                            M.TPAny
+                          else
+                            M.TRef)
+
+                  (* Sum widening *)
+                  | (M.TPSum d1, M.TPSum d2) => 
+                    let
+                      val combine = (fn (nm, op1, op2) => 
+                                        (case (op1, op2)
+                                          of (NONE, _) => op2
+                                           | (_, NONE) => op1
+                                           | (SOME t1, SOME t2) => SOME (lub (t1, t2))))
+                      val d = ND.map2 (d1, d2, combine)
+                    in M.TPSum d
+                    end
+
+                  (* All other combinations.  Note that by assumption, 
+                   * t1 and t2 have different top level structure, and neither is TNone. *)
+                  | _ => 
+                    (case (MU.Typ.valueSize (config, t1), MU.Typ.valueSize (config, t2))
+                      of (SOME sz1, SOME sz2) => 
+                         if MU.ValueSize.eq (sz1, sz2) then  (* Both same sized *)
+                           (case (summarize (config, t1), summarize (config, t2))
+                             of (SNone, _) => t2
+                              | (_, SNone) => t1
+                              | (SAny, _) => M.TAny
+                              | (_, SAny) => M.TAny
+                              | (SMask, _) => M.TAny
+                              | (_, SMask) => M.TAny 
+                              | (SSized, _) => M.TAnyS sz1 (* Same size *)
+                              | (_, SSized) => M.TAnyS sz1 (* Same size *)
+                              | (SBits ex1, SBits ex2) => M.TBits sz1 (* Same size, both <= Bits *)
+                              | (SBits _, _) => M.TAnyS sz1 (* Same size, t2 not <= Bits *)
+                              | (_, SBits _) => M.TAnyS sz1 (* Same size, t1 not <= Bits *)
+                              | (SPtr _, _) => M.TPtr (* Same size, t2 <> TAny, TAnyS, TBits, so t2 <= t1*)
+                              | (_, SPtr _) => M.TPtr (* Same size, t1 <> TAny, TAnyS, TBits, so t1 <= t2*)
+                              | (SRef _, _) => M.TRef (* Same size, t2 <> TAny, TAnyS, TBits, TPtr, so t2 <= t1*)
+                              | (_, SRef _) => M.TRef (* Same size, t1 <> TAny, TAnyS, TBits, TPtr, so t1 <= t2*)
+                              | (SPAny _, _) => M.TPAny (* Same size, t2 <> TAny, TAnyS, TBits, TPtr, TRef so t2 <= t1*)
+(*                            | (_, SPAny _) => M.TPAny (* Same size, t1 <> TAny, TAnyS, TBits, TPtr, TRef so t1 <= t2*)
+*)
+                           )
+                         else
+                           M.TAny (* Different sizes, not equal *)
+                       | _ => (* At least one is not sized, and they are not equal *)
+                         (case (t1, t2)
+                           of (M.TNone, _) => t2
+                            | (_, M.TNone) => t1
+                            | _ => M.TAny (* Both TMask or TAny *)
+                         )
+                    )
+               )
+         in t
+         end
+
+     (* This code handles the non-structural glb cases *)
+     and rec glbLossy = 
+      fn (config, t1, t2) => 
+         let
+           val lub = fn (t1, t2) => lub (config, t1, t2)
+           val glb = fn (t1, t2) => glb (config, t1, t2)
+
+           val eq = 
+            fn (t1, t2) => 
+               if MU.Typ.eq (t1, t2) then 
+                 SOME t1
+               else
+                 NONE
+
+           val sub =
+            fn (t1, t2) => 
+               if subtype (config, t1, t2) then 
+                 SOME t1
+               else
+                 NONE
+
+           val field = 
+               Try.lift 
+               (fn ((t1, fv1), (t2, fv2)) => 
+                   (case (fv1, fv2)
+                     of (M.FvReadOnly, M.FvReadOnly) => (glb (t1, t2), M.FvReadOnly)
+                      | (M.FvReadOnly, M.FvReadWrite) => (<@ sub (t2, t1), M.FvReadWrite)
+                      | (M.FvReadWrite, M.FvReadOnly) => (<@ sub (t1, t2), M.FvReadWrite)
+                      | (M.FvReadWrite, M.FvReadWrite) => (<@ eq (t1, t2), M.FvReadWrite)))
+
+           (* GLB: t1 ^ t2
+            * <a1, ..., an, R1> ^ <b1, ..., bn, ..., bm, R2> = <a1 ^ b1, ..., an ^ bn, cn+1, ..., cm, R3>
+            * where
+            *   R3 = [] if R1 = [] and R2 = []
+            *      = [aa] if R1 = [aa] and R2 = [] or vice versa
+            *      = [aa ^ bb] if R1=[aa] and R2=[bb]
+            * and
+            *   ci = bi ^ aa if R1 = [aa]
+            *      = bi otherwise
+            *)
+           val rec tTupleWidth =
+            fn (r1 as {pok = pok1, fixed = fixed1, array = array1},
+                r2 as {pok = pok2, fixed = fixed2, array = array2}) => 
+               if (Vector.length fixed1 > Vector.length fixed2) then
+                 tTupleWidth (r2, r1)
+               else 
+                 Try.try
+                   (fn () => 
+                       let 
+                         val pok = <@ pObjKind (pok1, pok2)
+                         val (fixed2, extras2) = Utils.Vector.split (fixed2, Vector.length fixed1)
+                         val fixedA = Vector.map2 (fixed1, fixed2, <@ field)
+                         val fixedB = 
+                             case array1
+                              of SOME f => Vector.map (extras2, fn f2 => (<@ field (f, f2)))
+                               | NONE => extras2
+                         val fixed = Vector.concat [fixedA, fixedB]
+                         val array = 
+                             (case (array1, array2)
+                               of (NONE, _) => array2
+                                | (_, NONE) => array1
+                                | (SOME f1, SOME f2) => SOME (<@ field (f1, f2)))
+                       in M.TTuple {pok = pok, fixed = fixed, array = array}
+                       end)
+               
+           val t = 
+               (case (t1, t2)
+                  (* Width subtyping on tuples *)
+                 of (M.TTuple r1, M.TTuple r2) =>
+                     (case tTupleWidth (r1, r2)
+                       of SOME t => t
+                        | NONE => M.TNone)
+
+                  (* Sum narrowing *)
+                  | (M.TPSum d1, M.TPSum d2) => 
+                    let
+                      val combine = (fn (nm, op1, op2) => 
+                                        (case (op1, op2)
+                                          of (NONE, _) => NONE
+                                           | (_, NONE) => NONE
+                                           | (SOME t1, SOME t2) => SOME (glb (t1, t2))))
+                      val d = ND.map2 (d1, d2, combine)
+                    in M.TPSum d
+                    end
+
+                  (* All other combinations.  Note that by assumption, 
+                   * t1 and t2 have different top level structure *)
+                  | _ => 
+                    (case (MU.Typ.valueSize (config, t1), MU.Typ.valueSize (config, t2))
+                      of (SOME sz1, SOME sz2) => 
+                         if MU.ValueSize.eq (sz1, sz2) then  (* Both same sized *)
+                           (case (summarize (config, t1), summarize (config, t2))
+                             of (SNone, _) => M.TNone
+                              | (_, SNone) => M.TNone
+                              | (SAny, _) => t2
+                              | (_, SAny) => t1
+                              | (SMask, _) => M.TNone
+                              | (_, SMask) => M.TNone
+                              | (SSized, _) => t2 (* Same size *)
+                              | (_, SSized) => t1 (* Same size *)
+
+                              (* On a bits branch *)
+                              | (SBits true, SBits true) => M.TNone (* Unequal exact bit types *)
+                              | (SBits false, SBits _) => t2
+                              | (SBits _, SBits false) => t1
+                              | (SBits _, _) => M.TNone
+                              | (_, SBits _) => M.TNone
+
+                              (* On the Ptr branch *)
+
+                              | (SPAny true, SPAny true) => M.TNone (* Unequal, exact *)
+                              | (SRef true, SRef true)   => M.TNone (* Unequal, exact *)
+                              | (SPtr true, SPtr true)   => M.TNone (* Unequal, exact *)
+
+                              | (SPAny true, SRef true)  => M.TNone (* Unequal, exact *)
+                              | (SRef true, SPAny true)  => M.TNone (* Unequal, exact *)
+
+                              | (SPAny true, SPtr true)  => M.TNone (* Unequal, exact *)
+                              | (SPtr true, SPAny true)  => M.TNone (* Unequal, exact *)
+
+                              | (SRef true, SPtr true)  => M.TNone (* Unequal, exact *)
+                              | (SPtr true, SRef true)  => M.TNone (* Unequal, exact *)
+
+                              | (SPAny false, _) => t1
+                              | (_, SPAny false) => t2
+
+                              | (SRef false, _)  => t1
+                              | (_, SRef false)  => t2
+
+                              | (SPtr false, _)  => t1
+                              | (_, SPtr false)  => t2
+                           )
+                         else
+                           M.TNone (* Different sizes *)
+                       | _ => 
+                         (case (t1, t2)
+                           of (_, M.TAny) => t1
+                            | (M.TAny, _) => t2
+                            | _ => M.TNone (* At least one is not sized, and they are not equal *)
+                         )
+                    )
+               )
+         in t
+         end
+     and rec lub = 
+      fn args =>           
+         (case structural (lub, glb) args
+           of NONE => lubLossy args
+            | SOME t => t)
+     and rec glb = 
+      fn args => 
+         (case structural (glb, lub) args
+           of NONE => glbLossy args
+            | SOME t => t)
+     end (* structure Lub  *)
+     val lub = Lub.lub
+     val glb = Lub.glb
    end
 
    structure Prim =

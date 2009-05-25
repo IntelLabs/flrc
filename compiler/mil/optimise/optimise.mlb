@@ -22,9 +22,8 @@ local
         inline-profile.sml
 *)
         inline-leaves.sml
-(*
-        rep-seq.sml
-        rep.sml
+(*        rep-seq.sml
+      rep.sml
 *)
         vectorize.sml
         branch-remove.sml
