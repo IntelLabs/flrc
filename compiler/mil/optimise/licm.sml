@@ -112,7 +112,8 @@ struct
         val() = LU.printLayout (VS.layout (s, Identifier.layoutVariable'))
       in  ()
       end
-      
+
+  (* return s plus all variables defined in the block *)      
   fun varsDefInBlock (state, env, M.B {parameters, instructions, transfer}, s) : VS.t = 
       let
         val s =
@@ -159,37 +160,43 @@ struct
 
   fun canLicm (state, env, i) = Effect.subset (MUI.fx (getConfig env, i), Effect.InitReadS)
 
-  fun licmTree (state, env, lsi, pblks, lt) =
+  (* Given a loop tree and its preheader (if it exists) perform LICM on the whole tree and return the new tree and
+   * preheader
+   *)
+  fun licmTree (state, env, lsi, oph, lt) =
       let   
         val Tree.T (root, children) = lt
         val Loop.L {header, blocks, ...} = root
         val () = debugDo (env, fn () => print ("Doing loop tree: " ^ I.labelString header ^ "\n"))
         val (children, blocks) = licmForest (state, env, lsi, blocks, children)
-        val lt = Tree.T (Loop.L {header = header, blocks = blocks}, children)
-        val (lt, pblks) =
-            case getPreheader (lsi, header)
+        val l = Loop.L {header = header, blocks = blocks}
+        val (l, oph) =
+            case oph
              of NONE =>
                 (* No preheader was generated.  This can happen under some circumstances.  Don't LICM this loop. *)
                 let
                   val () = Chat.warn0 (env, "Loop has no preheader: " ^ I.labelString header)
-                in (lt, pblks)
+                in (l, NONE)
                 end
-              | SOME phl =>
+              | SOME (phl, phb) =>
                 let
-                  val (l, pblks) = licmTreeA (state, env, lsi, pblks, lt, phl, header, blocks)
-                in
-                  (Tree.T (l, children), pblks)
+                  val (l, phb) = licmTreeA (state, env, lsi, phb, l, children)
+                in (l, SOME (phl, phb))
                 end
-      in (lt, pblks)
+        val lt = Tree.T (l, children)
+      in (lt, oph)
       end
 
-  and licmTreeA (state, env, lsi, pblks, lt, preheader, header, blocks) =
+  (* Given a loop and its preheader (which exists otherwise we are not called) perform LICM on this loop and return
+   * the new loop and preheader
+   *)
+  and licmTreeA (state, env, lsi, phb, l as Loop.L {header, blocks}, children) =
       let
         (* Calculate the instructions that are invariant named by the destination variable *)
         val exits = getExits (lsi, header)
         fun checkOne (l, b, blks) = if dominatesSet (lsi, l, exits) then (l, b)::blks else blks
         val blocksDominatingExits = LD.fold (blocks, [], checkOne)
-        val varsDefInLoop = varsDefInLoopTree (state, env, lt)
+        val varsDefInLoop = varsDefInLoopTree (state, env, Tree.T (l, children))
         val () = debugDo (env, fn () => printVS ("VarsDefInLoop", varsDefInLoop))
         fun instructionInvariants (i, inv) =
             case MUI.dest i
@@ -236,19 +243,32 @@ struct
         val () = debugDo (env, printInvInstrs invInstrs)
 
         (* Add invariant instructions to preheader *)
-        val M.B {parameters, instructions, transfer} = Option.valOf (LD.lookup (pblks, preheader))
+        val M.B {parameters, instructions, transfer} = phb
         val instructions = Vector.concat [instructions, invInstrs]
-        val preheaderB = M.B {parameters = parameters, instructions = instructions, transfer = transfer}
-        val pblks = LD.insert (pblks, preheader, preheaderB)
+        val phb = M.B {parameters = parameters, instructions = instructions, transfer = transfer}
 
         (* Form result *)
-        val lt = Loop.L {header = header, blocks = blocks}
-      in (lt, pblks)
+        val l = Loop.L {header = header, blocks = blocks}
+      in (l, phb)
       end
 
+  (* Given a loop forest and the blocks of the parent (which might be the CFG itself), which contain the preheaders of
+   * the loops, perform LICM on the forrest and return the new forest and blocks for the parent
+   *)
   and licmForest (state, env, lsi, pblks, loops) =
       let
-        fun doOne (loop, pblks) = licmTree (state, env, lsi, pblks, loop)
+        fun doOne (lt, pblks) =
+            let
+              val Tree.T (Loop.L {header, ...}, _) = lt
+              val oph = getPreheader (lsi, header)
+              val oph = Option.map (oph, fn phl => (phl, Option.valOf (LD.lookup (pblks, phl))))
+              val (lt, oph) = licmTree (state, env, lsi, oph, lt)
+              val pblks =
+                  case oph
+                   of NONE => pblks
+                    | SOME (phl, phb) => LD.insert (pblks, phl, phb)
+            in (lt, pblks)
+            end
         val (loops, pblks) = Vector.mapAndFold (loops, pblks, doOne)
       in (loops, pblks)
       end
