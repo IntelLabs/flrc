@@ -162,7 +162,8 @@ struct
    Try.lift 
      (fn ((d, imil), fname) =>
          let
-           val iFunc = IFunc.getIFuncByName (imil, fname)
+           (* Function may have become dead before we get here *)
+           val iFunc = <@ IFunc.getIFuncByName' (imil, fname)
            val () = Try.require (IFunc.getEscapes (imil, iFunc))
            val () = Try.require (not (IFunc.isProgramEntry (imil, iFunc)))
            val () = Try.require (noInternalEscapes (d, imil, fname, iFunc))
