@@ -82,6 +82,7 @@ struct
                              fun config (E {config, ...}) = config
                              val indent = 2
                              val variableBind = NONE
+                             val labelBind = NONE
                              val variableUse = NONE
                              val analyseJump = NONE
                              val analyseCut = NONE

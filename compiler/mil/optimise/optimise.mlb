@@ -22,7 +22,10 @@ local
         inline-profile.sml
 *)
         inline-leaves.sml
-(*        rep-seq.sml
+        rep-seq.sml
+        rep-base.sml
+        rep-object.sml
+(*
       rep.sml
 *)
         vectorize.sml

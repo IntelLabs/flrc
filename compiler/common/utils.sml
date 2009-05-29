@@ -65,6 +65,8 @@ structure Utils = struct
           end
       val toListOnto : 'a vector * 'a list -> 'a list = 
        fn (v, l) => Vector.foldr (v, l, op ::)
+      val toListMap2 : 'a vector * 'b vector * (('a * 'b) ->  'c) -> 'c list =
+       fn (v1, v2, f) => Vector.foldr2 (v1, v2, [], fn (a, b, l) => f (a, b) :: l)
       val rec concatToList : 'a vector list -> 'a list = 
        fn vl => 
           (case vl
@@ -145,6 +147,14 @@ structure Utils = struct
              (case (o1, o2)
                of (SOME a, SOME b) => SOME (f (a, b))
                 | _ => NONE)
+
+      val union : ('a option) * ('a option) * ('a * 'a -> 'a) -> 'a option = 
+          fn (o1, o2, f) => 
+             (case (o1, o2)
+               of (a, NONE) => a
+                | (NONE, b) => b
+                | (SOME a, SOME b) => SOME (f (a, b)))
+
     end (* structure Option *)
 
     (* Numeric stuff *)
@@ -543,6 +553,11 @@ structure StringDict =
 
 structure CharDict =
     DictF (struct type t = char val compare = Char.compare end);
+
+structure IntIntDict = DictF(struct
+                               type t = int * int
+                               val compare = Compare.pair (Int.compare, Int.compare)
+                             end)
 
 signature DICT_IMP =
 sig

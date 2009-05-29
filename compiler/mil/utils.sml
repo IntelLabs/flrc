@@ -104,6 +104,7 @@ sig
     val numBytes : t -> int
     val toString : t -> string
     val intArb : IntArb.size -> t
+    val wordSize : Config.t -> t
     val ptrSize : Config.t -> t
     val vectorSize : Config.t -> t
     val compare : t Compare.t
@@ -185,6 +186,7 @@ sig
     val toValueSize : t -> ValueSize.t
     val toString : t -> string
     val intArb : IntArb.size -> t
+    val wordSize : Config.t -> t
     val ptrSize : Config.t -> t
     val compare : t Compare.t
     val eq : t * t -> bool
@@ -207,6 +209,7 @@ sig
     val fromTraceSize : Config.t * Typ.traceabilitySize -> t
       (* pre: result determined *)
     val fromTyp : Config.t * Typ.t -> t (* pre: result determined *)
+    val toTyp : t -> Typ.t 
   end
 
   structure FieldDescriptor :
@@ -1708,7 +1711,12 @@ struct
           | IntArb.S32  => M.Vs32
           | IntArb.S64  => M.Vs64
 
-    fun ptrSize config = intArb (Config.targetWordSize' config)
+    fun ptrSize config = 
+        (case Config.targetWordSize config
+          of Config.Ws32 => M.Vs32
+           | Config.Ws64 => M.Vs64)
+
+    val wordSize = ptrSize
 
     fun vectorSize config =
         case Config.targetVectorSize config
@@ -1966,7 +1974,12 @@ struct
           | IntArb.S32  => M.Fs32
           | IntArb.S64  => M.Fs64
 
-    fun ptrSize config = intArb (Config.targetWordSize' config)
+    fun ptrSize config = 
+        (case Config.targetWordSize config
+          of Config.Ws32 => M.Fs32
+           | Config.Ws64 => M.Fs64)
+
+    val wordSize = ptrSize
 
     val compare = Compare.fieldSize
     val eq = Compare.C.equal compare
@@ -2037,7 +2050,10 @@ struct
         end
 
     fun fromTyp (c, t) = fromTraceSize (c, Typ.traceabilitySize (c, t))
-
+    fun toTyp fk = 
+        (case fk
+          of M.FkRef => M.TRef
+           | M.FkBits fs => M.TBits (FieldSize.toValueSize fs))
   end
 
   structure FieldDescriptor =
