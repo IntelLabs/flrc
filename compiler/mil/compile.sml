@@ -17,18 +17,19 @@ struct
   val passes =
       [
        (#"C", MilContify.pass         ),
-(*       (#"D", MilDblDiamond.pass      ),*)
+       (#"D", MilDblDiamond.pass      ),
        (#"f", MilLowerPFunctions.pass ),
-(*     (#"I", MilInlineLeaves.pass    ),  
-       (#"J", MilInlineAggressive.pass),
-       (#"K", MilInlineProfile.pass   ),
+       (#"I", MilInlineLeaves.pass    ),  
+(*       (#"J", MilInlineAggressive.pass),
+       (#"K", MilInlineProfile.pass   ),*)
        (#"L", MilLicm.pass            ),
-       (#"R", MilRep.pass             ), *)
+(*       (#"R", MilRep.pass             ), *)
        (#"S", MilSimplify.pass        ),
        (#"s", MilLowerPSums.pass      ),
        (#"t", MilLowerPTypes.pass     ),
        (#"V", MilCse.pass             ),
-       (#"Z", MilVectorize.pass       )]
+       (#"Z", MilVectorize.pass       ),
+       (#"B", MilRemoveBranch.pass    )]
 
   val subPasses = List.map (passes, #2)
 
@@ -64,14 +65,13 @@ struct
       in cis
       end
 
-(*  val o0String = "HNOT"
-  val o1String = "SHFNOT"
-  val o2String = "SVSISVSIHFNOT"
-  val o3String = "VSCSVSIRDSCSVLSRSIKHFNOT"*)
-  val o0String = "fst"
-  val o1String = "VSfst"   (* deleted CS before fst*)
-  val o2String = "SVSfst"  (* deleted CS before fst*)
-  val o3String = o2String
+  val disabled = "JKR"
+  val enabled = fn c => not (String.contains (disabled, c))
+  val filter = fn s => String.keepAll (s, enabled)
+  val o0String = filter "fst"
+  val o1String = filter "Sfst"
+  val o2String = filter "SVSISVSIfst"
+  val o3String = filter "VSCSVSIRDSCSVLSRSIKfst"
 
   val o0Control = Option.valOf (parseControl o0String)
   val o1Control = Option.valOf (parseControl o1String)

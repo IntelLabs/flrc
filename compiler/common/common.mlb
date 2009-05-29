@@ -54,6 +54,7 @@ in
         signature DICT_IMP
         signature DOMINANCE
         signature IMP_POLY_LABELED_GRAPH
+        signature LATTICE
         signature ORD
         signature SET
 
@@ -85,6 +86,7 @@ in
         structure ImpQueue
         structure IntArb
         structure IntDict
+        structure IntIntDict
         structure Intr
         structure IntSet
         structure LayoutUtils

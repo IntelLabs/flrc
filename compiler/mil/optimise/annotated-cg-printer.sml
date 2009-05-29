@@ -1,6 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
 (* Copyright (C) Intel Corporation, May 2008 *)
-(* Description: Inline small leaf functions. *)
 
 (* Print multiple annotated call graphs to a single or multi files.  *)
 
@@ -19,16 +18,13 @@ struct
 
   (* Aliases *)
   structure PD  = PassData
-  structure MOU = MilOptUtils
   structure M   = Mil
   structure L   = Layout
   structure ID  = Identifier
   structure IM  = ID.Manager
+  structure MU = MilUtils
 
-  structure MCG = MilCallGraphF (type env = PD.t
-                                 val layoutVariable = fn (e, v) => L.str ""
-                                 val config = PD.getConfig
-                                 val indent = 2)
+  structure MCG = MilCallGraph
 
   (* First time we print the call graph?. *)
   val firstPrint = ref true
@@ -45,11 +41,11 @@ struct
         val fillColorRed    = L.str ("fillcolor=red")
         val fillColorYellow = L.str ("fillcolor=red")
         (* Helper function to name a "function node" in the call graph. *)
-        fun nameFunction (f: Mil.variable, cfg): string =
+        fun nameFunction (f: Mil.variable, iFunc): string =
             let
-              val hint = ID.variableName (IMil.getST (imil), f)
-              val size = IMil.Cfg.getSize (imil, cfg)
-              val recFlag = if IMil.Cfg.getRecursive (imil, cfg) then
+              val hint = MU.SymbolInfo.variableName (IMil.T.getSi imil, f)
+              val size = IMil.IFunc.getSize (imil, iFunc)
+              val recFlag = if IMil.IFunc.getRecursive (imil, iFunc) then
                               ", REC"
                             else
                               ""
@@ -59,9 +55,9 @@ struct
 
         fun getFirstBlk f = 
             let
-              val cfg = IMil.Cfg.getCfgByName (imil, f)
-              val blk = IMil.Cfg.getStart (imil, cfg)
-              val (lbl, _) = IMil.Block.getLabel' (imil, blk)
+              val iFunc = IMil.IFunc.getIFuncByName (imil, f)
+              val blk = IMil.IFunc.getStart (imil, iFunc)
+              val (lbl, _) = IMil.IBlock.getLabel' (imil, blk)
             in
               lbl
             end
@@ -78,8 +74,8 @@ struct
 
         fun nodeOptions (f: Mil.variable, escapes: bool) : L.t list = 
             let
-              val cfg = IMil.Cfg.getCfgByName (imil, f)
-              val funName = nameFunction (f, cfg)
+              val iFunc = IMil.IFunc.getIFuncByName (imil, f)
+              val funName = nameFunction (f, iFunc)
               val label = L.str ("label=\"" ^ funName ^ freqStr (f) ^ "\"");
               val filled = L.str ("style=filled /*Escaping Function*/")
               val escaping = [filled, fillColorRed]
@@ -87,7 +83,7 @@ struct
                               escaping
                             else
                               nil
-              val options = if IMil.Cfg.isProgramEntry (imil, cfg) then
+              val options = if IMil.IFunc.isProgramEntry (imil, iFunc) then
                               L.str ("shape=box /*Program Entry*/")::options
                             else
                               options
@@ -98,14 +94,9 @@ struct
         fun edgeOptions (call : Mil.label,
                          srcF : Mil.variable, 
                          tgtF : Mil.variable option,
-                         kind : MCG.callKind, 
-                         toUnknown : bool, 
                          virtualCall : bool) : L.t list = 
             let
-              val options = case kind
-                             of MCG.CkCall      => [black]
-                              | MCG.CkEval      => [red]
-                              | MCG.CkBulkSpawn => [blue]
+              val options = [black]
 
               val options = case getBBFreq call
                              of NONE => options
@@ -118,7 +109,7 @@ struct
                                   label::options
                                 end
 
-              val options = if toUnknown orelse virtualCall then
+              val options = if virtualCall then
                               dotted::options
                             else 
                               options
@@ -126,10 +117,11 @@ struct
               options
             end
         val filename = "call_graphs.dot"
-        val p = IMil.unBuild imil
-        val cg = MCG.program (d, p)
-        val l = MCG.layoutAnnotatedDot (cg, nodeOptions, 
-                                        edgeOptions, graphLabel)
+        val p = IMil.T.unBuild imil
+        val cg = MCG.program (PD.getConfig d, IMil.T.getSi imil, p)
+        val l = MCG.layoutDot (cg, {edgeOptions = edgeOptions,
+                                    nodeOptions = nodeOptions,
+                                    graphTitle = graphLabel})
       in 
         if !firstPrint then
           (LayoutUtils.writeLayout' (l, filename, false); firstPrint := false)

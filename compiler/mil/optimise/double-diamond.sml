@@ -71,22 +71,22 @@ struct
   val stats = [("SQLifted", "PSetQueries lifted")]
 
   (* Aliases *)
-  structure PD    = PassData
-  structure MOU   = MilOptUtils
   structure U     = Utils
+  structure PD    = PassData
+  structure MU    = MilUtils
   structure WS    = IMil.WorkSet
-  structure Instr = IMil.Instr
-  structure Block = IMil.Block
+  structure Instr = IMil.IInstr
+  structure Block = IMil.IBlock
+  structure Use   = IMil.Use
                     
-  type block = IMil.block
+  type block = IMil.iBlock
                
   (* Reports a fail message and exit the program.
    * param f: The function name.
    * param s: the messagse. *)
-  fun fail (f, m) = Fail.fail ("double-diamond.sml", f, m)
+  fun fail (f, m) = Fail.fail ("MilDblDiamond", f, m)
                     
-  val (debugPassD, debugPass) =
-      Config.Debug.mk (passname, "debug the Mil double diamond pass")
+  val (debugPassD, debugPass) = Config.Debug.mk (passname, "debug the Mil double diamond pass")
 
   (* Print a message if debug mode is on. *)
   fun debug (d : PD.t, m : string) =
@@ -105,22 +105,18 @@ struct
         (* Add "vi' = RhsSeqQuery (vi)" into the block. *)
         val parameters = Block.getParameters (imil, blk)
         val vi : Mil.variable = Vector.sub (parameters, varIndex)
-        val vi' : Mil.variable = IMil.newVar (imil, "mdd_vii", 
-                                              MilDefinitions.Bool.t, false)
+        val vi' : Mil.variable = IMil.Var.new (imil, "mdd_vii", MU.Bool.t (IMil.T.getConfig imil), false)
         val opand : Mil.operand = Mil.SVariable (vi)
         val newMilInstr = Mil.I {dest=SOME vi', rhs=Mil.RhsPSetQuery (opand)}
-        val newInstr : IMil.instr = Block.append (imil, blk, newMilInstr)
+        val newInstr : IMil.iInstr = Block.append (imil, blk, newMilInstr)
         (* Add newInstr to worklist. *)
         val () = WS.addInstr (wl, newInstr)
         (* Change "Goto L (v1, ..., vi, ...)" to "Goto L (v1, ..., vi', ...) *)
-        val transferInstr : IMil.instr = Block.getTransfer (imil, blk)
-        val (args, block) = case MOU.iinstrToTransfer (imil, transferInstr)
-                             of SOME (Mil.TGoto (Mil.T {block, arguments})) => 
-                                (arguments, block)
-                              | _ => fail ("fixPredecessor", 
-                                           "Block optional transfer is "^
-                                           "not TGoto")
-        val newArguments = U.vectorUpdate (args, varIndex, Mil.SVariable (vi'))
+        val transferInstr : IMil.iInstr = Block.getTransfer (imil, blk)
+        val (args, block) = case Instr.toTransfer transferInstr
+                             of SOME (Mil.TGoto (Mil.T {block, arguments})) => (arguments, block)
+                              | _ => fail ("fixPredecessor", "Block optional transfer is not TGoto")
+        val newArguments = U.Vector.update (args, varIndex, Mil.SVariable (vi'))
         val newTarget = Mil.T {block=block, arguments=newArguments} 
         val newTransfer = Mil.TGoto newTarget
         (* Add newInstr to worklist *)
@@ -136,21 +132,16 @@ struct
    * param newVar: the new variable. *)
   fun replacePSetQuery (imil, wl, use, newVar) = 
       let
-        val iinstr = case MOU.useToIInstr (imil, use)
-                      of SOME iinstr => iinstr
-                       | NONE => fail ("replacePSetQuery", 
-                                       "Invalid use");
-        (*  XXX EB:  Should it  become an  iinstrToDest  function into
-         * MilOptUtils? *)
-        val Mil.I {dest=d,...} = case MOU.iinstrToInstr (imil, iinstr)
-                                  of SOME x => x
-                                   | NONE => fail ("replacePSetQuery",
-                                                   "Invalid mil instruction")
-        val newInstr = Mil.I {dest = d, 
-                              rhs  = Mil.RhsSimple (Mil.SVariable (newVar))}
+        val iinstr = case Use.toIInstr use
+                      of SOME x => x
+                       | NONE => fail ("replacePSetQuery", "Invalid use")
+        val Mil.I {dest = d, ...} = case Instr.toInstruction iinstr
+                                     of SOME x => x
+                                      | NONE => fail ("replacePSetQuery", "Not a Mil instruction")
+        val newInstr = Mil.I {dest = d, rhs  = Mil.RhsSimple (Mil.SVariable (newVar))}
         val () = WS.addInstr (wl, iinstr)
       in 
-        IMil.Instr.replaceInstruction (imil, iinstr, newInstr)
+        IMil.IInstr.replaceInstruction (imil, iinstr, newInstr)
       end
       
   (* Process the variable v. Creates a new variable, and updates
@@ -169,7 +160,7 @@ struct
                        predecessors : block list) : Mil.variable =  
       let
         (* Replace v with a new variable b in the inarg list *)
-        val newVar = IMil.newVar (imil, "mdd", MilDefinitions.Bool.t, false)
+        val newVar = IMil.Var.new (imil, "mdd", MU.Bool.t (IMil.T.getConfig imil), false)
         (* Replace the RhsSetQuery (v) instructions by RhsSimple (newVar) *)
         val uses = IMil.Use.getUses (imil, v)
 	fun doOne (use) = replacePSetQuery (imil, wl, use, newVar)
@@ -191,7 +182,7 @@ struct
    * returns true if use is in the format dest <- RhsPSetQuery (use),
    *         otherwise returns false. *)
   fun useIsRhsPSetQuery (imil : IMil.t, use : IMil.use) : bool =
-      case MOU.useToInstr (imil, use)
+      case Use.toInstruction use
        of  SOME (Mil.I {rhs=Mil.RhsPSetQuery _, ...}) => true
 	 | _ => false
 
@@ -205,8 +196,7 @@ struct
                               v : Mil.variable) : bool = 
       let
         val uses : IMil.use Vector.t = IMil.Use.getUses (imil, v)
-        val allRhsPSetQuery = 
-            Vector.forall (uses, fn (u) => useIsRhsPSetQuery (imil, u))
+        val allRhsPSetQuery = Vector.forall (uses, fn (u) => useIsRhsPSetQuery (imil, u))
         val () = if (allRhsPSetQuery) then
                    debug (d, "  - [OK]: All uses are RhsPSetQuery.")
                  else
@@ -220,7 +210,7 @@ struct
    * param block: The block to check. 
    * returns true if IMil block has multiple input edges, otherwise,
    * returns false. *)
-  fun isMultipleInEdgeBlock (imil : IMil.t, block : IMil.block) : bool =
+  fun isMultipleInEdgeBlock (imil : IMil.t, block : block) : bool =
       let
         val inEdges : (block * block) list = Block.inEdges (imil, block);
       in
@@ -238,18 +228,17 @@ struct
    * return: true  if  any  variable was  updated,  otherwise  returns
    *         default changed flag. *)
   fun processLabel (d : PD.t, imil : IMil.t, wl : WS.ws, 
-                    labelInstr : IMil.instr) : bool = 
+                    labelInstr : IMil.iInstr) : bool = 
       let
-        val (label, vars) = case MOU.iinstrToLabel (imil, labelInstr)
+        val (label, vars) = case Instr.toLabel labelInstr
                              of NONE => fail ("processLabel","Invalid label")
                               | SOME x => x
         (* splitBlocks  contains  an  optional list  of  predecessors
          * blocks, resulting from the edge spliting. *)
         val splitBlocks = ref NONE
         val changed = ref false
-        val block = IMil.Instr.getBlock (imil, labelInstr);
-        val () = debug (d, "- Processing label \""^
-                           Identifier.labelString (label)^"\".")
+        val block = Instr.getIBlock (imil, labelInstr)
+        val () = debug (d, "- Processing label \"" ^ Identifier.labelString (label) ^ "\".")
         (* Check  if the input  edges where previously split.  If not,
          * split it and update the splitBlocks reference. *)
         fun splitInputEdges () : (block list) option =
@@ -264,8 +253,7 @@ struct
                          * exception. XXX EB: Should be tested before. *)
                         val () = Try.require (not cut)
                         val () = splitBlocks := SOME preds
-                        fun addLabelToWL (blk) = 
-                            WS.addInstr (wl, IMil.Block.getLabel (imil, blk))
+                        fun addLabelToWL (blk) = WS.addInstr (wl, Block.getLabel (imil, blk))
                         val () = List.foreach (preds, addLabelToWL)
                       in preds
                       end)
@@ -278,10 +266,9 @@ struct
             Try.try 
               (fn () => 
                   let
-                    val () = debug (d, "  - check and process variable \""
-                                       ^Identifier.variableString'(v)^"\".")
+                    val () = debug (d, "  - check and process variable \"" ^ Identifier.variableString' v ^ "\".")
                   in
-                    if ( allUsesAreRhsPSetQuery (d, imil, v) ) then
+                    if allUsesAreRhsPSetQuery (d, imil, v) then
                       let
                         val () = debug (d, "     - all uses are RhsPSetQuery.")
                         (* XXX EB: TODO:  Check if block has input cut
@@ -317,41 +304,38 @@ struct
                   (* The labelInstr will be modified. Add it to the WS. *)
                   val () = WS.addInstr (wl, labelInstr)
                 in 
-                  Instr.replaceMil (imil, labelInstr, IMil.MLabel (label, 
-                                                                   newVars))
+                  Instr.replaceMil (imil, labelInstr, IMil.MLabel (label, newVars))
                 end)
       in
         !changed
       end
 
-  (* Process a single cfg.  Apply the double diamond reduction to each
+  (* Process a single function.  Apply the double diamond reduction to each
    * label in the imil program.
    * param d: Mil optimizing pass data.
    * param imil: The imil representation. *)
-  fun processCfg (d : PD.t, imil : IMil.t, cfg : IMil.cfg) : unit = 
+  fun processFunc (d : PD.t, imil : IMil.t, f : IMil.iFunc) : unit = 
       let
         val wl = WS.new ()
-        val labels : IMil.instr list = IMil.Enumerate.Cfg.labels (imil, cfg)
+        val labels : IMil.iInstr list = IMil.Enumerate.IFunc.labels (imil, f)
         fun doLabel (l, c) = c orelse processLabel (d, imil, wl, l)
         val changed = List.fold (labels, false, doLabel)
         (* Update the imil internal representation *)
-        val () = MilCFGSimplify.function (d, imil, cfg)
+        val () = MilCfgSimplify.function (d, imil, f)
         val () = MilSimplify.simplify (d, imil, wl)
       in 
         (* Repeat while there are changes. *)
-        if (changed) then 
-          processCfg (d, imil, cfg)
-        else ()
+        if changed then processFunc (d, imil, f) else ()
       end
 
-  (* Process all the cfgs.
+  (* Process all the functions.
    * param d: Mil optimizing pass data.
    * param imil: The imil representation. *)
-  fun processCfgs (d : PD.t, imil : IMil.t) : unit = 
+  fun processFuncs (d : PD.t, imil : IMil.t) : unit = 
       let
-        val cfgs = IMil.Enumerate.T.cfgs (imil)
+        val funcs = IMil.Enumerate.T.funcs imil
       in
-        List.foreach (cfgs, fn (cfg) => processCfg (d, imil, cfg))
+        List.foreach (funcs, fn f => processFunc (d, imil, f))
       end
       
   (* Perform the double  diamond reduction  in the  imil intermediate
@@ -361,7 +345,7 @@ struct
   fun program (imil : IMil.t, pd : PD.t) : unit = 
       let
         val () = debug (pd, " - Starting the double diamond reduction...")
-        val () = processCfgs (pd, imil)
+        val () = processFuncs (pd, imil)
         val () = PD.report (pd, passname)
       in ()
       end

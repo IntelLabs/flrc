@@ -18,6 +18,7 @@ functor MilAnalyseF (
   val config : env -> Config.t
   val indent : int
   val variableBind : (state * env * Mil.variable -> env) option
+  val labelBind : (state * env * Mil.label -> env) option
   val variableUse : (state * env * Mil.variable -> unit) option
   val analyseJump : (state * env * Mil.label -> unit) option
   val analyseCut : (state * env * Mil.label -> unit) option
@@ -38,6 +39,7 @@ functor MilAnalyseF (
                           end)
 
   val clientBind = variableBind
+  val clientLabelBind = labelBind
   val clientVariable = variableUse
   val clientJump = analyseJump
   val clientCut = analyseCut
@@ -60,6 +62,11 @@ functor MilAnalyseF (
       case clientBind
        of NONE => e
         | SOME vb => vb (s, e, v)
+
+  fun analyseLabelBinder (s, e, l) =
+      case clientLabelBind
+       of NONE => e
+        | SOME lb => lb (s, e, l)
 
   fun analyseBinders (s, e, vs) =
       Vector.fold (vs, e, fn (v, e) => analyseBinder (s, e, v))
@@ -302,6 +309,7 @@ functor MilAnalyseF (
   fun analyseBlock (s, e, l,
                     b as M.B {parameters, instructions, transfer}) =
       let
+        val e = analyseLabelBinder (s, e, l)
         val e =
             case clientBlock
              of NONE => e

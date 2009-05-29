@@ -65,6 +65,8 @@ structure Utils = struct
           end
       val toListOnto : 'a vector * 'a list -> 'a list = 
        fn (v, l) => Vector.foldr (v, l, op ::)
+      val toListMap2 : 'a vector * 'b vector * (('a * 'b) ->  'c) -> 'c list =
+       fn (v1, v2, f) => Vector.foldr2 (v1, v2, [], fn (a, b, l) => f (a, b) :: l)
       val rec concatToList : 'a vector list -> 'a list = 
        fn vl => 
           (case vl
@@ -139,6 +141,20 @@ structure Utils = struct
           (case fst
             of NONE => snd
              | _ => fst)
+
+      val map2 : ('a option) * ('b option) * ('a * 'b -> 'c) -> 'c option = 
+          fn (o1, o2, f) => 
+             (case (o1, o2)
+               of (SOME a, SOME b) => SOME (f (a, b))
+                | _ => NONE)
+
+      val union : ('a option) * ('a option) * ('a * 'a -> 'a) -> 'a option = 
+          fn (o1, o2, f) => 
+             (case (o1, o2)
+               of (a, NONE) => a
+                | (NONE, b) => b
+                | (SOME a, SOME b) => SOME (f (a, b)))
+
     end (* structure Option *)
 
     (* Numeric stuff *)
@@ -456,9 +472,7 @@ signature DICT = sig
     val forall : 'a t * (key * 'a -> bool) -> bool
    (* false if domains are different *)
     val forall2 : 'a t * 'b t * (key * 'a * 'b -> bool) -> bool
-    val lub : 'a Lub.lubber -> 'a t Lub.lubber
-    val lubStrict : 'a Lub.lubber -> 'a t Lub.lubber
-    val map2    : 'a t * 'b t * (key * 'a option * 'b option -> 'c) -> 'c t
+    val map2    : 'a t * 'b t * (key * 'a option * 'b option -> 'c option) -> 'c t
     (* Order of entries is arbitrary *)
     val layout : 'a t * (key * 'a -> Layout.t) -> Layout.t
 end;
@@ -520,14 +534,10 @@ struct
           fold (RBT.mergeWithi aux (d1, d2), false, band)
         end
     fun map2 (d1, d2, f) =
-        RBT.mergeWithi (SOME o f) (d1, d2)
+        RBT.mergeWithi f (d1, d2)
     fun layout (d, f) =
         Layout.sequence ("{", "}", ",") (List.map (RBT.listItemsi d, f))
 
-    val lub : 'a Lub.lubber -> 'a t Lub.lubber = 
-        fn lub => fn p => Lub.pairWise map2 lub p
-    val lubStrict : 'a Lub.lubber -> 'a t Lub.lubber =
-        fn lub => fn p => Lub.pairWiseStrict map2 lub p
     val choose : 'a t -> ('a t * key * 'a) option = 
         fn d => 
            case RBT.firsti d
@@ -543,6 +553,11 @@ structure StringDict =
 
 structure CharDict =
     DictF (struct type t = char val compare = Char.compare end);
+
+structure IntIntDict = DictF(struct
+                               type t = int * int
+                               val compare = Compare.pair (Int.compare, Int.compare)
+                             end)
 
 signature DICT_IMP =
 sig

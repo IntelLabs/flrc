@@ -22,6 +22,7 @@ local
         transform.sml
         loop.sml
         name-small-values.sml
+        name-instructions.sml
         call-graph.sml
         imil-types.sml
         imil-enumerate.sml

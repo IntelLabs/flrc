@@ -162,7 +162,8 @@ struct
    Try.lift 
      (fn ((d, imil), fname) =>
          let
-           val iFunc = IFunc.getIFuncByName (imil, fname)
+           (* Function may have become dead before we get here *)
+           val iFunc = <@ IFunc.getIFuncByName' (imil, fname)
            val () = Try.require (IFunc.getEscapes (imil, iFunc))
            val () = Try.require (not (IFunc.isProgramEntry (imil, iFunc)))
            val () = Try.require (noInternalEscapes (d, imil, fname, iFunc))
@@ -202,11 +203,7 @@ struct
   val optimize = 
    fn (d, imil) =>
       let
-        val config = PD.getConfig d
-        val si = IMil.T.getSi imil
-        val p  = IMil.T.unBuild imil
-        val cg = MCG.program (config, si, p)
-        val MCG.Graph.G {unknown, graph} = MCG.Graph.make cg
+        val MCG.Graph.G {unknown, graph} = IMil.T.callGraph imil
         (* Process callees before callers, since escape analysis may enable
          * inlining in the caller. *)
         val components = List.rev (PLG.scc graph)

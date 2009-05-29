@@ -13,30 +13,35 @@ local
         simple-escape.sml
 
         simplify.sml
-(*
-        inline-rewrite.sml
-        annotated-cg-printer.sml
-        inline-aggressive.sml
-        inline-profile.sml
-        inline-leaves.sml
-        inline-small.sml  (* XXX EB: Deprecated. Remove it. *)
         double-diamond.sml
         licm.sml
+        inline-rewrite.sml
+        annotated-cg-printer.sml
+(*
+        inline-aggressive.sml
+        inline-profile.sml
+*)
+        inline-leaves.sml
         rep-seq.sml
-        rep.sml
-        fusion.sml *)
+        rep-base.sml
+        rep-object.sml
+(*
+      rep.sml
+*)
         vectorize.sml
+        branch-remove.sml
 in
         structure MilCse
         structure MilContify
-        structure MilSimplify
-(*        structure MilInlineAggressive   
-        structure MilInlineProfile   
-        structure MilInlineLeaves
-        structure MilInlineSmall (* XXX EB: Deprecated. Remove it. *)
         structure MilDblDiamond
         structure MilLicm
-        structure MilRep *)
+        structure MilInlineLeaves
+        structure MilSimplify
         structure MilVectorize
-(*        structure VpFusion*)
+        structure MilRemoveBranch
+(*
+        structure MilInlineAggressive   
+        structure MilInlineProfile   
+        structure MilRep
+*)
 end

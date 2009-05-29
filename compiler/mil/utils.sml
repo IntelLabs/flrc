@@ -104,6 +104,7 @@ sig
     val numBytes : t -> int
     val toString : t -> string
     val intArb : IntArb.size -> t
+    val wordSize : Config.t -> t
     val ptrSize : Config.t -> t
     val vectorSize : Config.t -> t
     val compare : t Compare.t
@@ -185,6 +186,7 @@ sig
     val toValueSize : t -> ValueSize.t
     val toString : t -> string
     val intArb : IntArb.size -> t
+    val wordSize : Config.t -> t
     val ptrSize : Config.t -> t
     val compare : t Compare.t
     val eq : t * t -> bool
@@ -207,6 +209,7 @@ sig
     val fromTraceSize : Config.t * Typ.traceabilitySize -> t
       (* pre: result determined *)
     val fromTyp : Config.t * Typ.t -> t (* pre: result determined *)
+    val toTyp : t -> Typ.t 
   end
 
   structure FieldDescriptor :
@@ -633,18 +636,28 @@ sig
   structure Code :
   sig
     type t = Mil.code
+
     val fx : t -> Mil.effects
     val escapes : t -> bool
     val recursive : t -> bool
     val cc : t -> Mil.variable CallConv.t
     val args : t -> Mil.variable Vector.t
+    val rtyps : t -> Typ.t Vector.t
+    val body : t -> CodeBody.t
+
+    val setFx : t * Mil.effects -> t
+    val setEscapes : t * bool -> t
+    val setRecursive : t * bool -> t
+    val setCc : t * Mil.variable CallConv.t -> t
+    val setArgs : t * Mil.variable Vector.t -> t
+    val setRtyps : t * Typ.t Vector.t -> t
+    val setBody : t * CodeBody.t -> t
+
     val numArgs : t -> int
     val arg : t * int -> Mil.variable
-    val rtyps : t -> Typ.t Vector.t
     val numRtyps : t -> int
     val rtyp : t * int -> Typ.t
     val thunkTyp : t -> Typ.t (* For CcThunk, extra single return type *)
-    val body : t -> CodeBody.t
     val entry : t -> Mil.label
     val blocks : t -> Block.t Mil.LD.t
     val numBlocks : t -> int
@@ -1698,7 +1711,12 @@ struct
           | IntArb.S32  => M.Vs32
           | IntArb.S64  => M.Vs64
 
-    fun ptrSize config = intArb (Config.targetWordSize' config)
+    fun ptrSize config = 
+        (case Config.targetWordSize config
+          of Config.Ws32 => M.Vs32
+           | Config.Ws64 => M.Vs64)
+
+    val wordSize = ptrSize
 
     fun vectorSize config =
         case Config.targetVectorSize config
@@ -1956,7 +1974,12 @@ struct
           | IntArb.S32  => M.Fs32
           | IntArb.S64  => M.Fs64
 
-    fun ptrSize config = intArb (Config.targetWordSize' config)
+    fun ptrSize config = 
+        (case Config.targetWordSize config
+          of Config.Ws32 => M.Fs32
+           | Config.Ws64 => M.Fs64)
+
+    val wordSize = ptrSize
 
     val compare = Compare.fieldSize
     val eq = Compare.C.equal compare
@@ -2027,7 +2050,10 @@ struct
         end
 
     fun fromTyp (c, t) = fromTraceSize (c, Typ.traceabilitySize (c, t))
-
+    fun toTyp fk = 
+        (case fk
+          of M.FkRef => M.TRef
+           | M.FkBits fs => M.TBits (FieldSize.toValueSize fs))
   end
 
   structure FieldDescriptor =
@@ -3143,13 +3169,21 @@ struct
 
     type t = Mil.code
 
-    fun fx        (M.F {fx,        ...}) = fx
-    fun escapes   (M.F {escapes,   ...}) = escapes
-    fun recursive (M.F {recursive, ...}) = recursive
-    fun cc        (M.F {cc,        ...}) = cc
-    fun args      (M.F {args,      ...}) = args
-    fun rtyps     (M.F {rtyps,     ...}) = rtyps
-    fun body      (M.F {body,      ...}) = body
+    val ((setFx, fx),
+         (setEscapes, escapes),
+         (setRecursive, recursive),
+         (setCc, cc),
+         (setArgs, args),
+         (setRtyps, rtyps),
+         (setBody, body)) = 
+        let
+          val pFr = fn (M.F {fx, escapes, recursive, cc, args, rtyps, body}) =>
+                       (fx, escapes, recursive, cc, args, rtyps, body)
+          val rFp = fn (fx, escapes, recursive, cc, args, rtyps, body) =>
+                       M.F {fx = fx, escapes = escapes, recursive = recursive, 
+                            cc = cc, args = args, rtyps = rtyps, body = body}
+        in FunctionalUpdate.mk7 (pFr, rFp)
+        end
 
     fun numArgs f = Vector.length (args f)
     fun arg (f, idx) = Vector.sub (args f, idx)

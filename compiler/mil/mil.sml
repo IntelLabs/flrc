@@ -159,7 +159,9 @@ struct
         typ   : fieldKind,
         thunk : variable option, (* if absent then create *)
         fx    : effects,
-        code  : variable option, (* if absent then cannot eval indirectly *)
+        code  : variable option, 
+        (* Must be function name. If absent then this is an environment, 
+         * which can only be projected from but not evaled.  *)
         fvs   : (fieldKind * operand) Vector.t
       }
     | RhsThunkGetFv of {
@@ -182,7 +184,9 @@ struct
         cls  : variable option, (* if absent, create;
                                  * if present, must be from PFunctionMk
                                  *)
-        code : variable option, (* if absent, cannot be called indirectly *)
+        code : variable option,
+        (* Must be function name. If absent then this is an environment, 
+         * which can only be projected from but not called.  *)
         fvs  : (fieldKind * operand) Vector.t
       }
     | RhsPFunctionGetFv of
@@ -213,7 +217,7 @@ struct
    * The code variable in CDirectThunk and in EDirectThunk must be
    * a function name. *) 
   datatype call =
-      CCode          of variable
+      CCode          of variable  (* XXX Add codes -leaf *)
     | CClosure       of {cls : variable, code : codes}
     | CDirectClosure of {cls : variable, code : variable}
 
