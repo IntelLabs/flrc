@@ -30,6 +30,12 @@ sig
     val subtypeIn : Config.t * Mil.name (* ord *) * Mil.typ * Prims.typ -> bool
     val subtypeOut : Config.t * Mil.name (* ord *) * Prims.typ * Mil.typ
                      -> bool
+
+    val resultTypFromPrimTyp : Config.t * Mil.symbolInfo * Prims.primTyp -> Mil.typ option 
+    val resultTypOf : Config.t * Mil.symbolInfo * Prims.t -> Mil.typ option option
+    val resultTypOfPrim : Config.t * Mil.symbolInfo * Prims.prim -> Mil.typ option 
+    val resultTypOfRuntime : Config.t * Mil.symbolInfo * Prims.runtime -> Mil.typ option option
+    val resultTypOfVi : Config.t * Mil.symbolInfo * VectorInstructions.prim -> Mil.typ option
   end
 
   structure Typer :
@@ -830,6 +836,45 @@ struct
       fun subtypeOut (config, ord, t1, t2) =
           Type.subtype (config, typToMilTyp (config, ord, t1), t2)
 
+      val resultTypFromPrimTyp = 
+       fn (config, si, t) => 
+          (case t
+            of (_, _, P.TVoid) => NONE
+             | (_, _, t) => SOME (typToMilTyp (config, Prims.getOrd si, t)))
+
+      val resultTypOfPrim = 
+       fn (config, si, p) => 
+          let
+            val t = Prims.typeOfPrim (config, p) 
+            val to = resultTypFromPrimTyp (config, si, t)
+          in to
+          end
+
+      val resultTypOfRuntime =
+       fn (config, si, rt) => 
+          let
+            val to = 
+                (case Prims.typeOfRuntime (config, rt) 
+                  of SOME t => SOME (resultTypFromPrimTyp (config, si, t))
+                   | NONE => NONE)
+          in to
+          end
+
+      val resultTypOfVi = 
+       fn (config, si, vi) => 
+          let
+            val t = Prims.typeOfVi (config, vi) 
+            val to = resultTypFromPrimTyp (config, si, t)
+          in to
+          end
+
+      val resultTypOf =
+       fn (config, si, p) => 
+          (case p
+            of P.Prim p => SOME (resultTypOfPrim (config, si, p))
+             | P.Runtime rt => resultTypOfRuntime (config, si, rt)
+             | P.Vi vi => SOME (resultTypOfVi (config, si, vi)))
+
    end
 
    structure Typer =
@@ -931,9 +976,10 @@ struct
                (case rhs
                  of M.RhsSimple s             => simple (config, si, s)
                   | M.RhsPrim {prim, ...}     => 
-                    (case Prims.typeOf (config, prim)
-                      of SOME t => Prim.typToMilTraceTyp (config, #3 t)
-                       | NONE => M.TNone)
+                    (case Prim.resultTypOf (config, si, prim)
+                      of SOME (SOME t) => TraceTyp.fromTyp (config, t)
+                       | SOME NONE => M.TNone
+                       | NONE => Fail.fail ("MilTyp.Prim", "rhs", "Untyped prim"))
                   | M.RhsTuple x              => M.TRef
                   | M.RhsTupleSub tf          => 
                     MU.FieldKind.toTyp (MU.FieldDescriptor.kind (MU.TupleField.fieldDescriptor tf))

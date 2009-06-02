@@ -25,6 +25,7 @@ local
         rep-seq.sml
         rep-base.sml
         rep-object.sml
+        rep-analyze.sml
 (*
       rep.sml
 *)

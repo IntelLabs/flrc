@@ -207,6 +207,7 @@ sig
     val eq : t * t -> bool
     val nonRefPtr : Config.t -> t
     val fromTraceSize : Config.t * Typ.traceabilitySize -> t
+    val toTraceSize : Config.t * t -> Typ.traceabilitySize 
       (* pre: result determined *)
     val fromTyp : Config.t * Typ.t -> t (* pre: result determined *)
     val toTyp : t -> Typ.t 
@@ -2048,6 +2049,11 @@ struct
             | Typ.TsNone      => err ()
             | Typ.TsMask vs   => err ()
         end
+
+    fun toTraceSize (c, fk) =
+        (case fk
+          of M.FkRef => Typ.TsRef
+           | M.FkBits fs => Typ.TsBits (FieldSize.toValueSize fs))
 
     fun fromTyp (c, t) = fromTraceSize (c, Typ.traceabilitySize (c, t))
     fun toTyp fk = 

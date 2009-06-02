@@ -64,6 +64,7 @@ in
         structure MilLayout
         structure MilLoop
         structure MilNameSmallValues
+        structure MilNameInstructions
         structure MilRename
         structure MilRewriterClient
         structure MilStats
