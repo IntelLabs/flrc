@@ -23,7 +23,7 @@ struct
 (*       (#"J", MilInlineAggressive.pass),
        (#"K", MilInlineProfile.pass   ),*)
        (#"L", MilLicm.pass            ),
-(*       (#"R", MilRep.pass             ), *)
+       (#"R", MilRep.pass             ), 
        (#"S", MilSimplify.pass        ),
        (#"s", MilLowerPSums.pass      ),
        (#"t", MilLowerPTypes.pass     ),

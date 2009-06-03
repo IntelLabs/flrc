@@ -1324,12 +1324,17 @@ struct
       end
 
   fun program (config, p) =
-      if program' (config, p) then ()
-      else
-        let
-          val () = MilLayout.print (config, p)
-        in
-          Fail.fail ("MilCheck", "program", "Mil code not well formed")
-        end
+      (if program' (config, p) then ()
+       else
+         let
+           val () = MilLayout.print (config, p)
+         in
+           Fail.fail ("MilCheck", "program", "Mil code not well formed")
+         end) handle any => 
+                     let
+                       val () = MilLayout.print (config, p)
+                     in raise any
+                     end
+
 
 end;
