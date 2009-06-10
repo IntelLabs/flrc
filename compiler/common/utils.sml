@@ -45,6 +45,7 @@ structure Utils = struct
       val ` = fn f => fn x => fn () => f x
     end (* structure Function *)
 
+    structure MltonVector = Vector
     structure Vector = 
     struct 
       val cons : 'a * 'a vector -> 'a vector = 
@@ -98,6 +99,11 @@ structure Utils = struct
                val v = Vector.tabulate (newRows, fn row => Vector.tabulate (newCols, fn col => oldElt (col, row)))
              in v
              end
+      val fromOption : 'a option -> 'a vector = 
+       fn opt => 
+          (case opt
+            of SOME a => Vector.new1 a
+             | NONE => Vector.new0 ())
     end (* structure Vector *)
 
     structure Option = 
@@ -155,7 +161,23 @@ structure Utils = struct
                 | (NONE, b) => b
                 | (SOME a, SOME b) => SOME (f (a, b)))
 
+      val fromVector : 'a vector -> 'a option option = 
+       fn v => 
+          (case MltonVector.length v
+            of 0 => SOME NONE
+             | 1 => SOME (SOME (MltonVector.sub (v, 0)))
+             | _ => NONE)
     end (* structure Option *)
+
+    structure Ref = 
+    struct
+      val inc : int ref -> int = 
+       fn (r as ref i) => (r := i + 1;i)
+
+      val dec : int ref -> int = 
+       fn (r as ref i) => (r := i - 1;i)
+
+    end (* structure Ref *)
 
     (* Numeric stuff *)
 

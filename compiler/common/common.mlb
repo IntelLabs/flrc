@@ -60,6 +60,7 @@ in
 
         functor ChatF
         functor DictF
+        functor DictImpF
         functor DominanceF
         functor FlatLatticeFn
         functor FlatOptionLatticeFn 

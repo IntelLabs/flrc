@@ -156,7 +156,7 @@ struct
       let
         val config = envGetConfig env
         val rename = envGetRename env 
-        val i as M.I {dest, rhs} = RNV.instruction (config, rename, i)
+        val i as M.I {dests, n, rhs} = RNV.instruction (config, rename, i)
         val keepWith = fn env => (SOME i, env)
         val deleteWith = fn env => (NONE, env)
         val rhsD = envGetRhsDict env 
@@ -164,17 +164,22 @@ struct
             if canCse (env, i) then
               let
                 val res =
-                    case (dest, RD.lookup (rhsD, rhs))
-                     of (SOME vv, SOME v') => deleteWith (addToRename (env, vv, v'))
-                      | (NONE, SOME v') => deleteWith env
-                      | (SOME vv, NONE) => 
+                    case (Vector.length dests, RD.lookup (rhsD, rhs))
+                     of (1, SOME v') => 
                         let
+                          val vv = Vector.sub (dests, 0)
+                        in deleteWith (addToRename (env, vv, v'))
+                        end
+                      | (0, SOME v') => deleteWith env
+                      | (1, NONE) => 
+                        let
+                          val vv = Vector.sub (dests, 0)
                           val rhsD = RD.insert (rhsD, rhs, vv) 
                           val env = envSetRhsDict (env, rhsD)
                         in 
                           keepWith env
                         end
-                      | (NONE, NONE) => keepWith env
+                      | (_, _) => keepWith env
               in
                 res
               end

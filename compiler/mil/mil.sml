@@ -87,7 +87,7 @@ struct
     array : fieldDescriptor option
   }
 
-  datatype vtableDescriptor = VTD of {
+  datatype vTableDescriptor = VTD of {
     pok   : pObjKind,
     fixed : fieldDescriptor Vector.t,
     array : (int * fieldDescriptor) option
@@ -142,7 +142,7 @@ struct
       RhsSimple of simple
     | RhsPrim of {prim : Prims.t, createThunks : bool, args : operand Vector.t}
     | RhsTuple of {
-        vtDesc : vtableDescriptor,  (* Length field must be initialised *)
+        vtDesc : vTableDescriptor,  (* Length field must be initialised *)
         inits  : operand Vector.t   (* Initialises a prefix of the fields;
                                      * can be less than all fixed fields;
                                      * can include some/all array elements
@@ -150,7 +150,7 @@ struct
       }
     | RhsTupleSub of tupleField
     | RhsTupleSet of {tupField : tupleField, ofVal : operand}
-    | RhsTupleInited of {vtDesc : vtableDescriptor, tup : variable}
+    | RhsTupleInited of {vtDesc : vTableDescriptor, tup : variable}
     | RhsIdxGet of {idx : variable, ofVal : operand}
     | RhsCont of label
     | RhsObjectGetKind of variable
@@ -199,7 +199,9 @@ struct
     | RhsPSum of {tag : name, typ : fieldKind, ofVal : operand}
     | RhsPSumProj of {typ : fieldKind, sum : variable, tag : name}
 
-  datatype instruction = I of {dest : variable option, rhs : rhs}
+  datatype instruction = I of {dests : variable vector, (* arity must match rhs *)
+                               n : int,                 (* scratch info, pass specific *)
+                               rhs : rhs}
 
   datatype target = T of {block : label, arguments : operand Vector.t}
 
@@ -277,7 +279,7 @@ struct
     | GErrorVal   of typ
     | GIdx        of int ND.t
     | GTuple      of {
-        vtDesc : vtableDescriptor,
+        vtDesc : vTableDescriptor,
         inits  : simple Vector.t   (* must be all fields *)
       }
     | GRat        of Rat.t

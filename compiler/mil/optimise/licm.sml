@@ -120,7 +120,7 @@ struct
             case transfer
              of M.TInterProc {ret = M.RNormal {rets, ...}, ...} => Vector.fold (rets, s, VS.insert o Utils.flip2)
               | _ => s
-        fun addI (M.I {dest, ...}, res) = Option.fold (dest, res, VS.insert o Utils.flip2)
+        fun addI (M.I {dests, ...}, res) = Vector.fold (dests, res, VS.insert o Utils.flip2)
         val s = Vector.fold (instructions, s, addI)
         val s = Vector.fold (parameters, s, VS.insert o Utils.flip2)
         (*val () = debugDo (env, fn () => printVS ("VarsDefinedInBlock", s))*)
@@ -147,14 +147,14 @@ struct
   fun topoSortInstructions (state, env, invInstrs) =
        let
          val config = getConfig env
-         val vis = Vector.toListMap (invInstrs, fn i => (Option.valOf (MUI.dest i), i))
+         val help = fn (i, l) => Vector.fold (MUI.dests i, l, fn (v, l) => (v, i) :: l)
+         val vis = Vector.fold (invInstrs, [], help)
          val components = I.variableToposort (vis, fn (_, i) => FV.instruction (config, i))
-         val components = Vector.fromList components
          fun extract c =
              case c
               of [(_, i)] => i
                | _ => Fail.fail ("MilLicm", "topoSortInstructions", "recursive instructions")
-         val is = Vector.map (components, extract)
+         val is = Vector.fromListMap (components, extract)
        in is
        end
 
@@ -198,10 +198,15 @@ struct
         val blocksDominatingExits = LD.fold (blocks, [], checkOne)
         val varsDefInLoop = varsDefInLoopTree (state, env, Tree.T (l, children))
         val () = debugDo (env, fn () => printVS ("VarsDefInLoop", varsDefInLoop))
+        (* This code uses variables to identify instructions.  Probably this
+         * should be changed (along with other things here), but for the time 
+         * being we restrict ourselves to instructions with exactly one 
+         * destination. *)
         fun instructionInvariants (i, inv) =
-            case MUI.dest i
+            case Utils.Option.fromVector (MUI.dests i)
              of NONE => inv
-              | SOME v =>
+              | SOME NONE => inv
+              | SOME (SOME v) =>
                 let
                   val usesFromLoop = VS.intersection (FV.instruction (getConfig env, i), varsDefInLoop)
                 in
@@ -216,7 +221,10 @@ struct
             end
         val loopInvariants = calcLoopInvariants VS.empty
         val () = debugDo (env, fn () => printVS ("Loop invariants:", loopInvariants))
-        fun isInvInstr i = Option.exists (MUI.dest i, fn v => VS.member (loopInvariants, v))
+        fun isInvInstr i = 
+            (case Utils.Option.fromVector (MUI.dests i)
+              of SOME (SOME v) => VS.member (loopInvariants, v)
+               | _ => false)
 
         (* Remove invariant instructions and return them *)
         fun removeFromBlock (l, b, invis) =

@@ -107,7 +107,7 @@ struct
         val vi : Mil.variable = Vector.sub (parameters, varIndex)
         val vi' : Mil.variable = IMil.Var.new (imil, "mdd_vii", MU.Bool.t (IMil.T.getConfig imil), false)
         val opand : Mil.operand = Mil.SVariable (vi)
-        val newMilInstr = Mil.I {dest=SOME vi', rhs=Mil.RhsPSetQuery (opand)}
+        val newMilInstr = MU.Instruction.new (vi',Mil.RhsPSetQuery opand)
         val newInstr : IMil.iInstr = Block.append (imil, blk, newMilInstr)
         (* Add newInstr to worklist. *)
         val () = WS.addInstr (wl, newInstr)
@@ -135,10 +135,10 @@ struct
         val iinstr = case Use.toIInstr use
                       of SOME x => x
                        | NONE => fail ("replacePSetQuery", "Invalid use")
-        val Mil.I {dest = d, ...} = case Instr.toInstruction iinstr
-                                     of SOME x => x
-                                      | NONE => fail ("replacePSetQuery", "Not a Mil instruction")
-        val newInstr = Mil.I {dest = d, rhs  = Mil.RhsSimple (Mil.SVariable (newVar))}
+        val Mil.I {dests, ...} = case Instr.toInstruction iinstr
+                                  of SOME x => x
+                                   | NONE => fail ("replacePSetQuery", "Not a Mil instruction")
+        val newInstr = MU.Instruction.new' (dests, Mil.RhsSimple (Mil.SVariable newVar))
         val () = WS.addInstr (wl, iinstr)
       in 
         IMil.IInstr.replaceInstruction (imil, iinstr, newInstr)

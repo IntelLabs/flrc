@@ -295,10 +295,10 @@ struct
     val (prnAnalyseD, prnAnalyse) =
         Config.Debug.mk (passname ^ ":analyse", "print analysis in Mil contifier")
 
-    fun analyseProgram (config, p as M.P {entry, globals, symbolTable}) =
+    fun analyseProgram (config, p) =
         let
+          val (M.P {entry, globals, symbolTable}, fmil) = FMil.program (config, p)
           val si = I.SymbolInfo.SiTable symbolTable
-          val fmil = FMil.program (config, p)
           val env = envMk (config, si, fmil)
           val cg = MCG.program (config, si, p)
           val () =
@@ -607,7 +607,7 @@ struct
           | M.TCut {cont, args, cuts} => M.TCut {cont = cont, args = args, cuts = rewriteCuts (state, env, cuts)}
           | M.TPSumCase _ => t
 
-    fun doInstr (state, env, i as M.I {dest, rhs}) =
+    fun doInstr (state, env, i as M.I {dests, n, rhs}) =
         case rhs
          of M.RhsPFunctionInit {cls, code = SOME codeVar, fvs} =>
             if keep (env, codeVar) then 
@@ -616,7 +616,7 @@ struct
               let
                 val () = click (state, "dummyCode")
                 val rhs = M.RhsPFunctionInit {cls = cls, code = NONE, fvs = fvs}
-                val i = M.I {dest = dest, rhs = rhs}
+                val i = M.I {dests = dests, n = n, rhs = rhs}
               in i
               end
           | _ => i
@@ -653,7 +653,7 @@ struct
                     val fvts = Vector.map (fvs, fn v => MU.SymbolTableManager.variableTyp (getStm state, v))
                     val fvfks = Vector.map (fvts, fn t => MU.FieldKind.fromTyp (getConfig env, t))
                     fun doOne (i, fv) =
-                        M.I {dest = SOME fv, rhs = M.RhsPFunctionGetFv {fvs = fvfks, cls = cls, idx = i}}
+                        M.I {dests = Vector.new1 fv, n = 0, rhs = M.RhsPFunctionGetFv {fvs = fvfks, cls = cls, idx = i}}
                     val is = Vector.mapi (fvs, doOne)
                   in (args, is)
                   end

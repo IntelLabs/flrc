@@ -102,7 +102,7 @@ struct
    fn (state, env, _) => (env, NONE)
 
   val instr = 
-   fn (state, env, M.I {dest, rhs}) => 
+   fn (state, env, M.I {dests, n, rhs}) => 
       let
         val bind = bindLocal (fn (v, oper) => 
                                  let
@@ -121,10 +121,7 @@ struct
         val doOperand = lift (doOperand bind)
         val doOperands = lift (doOperands bind)
 
-        val assignDest = 
-            case dest
-             of SOME v => (fn rhs => Stream.bindRhs (state, env, v, rhs))
-              | NONE   => (fn rhs => Stream.doRhs (state, env, rhs))
+        val assignDest = fn rhs => Stream.instrMk (state, env, dests, rhs)
 
         val vector = 
          fn mk => 

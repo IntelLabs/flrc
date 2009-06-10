@@ -932,7 +932,7 @@ struct
            | M.GErrorVal t => t
            | M.GIdx _ => M.TIdx
            | M.GTuple {vtDesc, inits} => 
-             M.TTuple {pok = MU.VtableDescriptor.pok vtDesc,
+             M.TTuple {pok = MU.VTableDescriptor.pok vtDesc,
                        fixed = Vector.map (simples (config, si, inits),
                                            fn t => (t, M.FvReadWrite)),
                        array = NONE}

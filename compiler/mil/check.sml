@@ -299,7 +299,13 @@ struct
       end
 
   fun bindVarsTo (s, e, vs, ts) =
-      Vector.foreach2 (vs, ts, fn (v, t) => bindVarTo (s, e, v, t))
+      let
+        val () = assert (s, Vector.length vs = Vector.length ts,
+                      fn () => "Arity mismatch: ")
+        val () = 
+            Vector.foreach2 (vs, ts, fn (v, t) => bindVarTo (s, e, v, t))
+      in ()
+      end
 
   fun variableUse (s, e, msg, v) =
       let
@@ -569,9 +575,10 @@ struct
       let
         fun msg' () = msg () ^ ": arg"
         val ts = operands (s, e, msg', args)
+        val config = getConfig e
         val t =
-            case P.typeOf (getConfig e, prim)
-             of NONE => M.TNone
+            case P.typeOf (config, prim)
+             of NONE => Vector.new (Prims.arity (config, prim), M.TNone)
               | SOME (ats, fx, rt) =>
                 let
                   fun msg' () = msg () ^ ": argument number mismatch"
@@ -590,8 +597,8 @@ struct
                   (*val () = List.foreachi (ats, checkOne)*)
                   val t =
                       case rt
-                       of P.TVoid => M.TNone
-                        | _ => MT.Prim.typToMilTyp (c, ord, rt)
+                       of P.TVoid => Vector.new0 ()
+                        | _ => Vector.new1 (MT.Prim.typToMilTyp (c, ord, rt))
                 in t
                 end
       in t
@@ -627,182 +634,197 @@ struct
       end
 
   fun rhs (s, e, msg, r) =
-      case r
-       of M.RhsSimple simp => simple (s, e, msg, simp)
-        | M.RhsPrim {prim = p, createThunks, args} => prim (s, e, msg, p, args)
-        | M.RhsTuple {vtDesc, inits} =>
-          let
-            val ts = tupleMake (s, e, msg, vtDesc, inits)
-          in M.TNone
-          end
-        | M.RhsTupleSub tf => tupleField (s, e, msg, tf)
-        | M.RhsTupleSet {tupField, ofVal} =>
-          let
-            val ft = tupleField (s, e, msg, tupField)
-            val nvt = operand (s, e, msg, ofVal)
-            fun msg' () = msg () ^ ": field/value type mismatch"
-            val () = checkConsistentTyp (s, e, msg', ft, nvt)
-          in nvt
-          end
-        | M.RhsTupleInited {vtDesc, tup} =>
-          let
-            fun msg' () = msg () ^ ": tuple"
-            val _ = variableUse (s, e, msg', tup)
-          in M.TNone
-          end
-        | M.RhsIdxGet {idx, ofVal} =>
-          let
-            fun msg1 () = msg () ^ ": index"
-            val _ = variableUse (s, e, msg1, idx)
-            fun msg2 () = msg () ^ ": of val"
-            val _ = operand (s, e, msg2, ofVal)
-          in M.TNone
-          end
-        | M.RhsCont l =>
-          let
-            val _ = labelUseNoArgs (s, e, msg, l)
-          in M.TNone
-          end
-        | M.RhsObjectGetKind v =>
-          let
-            fun msg' () = msg () ^ ": object"
-            val _ = variableUse (s, e, msg', v)
-          in M.TNone
-          end
-        | M.RhsThunkMk {typ, fvs} =>
-          let
-          in M.TNone
-          end
-        | M.RhsThunkInit {typ, thunk, fx, code, fvs} =>
-          let
-            fun msg1 () = msg () ^ ": thunk"
-            val () =
-                case thunk
-                 of NONE => ()
-                  | SOME v => ignore (variableUse (s, e, msg1, v))
-            fun msg2 () = msg () ^ ": code"
-            val () =
-                case code
-                 of NONE => ()
-                  | SOME v => ignore (variableUse (s, e, msg2, v))
-            fun doOne (i, (fk, opnd)) =
-                let
-                  fun msg' () = msg () ^ ": free variable " ^ Int.toString i
-                  val _ = operand (s, e, msg', opnd)
-                in ()
-                end
-            val () = Vector.foreachi (fvs, doOne)
-          in M.TNone
-          end
-        | M.RhsThunkGetFv {typ, fvs, thunk, idx} =>
-          let
-            fun msg' () = msg () ^ ": thunk"
-            val _ = variableUse (s, e, msg', thunk)
-          in M.TNone
-          end
-        | M.RhsThunkValue {typ, thunk, ofVal} =>
-          let
-            fun msg1 () = msg () ^ ": thunk"
-            val () =
-                case thunk
-                 of NONE => ()
-                  | SOME v => ignore (variableUse (s, e, msg1, v))
-            fun msg2 () = msg () ^ ": val"
-            val _ = operand (s, e, msg2, ofVal)
-          in M.TNone
-          end
-        | M.RhsThunkGetValue {typ, thunk} =>
-          let
-            fun msg' () = msg () ^ ": thunk"
-            val _ = variableUse (s, e, msg', thunk)
-          in M.TNone
-          end
-        | M.RhsThunkSpawn {typ, thunk, fx} =>
-          let
-            fun msg' () = msg () ^ ": thunk"
-            val _ = variableUse (s, e, msg', thunk)
-          in M.TNone
-          end
-        | M.RhsPFunctionMk {fvs} =>
-          let
-          in M.TNone
-          end
-        | M.RhsPFunctionInit {cls, code, fvs} =>
-          let
-            fun msg1 () = msg () ^ ": closure"
-            val () =
-                case cls
-                 of NONE => ()
-                  | SOME v => ignore (variableUse (s, e, msg1, v))
-            fun msg2 () = msg () ^ ": code"
-            val () =
-                case code
-                 of NONE => ()
-                  | SOME v => ignore (variableUse (s, e, msg2, v))
-            fun doOne (i, (fk, opnd)) =
-                let
-                  fun msg' () = msg () ^ ": free variable " ^ Int.toString i
-                  val _ = operand (s, e, msg', opnd)
-                in ()
-                end
-            val () = Vector.foreachi (fvs, doOne)
-          in M.TNone
-          end
-        | M.RhsPFunctionGetFv {fvs, cls, idx} =>
-          let
-            fun msg' () = msg () ^ ": closure"
-            val _ = variableUse (s, e, msg', cls)
-          in M.TNone
-          end
-        | M.RhsPSetNew opnd =>
-          let
-            fun msg' () = msg () ^ ": of val"
-            val _ = operand (s, e, msg', opnd)
-          in M.TNone
-          end
-        | M.RhsPSetGet v =>
-          let
-            fun msg' () = msg () ^ ": set"
-            val _ = variableUse (s, e, msg', v)
-          in M.TNone
-          end
-        | M.RhsPSetCond {bool, ofVal} =>
-          let
-            fun msg1 () = msg () ^ ": boolean"
-            val _ = operand (s, e, msg1, bool)
-            fun msg2 () = msg () ^ ": of val"
-            val _ = operand (s, e, msg2, ofVal)
-          in M.TNone
-          end
-        | M.RhsPSetQuery oper =>
-          let
-            fun msg' () = msg () ^ ": set"
-            val _ = operand (s, e, msg', oper)
-          in M.TNone
-          end
-        | M.RhsPSum {tag, typ, ofVal} =>
-          let
-            val () = name (s, e, tag)
-            fun msg2 () = msg () ^ ": of val"
-            val _ = operand (s, e, msg2, ofVal)
-          in M.TNone
-          end
-        | M.RhsPSumProj {typ, sum, tag} =>
-          let
-            fun msg1 () = msg () ^ ": sum"
-            val _ = variableUse (s, e, msg1, sum)
-            val () = name (s, e, tag)
-          in M.TNone
-          end
-
-  fun instruction (s, e, msg, M.I {dest, rhs = r}) =
       let
-        val t = rhs (s, e, msg, r)
+        val none = Vector.new0 ()
+        val some = Vector.new1 
+        val ts = 
+            (case r
+              of M.RhsSimple simp => some (simple (s, e, msg, simp))
+               | M.RhsPrim {prim = p, createThunks, args} => prim (s, e, msg, p, args)
+               | M.RhsTuple {vtDesc, inits} =>
+                 let
+                   val ts = tupleMake (s, e, msg, vtDesc, inits)
+                 in some M.TNone
+                 end
+               | M.RhsTupleSub tf => some (tupleField (s, e, msg, tf))
+               | M.RhsTupleSet {tupField, ofVal} =>
+                 let
+                   val ft = tupleField (s, e, msg, tupField)
+                   val nvt = operand (s, e, msg, ofVal)
+                   fun msg' () = msg () ^ ": field/value type mismatch"
+                   val () = checkConsistentTyp (s, e, msg', ft, nvt)
+                 in none
+                 end
+               | M.RhsTupleInited {vtDesc, tup} =>
+                 let
+                   fun msg' () = msg () ^ ": tuple"
+                   val _ = variableUse (s, e, msg', tup)
+                 in none
+                 end
+               | M.RhsIdxGet {idx, ofVal} =>
+                 let
+                   fun msg1 () = msg () ^ ": index"
+                   val _ = variableUse (s, e, msg1, idx)
+                   fun msg2 () = msg () ^ ": of val"
+                   val _ = operand (s, e, msg2, ofVal)
+                 in some M.TNone
+                 end
+               | M.RhsCont l =>
+                 let
+                   val _ = labelUseNoArgs (s, e, msg, l)
+                 in some M.TNone
+                 end
+               | M.RhsObjectGetKind v =>
+                 let
+                   fun msg' () = msg () ^ ": object"
+                   val _ = variableUse (s, e, msg', v)
+                 in some M.TNone
+                 end
+               | M.RhsThunkMk {typ, fvs} =>
+                 let
+                 in some M.TNone
+                 end
+               | M.RhsThunkInit {typ, thunk, fx, code, fvs} =>
+                 let
+                   fun msg1 () = msg () ^ ": thunk"
+                   val () =
+                       case thunk
+                        of NONE => ()
+                         | SOME v => ignore (variableUse (s, e, msg1, v))
+                   fun msg2 () = msg () ^ ": code"
+                   val () =
+                       case code
+                        of NONE => ()
+                         | SOME v => ignore (variableUse (s, e, msg2, v))
+                   fun doOne (i, (fk, opnd)) =
+                       let
+                         fun msg' () = msg () ^ ": free variable " ^ Int.toString i
+                         val _ = operand (s, e, msg', opnd)
+                       in ()
+                       end
+                   val () = Vector.foreachi (fvs, doOne)
+                   val ts =
+                       case thunk
+                        of SOME _ => none
+                         | NONE => some M.TNone
+                 in ts
+                 end
+               | M.RhsThunkGetFv {typ, fvs, thunk, idx} =>
+                 let
+                   fun msg' () = msg () ^ ": thunk"
+                   val _ = variableUse (s, e, msg', thunk)
+                 in some M.TNone
+                 end
+               | M.RhsThunkValue {typ, thunk, ofVal} =>
+                 let
+                   fun msg1 () = msg () ^ ": thunk"
+                   val () =
+                       case thunk
+                        of NONE => ()
+                         | SOME v => ignore (variableUse (s, e, msg1, v))
+                   fun msg2 () = msg () ^ ": val"
+                   val _ = operand (s, e, msg2, ofVal)
+                   val ts = 
+                       case thunk
+                        of SOME _ => none
+                         | NONE => some M.TNone
+                 in ts
+                 end
+               | M.RhsThunkGetValue {typ, thunk} =>
+                 let
+                   fun msg' () = msg () ^ ": thunk"
+                   val _ = variableUse (s, e, msg', thunk)
+                 in some M.TNone
+                 end
+               | M.RhsThunkSpawn {typ, thunk, fx} =>
+                 let
+                   fun msg' () = msg () ^ ": thunk"
+                   val _ = variableUse (s, e, msg', thunk)
+                 in none
+                 end
+               | M.RhsPFunctionMk {fvs} =>
+                 let
+                 in some M.TNone
+                 end
+               | M.RhsPFunctionInit {cls, code, fvs} =>
+                 let
+                   fun msg1 () = msg () ^ ": closure"
+                   val () =
+                       case cls
+                        of NONE => ()
+                         | SOME v => ignore (variableUse (s, e, msg1, v))
+                   fun msg2 () = msg () ^ ": code"
+                   val () =
+                       case code
+                        of NONE => ()
+                         | SOME v => ignore (variableUse (s, e, msg2, v))
+                   fun doOne (i, (fk, opnd)) =
+                       let
+                         fun msg' () = msg () ^ ": free variable " ^ Int.toString i
+                         val _ = operand (s, e, msg', opnd)
+                       in ()
+                       end
+                   val () = Vector.foreachi (fvs, doOne)
+                   val ts = 
+                       case cls
+                        of SOME _ => none
+                         | NONE => some M.TNone
+                 in ts
+                 end
+               | M.RhsPFunctionGetFv {fvs, cls, idx} =>
+                 let
+                   fun msg' () = msg () ^ ": closure"
+                   val _ = variableUse (s, e, msg', cls)
+                 in some M.TNone
+                 end
+               | M.RhsPSetNew opnd =>
+                 let
+                   fun msg' () = msg () ^ ": of val"
+                   val _ = operand (s, e, msg', opnd)
+                 in some M.TNone
+                 end
+               | M.RhsPSetGet v =>
+                 let
+                   fun msg' () = msg () ^ ": set"
+                   val _ = variableUse (s, e, msg', v)
+                 in some M.TNone
+                 end
+               | M.RhsPSetCond {bool, ofVal} =>
+                 let
+                   fun msg1 () = msg () ^ ": boolean"
+                   val _ = operand (s, e, msg1, bool)
+                   fun msg2 () = msg () ^ ": of val"
+                   val _ = operand (s, e, msg2, ofVal)
+                 in some M.TNone
+                 end
+               | M.RhsPSetQuery oper =>
+                 let
+                   fun msg' () = msg () ^ ": set"
+                   val _ = operand (s, e, msg', oper)
+                 in some M.TNone
+                 end
+               | M.RhsPSum {tag, typ, ofVal} =>
+                 let
+                   val () = name (s, e, tag)
+                   fun msg2 () = msg () ^ ": of val"
+                   val _ = operand (s, e, msg2, ofVal)
+                 in some M.TNone
+                 end
+               | M.RhsPSumProj {typ, sum, tag} =>
+                 let
+                   fun msg1 () = msg () ^ ": sum"
+                   val _ = variableUse (s, e, msg1, sum)
+                   val () = name (s, e, tag)
+                 in some M.TNone
+                 end)
+      in ts
+      end
+
+  fun instruction (s, e, msg, M.I {dests, n, rhs = r}) =
+      let
+        val ts = rhs (s, e, msg, r)
         (* XXX NG: If we used the dominator tree then we would bind dest *)
-        val () =
-            case dest
-             of NONE => ()
-              | SOME v => bindVarTo (s, e, v, t)
+        val () = bindVarsTo (s, e, dests, ts)
       in e
       end
 
@@ -1093,10 +1115,7 @@ struct
   fun addVarDefs (s, e, M.B {parameters, instructions, transfer}) =
       let
         val e = bindVars (s, e, parameters, false)
-        fun doOne (M.I {dest, ...}, e) =
-            case dest
-             of NONE => e
-              | SOME v => bindVar (s, e, v, false)
+        fun doOne (M.I {dests, ...}, e) = bindVars (s, e, dests, false)
         val e = Vector.fold (instructions, e, doOne)
         val e =
             case transfer

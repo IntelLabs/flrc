@@ -23,7 +23,9 @@ sig
   val instruction : Mil.instruction             rewriterE
   val transfer    : Mil.transfer                rewriter
   val codeBody    : Mil.codeBody                rewriter
+  val code        : Mil.code                    rewriter
   val global      : (Mil.variable * Mil.global) rewriter
+  val globals     : Mil.globals                 rewriterE
   val program     : Mil.t                       rewriter
 
 end;
@@ -37,7 +39,7 @@ functor MilRewriterF (
   val operand     : (state, env, Mil.operand    ) MilRewriterClient.rewriter
   val instruction : (state, env, Mil.instruction) MilRewriterClient.rewriter
   val transfer    : (state, env, Mil.transfer   ) MilRewriterClient.rewriter
-  val global : (state, env, Mil.variable*Mil.global) MilRewriterClient.rewriter
+  val global      : (state, env, Mil.variable*Mil.global) MilRewriterClient.rewriter
   val bind        : (state, env, Mil.variable   ) MilRewriterClient.binder
   val bindLabel   : (state, env, Mil.label      ) MilRewriterClient.binder
   val cfgEnum     : state * env * Mil.codeBody
@@ -197,24 +199,16 @@ struct
 
   fun instruction (state, env, i) = 
       let
-        fun bindDest (env, dest) = 
-            case dest
-             of NONE => (env, dest) 
-              | SOME v =>
-                let
-                  val (env, v) = bindVar (state, env, v)
-                in (env, SOME v)
-                end
-        fun bindInstr (env, M.I {dest, rhs}) = 
+        fun bindInstr (env, M.I {dests, n, rhs}) = 
             let
-              val (env, dest) = bindDest (env, dest)
-            in (env, M.I {dest = dest, rhs = rhs})
+              val (env, dests) = bindVars (state, env, dests)
+            in (env, M.I {dests = dests, n = n, rhs = rhs})
             end
-        fun doInstr (env, M.I {dest, rhs}) =
+        fun doInstr (env, M.I {dests, n, rhs}) =
             let
               val rhs = doRhs (state, env, rhs)
-              val (env, dest) = bindDest (env, dest)
-              val i = M.I {dest = dest, rhs = rhs}
+              val (env, dests) = bindVars (state, env, dests)
+              val i = M.I {dests = dests, n = n, rhs = rhs}
             in (env, i)
             end
         fun doInstrs (env, instrs) = 
@@ -387,7 +381,7 @@ struct
             (env, M.CcThunk {thunk = thnk, fvs = fvs})
           end
 
-  fun function (state, env, f) =
+  fun code (state, env, f) =
       let
         val M.F {fx, escapes, recursive, cc, args, rtyps, body} = f
         val (env, cc) = callConv (state, env, cc)
@@ -411,7 +405,7 @@ struct
               fun doVarO vo = Option.map (vo, fn v => variable (state, env, v))
               val global = 
                   case global
-                   of M.GCode f => M.GCode (function (state, env, f))
+                   of M.GCode f => M.GCode (code (state, env, f))
                     | M.GErrorVal _ => global
                     | M.GIdx _ => global
                     | M.GTuple {vtDesc, inits} =>
@@ -450,12 +444,12 @@ struct
             end
         val gs = List.fold (gs, VD.empty, doGlobal)
       in
-        (gs, env)
+        (env, gs)
       end
 
   fun program (state, env, M.P {globals = gs, symbolTable, entry})  = 
       let
-        val (gs, env) = globals (state, env, gs)
+        val (env, gs) = globals (state, env, gs)
         val entry = variable (state, env, entry)
         val p = M.P {globals = gs, symbolTable = symbolTable, entry = entry}
       in p

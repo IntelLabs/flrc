@@ -129,7 +129,7 @@ functor MilAnalyseF (
       in ()
       end
 
-  fun analyseRhs (s, e, dest, rhs) =
+  fun analyseRhs (s, e, rhs) =
       case rhs
        of M.RhsSimple simple => analyseSimple (s, e, simple)
         | M.RhsPrim {prim, createThunks, args} => analyseOperands (s, e, args)
@@ -195,14 +195,14 @@ functor MilAnalyseF (
         | M.RhsPSum {tag, typ, ofVal} => analyseOperand (s, e, ofVal)
         | M.RhsPSumProj {typ, sum, tag} => analyseVariable (s, e, sum)
 
-  fun analyseInstruction (s, e, i as M.I {dest, rhs}) =
+  fun analyseInstruction (s, e, i as M.I {dests, n, rhs}) =
       let
         val e =
             case clientInstruction
              of NONE => e
               | SOME ai => ai (s, e, i)
-        val () = analyseRhs (s, e, dest, rhs)
-        val e = Option.fold (dest, e, fn (v, e) => analyseBinder (s, e, v))
+        val () = analyseRhs (s, e, rhs)
+        val e = Vector.fold (dests, e, fn (v, e) => analyseBinder (s, e, v))
       in e
       end
 
