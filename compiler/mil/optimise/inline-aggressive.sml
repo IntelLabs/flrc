@@ -47,7 +47,7 @@ struct
 
   (* Aliases *)
   structure PD = PassData
-  structure MOU = MilOptUtils
+(*  structure MOU = MilOptUtils*)
   structure M   = Mil
   structure L   = Layout
   structure ID  = Identifier
@@ -86,13 +86,13 @@ struct
   (* Policy functions and types. *)
   type policyInfo = unit
   fun analyze (imil) = nOptExec := 0
-  type callId = IMil.instr
+  type callId = IMil.iInstr
   fun callIdToCall (info: policyInfo, imil: IMil.t, call: callId) = call
   fun associateCallToCallId (info: policyInfo, 
                              imil: IMil.t, 
-                             cp: IMil.instr,
-                             origBlock: IMil.block, 
-                             newBlock: IMil.block) = ()
+                             cp: IMil.iInstr,
+                             origBlock: IMil.iBlock, 
+                             newBlock: IMil.iBlock) = ()
   fun rewriteOperation (c: callId) = InlineFunctionCopy
 
   val (noOptimizerF, noOptimizer) =
@@ -124,15 +124,16 @@ struct
   (* Collect call sites that call function (fname, cfg). *)
   fun getInlineableCalls (d: PD.t, 
                           fname: Mil.variable, 
-                          cfg: IMil.cfg,
+                          cfg: IMil.iFunc,
                           imil: IMil.t) : callId list * bool =
       let
         fun getCandidateCall (u: IMil.use) = 
             Try.try
               (fn () => 
                   let
-                    val i = Try.<- (MOU.useToIInstr (imil, u))
-                    val t = Try.<- (MOU.iinstrToTransfer (imil, i))
+                    val i = Try.<- (IMil.Use.toIInstr u)
+(*                    val t = Try.<- (IMil.Use.toTransfer (imil, i))*)
+                    val t = Try.<- (IMil.Use.toTransfer u)
                     fun warn f = 
                         (* XXX EB: Why is it necessary to check fname? *)
                         if f = fname then ()
@@ -146,31 +147,35 @@ struct
                     fun doConv conv = 
                         (case conv
                           of M.CCode f => warn f
-                           | M.CDirectClosure (f, c) => warn f
+                           | M.CDirectClosure {cls, code} => warn cls
                            | _ => Try.fail ())
                     (* Check transfer. Only TCall and TTailCall are valid. *)
                     (* XXX EB: Is there any other transfer that may
                      * use a function? *)
                     val () = 
                         case t
-                         of M.TCall (conv, _, _, _, _) => doConv conv
-                          | M.TTailCall (conv, _, _) => doConv conv
+(*                         of M.TCall (conv, _, _, _, _) => doConv conv
+                          | M.TTailCall (conv, _, _) => doConv conv*)
+                         of M.TInterProc {callee, ret, fx} => 
+                            (case callee 
+                              of M.IpCall {call, args} => doConv call
+                               | M.IpEval {typ, eval} => Try.fail())
                           | _ => Try.fail ()
                   in i
                   end)
-        val uses = IMil.Cfg.getUses (imil, cfg)
+        val uses = IMil.IFunc.getUses (imil, cfg)
         val calls = Vector.keepAllMap (uses, getCandidateCall)
         val allCallsAreInlineable : bool = (Vector.length (calls) = Vector.length (uses))
         (* Keep original function after inlining? *)
-        val keepOriginal : bool = IMil.Cfg.getEscapes (imil, cfg) orelse 
+        val keepOriginal : bool = IMil.IFunc.getEscapes (imil, cfg) orelse 
                                   not allCallsAreInlineable
         (* Debug message. XXX EB: Delete this*)
         val () = if Vector.isEmpty (calls) then
                    ()
                  else 
                    (dbgLayout (d, L.seq [L.str "Function \"",
-                                         ID.layoutVariable (fname, 
-                                                            IMil.getST (imil)),
+                                         ID.layoutVariable' (fname),
+(*                                                            IMil.getST (imil)),*)
                                          L.str "\" selected for inlining in ",
                                          Int.layout (Vector.length (calls)),
                                          L.str " call sites."]))
@@ -179,7 +184,7 @@ struct
       end
 
   (* Select the best candidate to inline based on the size cost. *)
-  fun selectByBudget (funs : (Mil.variable * IMil.cfg * int) list, 
+  fun selectByBudget (funs : (Mil.variable * IMil.iFunc * int) list, 
                       budget: int) =
       let
         val func = ref NONE
@@ -198,13 +203,13 @@ struct
    * its cost in size to inline. Otherwise, return NONE. *)
   fun selectInlineable (d: PD.t, 
                         f: Mil.variable, 
-                        cfg : IMil.cfg, 
+                        cfg : IMil.iFunc, 
                         imil: IMil.t) : 
-      (Mil.variable * IMil.cfg * int) option = 
+      (Mil.variable * IMil.iFunc * int) option = 
       Try.try
         (fn () =>
             let
-              val () = Try.require (not (IMil.Cfg.getRecursive (imil, cfg)))
+              val () = Try.require (not (IMil.IFunc.getRecursive (imil, cfg)))
               val (calls, keepOriginal) = getInlineableCalls (d, f, cfg, imil)
               val nUses = List.length (calls)
               val () = Try.require (nUses > 1)
@@ -212,7 +217,7 @@ struct
                                   nUses
                                 else
                                   nUses - 1
-              val sizeCost = extraCopies * IMil.Cfg.getSize (imil, cfg)
+              val sizeCost = extraCopies * IMil.IFunc.getSize (imil, cfg)
             in
               (f, cfg, sizeCost)
             end)
@@ -223,7 +228,7 @@ struct
   fun policy (info: policyInfo, d: PD.t, imil: IMil.t) =
       let
         fun doOne (f, cfg) = selectInlineable (d, f, cfg, imil)
-        val candidateFuns = List.keepAllMap (IMil.Cfg.getCfgs (imil), doOne)
+        val candidateFuns = List.keepAllMap (IMil.IFunc.getIFuncs (imil), doOne)
         val (func, codeSize) = selectByBudget (candidateFuns, !budgetSize)
         val calls = case func
                      of SOME (f, cfg) => 
@@ -252,10 +257,10 @@ struct
                                
   fun getProgSize (imil) = 
       let
-        val cfgs = IMil.Cfg.getCfgs (imil)
+        val cfgs = IMil.IFunc.getIFuncs (imil)
       in
         List.fold (cfgs, 0, 
-                fn ((f, cfg), sz) => sz + IMil.Cfg.getSize (imil, cfg))
+                fn ((f, cfg), sz) => sz + IMil.IFunc.getSize (imil, cfg))
       end
 
   fun program (imil : IMil.t, d : PD.t) : unit = 

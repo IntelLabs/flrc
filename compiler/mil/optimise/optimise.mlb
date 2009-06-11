@@ -17,9 +17,9 @@ local
         licm.sml
         inline-rewrite.sml
         annotated-cg-printer.sml
-(*
+
         inline-aggressive.sml
-        inline-profile.sml
+(*        inline-profile.sml
 *)
         inline-leaves.sml
         rep-seq.sml
@@ -44,9 +44,8 @@ in
         structure MilSimplify
         structure MilVectorize
 
-(*
         structure MilInlineAggressive   
-        structure MilInlineProfile   
+(*        structure MilInlineProfile   
 
 *)
 end
