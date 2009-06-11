@@ -207,7 +207,9 @@ sig
       (** Creation **)
       type 'a t
       (* Return a blank symbol table *)
-      val new : unit -> 'a t
+      (* Currently requires the name of core\char\ord, 
+       * pending front-end redesign. *)
+      val new : string -> 'a t
       (* Return a symbol table based on an existing one
        * retaining all information in the old one.
        *)
@@ -234,6 +236,8 @@ sig
       val nameExists : 'a t * name -> bool
       (* pre: name is in symbol table *)
       val nameString : 'a t * name -> string
+      (* pre: name is in symbol table *)
+      val nameFromString : 'a t * string -> name
 
       (** Variables **)
       val variableFresh : 'a t * string * 'a -> variable
@@ -275,6 +279,7 @@ sig
       (** Names **)
       val nameExists : 'a t * name -> bool
       val nameString : 'a t * name -> string   (* pre: exists *)
+      val nameFromString : 'a t * string -> name (* pre: exists *)
 
       (** Layout **)
       val layoutVariable : variable * 'a t -> Layout.t
@@ -469,15 +474,6 @@ struct
             rnames: name StringDict.t ref
         }
 
-        fun new () =
-            M { variable = ref 0,
-                name = ref 0,
-                label = ref 0,
-                variableNames = ref VariableDict.empty,
-                variableInfo = ref VariableDict.empty,
-                names = ref NameDict.empty,
-                rnames = ref StringDict.empty }
-
         fun fromExistingAll (S st) =
             M { variable = ref (#maxVariable st),
                 name = ref (#maxName st),
@@ -559,6 +555,12 @@ struct
              of NONE => Fail.fail ("Identifier.Manager", "nameString",
                                    "undefined")
               | SOME s => s
+
+        fun nameFromString (M {rnames, ...}, s) =
+            case StringDict.lookup (!rnames, s)
+             of NONE => Fail.fail ("Identifier.Manager", "nameFromString", "undefined")
+              | SOME n => n
+
 
         fun variableFresh (M {variable, variableNames, variableInfo, ...},
                            hint, info) =
@@ -695,6 +697,21 @@ struct
             in  Layout.str ("n" ^ (Int.toString m) ^ str)
         end
 
+        fun new ord =
+            let
+              val stm = 
+                  M { variable = ref 0,
+                      name = ref 0,
+                      label = ref 0,
+                      variableNames = ref VariableDict.empty,
+                      variableInfo = ref VariableDict.empty,
+                      names = ref NameDict.empty,
+                      rnames = ref StringDict.empty }
+              val _ = nameMake (stm, ord)
+            in stm
+            end
+
+
     end
 
     structure SymbolInfo =
@@ -743,6 +760,12 @@ struct
              case si
               of SiTable st => nameString (st, n)
                | SiManager stm => Manager.nameString (stm, n)
+
+      val nameFromString =
+          fn (si, s) =>
+             case si
+              of SiTable st => nameFromString (st, s)
+               | SiManager stm => Manager.nameFromString (stm, s)
 
       val layoutVariable =
           fn (n, si) =>

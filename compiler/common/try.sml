@@ -29,6 +29,7 @@ sig
   val <! : ('b -> 'c) * ('a -> 'b t) -> ('a -> 'c)  (* use infix 3 *)
   val when : bool -> (unit -> 'a) -> 'a
   val require : bool -> unit
+  val not : bool -> unit
 
   structure V : sig
     val sub : 'a Vector.t * int -> 'a
@@ -107,6 +108,7 @@ struct
   fun bool t = isSome t
   fun option t = t
   val require = <- o ?
+  val not = <- o ? o not
   fun when b f = (require b;f())
 
   structure V = 

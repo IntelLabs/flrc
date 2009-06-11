@@ -102,7 +102,7 @@ struct
     fun program (c, r, p) =
         let
           val (s, e) = mkStateEnv (c, r)
-          val t = MR.program (s, e, p)
+          val p = MR.program (s, e, p)
         in p
         end
 

@@ -26,7 +26,7 @@ sig
     val layoutFieldDescriptor      : Mil.fieldDescriptor layout
     val layoutFieldDescriptorShort : Mil.fieldDescriptor layout
     val layoutTupleDescriptor      : Mil.tupleDescriptor layout
-    val layoutVtableDescriptor     : Mil.vtableDescriptor layout
+    val layoutVTableDescriptor     : Mil.vTableDescriptor layout
     val layoutConstant             : Mil.constant layout
     val layoutSimple               : Mil.simple layout
     val layoutOperand              : Mil.operand layout
@@ -147,6 +147,7 @@ struct
    type options = {
      binderTyps : bool,
      viElemType : bool,
+     numbers    : bool,
      tupDesc    : bool,
      thunkTyp   : bool,
      thunkFvs   : bool,
@@ -177,6 +178,7 @@ struct
    fun showPFunctionFvs e = #pFunFvs    (getOptions e)
    fun showPSumTyp      e = #pSumTyp    (getOptions e)
    fun showCodes        e = #codes      (getOptions e)
+   fun showNumbers      e = #numbers    (getOptions e)
 
    fun setBlock (E {config, si, helpers, options, block}, b) =
        E {config = config, si = si, helpers = helpers, options = options, block = b}
@@ -356,7 +358,7 @@ struct
        in l
        end
 
-   fun layoutVtableDescriptor (env, M.VTD {pok, fixed, array}) =
+   fun layoutVTableDescriptor (env, M.VTD {pok, fixed, array}) =
        let
          val pok = layoutPObjKindShort (env, pok)
          val fixed = layoutVector (env, layoutFieldDescriptorShort, fixed)
@@ -463,7 +465,7 @@ struct
 
    fun layoutTuple (env, vtDesc, inits) =
        let
-         val vtd = layoutVtableDescriptor (env, vtDesc)
+         val vtd = layoutVTableDescriptor (env, vtDesc)
          val inits = layoutOperands (env, inits)
          val l = LU.brace (L.mayAlign (semiCommaL (vtd, inits)))
        in l
@@ -553,7 +555,7 @@ struct
                        LU.indent (layoutOperand (env, ofVal))]
          | M.RhsTupleInited {vtDesc, tup} =>
            let
-             val vtDesc = layoutVtableDescriptor (env, vtDesc)
+             val vtDesc = layoutVTableDescriptor (env, vtDesc)
              val tup = layoutVariable (env, tup)
              val l = L.seq [L.str "Inited", L.tuple [vtDesc, tup]]
            in l
@@ -670,15 +672,17 @@ struct
                                  layoutName (env, tag)],
                           typ)
 
-   fun layoutInstruction (env, M.I {dest, rhs}) =
+   fun layoutInstruction (env, M.I {dests, n, rhs}) =
        let
          val rhs = layoutRhs (env, rhs)
-         val l =
-             case dest
-              of NONE => rhs
-               | SOME v =>
-                 L.mayAlign [L.seq [layoutBinder (env, v), L.str " ="],
-                             LU.indent rhs]
+         val num = 
+             if showNumbers env then
+               L.seq [L.str " > ", Int.layout n]
+             else
+               L.empty
+         val l = 
+             L.mayAlign [L.seq [LU.parenSeq (layoutVector (env, layoutBinder, dests)), num, L.str " ="],
+                         LU.indent rhs]
        in l
        end
 
@@ -956,6 +960,7 @@ struct
                 LU.indent (L.align [L.str "b => show types on variable binders",
                                     L.str "c => show codes in CcClosure",
                                     L.str "f => show P Function free variable field kinds",
+                                    L.str "n => show instruction number",
                                     L.str "s => show sum types",
                                     L.str "S => show symbol table",
                                     L.str "t => show vtable/tuple descriptors",
@@ -976,11 +981,13 @@ struct
          val pSumTyp    = ref false
          val codes      = ref false
          val symbols    = ref false
+         val numbers    = ref false
          fun doOne c =
              case c
               of #"b" => let val () = binderTyps := true in true end
                | #"c" => let val () = codes := true in true end
                | #"f" => let val () = pFunFvs := true in true end
+               | #"n" => let val () = numbers := true in true end
                | #"s" => let val () = pSumTyp := true in true end
                | #"S" => let val () = symbols := true in true end
                | #"t" => let val () = tupDesc := true in true end
@@ -998,20 +1005,21 @@ struct
                    val () = pSumTyp := true
                    val () = codes := true
                    val () = symbols := true
+                   val () = numbers := true
                  in true
                  end
                | _    => false
        in
          if List.forall (String.explode str, doOne) then
            SOME ({binderTyps = !binderTyps, viElemType = !viElemType, tupDesc = !tupDesc, thunkTyp = !thunkTyp,
-                  thunkFvs = !thunkFvs, pFunFvs = !pFunFvs, pSumTyp = !pSumTyp, codes = !codes},
+                  thunkFvs = !thunkFvs, pFunFvs = !pFunFvs, pSumTyp = !pSumTyp, codes = !codes, numbers = !numbers},
                  !symbols)
          else
            NONE
        end
 
    fun dft _ = ({binderTyps = false, viElemType = false, tupDesc = false, thunkTyp = false, thunkFvs = false,
-                 pFunFvs = false, pSumTyp = false, codes = false},
+                 pFunFvs = false, pSumTyp = false, codes = false, numbers = false},
                 false)
 
    val (control, controlGet) = Config.Control.mk (modulename, describe, parse, dft)
@@ -1080,7 +1088,7 @@ struct
    val layoutFieldDescriptor      = wrap layoutFieldDescriptor
    val layoutFieldDescriptorShort = wrap layoutFieldDescriptorShort
    val layoutTupleDescriptor      = wrap layoutTupleDescriptor
-   val layoutVtableDescriptor     = wrap layoutVtableDescriptor
+   val layoutVTableDescriptor     = wrap layoutVTableDescriptor
    val layoutConstant             = wrap layoutConstant
    val layoutSimple               = wrap layoutSimple
    val layoutOperand              = wrap layoutOperand

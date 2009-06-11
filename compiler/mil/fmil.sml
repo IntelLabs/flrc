@@ -7,7 +7,7 @@ signature FMIL =
 sig
 
   type blockId = Mil.label
-  type instructionId = blockId * int
+  type instructionId = int
   type transferId = blockId
   type globalId = Mil.variable
 
@@ -24,9 +24,14 @@ sig
 
   type t
 
-  val codeBody : Config.t * Mil.symbolInfo * globalId * Mil.codeBody -> t
-  val code     : Config.t * Mil.symbolInfo * globalId * Mil.code -> t
-  val program  : Config.t * Mil.t -> t
+  val codeBody : Config.t * Mil.symbolInfo * globalId * Mil.codeBody -> Mil.codeBody * t
+  val code     : Config.t * Mil.symbolInfo * globalId * Mil.code -> Mil.code * t
+  val program  : Config.t * Mil.t -> Mil.t * t
+
+  (* These versions assume that instructions are already labelled. *)
+  val codeBody' : Config.t * Mil.symbolInfo * globalId * Mil.codeBody -> t
+  val code'     : Config.t * Mil.symbolInfo * globalId * Mil.code -> t
+  val program'  : Config.t * Mil.t -> t
 
   val getVariable    : t * Mil.variable  -> varDef
   val getLabel       : t * Mil.label     -> labDef
@@ -52,9 +57,11 @@ struct
   structure LD = I.LabelDict
   structure M = Mil
   structure MU = MilUtils
+  structure ID = IntDict
+  structure MNI = MilNumberInstructions
 
   type blockId = Mil.label
-  type instructionId = blockId * int
+  type instructionId = int
   type transferId = blockId
   type globalId = Mil.variable
 
@@ -69,24 +76,27 @@ struct
 
   datatype labDef = Ld of {inFun : globalId, block : Mil.block}
 
-  datatype state = S of {vars : varDef VD.t ref, labs : labDef LD.t ref}
+  datatype state = S of {vars : varDef VD.t ref, 
+                         instrs : Mil.instruction ID.t ref,
+                         labs : labDef LD.t ref}
 
-  fun stateMk () = S {vars = ref VD.empty, labs = ref LD.empty}
+  fun stateMk () = S {vars = ref VD.empty, instrs = ref ID.empty, labs = ref LD.empty}
 
+  fun addInstr (S {instrs, ...}, num, i) = instrs := ID.insert (!instrs, num, i)
   fun addVarDef (S {vars, ...}, v, d) = vars := VD.insert (!vars, v, d)
+  fun addVarDefs (state, vv, d) = Vector.foreach (vv, fn v => addVarDef (state, v, d))
   fun addLabDef (S {labs, ...}, l, d) = labs := LD.insert (!labs, l, d)
+
 
   datatype env = E of {config : Config.t, si : M.symbolInfo}
 
   fun envMk (c, si) = E {config = c, si = si}
 
-  fun analyseInstruction (s, e, f, l, idx, i) =
+  fun analyseInstruction (s, e, f, i) =
       let
-        val M.I {dest, rhs, ...} = i
-        val () =
-            case dest
-             of NONE => ()
-              | SOME v => addVarDef (s, v, VdInstr ((l, idx), rhs))
+        val M.I {dests, n, rhs} = i
+        val () = addVarDefs (s, dests, VdInstr (n, rhs))
+        val () = addInstr (s, n, i)
       in ()
       end
 
@@ -115,7 +125,7 @@ struct
         val () = addLabDef (s, l, Ld {inFun = f, block = b})
         fun doParam (i, v) = addVarDef (s, v, VdLabParam (l, i))
         val () = Vector.foreachi (parameters, doParam)
-        val () = Vector.foreachi (instructions, fn (idx, i) => analyseInstruction (s, e, f, l, idx, i))
+        val () = Vector.foreach (instructions, fn i => analyseInstruction (s, e, f, i))
         val () = analyseTransfer (s, e, f, l, transfer)
       in ()
       end
@@ -171,12 +181,12 @@ struct
   fun analyseGlobals (s, e, globals) =
       VD.foreach (globals, fn (x, g) => analyseGlobal (s, e, x, g))
 
-  datatype t = P of {vars : varDef VD.t, labs : labDef LD.t}
+  datatype t = P of {vars : varDef VD.t, instrs : Mil.instruction ID.t, labs : labDef LD.t}
 
   fun mkFMil (s, e) =
       let
-        val S {vars, labs, ...} = s
-        val p = P {vars = !vars, labs = !labs}
+        val S {vars, labs, instrs} = s
+        val p = P {vars = !vars, instrs = !instrs, labs = !labs}
       in p
       end
 
@@ -189,11 +199,30 @@ struct
       in p
       end
 
-  fun codeBody (c, si, f, cb) = mk (c, si, analyseCodeBody, (f, cb))
+  fun codeBody' (c, si, f, cb) = mk (c, si, analyseCodeBody, (f, cb))
 
-  fun code (c, si, f, code) = mk (c, si, analyseCode, (f, code))
+  fun code' (c, si, f, code) = mk (c, si, analyseCode, (f, code))
 
-  fun program (c, M.P {symbolTable, globals, ...}) = mk (c, I.SymbolInfo.SiTable symbolTable, analyseGlobals, globals)
+  fun program' (c, M.P {symbolTable, globals, entry}) = 
+      mk (c, I.SymbolInfo.SiTable symbolTable, analyseGlobals, globals)
+
+  fun codeBody (c, si, f, cb) =
+      let
+        val (cb, _) = MNI.codeBody (c, cb)
+      in (cb, codeBody' (c, si, f, cb))
+      end
+
+  fun code (c, si, f, cd) =
+      let
+        val (cd, _) = MNI.code (c, cd)
+      in (cd, code' (c, si, f, cd))
+      end
+
+  fun program (c, p) = 
+      let
+        val (p, _) = MNI.program (c, p)
+      in (p, program' (c, p))
+      end
 
   fun getVariable (P {vars, ...}, v) =
       case VD.lookup (vars, v)
@@ -205,11 +234,14 @@ struct
        of NONE   => fail ("getLabel", "label not in FMil")
         | SOME d => d
 
+  fun getInstruction (P {instrs, ...}, i) = 
+      case ID.lookup (instrs, i)
+       of NONE   => fail ("getInstruction", "instruction not in FMil")
+        | SOME i => i
+
   fun getLabelFun (p, l) = case getLabel (p, l) of Ld {inFun, ...} => inFun
 
   fun getBlock (p, l) = case getLabel (p, l) of Ld {block, ...} => block
-
-  fun getInstruction (p, (l, i)) = MU.Block.instruction (getBlock (p, l), i)
 
   fun getTransfer (p, l) = MU.Block.transfer (getBlock (p, l))
 

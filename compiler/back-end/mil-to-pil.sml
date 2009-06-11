@@ -15,6 +15,8 @@ struct
 
   val passname = "Outputter"
 
+  val fail = fn (f, msg) => Fail.fail ("MilToPil", f, msg)
+
   structure L = Layout
   structure VI = VectorInstructions
   structure I = Identifier
@@ -608,7 +610,7 @@ struct
         * generating it if necessary.
         *)
        val genVtable :
-           state * env * string option * M.vtableDescriptor * bool -> Pil.E.t
+           state * env * string option * M.vTableDescriptor * bool -> Pil.E.t
        (* Return a pointer to the vtable for the given tuple,
         * generating it if necessary.
         *)
@@ -636,7 +638,7 @@ struct
     fun deriveVtInfo (state, env, no, vtd, nebi) =
         let
           val M.VTD {pok, fixed, array} = vtd
-          val td = MU.VtableDescriptor.toTupleDescriptor vtd
+          val td = MU.VTableDescriptor.toTupleDescriptor vtd
           val ws = OM.wordSize (state, env)
           val fs = OM.fixedSize (state, env, td)
           val frefs = Array.new (fs div ws, false)
@@ -674,7 +676,7 @@ struct
               case no
                of NONE => vtiToName (state, env, pok, fs, frefs, a)
                 | SOME n => n
-          val mut = not (MU.VtableDescriptor.immutable vtd)
+          val mut = not (MU.VTableDescriptor.immutable vtd)
           val vtm =
               if mut then
                 VtmAlwaysMutable
@@ -1170,7 +1172,7 @@ struct
   fun genTuple (state, env, no, dest, vtd, inits) = 
       let
         val M.VTD {pok, fixed, array} = vtd
-        val td = MU.VtableDescriptor.toTupleDescriptor vtd
+        val td = MU.VTableDescriptor.toTupleDescriptor vtd
         val (fdo, lenIdx, nebi) =
             case array
              of NONE => (NONE, 0, true)
@@ -1444,8 +1446,13 @@ struct
       in Pil.S.expr set
       end
 
-  fun genRhs (state, env, dest, rhs) =
+  fun genRhs (state, env, dests, rhs) =
       let
+
+        val dest = 
+            (case Utils.Option.fromVector dests
+              of SOME opt => opt
+               | NONE => fail ("genRhs", "Don't know how to generate multiple destinations"))
 
         (* Assign effectful *)
         fun assign rhs =
@@ -1573,18 +1580,10 @@ struct
 
   (*** Instructions ***)
 
-  fun genInstr (state, env, (M.I {dest, rhs})) = 
+  fun genInstr (state, env, (M.I {dests, n, rhs})) = 
       let
-        val dest = 
-            case dest
-             of SOME v => 
-                let
-                  val () = addLocal (state, v)
-                in 
-                  SOME v
-                end
-              | NONE => NONE
-        val code = genRhs (state, env, dest, rhs)
+        val () = addLocals (state, dests)
+        val code = genRhs (state, env, dests, rhs)
       in
         code
       end
@@ -2368,7 +2367,7 @@ struct
   fun genInit (state, env, entry, globals) = 
       let
         (* The runtime needs to know the \core\char\ord name *)
-        val ord = IM.nameMake (getStm state, "\\core\\char\\ord")
+        val ord = IM.nameMake (getStm state, Prims.ordString)
         val ord = genName (state, env, ord)
         val or = Pil.E.call (Pil.E.variable RT.Name.registerCoreCharOrd, [ord])
         val () = addReg (state, Pil.S.expr or)

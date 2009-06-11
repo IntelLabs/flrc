@@ -36,7 +36,7 @@ sig
     val fieldKind        : Mil.fieldKind t
     val fieldDescriptor  : Mil.fieldDescriptor t
     val tupleDescriptor  : Mil.tupleDescriptor t
-    val vtableDescriptor : Mil.vtableDescriptor t
+    val vTableDescriptor : Mil.vTableDescriptor t
     val constant         : Mil.constant t
     val simple           : Mil.simple t
     val operand          : Mil.operand t
@@ -104,6 +104,7 @@ sig
     val numBytes : t -> int
     val toString : t -> string
     val intArb : IntArb.size -> t
+    val wordSize : Config.t -> t
     val ptrSize : Config.t -> t
     val vectorSize : Config.t -> t
     val compare : t Compare.t
@@ -185,6 +186,7 @@ sig
     val toValueSize : t -> ValueSize.t
     val toString : t -> string
     val intArb : IntArb.size -> t
+    val wordSize : Config.t -> t
     val ptrSize : Config.t -> t
     val compare : t Compare.t
     val eq : t * t -> bool
@@ -205,8 +207,10 @@ sig
     val eq : t * t -> bool
     val nonRefPtr : Config.t -> t
     val fromTraceSize : Config.t * Typ.traceabilitySize -> t
+    val toTraceSize : Config.t * t -> Typ.traceabilitySize 
       (* pre: result determined *)
     val fromTyp : Config.t * Typ.t -> t (* pre: result determined *)
+    val toTyp : t -> Typ.t 
   end
 
   structure FieldDescriptor :
@@ -239,9 +243,9 @@ sig
     val eq : t * t -> bool
   end
 
-  structure VtableDescriptor :
+  structure VTableDescriptor :
   sig
-    type t = Mil.vtableDescriptor
+    type t = Mil.vTableDescriptor
     val pok : t -> PObjKind.t
     val fixedFields : t -> FieldDescriptor.t Vector.t
     val numFixed : t -> int
@@ -358,17 +362,18 @@ sig
     val isInit : t -> bool
     val isInitOf : t * Mil.variable -> bool
     val pObjKind : t -> Mil.pObjKind option
+    val arity : Config.t * t -> int
     structure Dec :
     sig
       val rhsSimple : t -> Mil.simple option
       val rhsPrim : t -> {prim : Prims.t, createThunks : bool, args : Mil.operand Vector.t}option
       val rhsTuple : t -> {
-        vtDesc : Mil.vtableDescriptor,  
+        vtDesc : Mil.vTableDescriptor,  
         inits  : Mil.operand Vector.t   
       } option
       val rhsTupleSub : t -> Mil.tupleField option
       val rhsTupleSet : t -> {tupField : Mil.tupleField, ofVal: Mil.operand} option
-      val rhsTupleInited : t -> {vtDesc : Mil.vtableDescriptor, tup : Mil.variable} option
+      val rhsTupleInited : t -> {vtDesc : Mil.vTableDescriptor, tup : Mil.variable} option
       val rhsIdxGet : t -> {idx : Mil.variable, ofVal : Mil.operand} option
       val rhsCont : t -> Mil.label option
       val rhsObjectGetKind : t -> Mil.variable option
@@ -412,7 +417,10 @@ sig
   structure Instruction :
   sig
     type t = Mil.instruction
-    val dest : t -> Mil.variable option
+    val new : Mil.variable * Mil.rhs -> Mil.instruction
+    val new' : Mil.variable vector * Mil.rhs -> Mil.instruction
+    val dests : t -> Mil.variable vector
+    val n : t -> int
     val rhs : t -> Rhs.t
     val isCore : t -> bool
     val compare : t Compare.t
@@ -678,7 +686,7 @@ sig
       val gCode : t -> Mil.code option
       val gErrorVal : t -> Mil.typ option
       val gIdx : t -> int Mil.ND.t option
-      val gTuple : t -> {vtDesc : Mil.vtableDescriptor, inits  : Mil.simple Vector.t} option
+      val gTuple : t -> {vtDesc : Mil.vTableDescriptor, inits  : Mil.simple Vector.t} option
       val gRat : t -> Rat.t option
       val gInteger : t -> IntInf.t option
       val gThunkValue : t -> {typ : Mil.fieldKind, ofVal : Mil.simple} option
@@ -788,22 +796,22 @@ sig
     val typ : Mil.pObjKind * (Mil.typ * Mil.fieldVariance) Vector.t -> Mil.typ
 
     val td : Mil.fieldDescriptor Vector.t -> Mil.tupleDescriptor
-    val vtd : Mil.pObjKind * (Mil.fieldDescriptor Vector.t) -> Mil.vtableDescriptor
+    val vtd : Mil.pObjKind * (Mil.fieldDescriptor Vector.t) -> Mil.vTableDescriptor
 
     (* These assume PokNone *)
-    val vtdImmutable     : Mil.fieldKind Vector.t -> Mil.vtableDescriptor
-    val vtdImmutableTyps : Config.t * Mil.typ Vector.t -> Mil.vtableDescriptor
-    val vtdImmutableRefs : int -> Mil.vtableDescriptor
-    val vtdImmutableBits : int * Mil.fieldSize -> Mil.vtableDescriptor
+    val vtdImmutable     : Mil.fieldKind Vector.t -> Mil.vTableDescriptor
+    val vtdImmutableTyps : Config.t * Mil.typ Vector.t -> Mil.vTableDescriptor
+    val vtdImmutableRefs : int -> Mil.vTableDescriptor
+    val vtdImmutableBits : int * Mil.fieldSize -> Mil.vTableDescriptor
 
     val tdImmutable     : Mil.fieldKind Vector.t -> Mil.tupleDescriptor
     val tdImmutableRefs : int -> Mil.tupleDescriptor
     val tdImmutableBits : int * Mil.fieldSize -> Mil.tupleDescriptor
 
-    val new : Mil.vtableDescriptor * Mil.operand Vector.t -> Mil.rhs
+    val new : Mil.vTableDescriptor * Mil.operand Vector.t -> Mil.rhs
     val proj : Mil.tupleDescriptor * Mil.variable * int -> Mil.rhs
     val init : Mil.tupleDescriptor * Mil.variable * int * Mil.operand -> Mil.rhs 
-    val inited : Mil.vtableDescriptor * Mil.variable -> Mil.rhs
+    val inited : Mil.vTableDescriptor * Mil.variable -> Mil.rhs
   end (* structure Tuple *)
 
   (* This defines an abstraction of variable length arrays in MIL.  
@@ -893,7 +901,7 @@ sig
 
     structure Out : 
     sig
-      val tuple : t -> {vtDesc : Mil.vtableDescriptor, inits  : Mil.simple Vector.t} option
+      val tuple : t -> {vtDesc : Mil.vTableDescriptor, inits  : Mil.simple Vector.t} option
       val thunkValue : t -> {typ : Mil.fieldKind, ofVal : Mil.simple} option
       val simple : t -> Mil.simple option
       val pFunction : t -> {code : Mil.variable option, fvs : (Mil.fieldKind * Mil.operand) Vector.t} option
@@ -928,6 +936,19 @@ sig
 
   end (* structure Prims *)
 
+  structure Id : 
+  sig
+    datatype t = 
+             L of Mil.label    (* block label *)
+           | I of int          (* numbered instruction *)
+           | T of Mil.label    (* block transfer *)
+           | G of Mil.variable (* global *)
+
+    val compare : t Compare.t
+    val eq : t * t -> bool
+    structure Dict : DICT where type key = t
+    structure ImpDict : DICT_IMP where type key = t
+  end (* structure Id *)
 end;
 
 functor Intp(val sgn : IntArb.signed
@@ -1175,7 +1196,7 @@ struct
                 #array, C.option fieldDescriptor)
           (td1, td2)
 
-    fun vtableDescriptor (M.VTD vtd1, M.VTD vtd2) =
+    fun vTableDescriptor (M.VTD vtd1, M.VTD vtd2) =
         C.rec3 (#pok, pObjKind,
                 #fixed, C.vector fieldDescriptor,
                 #array, C.option (C.pair (Int.compare, fieldDescriptor)))
@@ -1269,11 +1290,11 @@ struct
           val prim = C.rec3 (#prim, Prims.Compare.t,
                              #createThunks, Bool.compare,
                              #args, C.vector operand)
-          val t    = C.rec2 (#vtDesc, vtableDescriptor,
+          val t    = C.rec2 (#vtDesc, vTableDescriptor,
                              #inits, operands)
           val tf   = tupleField
           val ts   = C.rec2 (#tupField, tupleField, #ofVal, operand)
-          val ti   = C.rec2 (#vtDesc, vtableDescriptor,
+          val ti   = C.rec2 (#vtDesc, vTableDescriptor,
                              #tup, variable)
           val ig   = C.rec2 (#idx, variable, #ofVal, operand)
           val thkm = C.rec2 (#typ, fieldKind, #fvs, C.vector fieldKind)
@@ -1376,7 +1397,7 @@ struct
         end
 
     fun instruction (M.I x1, M.I x2) =
-        C.rec2 (#dest, C.option variable, #rhs, rhs) (x1, x2)
+        C.rec2 (#dests, C.vector variable, #rhs, rhs) (x1, x2)
 
     fun target (M.T x1, M.T x2) =
         C.rec2 (#block, label, #arguments, C.vector operand) (x1, x2)
@@ -1491,7 +1512,7 @@ struct
 
     local
       fun idx (x1, x2) = ND.compare (x1, x2, Int.compare)
-      val tuple = C.rec2 (#vtDesc, vtableDescriptor,
+      val tuple = C.rec2 (#vtDesc, vTableDescriptor,
                           #inits, C.vector simple)
       val thunkValue = C.rec2 (#typ, fieldKind, #ofVal, simple)
       val psum = C.rec3 (#tag, name, #typ, fieldKind, #ofVal, simple)
@@ -1708,7 +1729,12 @@ struct
           | IntArb.S32  => M.Vs32
           | IntArb.S64  => M.Vs64
 
-    fun ptrSize config = intArb (Config.targetWordSize' config)
+    fun ptrSize config = 
+        (case Config.targetWordSize config
+          of Config.Ws32 => M.Vs32
+           | Config.Ws64 => M.Vs64)
+
+    val wordSize = ptrSize
 
     fun vectorSize config =
         case Config.targetVectorSize config
@@ -1966,7 +1992,12 @@ struct
           | IntArb.S32  => M.Fs32
           | IntArb.S64  => M.Fs64
 
-    fun ptrSize config = intArb (Config.targetWordSize' config)
+    fun ptrSize config = 
+        (case Config.targetWordSize config
+          of Config.Ws32 => M.Fs32
+           | Config.Ws64 => M.Fs64)
+
+    val wordSize = ptrSize
 
     val compare = Compare.fieldSize
     val eq = Compare.C.equal compare
@@ -2036,8 +2067,16 @@ struct
             | Typ.TsMask vs   => err ()
         end
 
-    fun fromTyp (c, t) = fromTraceSize (c, Typ.traceabilitySize (c, t))
+    fun toTraceSize (c, fk) =
+        (case fk
+          of M.FkRef => Typ.TsRef
+           | M.FkBits fs => Typ.TsBits (FieldSize.toValueSize fs))
 
+    fun fromTyp (c, t) = fromTraceSize (c, Typ.traceabilitySize (c, t))
+    fun toTyp fk = 
+        (case fk
+          of M.FkRef => M.TRef
+           | M.FkBits fs => M.TBits (FieldSize.toValueSize fs))
   end
 
   structure FieldDescriptor =
@@ -2086,10 +2125,10 @@ struct
 
   end
 
-  structure VtableDescriptor =
+  structure VTableDescriptor =
   struct
 
-    type t = Mil.vtableDescriptor
+    type t = Mil.vTableDescriptor
 
     fun pok (M.VTD {pok = p, ...}) = p
     fun fixedFields (M.VTD {fixed, ...}) = fixed
@@ -2109,7 +2148,7 @@ struct
     fun toTupleDescriptor (M.VTD {fixed, array, ...}) =
         M.TD {fixed = fixed, array = Option.map (array, #2)}
 
-    val compare = Compare.vtableDescriptor
+    val compare = Compare.vTableDescriptor
     val eq = Compare.C.equal compare
 
   end
@@ -2378,8 +2417,8 @@ struct
       val R = ReadOnly
       val writes = fromList [HeapWrite, InitWrite]
       fun tuple {vtDesc, inits} =
-          if VtableDescriptor.hasArray vtDesc orelse
-             VtableDescriptor.numFixed vtDesc <> Vector.length inits
+          if VTableDescriptor.hasArray vtDesc orelse
+             VTableDescriptor.numFixed vtDesc <> Vector.length inits
           then InitGenS
           else T
       fun thunkInit {thunk, ...} =
@@ -2439,7 +2478,7 @@ struct
         (case rhs 
           of M.RhsSimple s             => Simple.pObjKind s
            | M.RhsPrim _               => NONE (* XXX anything else here?  -leaf *)
-           | M.RhsTuple {vtDesc, ...}  => SOME (VtableDescriptor.pok vtDesc)
+           | M.RhsTuple {vtDesc, ...}  => SOME (VTableDescriptor.pok vtDesc)
            | M.RhsTupleSub _           => NONE
            | M.RhsTupleSet _           => NONE
            | M.RhsTupleInited _        => NONE
@@ -2461,6 +2500,36 @@ struct
            | M.RhsPSetQuery _          => NONE
            | M.RhsPSum _               => SOME M.PokSum
            | M.RhsPSumProj _           => NONE)
+
+    fun arity (config, rhs) =
+        case rhs
+         of M.RhsSimple _                          => 1
+          | M.RhsPrim {prim, ...}                  => Prims.arity (config, prim)
+          | M.RhsTuple x                           => 1
+          | M.RhsTupleSub _                        => 1
+          | M.RhsTupleSet _                        => 0
+          | M.RhsTupleInited _                     => 0
+          | M.RhsIdxGet _                          => 1
+          | M.RhsCont _                            => 1
+          | M.RhsObjectGetKind _                   => 1
+          | M.RhsThunkMk _                         => 1
+          | M.RhsThunkInit {thunk = NONE, ...}     => 1
+          | M.RhsThunkInit {thunk = SOME _, ...}   => 0
+          | M.RhsThunkGetFv _                      => 1
+          | M.RhsThunkValue {thunk = NONE, ...}    => 1
+          | M.RhsThunkValue {thunk = SOME _, ...}  => 0
+          | M.RhsThunkGetValue _                   => 1
+          | M.RhsThunkSpawn _                      => 0
+          | M.RhsPFunctionMk _                     => 1
+          | M.RhsPFunctionInit {cls = NONE, ...}   => 1
+          | M.RhsPFunctionInit {cls = SOME _, ...} => 0
+          | M.RhsPFunctionGetFv _                  => 1
+          | M.RhsPSetNew _                         => 1
+          | M.RhsPSetGet _                         => 1
+          | M.RhsPSetCond _                        => 1
+          | M.RhsPSetQuery _                       => 1
+          | M.RhsPSum _                            => 1
+          | M.RhsPSumProj _                        => 1
 
     structure Dec =
     struct
@@ -2521,7 +2590,11 @@ struct
 
     type t = Mil.instruction
 
-    fun dest (M.I {dest, ...}) = dest
+    fun new' (vv, rhs) = M.I {dests = vv, n = 0, rhs = rhs}
+    fun new (v, rhs) = new' (Vector.new1 v, rhs)
+
+    fun dests (M.I {dests, ...}) = dests
+    fun n (M.I {n, ...}) = n
     fun rhs  (M.I {rhs,  ...}) = rhs
 
     fun isCore i = Rhs.isCore (rhs i)
@@ -3227,7 +3300,7 @@ struct
           of M.GCode f              => NONE
            | M.GErrorVal _          => NONE
            | M.GIdx _               => NONE
-           | M.GTuple {vtDesc, ...} => SOME (VtableDescriptor.pok vtDesc)
+           | M.GTuple {vtDesc, ...} => SOME (VTableDescriptor.pok vtDesc)
            | M.GRat _               => NONE
            | M.GInteger _           => NONE
            | M.GThunkValue _        => SOME M.PokThunk
@@ -3467,9 +3540,9 @@ struct
     val vtdImmutableBits = 
      fn (i, fs) => vtdImmutable (Vector.new (i, M.FkBits fs))
 
-    val tdImmutable = VtableDescriptor.toTupleDescriptor o vtdImmutable
-    val tdImmutableRefs = VtableDescriptor.toTupleDescriptor o vtdImmutableRefs
-    val tdImmutableBits = VtableDescriptor.toTupleDescriptor o vtdImmutableBits
+    val tdImmutable = VTableDescriptor.toTupleDescriptor o vtdImmutable
+    val tdImmutableRefs = VTableDescriptor.toTupleDescriptor o vtdImmutableRefs
+    val tdImmutableBits = VTableDescriptor.toTupleDescriptor o vtdImmutableBits
 
     val new = 
      fn (vt, inits) => M.RhsTuple {vtDesc = vt, inits = inits}
@@ -3905,5 +3978,38 @@ struct
 
   end (* structure Prims *)
 
+
+  structure Id =
+  struct
+    datatype t = 
+             L of Mil.label    (* block label *)
+           | I of int          (* numbered instruction *)
+           | T of Mil.label    (* block transfer *)
+           | G of Mil.variable (* global *)
+
+    val compare = 
+     fn (id1, id2) => 
+        (case (id1, id2)
+          of (L l1, L l2) => Compare.label (l1, l2)
+           | (L _, _) => GREATER
+           | (_, L _) => LESS
+           | (I i1, I i2) => Int.compare (i1, i2)
+           | (I _, _) => GREATER
+           | (_, I _) => LESS
+           | (T l1, T l2) => Compare.label (l1, l2)
+           | (T _, _) => GREATER
+           | (_, T _) => LESS
+           | (G v1, G v2) => Compare.variable (v1, v2))
+
+    val eq = Compare.C.equal compare
+    structure Dict = DictF (struct
+                              type t = t
+                              val compare = compare
+                            end)
+    structure ImpDict = DictImpF (struct
+                                    type t = t
+                                    val compare = compare
+                                  end)
+  end (* structure Id *)
 
 end

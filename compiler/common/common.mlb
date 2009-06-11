@@ -54,11 +54,13 @@ in
         signature DICT_IMP
         signature DOMINANCE
         signature IMP_POLY_LABELED_GRAPH
+        signature LATTICE
         signature ORD
         signature SET
 
         functor ChatF
         functor DictF
+        functor DictImpF
         functor DominanceF
         functor FlatLatticeFn
         functor FlatOptionLatticeFn 
@@ -85,6 +87,7 @@ in
         structure ImpQueue
         structure IntArb
         structure IntDict
+        structure IntIntDict
         structure Intr
         structure IntSet
         structure LayoutUtils

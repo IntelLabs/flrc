@@ -17,12 +17,25 @@ sig
         Config.t * t * VectorInstructions.elemType -> bool
   end
 
+  structure TraceTyp :
+  sig
+    (* Trace typs are TBits/TRef/TPtr/TAnyS/TAny/TNone *)
+    val fromTyp : Config.t * Mil.typ -> Mil.typ
+  end (* structure TraceTyp *)
+
   structure Prim :
   sig
     val typToMilTyp : Config.t * Mil.name (* ord *) * Prims.typ -> Mil.typ
+    val typToMilTraceTyp : Config.t * Prims.typ -> Mil.typ
     val subtypeIn : Config.t * Mil.name (* ord *) * Mil.typ * Prims.typ -> bool
     val subtypeOut : Config.t * Mil.name (* ord *) * Prims.typ * Mil.typ
                      -> bool
+
+    val resultTypFromPrimTyp : Config.t * Mil.symbolInfo * Prims.primTyp -> Mil.typ option 
+    val resultTypOf : Config.t * Mil.symbolInfo * Prims.t -> Mil.typ option option
+    val resultTypOfPrim : Config.t * Mil.symbolInfo * Prims.prim -> Mil.typ option 
+    val resultTypOfRuntime : Config.t * Mil.symbolInfo * Prims.runtime -> Mil.typ option option
+    val resultTypOfVi : Config.t * Mil.symbolInfo * VectorInstructions.prim -> Mil.typ option
   end
 
   structure Typer :
@@ -37,6 +50,22 @@ sig
     val operands  : (Mil.operand Vector.t     , Mil.typ Vector.t    ) typer
     val global    : (Mil.global               , Mil.typ             ) typer
   end
+
+  structure TraceTyper :
+  sig
+    type ('a, 'b) typer = Config.t * Mil.symbolInfo * 'a -> 'b
+    val callConv  : (Mil.variable Mil.callConv, Mil.typ Mil.callConv) typer
+    val variable  : (Mil.variable             , Mil.typ             ) typer
+    val variables : (Mil.variable Vector.t    , Mil.typ Vector.t    ) typer
+    val constant  : (Mil.constant             , Mil.typ             ) typer
+    val simple    : (Mil.simple               , Mil.typ             ) typer
+    val operand   : (Mil.operand              , Mil.typ             ) typer
+    val operands  : (Mil.operand Vector.t     , Mil.typ Vector.t    ) typer
+    val rhs       : (Mil.rhs                  , Mil.typ             ) typer
+    val global    : (Mil.global               , Mil.typ             ) typer
+  end (* structure TraceTyper *)
+
+
 (*
   val call      : state * Mil.call -> Mil.typ        
   val elim      : state * Mil.typ -> Mil.typ
@@ -714,6 +743,27 @@ struct
      val glb = Lub.glb
    end
 
+   structure TraceTyp = 
+   struct
+     val fromTyp = 
+      fn (config, t) => 
+         let
+           val ts = MU.Typ.traceabilitySize (config, t)
+           val t = 
+               (case ts
+                 of MU.Typ.TsAny       => M.TAny
+                  | MU.Typ.TsAnyS vs   => M.TAnyS vs
+                  | MU.Typ.TsBits vs   => M.TBits vs
+                  | MU.Typ.TsPtr       => M.TPtr
+                  | MU.Typ.TsNonRefPtr => M.TPtr
+                  | MU.Typ.TsRef       => M.TRef
+                  | MU.Typ.TsNone      => M.TNone
+                  | MU.Typ.TsMask et   => M.TViMask et)
+         in t
+         end
+
+   end (* structure TraceTyp *)
+
    structure Prim =
    struct
 
@@ -754,6 +804,26 @@ struct
               Fail.fail ("MilTyp.Prim", "typToMilTyp",
                          "void is not a Mil type")
 
+      fun typToMilTraceTyp (config, t) =
+          (case t
+            of P.TAny                                   => M.TRef
+             | P.TNum P.NtRat                           => M.TRef
+             | P.TNum P.NtInteger                       => M.TRef
+             | P.TNum (P.NtIntegral (IntArb.T (sz, _))) => M.TBits (MU.ValueSize.intArb sz)
+             | P.TNum P.NtFloat                         => M.TBits M.Vs32
+             | P.TNum P.NtDouble                        => M.TBits M.Vs64
+             | P.TString                                => M.TRef
+             | P.TBool                                  => M.TBits (MU.ValueSize.wordSize config)
+             | P.TArrayF ts                             => M.TRef
+             | P.TArrayV t                              => M.TRef
+             | P.TRef t                                 => M.TRef
+             | P.TSet t                                 => M.TRef
+             | P.TViVector et                           => M.TBits (MU.ValueSize.vectorSize config)
+             | P.TViMask et                             => M.TViMask et
+             | P.TVoid                                  =>
+               Fail.fail ("MilTyp.Prim", "typToMilTyp",
+                          "void is not a Mil type"))
+
       (* XXX NG: this doesn't work after lowering *)
       fun equalTyp (config, ord, t1, t2) =
           Type.equal (t1, typToMilTyp (config, ord, t2))
@@ -765,6 +835,45 @@ struct
       (* XXX NG: this doesn't work after lowering *)
       fun subtypeOut (config, ord, t1, t2) =
           Type.subtype (config, typToMilTyp (config, ord, t1), t2)
+
+      val resultTypFromPrimTyp = 
+       fn (config, si, t) => 
+          (case t
+            of (_, _, P.TVoid) => NONE
+             | (_, _, t) => SOME (typToMilTyp (config, Prims.getOrd si, t)))
+
+      val resultTypOfPrim = 
+       fn (config, si, p) => 
+          let
+            val t = Prims.typeOfPrim (config, p) 
+            val to = resultTypFromPrimTyp (config, si, t)
+          in to
+          end
+
+      val resultTypOfRuntime =
+       fn (config, si, rt) => 
+          let
+            val to = 
+                (case Prims.typeOfRuntime (config, rt) 
+                  of SOME t => SOME (resultTypFromPrimTyp (config, si, t))
+                   | NONE => NONE)
+          in to
+          end
+
+      val resultTypOfVi = 
+       fn (config, si, vi) => 
+          let
+            val t = Prims.typeOfVi (config, vi) 
+            val to = resultTypFromPrimTyp (config, si, t)
+          in to
+          end
+
+      val resultTypOf =
+       fn (config, si, p) => 
+          (case p
+            of P.Prim p => SOME (resultTypOfPrim (config, si, p))
+             | P.Runtime rt => resultTypOfRuntime (config, si, rt)
+             | P.Vi vi => SOME (resultTypOfVi (config, si, vi)))
 
    end
 
@@ -823,7 +932,7 @@ struct
            | M.GErrorVal t => t
            | M.GIdx _ => M.TIdx
            | M.GTuple {vtDesc, inits} => 
-             M.TTuple {pok = MU.VtableDescriptor.pok vtDesc,
+             M.TTuple {pok = MU.VTableDescriptor.pok vtDesc,
                        fixed = Vector.map (simples (config, si, inits),
                                            fn t => (t, M.FvReadWrite)),
                        array = NONE}
@@ -844,6 +953,63 @@ struct
              M.TPType {kind = M.TkE, over = simple (config, si, s)}
 
    end
+
+   structure TraceTyper =
+   struct
+     type ('a, 'b) typer = Config.t * Mil.symbolInfo * 'a -> 'b
+     val lift = 
+      fn (f, map) =>
+      fn (config, si, a) => 
+         map (f (config, si, a), fn t => TraceTyp.fromTyp (config, t))
+     val callConv  = lift (Typer.callConv, MU.CallConv.map)
+     val variable  = lift (Typer.variable, Utils.Function.</)
+     val variables = lift (Typer.variables, Vector.map)
+     val constant  = lift (Typer.constant, Utils.Function.</)
+     val simple    = lift (Typer.simple, Utils.Function.</)
+     val operand   = lift (Typer.operand, Utils.Function.</)
+     val operands  = lift (Typer.operands, Vector.map)
+     val global    = lift (Typer.global, Utils.Function.</)
+     val rhs =
+      fn (config, si, rhs) => 
+         let
+           val t = 
+               (case rhs
+                 of M.RhsSimple s             => simple (config, si, s)
+                  | M.RhsPrim {prim, ...}     => 
+                    (case Prim.resultTypOf (config, si, prim)
+                      of SOME (SOME t) => TraceTyp.fromTyp (config, t)
+                       | SOME NONE => M.TNone
+                       | NONE => Fail.fail ("MilTyp.Prim", "rhs", "Untyped prim"))
+                  | M.RhsTuple x              => M.TRef
+                  | M.RhsTupleSub tf          => 
+                    MU.FieldKind.toTyp (MU.FieldDescriptor.kind (MU.TupleField.fieldDescriptor tf))
+                  | M.RhsTupleSet _           => M.TNone
+                  | M.RhsTupleInited _        => M.TNone
+                  | M.RhsIdxGet _             => M.TBits (MU.ValueSize.wordSize config)
+                  | M.RhsCont _               => M.TRef
+                  | M.RhsObjectGetKind _      => M.TBits (MU.ValueSize.wordSize config)
+                  | M.RhsThunkMk _            => M.TRef
+                  | M.RhsThunkInit {thunk = NONE,...}      => M.TRef
+                  | M.RhsThunkInit {thunk = SOME _, ...}   => M.TNone
+                  | M.RhsThunkGetFv {fvs, idx, ...}        => MU.FieldKind.toTyp (Vector.sub (fvs, idx))
+                  | M.RhsThunkValue {thunk = NONE, ...}    => M.TRef
+                  | M.RhsThunkValue {thunk = SOME _, ...}  => M.TNone
+                  | M.RhsThunkGetValue {typ, ...}          => MU.FieldKind.toTyp typ
+                  | M.RhsThunkSpawn _                      => M.TNone
+                  | M.RhsPFunctionMk _                     => M.TRef
+                  | M.RhsPFunctionInit {cls = NONE, ...}   => M.TRef
+                  | M.RhsPFunctionInit {cls = SOME _, ...} => M.TNone
+                  | M.RhsPFunctionGetFv {fvs, idx, ...}    => MU.FieldKind.toTyp (Vector.sub (fvs, idx))
+                  | M.RhsPSetNew _                         => M.TRef
+                  | M.RhsPSetGet _                         => M.TRef
+                  | M.RhsPSetCond _                        => M.TRef
+                  | M.RhsPSetQuery _                       => M.TBits (MU.ValueSize.wordSize config)
+                  | M.RhsPSum _                            => M.TRef
+                  | M.RhsPSumProj {typ, ...}               => MU.FieldKind.toTyp typ)
+         in t
+         end
+   end (* structure TraceTyper *)
+
 (*
    fun variable (st, v) = getTyp (st, v)
 
@@ -1068,4 +1234,5 @@ struct
             eqTV (state, tv1, tv2)
           | _ => false)
 *)
+
 end

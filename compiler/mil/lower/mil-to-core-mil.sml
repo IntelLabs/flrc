@@ -228,14 +228,14 @@ struct
   fun doPFunMk (state, env, fks) =
       POM.Function.mkUninit (envGetConfig env, fks)
 
-  fun doPFunInit (state, env, dest, cls, code, fvs) =
+  fun doPFunInit (state, env, dests, cls, code, fvs) =
       let
         val c = envGetConfig env
       in
         case cls
          of NONE =>
           (* Create the closure *)
-            MS.instrMk (state, env, dest, POM.Function.mkInit (c, code, fvs))
+            MS.instrMk (state, env, dests, POM.Function.mkInit (c, code, fvs))
           (* Closure already exists, initialise it *)
           | SOME cls =>
             let
@@ -254,20 +254,20 @@ struct
 
   fun doPSetGet (state, env, v) = POM.OptionSet.get (envGetConfig env, v)
 
-  fun doPSetCond (state, env, dest, bool, ofVal) =
+  fun doPSetCond (state, env, dests, bool, ofVal) =
       let 
         val c = envGetConfig env
         val (ps, vF, asF, vT, asT) =
-            case dest
+            case Utils.Vector.lookup (dests, 0)
              of NONE =>
-                (Vector.new0 (), NONE, Vector.new0 (), NONE, Vector.new0 ())
+                (Vector.new0 (), Vector.new0 (), Vector.new0 (), Vector.new0 (), Vector.new0 ())
               | SOME v =>
                 let
                   val vF = cloneVar (state, v)
                   val vT = cloneVar (state, v)
                 in
-                  (Vector.new1 v, SOME vF, Vector.new1 (M.SVariable vF),
-                   SOME vT, Vector.new1 (M.SVariable vT))
+                  (Vector.new1 v, Vector.new1 vF, Vector.new1 (M.SVariable vF),
+                   Vector.new1 vT, Vector.new1 (M.SVariable vT))
                 end
         val sFalse = MS.instrMk (state, env, vF, POM.OptionSet.empty c)
         val sTrue = MS.instrMk (state, env, vT, POM.OptionSet.mk (c, ofVal))
@@ -275,14 +275,14 @@ struct
       in s
       end
 
-  fun doPSetQuery (state, env, dest, v) =
+  fun doPSetQuery (state, env, dests, v) =
       let 
         val c = envGetConfig env
         val (rhs, t, compConst) = POM.OptionSet.query (c, v)
         val vc = relatedVar (state, v, "_ptr", t, false)
         val s1 = MS.bindRhs (state, env, vc, rhs)
         val (ps, asF, asT) =
-            case dest
+            case Utils.Vector.lookup (dests, 0)
              of NONE => (Vector.new0 (), Vector.new0 (), Vector.new0 ())
               | SOME v => (Vector.new1 v,
                            Vector.new1 (M.SConstant (MU.Bool.F c)),
@@ -301,11 +301,11 @@ struct
   fun doPSumProj (state, env, (fk, v, tag)) =
       POM.Sum.getVal (envGetConfig env, v, fk, tag)
 
-  fun lowerToRhs (state, env, lower, doIt, dest, args) =
+  fun lowerToRhs (state, env, lower, doIt, dests, args) =
       if lower then
         let
           val rhs = doIt (state, env, args)
-          val s = MS.instrMk (state, env, dest, rhs)
+          val s = MS.instrMk (state, env, dests, rhs)
         in SOME s
         end
       else
@@ -314,43 +314,43 @@ struct
   val instr = 
    fn (state, env, i) => 
       let
-        val M.I {dest, rhs} = i
+        val M.I {dests, n, rhs} = i
         val res = 
             case rhs
              of M.RhsSimple (M.SConstant M.COptionSetEmpty) => 
-                lowerToRhs (state, env, lowerPTypes, doPSetEmpty, dest, ())
+                lowerToRhs (state, env, lowerPTypes, doPSetEmpty, dests, ())
               | M.RhsSimple (M.SConstant M.CTypePH) =>
-                lowerToRhs (state, env, lowerPTypes, doPTypePH, dest, ())
+                lowerToRhs (state, env, lowerPTypes, doPTypePH, dests, ())
               | M.RhsPFunctionMk {fvs} =>
-                lowerToRhs (state, env, lowerPFunctions, doPFunMk, dest, fvs)
+                lowerToRhs (state, env, lowerPFunctions, doPFunMk, dests, fvs)
               | M.RhsPFunctionInit {cls, code, fvs} => 
                 if lowerPFunctions then
-                  SOME (doPFunInit (state, env, dest, cls, code, fvs))
+                  SOME (doPFunInit (state, env, dests, cls, code, fvs))
                 else
                   NONE
               | M.RhsPFunctionGetFv {fvs, cls, idx} => 
-                lowerToRhs (state, env, lowerPFunctions, doPFunGetFv, dest,
+                lowerToRhs (state, env, lowerPFunctions, doPFunGetFv, dests,
                             (fvs, cls, idx))
               | M.RhsPSetNew oper => 
-                lowerToRhs (state, env, lowerPTypes, doPSetNew, dest, oper)
+                lowerToRhs (state, env, lowerPTypes, doPSetNew, dests, oper)
               | M.RhsPSetGet v =>
-                lowerToRhs (state, env, lowerPTypes, doPSetGet, dest, v)
+                lowerToRhs (state, env, lowerPTypes, doPSetGet, dests, v)
               | M.RhsPSetCond {bool, ofVal} =>
                 if lowerPTypes then
-                  SOME (doPSetCond (state, env, dest, bool, ofVal))
+                  SOME (doPSetCond (state, env, dests, bool, ofVal))
                 else
                   NONE
               (* Name small values ensures that this is never a constant *)
               | M.RhsPSetQuery (M.SVariable v) =>
                 if lowerPTypes then
-                  SOME (doPSetQuery (state, env, dest, v))
+                  SOME (doPSetQuery (state, env, dests, v))
                 else
                   NONE
               | M.RhsPSum {tag, typ, ofVal} => 
-                lowerToRhs (state, env, lowerPTypes, doPSum, dest,
+                lowerToRhs (state, env, lowerPTypes, doPSum, dests,
                             (tag, typ, ofVal))
               | M.RhsPSumProj {typ, sum, tag} =>
-                lowerToRhs (state, env, lowerPTypes, doPSumProj, dest,
+                lowerToRhs (state, env, lowerPTypes, doPSumProj, dests,
                             (typ, sum, tag))
               | _ => NONE
       in (env, res)
@@ -452,7 +452,7 @@ struct
         val fks = Vector.map (fvts, fn t => MU.FieldKind.fromTyp (c, t))
         val project = 
          fn (i, v) =>
-            M.I {dest = SOME v, rhs = POM.Function.getFv (c, fks, cls, i)}
+            MU.Instruction.new (v, POM.Function.getFv (c, fks, cls, i))
         val projections = Vector.mapi (fvs, project)
         val parameters = Vector.new0 ()
         val transfer = M.TGoto (M.T {block = entry, arguments = Vector.new0()})

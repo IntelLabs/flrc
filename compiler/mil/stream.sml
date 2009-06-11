@@ -45,7 +45,7 @@ sig
 
     val instr     : state * env * Mil.instruction -> t
     val instrs    : state * env * Mil.instruction list -> t
-    val instrMk   : state * env * Mil.variable option * Mil.rhs -> t
+    val instrMk   : state * env * Mil.variable vector * Mil.rhs -> t
     val bindRhs   : state * env * Mil.variable * Mil.rhs -> t
     val doRhs     : state * env * Mil.rhs -> t
 
@@ -538,12 +538,12 @@ struct
 
      fun instrs (state, env, is) = appendl (state, env, new (state, env), is)
 
-     fun instrMk (state, env, dest, rhs) =
-         instr (state, env, M.I {dest = dest, rhs = rhs})
+     fun instrMk (state, env, dests, rhs) =
+         instr (state, env, M.I {dests = dests, n = 0, rhs = rhs})
 
-     fun bindRhs (state, env, x, rhs) = instrMk (state, env, SOME x, rhs)
+     fun bindRhs (state, env, x, rhs) = instrMk (state, env, Vector.new1 x, rhs)
 
-     fun doRhs (state, env, rhs) = instrMk (state, env, NONE, rhs)
+     fun doRhs (state, env, rhs) = instrMk (state, env, Vector.new0 (), rhs)
 
      fun labelWith' (state, env, s, l, vs) =
          case s
@@ -813,9 +813,9 @@ struct
          val body = 
              let
                val inc = MU.Uintp.add (c, M.SVariable i, incr)
-               val inc = M.I {dest = SOME ni, rhs = inc}
+               val inc = M.I {dests = Vector.new1 ni, n = 0, rhs = inc}
                val test = MU.Uintp.lt (c, M.SVariable ni, limit)
-               val test = M.I {dest = SOME nd, rhs = test}
+               val test = M.I {dests = Vector.new1 nd, n = 0, rhs = test}
                val body = appendl (state, env, body, [inc, test])
              in body
              end

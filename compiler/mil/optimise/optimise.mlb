@@ -22,23 +22,31 @@ local
         inline-profile.sml
 *)
         inline-leaves.sml
-(*        rep-seq.sml
-      rep.sml
-*)
+        rep-seq.sml
+        rep-base.sml
+        rep-object.sml
+        rep-node.sml
+        rep-summary.sml
+        rep-analyze.sml
+        rep-show.sml
+        rep.sml
+
         vectorize.sml
         branch-remove.sml
 in
-        structure MilCse
         structure MilContify
+        structure MilCse
         structure MilDblDiamond
-        structure MilLicm
         structure MilInlineLeaves
+        structure MilLicm
+        structure MilRemoveBranch
+        structure MilRep
         structure MilSimplify
         structure MilVectorize
-        structure MilRemoveBranch
+
 (*
         structure MilInlineAggressive   
         structure MilInlineProfile   
-        structure MilRep
+
 *)
 end

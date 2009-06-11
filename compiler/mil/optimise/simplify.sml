@@ -379,7 +379,7 @@ struct
                                     end
                                   | IMil.MInstr m => 
                                     let
-                                      val M.I {dest, rhs} = m
+                                      val M.I {dests, n, rhs} = m
                                       val {thunk, code, fvs, typ, ...} = <@ MU.Rhs.Dec.rhsThunkInit rhs
                                       val code = <- code
                                       val () = Try.require (code = fname)
@@ -391,7 +391,7 @@ struct
                                                M.RhsThunkValue {ofVal = #2 o Vector.sub @@ (fvs, i), 
                                                                 thunk = thunk, 
                                                                 typ = typ})
-                                      val m = M.I {dest = dest, rhs = rhs}
+                                      val m = M.I {dests = dests, n = n, rhs = rhs}
                                       val () = IInstr.replaceInstruction (imil, i, m)
                                       val () = changed := true
                                     in ()
@@ -616,8 +616,7 @@ struct
                   val contents = <@ MU.Def.Out.pSet <! Def.toMilDef o Def.get @@ (imil, <@ MU.Simple.Dec.sVariable arg1)
                   val t = MilType.Typer.operand (config, IMil.T.getSi imil, contents)
                   val v = IMil.Var.new (imil, "sset", t, false)
-                  val ni = M.I {dest = SOME v, 
-                                rhs  = M.RhsPSetCond {bool = on, ofVal = contents}}
+                  val ni = MU.Instruction.new (v, M.RhsPSetCond {bool = on, ofVal = contents})
                   val mv = IInstr.insertBefore (imil, ni, i)
                   val tg = 
                       M.T {block = l1, 
@@ -693,10 +692,10 @@ struct
                              | I.UseInstr i => 
                                let
                                  val mi = <@ IInstr.toInstruction i
-                                 val M.I {dest, rhs} = mi
+                                 val M.I {dests, n, rhs} = mi
                                  val {cls, code, fvs} = <@ MU.Rhs.Dec.rhsPFunctionInit rhs
                                  val rhs = M.RhsPFunctionInit {cls = cls, code = NONE, fvs = fvs}
-                                 val mi = M.I {dest = dest, rhs = rhs}
+                                 val mi = M.I {dests = dests, n = n, rhs = rhs}
                                  val () = IInstr.replaceInstruction (imil, i, mi)
                                in ()
                                end
@@ -1132,8 +1131,8 @@ struct
                        | MU.Def.DefGlobal (M.GThunkValue {ofVal, ...}) => OThunk ofVal
                        | MU.Def.DefRhs (M.RhsTuple {inits, vtDesc})    => 
                          let
-                           val () = Try.require (MU.VtableDescriptor.immutable vtDesc andalso 
-                                                 not (MU.VtableDescriptor.hasArray vtDesc))
+                           val () = Try.require (MU.VTableDescriptor.immutable vtDesc andalso 
+                                                 not (MU.VTableDescriptor.hasArray vtDesc))
                          in OTuple inits
                          end
                        | MU.Def.DefRhs (M.RhsThunkValue {typ, thunk = NONE, ofVal}) => OThunk ofVal
@@ -1282,7 +1281,7 @@ struct
                        val aa = Vector.map (vs, M.SVariable)
                        val vtd = MU.Tuple.vtdImmutableTyps (config, ts)
                        val rhs = MU.Tuple.new (vtd, aa)
-                       val mi = M.I {dest = SOME vnew, rhs = rhs}
+                       val mi = MU.Instruction.new (vnew, rhs)
                        val () = Use.replaceUses (imil, v, M.SVariable vnew)
                        val inew = IInstr.insertAfter (imil, i, mi)
                        val () = WS.addInstr (worklist, inew)
@@ -1296,8 +1295,7 @@ struct
                        val vval = Var.related (imil, v, "cnts", t, false)
                        val a = M.SVariable vval
                        val fk = MU.FieldKind.fromTyp (config, t)
-                       val mi = M.I {dest = SOME vnew, 
-                                     rhs = M.RhsThunkValue {typ = fk, thunk = NONE, ofVal = a}}
+                       val mi = MU.Instruction.new (vnew, M.RhsThunkValue {typ = fk, thunk = NONE, ofVal = a})
                        val () = Use.replaceUses (imil, v, M.SVariable vnew)
                        val inew = IInstr.insertAfter (imil, i, mi)
                        val () = WS.addInstr (worklist, inew)
@@ -1446,7 +1444,7 @@ struct
     val globalize = 
         let
           val f = 
-           fn ((d, imil, ws), (i, M.I {dest, rhs})) => 
+           fn ((d, imil, ws), (i, M.I {dests, n, rhs})) => 
               let
                 val add = 
                  fn (v, g) =>
@@ -1471,36 +1469,46 @@ struct
                 val () = 
                     (case rhs
                       of M.RhsTuple {vtDesc, inits} =>
-                         if MU.VtableDescriptor.immutable vtDesc andalso
-                            (not (MU.VtableDescriptor.hasArray vtDesc)) andalso
-                            Vector.forall (inits, const) 
-                         then
-                           add (<- dest, M.GTuple {vtDesc = vtDesc, inits = inits})
-                         else
-                           Try.fail ()
+                         let
+                           val () = Try.require (MU.VTableDescriptor.immutable vtDesc)
+                           val () = Try.not (MU.VTableDescriptor.hasArray vtDesc)
+                           val () = Try.require (Vector.length inits = MU.VTableDescriptor.numFixed vtDesc)
+                           val () = Try.require (Vector.forall (inits, const))
+                           val v = Try.V.singleton dests
+                           val () = add (v, M.GTuple {vtDesc = vtDesc, inits = inits})
+                         in ()
+                         end
                        | M.RhsThunkValue {typ, thunk, ofVal} =>
-                         if const ofVal then
-                           add (<@ Utils.Option.atMostOneOf (thunk, dest), 
-                                M.GThunkValue {typ = typ, ofVal = ofVal})
-                         else
-                           Try.fail ()
+                         let
+                           val vOpt = <@ Utils.Option.fromVector dests
+                           val dest = <@ Utils.Option.atMostOneOf (thunk, vOpt)
+                           val () = Try.require (const ofVal) 
+                           val () = add (dest, M.GThunkValue {typ = typ, ofVal = ofVal})
+                         in ()
+                         end
                        | M.RhsPFunctionInit {cls, code, fvs} =>
-                         if Option.forall (code, fn v => Var.isGlobal (imil, v)) andalso 
-                            Vector.isEmpty fvs 
-                         then
-                           add (<@ Utils.Option.atMostOneOf (cls, dest), M.GPFunction code)
-                         else
-                           Try.fail ()
+                         let
+                           val vOpt = <@ Utils.Option.fromVector dests
+                           val dest = <@ Utils.Option.atMostOneOf (cls, vOpt)
+                           val () = Try.require (Option.forall (code, fn v => Var.isGlobal (imil, v)))
+                           val () = Try.require (Vector.isEmpty fvs)
+                           val () = add (dest, M.GPFunction code)
+                         in ()
+                         end
                        | M.RhsPSetNew op1 => 
-                         if const op1 then
-                           add (<- dest, M.GPSet op1)
-                         else
-                           Try.fail ()
+                         let
+                           val () = Try.require (const op1)
+                           val v = Try.V.singleton dests
+                           val () = add (v, M.GPSet op1)
+                         in ()
+                         end
                        | M.RhsPSum {tag, typ, ofVal} => 
-                         if const ofVal then
-                           add (<- dest, M.GPSum {tag = tag, typ = typ, ofVal = ofVal})
-                         else
-                           Try.fail ()
+                         let
+                           val () = Try.require (const ofVal)
+                           val v = Try.V.singleton dests
+                           val () = add (v, M.GPSum {tag = tag, typ = typ, ofVal = ofVal})
+                         in ()
+                         end
                        | _ => Try.fail ())
               in []
               end
@@ -1528,9 +1536,9 @@ struct
     val simple = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dest, s)) =>
+           fn ((d, imil, ws), (i, dests, s)) =>
               let
-                val v = <- dest
+                val v = Try.V.singleton dests
                 val () = Use.replaceUses (imil, v, s)
                 val () = IInstr.delete (imil, i)
               in []
@@ -1541,9 +1549,9 @@ struct
     val primToLen = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dest, {prim, createThunks, args})) =>
+           fn ((d, imil, ws), (i, dests, {prim, createThunks, args})) =>
               let
-                val dv = <- dest
+                val dv = Try.V.singleton dests
                 val p = <@ MU.Prims.Dec.prim prim
                 val () = Try.require (p = Prims.PNub)
                 val v1 = <@ MU.Simple.Dec.sVariable o Try.V.singleton @@ args
@@ -1556,14 +1564,14 @@ struct
                 val ni = 
                     let
                       val rhs = POM.OrdinalArray.length (config, arrv)
-                      val mi = M.I {dest = SOME uintv, rhs = rhs}
+                      val mi = MU.Instruction.new (uintv, rhs)
                       val ni = IInstr.insertBefore (imil, mi, i)
                     in ni
                     end
                 val () = 
                     let
                       val rhs = MU.Rational.fromUintp (config, M.SVariable uintv)
-                      val mi = M.I {dest = SOME dv, rhs = rhs}
+                      val mi = MU.Instruction.new (dv, rhs)
                       val () = IInstr.replaceInstruction (imil, i, mi)
                     in ()
                     end
@@ -1575,9 +1583,9 @@ struct
     val primPrim = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dest, {prim, createThunks, args})) =>
+           fn ((d, imil, ws), (i, dests, {prim, createThunks, args})) =>
               let
-                val dv = <- dest
+                val dv = Try.V.singleton dests
 
                 val p = <@ MU.Prims.Dec.prim prim
 
@@ -1617,7 +1625,7 @@ struct
                            val rhs = M.RhsPrim {prim = P.Prim p, 
                                                 createThunks = createThunks,
                                                 args = Vector.fromList ops}
-                           val ni = M.I {dest = SOME dv, rhs = rhs}
+                           val ni = MU.Instruction.new (dv, rhs)
                            val () = IInstr.replaceInstruction (imil, i, ni)
                          in [I.ItemInstr i]
                          end)
@@ -1628,14 +1636,14 @@ struct
 
     val prim = primPrim or primToLen
 
-    val tuple = fn (state, (i, dest, r)) => NONE
+    val tuple = fn (state, (i, dests, r)) => NONE
 
     val tupleSub = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dest, tf)) =>
+           fn ((d, imil, ws), (i, dests, tf)) =>
               let
-                val dv = <- dest
+                val dv = Try.V.singleton dests
                 val fi = MU.TupleField.field tf
                 val tup = MU.TupleField.tup tf
                 val tupDesc = MU.TupleField.tupDesc tf
@@ -1658,16 +1666,16 @@ struct
         in try (Click.tupleSub, f)
         end
 
-    val tupleSet = fn (state, (i, dest, r)) => NONE
+    val tupleSet = fn (state, (i, dests, r)) => NONE
 
-    val tupleInited = fn (state, (i, dest, r)) => NONE
+    val tupleInited = fn (state, (i, dests, r)) => NONE
 
     val idxGet = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dest, {idx, ofVal})) =>
+           fn ((d, imil, ws), (i, dests, {idx, ofVal})) =>
               let
-                val dv = <- dest
+                val dv = Try.V.singleton dests
                 val nm = <@ MU.Constant.Dec.cName <! MU.Simple.Dec.sConstant @@ ofVal
                 val idx = <@ MU.Global.Dec.gIdx o #2 <! Def.toGlobal o Def.get @@ (imil, idx)
                 val offset = <@ M.ND.lookup (idx, nm)
@@ -1679,14 +1687,14 @@ struct
         in try (Click.idxGet, f)
         end
 
-    val cont = fn (state, (i, dest, r)) => NONE
+    val cont = fn (state, (i, dests, r)) => NONE
 
     val objectGetKind = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dest, v)) =>
+           fn ((d, imil, ws), (i, dests, v)) =>
               let
-                val dv = <- dest
+                val dv = Try.V.singleton dests
                 val pokO = 
                     Try.try
                       (fn () => 
@@ -1705,12 +1713,12 @@ struct
         in try (Click.objectGetKind, f)
         end
         
-    val thunkMk = fn (state, (i, dest, r)) => NONE
+    val thunkMk = fn (state, (i, dests, r)) => NONE
 
     val thunkInit = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dest, {typ, thunk, fx, code, fvs})) =>
+           fn ((d, imil, ws), (i, dests, {typ, thunk, fx, code, fvs})) =>
               let
                  val fcode = <- code
                  val iFunc = IFunc.getIFuncByName (imil, fcode)
@@ -1718,7 +1726,7 @@ struct
                  val uses = IMil.Use.getUses (imil, fcode)
                  val () = Try.V.lenEq (uses, 1)
                  val rhs = M.RhsThunkInit {typ = typ, thunk = thunk, fx = fx, code = NONE, fvs = fvs}
-                 val mi = M.I {dest = dest, rhs = rhs}
+                 val mi = MU.Instruction.new' (dests, rhs)
                  val () = IInstr.replaceInstruction (imil, i, mi)
               in [I.ItemInstr i]
               end
@@ -1728,9 +1736,9 @@ struct
     val thunkGetFv = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dest, {thunk, idx, ...})) =>
+           fn ((d, imil, ws), (i, dests, {thunk, idx, ...})) =>
               let
-                val v = <- dest
+                val v = Try.V.singleton dests
                 val fv =
                     case getUniqueInit (imil, thunk)
                      of SOME init => 
@@ -1755,8 +1763,9 @@ struct
     val thunkValue = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dest, {thunk, ofVal, ...})) =>
+           fn ((d, imil, ws), (i, dests, {thunk, ofVal, ...})) =>
               let
+                val dest = <@ Utils.Option.fromVector dests
                 val dv = <@ Utils.Option.atMostOneOf (dest, thunk)
                 val vv = <@ MU.Simple.Dec.sVariable ofVal
                 val {callee, ret, ...} = <@ MU.Transfer.Dec.tInterProc <! Def.toTransfer o Def.get @@ (imil, vv)
@@ -1773,9 +1782,9 @@ struct
     val thunkGetValue = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dest, {typ, thunk})) =>
+           fn ((d, imil, ws), (i, dests, {typ, thunk})) =>
               let
-                val dv = <- dest
+                val dv = Try.V.singleton dests
                 val ofVal = 
                     (case <@ Def.toMilDef o Def.get @@ (imil, thunk)
                       of MU.Def.DefRhs (M.RhsThunkValue {ofVal, ...})  => ofVal
@@ -1793,7 +1802,7 @@ struct
     val thunkSpawn = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dest, {thunk, fx, typ})) =>
+           fn ((d, imil, ws), (i, dests, {thunk, fx, typ})) =>
               let
                 val code = <@ #code <! MU.Rhs.Dec.rhsThunkInit <! Def.toRhs o Def.get @@ (imil, thunk)
                 val iFunc = IFunc.getIFuncByName (imil, code)
@@ -1802,19 +1811,19 @@ struct
                 val fx = Effect.intersection (fx, fx2)
                 val r = {thunk = thunk, fx = fx, typ = typ}
                 val rhs = M.RhsThunkSpawn r
-                val mi = M.I {dest = dest, rhs = rhs}
+                val mi = MU.Instruction.new' (dests, rhs)
                 val () = IInstr.replaceInstruction (imil, i, mi)
               in [I.ItemInstr i]
               end
         in try (Click.thunkSpawnFx, f)
         end
 
-    val pFunctionMk = fn (state, (i, dest, r)) => NONE
+    val pFunctionMk = fn (state, (i, dests, r)) => NONE
 
     val pFunctionInit = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dest, {cls, code, fvs})) =>
+           fn ((d, imil, ws), (i, dests, {cls, code, fvs})) =>
               let
                  val fcode = <- code
                  val iFunc = IFunc.getIFuncByName (imil, fcode)
@@ -1822,7 +1831,7 @@ struct
                  val uses = IMil.Use.getUses (imil, fcode)
                  val () = Try.V.lenEq (uses, 1)
                  val rhs = M.RhsPFunctionInit {cls = cls, code = NONE, fvs = fvs}
-                 val mi = M.I {dest = dest, rhs = rhs}
+                 val mi = MU.Instruction.new' (dests, rhs)
                  val () = IInstr.replaceInstruction (imil, i, mi)
               in [I.ItemInstr i]
               end
@@ -1832,9 +1841,9 @@ struct
     val pFunctionGetFv = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dest, {cls, idx, ...})) =>
+           fn ((d, imil, ws), (i, dests, {cls, idx, ...})) =>
               let
-                val v = <- dest
+                val v = Try.V.singleton dests
                 val fv =
                     case getUniqueInit (imil, cls)
                      of SOME init => 
@@ -1859,9 +1868,9 @@ struct
     val pSetNew = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dest, p)) =>
+           fn ((d, imil, ws), (i, dests, p)) =>
               let
-                val dv = <- dest
+                val dv = Try.V.singleton dests
                 val v = <@ MU.Simple.Dec.sVariable p
                 val setv =   
                     (case <@ Def.toMilDef o Def.get @@ (imil, v)
@@ -1878,9 +1887,9 @@ struct
     val pSetGet = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dest, v)) =>
+           fn ((d, imil, ws), (i, dests, v)) =>
               let
-                val dv = <- dest
+                val dv = Try.V.singleton dests
                 val c = 
                     (case <@ Def.toMilDef o Def.get @@ (imil, v)
                       of MU.Def.DefRhs (M.RhsPSetNew c)             => c
@@ -1897,7 +1906,7 @@ struct
     val pSetCond = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dest, {bool, ofVal})) =>
+           fn ((d, imil, ws), (i, dests, {bool, ofVal})) =>
               let
                 val c = <@ MU.Simple.Dec.sConstant ofVal
                 val rhs = 
@@ -1905,8 +1914,7 @@ struct
                       of SOME true => M.RhsPSetNew ofVal
                        | SOME false => M.RhsSimple (M.SConstant (M.COptionSetEmpty))
                        | NONE => Try.fail (Chat.warn0 (d, "Unexpected boolean constant")))
-                val mi = M.I {dest = dest,
-                              rhs = rhs}
+                val mi = MU.Instruction.new' (dests, rhs)
                 val () = IInstr.replaceInstruction (imil, i, mi)
               in [I.ItemInstr i]
               end
@@ -1916,12 +1924,12 @@ struct
     val pSetQuery = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dest, r)) => 
+           fn ((d, imil, ws), (i, dests, r)) => 
               let
                 val T = M.SConstant (MU.Bool.T (PD.getConfig d))
                 val F = M.SConstant (MU.Bool.F (PD.getConfig d))
 
-                val v = <- dest
+                val v = Try.V.singleton dests
                 val b = 
                     case r
                      of M.SConstant (M.COptionSetEmpty) => F
@@ -1939,14 +1947,14 @@ struct
         in try (Click.pSetQuery, f)
         end
 
-    val pSum = fn (state, (i, dest, r)) => NONE
+    val pSum = fn (state, (i, dests, r)) => NONE
 
     val pSumProj = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dest, {typ, sum, tag})) => 
+           fn ((d, imil, ws), (i, dests, {typ, sum, tag})) => 
               let
-                val v = <- dest
+                val v = Try.V.singleton dests
                 val {ofVal, ...} = <@ MU.Def.Out.pSum <! Def.toMilDef o Def.get @@ (imil, v)
                 val () = Use.replaceUses (imil, v, ofVal)
                 val () = IInstr.delete (imil, i)
@@ -1956,34 +1964,34 @@ struct
         end
 
     val simplify = 
-     fn (state, (i, M.I {dest, rhs})) =>
+     fn (state, (i, M.I {dests, n, rhs})) =>
         let
           val r = 
               case rhs
-               of M.RhsSimple r         => simple (state, (i, dest, r))
-                | M.RhsPrim r           => prim (state, (i, dest, r))
-                | M.RhsTuple r          => tuple (state, (i, dest, r))
-                | M.RhsTupleSub r       => tupleSub (state, (i, dest, r))
-                | M.RhsTupleSet r       => tupleSet (state, (i, dest, r))
-                | M.RhsTupleInited r    => tupleInited (state, (i, dest, r))
-                | M.RhsIdxGet r         => idxGet (state, (i, dest, r))
-                | M.RhsCont r           => cont (state, (i, dest, r))
-                | M.RhsObjectGetKind r  => objectGetKind (state, (i, dest, r))
-                | M.RhsThunkMk r        => thunkMk (state, (i, dest, r))
-                | M.RhsThunkInit r      => thunkInit (state, (i, dest, r))
-	        | M.RhsThunkGetFv r     => thunkGetFv (state, (i, dest, r))
-                | M.RhsThunkValue r     => thunkValue (state, (i, dest, r))
-                | M.RhsThunkGetValue r  => thunkGetValue (state, (i, dest, r))
-                | M.RhsThunkSpawn r     => thunkSpawn (state, (i, dest, r))
-                | M.RhsPFunctionMk r    => pFunctionMk (state, (i, dest, r))
-                | M.RhsPFunctionInit r  => pFunctionInit (state, (i, dest, r))
-                | M.RhsPFunctionGetFv r => pFunctionGetFv (state, (i, dest, r))
-                | M.RhsPSetNew r        => pSetNew (state, (i, dest, r))
-                | M.RhsPSetGet r        => pSetGet (state, (i, dest, r))
-                | M.RhsPSetCond r       => pSetCond (state, (i, dest, r))
-                | M.RhsPSetQuery r      => pSetQuery (state, (i, dest, r))
-                | M.RhsPSum r           => pSum (state, (i, dest, r))
-                | M.RhsPSumProj r       => pSumProj (state, (i, dest, r))
+               of M.RhsSimple r         => simple (state, (i, dests, r))
+                | M.RhsPrim r           => prim (state, (i, dests, r))
+                | M.RhsTuple r          => tuple (state, (i, dests, r))
+                | M.RhsTupleSub r       => tupleSub (state, (i, dests, r))
+                | M.RhsTupleSet r       => tupleSet (state, (i, dests, r))
+                | M.RhsTupleInited r    => tupleInited (state, (i, dests, r))
+                | M.RhsIdxGet r         => idxGet (state, (i, dests, r))
+                | M.RhsCont r           => cont (state, (i, dests, r))
+                | M.RhsObjectGetKind r  => objectGetKind (state, (i, dests, r))
+                | M.RhsThunkMk r        => thunkMk (state, (i, dests, r))
+                | M.RhsThunkInit r      => thunkInit (state, (i, dests, r))
+	        | M.RhsThunkGetFv r     => thunkGetFv (state, (i, dests, r))
+                | M.RhsThunkValue r     => thunkValue (state, (i, dests, r))
+                | M.RhsThunkGetValue r  => thunkGetValue (state, (i, dests, r))
+                | M.RhsThunkSpawn r     => thunkSpawn (state, (i, dests, r))
+                | M.RhsPFunctionMk r    => pFunctionMk (state, (i, dests, r))
+                | M.RhsPFunctionInit r  => pFunctionInit (state, (i, dests, r))
+                | M.RhsPFunctionGetFv r => pFunctionGetFv (state, (i, dests, r))
+                | M.RhsPSetNew r        => pSetNew (state, (i, dests, r))
+                | M.RhsPSetGet r        => pSetGet (state, (i, dests, r))
+                | M.RhsPSetCond r       => pSetCond (state, (i, dests, r))
+                | M.RhsPSetQuery r      => pSetQuery (state, (i, dests, r))
+                | M.RhsPSum r           => pSum (state, (i, dests, r))
+                | M.RhsPSumProj r       => pSumProj (state, (i, dests, r))
         in r
         end
 

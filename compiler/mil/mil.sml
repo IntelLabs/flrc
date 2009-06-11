@@ -87,7 +87,7 @@ struct
     array : fieldDescriptor option
   }
 
-  datatype vtableDescriptor = VTD of {
+  datatype vTableDescriptor = VTD of {
     pok   : pObjKind,
     fixed : fieldDescriptor Vector.t,
     array : (int * fieldDescriptor) option
@@ -142,7 +142,7 @@ struct
       RhsSimple of simple
     | RhsPrim of {prim : Prims.t, createThunks : bool, args : operand Vector.t}
     | RhsTuple of {
-        vtDesc : vtableDescriptor,  (* Length field must be initialised *)
+        vtDesc : vTableDescriptor,  (* Length field must be initialised *)
         inits  : operand Vector.t   (* Initialises a prefix of the fields;
                                      * can be less than all fixed fields;
                                      * can include some/all array elements
@@ -150,7 +150,7 @@ struct
       }
     | RhsTupleSub of tupleField
     | RhsTupleSet of {tupField : tupleField, ofVal : operand}
-    | RhsTupleInited of {vtDesc : vtableDescriptor, tup : variable}
+    | RhsTupleInited of {vtDesc : vTableDescriptor, tup : variable}
     | RhsIdxGet of {idx : variable, ofVal : operand}
     | RhsCont of label
     | RhsObjectGetKind of variable
@@ -159,7 +159,9 @@ struct
         typ   : fieldKind,
         thunk : variable option, (* if absent then create *)
         fx    : effects,
-        code  : variable option, (* if absent then cannot eval indirectly *)
+        code  : variable option, 
+        (* Must be function name. If absent then this is an environment, 
+         * which can only be projected from but not evaled.  *)
         fvs   : (fieldKind * operand) Vector.t
       }
     | RhsThunkGetFv of {
@@ -182,7 +184,9 @@ struct
         cls  : variable option, (* if absent, create;
                                  * if present, must be from PFunctionMk
                                  *)
-        code : variable option, (* if absent, cannot be called indirectly *)
+        code : variable option,
+        (* Must be function name. If absent then this is an environment, 
+         * which can only be projected from but not called.  *)
         fvs  : (fieldKind * operand) Vector.t
       }
     | RhsPFunctionGetFv of
@@ -195,7 +199,9 @@ struct
     | RhsPSum of {tag : name, typ : fieldKind, ofVal : operand}
     | RhsPSumProj of {typ : fieldKind, sum : variable, tag : name}
 
-  datatype instruction = I of {dest : variable option, rhs : rhs}
+  datatype instruction = I of {dests : variable vector, (* arity must match rhs *)
+                               n : int,                 (* scratch info, pass specific *)
+                               rhs : rhs}
 
   datatype target = T of {block : label, arguments : operand Vector.t}
 
@@ -213,7 +219,7 @@ struct
    * The code variable in CDirectThunk and in EDirectThunk must be
    * a function name. *) 
   datatype call =
-      CCode          of variable
+      CCode          of variable  (* XXX Add codes -leaf *)
     | CClosure       of {cls : variable, code : codes}
     | CDirectClosure of {cls : variable, code : variable}
 
@@ -273,7 +279,7 @@ struct
     | GErrorVal   of typ
     | GIdx        of int ND.t
     | GTuple      of {
-        vtDesc : vtableDescriptor,
+        vtDesc : vTableDescriptor,
         inits  : simple Vector.t   (* must be all fields *)
       }
     | GRat        of Rat.t

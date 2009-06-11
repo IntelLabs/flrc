@@ -282,53 +282,62 @@ struct
         (* for the rest I don't know *)
       
 
-  fun deriveInstr (env, st, v, rhs) = 
-      case rhs 
-       of M.RhsSimple s => SOME (Option.valOf v, (simpleToShape (st, s)))
-        | M.RhsPrim {prim, createThunks, args} => 
-          Option.map (v, fn (vv) => (vv, derivePrim (env, st, vv, prim, args)))
-(*        | M.RhsPRat _ => SOME (Option.valOf v, (SScalar, SScalar))*)
-        | M.RhsTuple {vtDesc, inits} =>
-          let 
-            val vtd as M.VTD {pok, fixed, array} = vtDesc
-
-            val () = dbgPrint (env, "TUPLE ->")
-            val pshp = pObjToShape (pok)
-            val () = dbgPrint (env, "PSHP: " ^ shapeToString (pshp))
-            fun simpleToShape' s = simpleToShape (st, s)
-            val tshp = (Vector.fold (inits, 
-                                    SUnknown,
-                                    fn (a, b) => lub (sMax (simpleToShape' a), b)),
-                        SUnknown)
-            val () = dbgPrint (env, "TSHP: " ^ shapeToString (tshp))
-          in 
-            SOME (Option.valOf v, (merge (pshp, tshp)))
-          end
-(*        | M.RhsTupleSub tf =>
-          let
-            val tfs as M.TF {tupDesc, tup, field} = tf
-
-            val () = dbgPrint (env, "TUPLESUB ->")
-            val shp = case dyn
-                       of SOME _ => denestShapeP (st (s), (SAny, SUnknown))
-                        | NONE => (SAny, SUnknown)
-          in SOME (Option.valOf v, shp)
-          end*)
-(*        | M.RhsTupleSet (v, f, dyn, s) =>
-          let
-            val () = dbgPrint (env, "TUPLESET ->")
-            val min = SDynamic (sMin (simpleToShape (st, s)))
-          in
-            (*
-             * we only get a lower approximation here as this updates
-             * a single element of the array only. The maximum of the
-             * overall array might be weaker.
-             *)
-            SOME (v, (SAny, min))
-          end
-*)
-        | _ => Option.map (v, fn (vv) => (vv, (SAny, SAny)))
-                              (* for the rest I don't know *)
+  fun deriveInstr (env, st, dests, rhs) = 
+      let
+        val some = Vector.new1
+        val none = Vector.new0 ()
+        val dest = fn () => Vector.sub (dests, 0)
+        val res = 
+            case rhs 
+             of M.RhsSimple s => some (dest (), (simpleToShape (st, s)))
+              | M.RhsPrim {prim, createThunks, args} => 
+                (case Utils.Vector.lookup (dests, 0)
+                  of SOME vv => some (vv, derivePrim (env, st, vv, prim, args))
+                   | NONE => none)
+                  (*        | M.RhsPRat _ => SOME (Option.valOf v, (SScalar, SScalar))*)
+              | M.RhsTuple {vtDesc, inits} =>
+                let 
+                  val vtd as M.VTD {pok, fixed, array} = vtDesc
+                                                         
+                  val () = dbgPrint (env, "TUPLE ->")
+                  val pshp = pObjToShape (pok)
+                  val () = dbgPrint (env, "PSHP: " ^ shapeToString (pshp))
+                  fun simpleToShape' s = simpleToShape (st, s)
+                  val tshp = (Vector.fold (inits, 
+                                           SUnknown,
+                                        fn (a, b) => lub (sMax (simpleToShape' a), b)),
+                              SUnknown)
+                  val () = dbgPrint (env, "TSHP: " ^ shapeToString (tshp))
+                in 
+                  some (dest (), (merge (pshp, tshp)))
+                end
+                  (*        | M.RhsTupleSub tf =>
+                              let
+                                val tfs as M.TF {tupDesc, tup, field} = tf
+                                                                        
+                                val () = dbgPrint (env, "TUPLESUB ->")
+                                val shp = case dyn
+                                           of SOME _ => denestShapeP (st (s), (SAny, SUnknown))
+                                            | NONE => (SAny, SUnknown)
+                              in SOME (Option.valOf v, shp)
+                                      end*)
+                  (*        | M.RhsTupleSet (v, f, dyn, s) =>
+                              let
+                                val () = dbgPrint (env, "TUPLESET ->")
+                                val min = SDynamic (sMin (simpleToShape (st, s)))
+                              in
+                                (*
+                                 * we only get a lower approximation here as this updates
+                                 * a single element of the array only. The maximum of the
+                                 * overall array might be weaker.
+                                 *)
+                                  SOME (v, (SAny, min))
+                              end
+                   *)
+              | _ => Vector.map (dests, fn (vv) => (vv, (SAny, SAny)))
+                                (* for the rest I don't know *)
+      in res
+      end
 
   (* for functions in general I don't know *)
   fun deriveFunction (env, st, _, p, _, _) = 

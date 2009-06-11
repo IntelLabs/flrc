@@ -761,9 +761,7 @@ struct
                   of NONE    => SOME (VLf {var = v, m = Rat.one, c = Rat.zero})
                    | SOME v' => SOME v')
         fun doInstruction i =
-            case MU.Instruction.dest i
-             of NONE => ()
-              | SOME v => ignore (getVarValue v)
+            Vector.foreach (MU.Instruction.dests i, ignore o getVarValue)
         fun doBlock (_, b) = Vector.foreach (MU.Block.instructions b, doInstruction)
         fun doLoop (L {blocks, ...}) = LD.foreach (blocks, doBlock)
         fun doLoopTree (Tree.T (l, ls)) =
@@ -953,7 +951,7 @@ struct
 
   fun genDefs (state, env, ls) =
       let
-        fun doInstruction (M.I {dest, ...}, defs) = Option.fold (dest, defs, VS.insert o Utils.flip2)
+        fun doInstruction (M.I {dests, ...}, defs) = Vector.fold (dests, defs, VS.insert o Utils.flip2)
         fun doBlock (l, b, defs) =
             let
               val M.B {parameters, instructions, ...} = b

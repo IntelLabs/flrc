@@ -26,25 +26,26 @@ structure Utils = struct
        fn (f1, f2) => 
        fn a => (f1 a) andalso (f2 a)
                    
-      (* infix 3 *)
+      (* infix 3 @@ *)
       val @@ : ('a -> 'b) * 'a -> 'b = 
        fn (f, a) => f a
 
       (* MLton sectioning and application operators *)
-      (* infix 3*)
+      (* infix 3 <\ \> *)
       val <\ = fn (x, f) => fn y => f (x, y)
       val \> = fn (f, y) => f y
-      (* infixr 3*)    
+      (* infixr 3 /> </ *)    
       val /> = fn (f, y) => fn x => f (x, y)
       val </ = fn (x, f) => f x
 
-     (* infix 1 *)
+     (* infix 1 >| *)
       val >| = </
-     (* infixr 1*)
+     (* infixr 1 |< *)
       val |< = \>
       val ` = fn f => fn x => fn () => f x
     end (* structure Function *)
 
+    structure MltonVector = Vector
     structure Vector = 
     struct 
       val cons : 'a * 'a vector -> 'a vector = 
@@ -65,6 +66,8 @@ structure Utils = struct
           end
       val toListOnto : 'a vector * 'a list -> 'a list = 
        fn (v, l) => Vector.foldr (v, l, op ::)
+      val toListMap2 : 'a vector * 'b vector * (('a * 'b) ->  'c) -> 'c list =
+       fn (v1, v2, f) => Vector.foldr2 (v1, v2, [], fn (a, b, l) => f (a, b) :: l)
       val rec concatToList : 'a vector list -> 'a list = 
        fn vl => 
           (case vl
@@ -96,6 +99,11 @@ structure Utils = struct
                val v = Vector.tabulate (newRows, fn row => Vector.tabulate (newCols, fn col => oldElt (col, row)))
              in v
              end
+      val fromOption : 'a option -> 'a vector = 
+       fn opt => 
+          (case opt
+            of SOME a => Vector.new1 a
+             | NONE => Vector.new0 ())
     end (* structure Vector *)
 
     structure Option = 
@@ -145,7 +153,31 @@ structure Utils = struct
              (case (o1, o2)
                of (SOME a, SOME b) => SOME (f (a, b))
                 | _ => NONE)
+
+      val union : ('a option) * ('a option) * ('a * 'a -> 'a) -> 'a option = 
+          fn (o1, o2, f) => 
+             (case (o1, o2)
+               of (a, NONE) => a
+                | (NONE, b) => b
+                | (SOME a, SOME b) => SOME (f (a, b)))
+
+      val fromVector : 'a vector -> 'a option option = 
+       fn v => 
+          (case MltonVector.length v
+            of 0 => SOME NONE
+             | 1 => SOME (SOME (MltonVector.sub (v, 0)))
+             | _ => NONE)
     end (* structure Option *)
+
+    structure Ref = 
+    struct
+      val inc : int ref -> int = 
+       fn (r as ref i) => (r := i + 1;i)
+
+      val dec : int ref -> int = 
+       fn (r as ref i) => (r := i - 1;i)
+
+    end (* structure Ref *)
 
     (* Numeric stuff *)
 
@@ -543,6 +575,11 @@ structure StringDict =
 
 structure CharDict =
     DictF (struct type t = char val compare = Char.compare end);
+
+structure IntIntDict = DictF(struct
+                               type t = int * int
+                               val compare = Compare.pair (Int.compare, Int.compare)
+                             end)
 
 signature DICT_IMP =
 sig

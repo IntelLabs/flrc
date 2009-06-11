@@ -18,6 +18,7 @@ functor MilAnalyseF (
   val config : env -> Config.t
   val indent : int
   val variableBind : (state * env * Mil.variable -> env) option
+  val labelBind : (state * env * Mil.label -> env) option
   val variableUse : (state * env * Mil.variable -> unit) option
   val analyseJump : (state * env * Mil.label -> unit) option
   val analyseCut : (state * env * Mil.label -> unit) option
@@ -38,6 +39,7 @@ functor MilAnalyseF (
                           end)
 
   val clientBind = variableBind
+  val clientLabelBind = labelBind
   val clientVariable = variableUse
   val clientJump = analyseJump
   val clientCut = analyseCut
@@ -60,6 +62,11 @@ functor MilAnalyseF (
       case clientBind
        of NONE => e
         | SOME vb => vb (s, e, v)
+
+  fun analyseLabelBinder (s, e, l) =
+      case clientLabelBind
+       of NONE => e
+        | SOME lb => lb (s, e, l)
 
   fun analyseBinders (s, e, vs) =
       Vector.fold (vs, e, fn (v, e) => analyseBinder (s, e, v))
@@ -122,7 +129,7 @@ functor MilAnalyseF (
       in ()
       end
 
-  fun analyseRhs (s, e, dest, rhs) =
+  fun analyseRhs (s, e, rhs) =
       case rhs
        of M.RhsSimple simple => analyseSimple (s, e, simple)
         | M.RhsPrim {prim, createThunks, args} => analyseOperands (s, e, args)
@@ -188,14 +195,14 @@ functor MilAnalyseF (
         | M.RhsPSum {tag, typ, ofVal} => analyseOperand (s, e, ofVal)
         | M.RhsPSumProj {typ, sum, tag} => analyseVariable (s, e, sum)
 
-  fun analyseInstruction (s, e, i as M.I {dest, rhs}) =
+  fun analyseInstruction (s, e, i as M.I {dests, n, rhs}) =
       let
         val e =
             case clientInstruction
              of NONE => e
               | SOME ai => ai (s, e, i)
-        val () = analyseRhs (s, e, dest, rhs)
-        val e = Option.fold (dest, e, fn (v, e) => analyseBinder (s, e, v))
+        val () = analyseRhs (s, e, rhs)
+        val e = Vector.fold (dests, e, fn (v, e) => analyseBinder (s, e, v))
       in e
       end
 
@@ -302,6 +309,7 @@ functor MilAnalyseF (
   fun analyseBlock (s, e, l,
                     b as M.B {parameters, instructions, transfer}) =
       let
+        val e = analyseLabelBinder (s, e, l)
         val e =
             case clientBlock
              of NONE => e

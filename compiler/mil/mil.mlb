@@ -8,15 +8,16 @@ local
         mil.sml
         utils.sml
         layout.sml
-        fmil.sml
         cfg.sml
+        rewrite.sml
+        number-instructions.sml
+        fmil.sml
         p-object-model.sml
         type.sml
         check.sml
         analyse.sml
         stats.sml
         free-vars.sml
-        rewrite.sml
         rename.sml      
         stream.sml
         transform.sml
@@ -63,6 +64,7 @@ in
         structure MilLayout
         structure MilLoop
         structure MilNameSmallValues
+        structure MilNumberInstructions
         structure MilRename
         structure MilRewriterClient
         structure MilStats

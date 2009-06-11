@@ -58,9 +58,9 @@ functor MilDataFlowAnalysisF (
   val deriveConstant : env * Mil.constant -> info
   val deriveInstr : env
                     * (Mil.variable -> info)
-                    * Mil.variable option
+                    * Mil.variable vector
                     * Mil.rhs 
-                    -> (Mil.variable * info) option
+                    -> (Mil.variable * info) vector
   val deriveGlobal : env
                      * (Mil.variable -> info)
                      * Mil.global
@@ -423,10 +423,12 @@ functor MilDataFlowAnalysisF (
           | _ => () (* all others terminate the function *)
       end
   
-  and inferInstruction (E env, st, M.I {dest, rhs}) = 
-      case deriveInstr (#env env, stateDict (#env env, st), dest, rhs)
-       of SOME (v, i) => updateStateInfo (E env, st, v, i)
-        | NONE => ()
+  and inferInstruction (E env, st, M.I {dests, n, rhs}) = 
+      let
+        val vis = deriveInstr (#env env, stateDict (#env env, st), dests, rhs)
+        val () = Vector.foreach (vis, fn (v, i) => updateStateInfo (E env, st, v, i))
+      in ()
+      end
     
   and inferBlock (env, st, M.B {instructions, transfer, ...}, m) = 
       let
