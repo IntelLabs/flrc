@@ -59,7 +59,6 @@ struct
 
   (* Aliases *)
   structure PD   = PassData
-  structure MOU  = MilOptUtils
   structure M    = Mil
   structure L    = Layout
   structure LU   = LayoutUtils
@@ -74,7 +73,7 @@ struct
   (* Reports a fail message and exit the program. *)
   fun fail (f, m) = Fail.fail ("inline-profile.sml ", f, m)
 
-  type callId = IMil.instr
+  type callId = IMil.iInstr
 
   (* Module controls. *)
   structure Control =
@@ -251,7 +250,7 @@ struct
     val checkIMil : PD.t * IMil.t -> unit =
      fn (d, imil) =>
         if Config.debug andalso debugPass (PD.getConfig d) then 
-          IMil.check imil
+          IMil.T.check imil
         else 
           ()
   end
@@ -313,53 +312,61 @@ struct
   structure Util =
   struct
 
-    val getCallTarget : IMil.t * IMil.instr -> Mil.variable option =
+    val getCallTarget : IMil.t * IMil.iInstr -> Mil.variable option =
      fn (imil, i) =>
         let
           fun callConv conv = 
               case conv
                of M.CCode f               => SOME f
-                | M.CDirectClosure (f, c) => SOME f
-                | _ => NONE
+                | M.CClosure {cls, code}  => SOME cls
+                | M.CDirectClosure {cls, code} => SOME cls
         in
-          case MOU.iinstrToTransfer (imil, i)
-           of SOME (M.TCall (conv, _, _, _, _)) => callConv conv
-            | SOME (M.TTailCall (conv, _, _))   => callConv conv
+(*
+          case IMil.Use.toTransfer (i)
+           of SOME (M.TInterProc {callee, ret, fx}) => 
+              case callee 
+               of M.IpCall {call, args} => callConv call
+                | M.IpEval {typ, eval} => NONE
+(*            | SOME (M.TTailCall (conv, _, _))   => callConv conv*)
             | _ => NONE
+*)
+          NONE
         end
         
     val getFunSize : IMil.t * Mil.variable -> int = 
-     fn (imil, f) => IMil.Cfg.getSize (imil, IMil.Cfg.getCfgByName (imil, f))
+     fn (imil, f) => IMil.IFunc.getSize (imil, IMil.IFunc.getIFuncByName (imil, f))
                                              
     val getProgSize : IMil.t -> int =
      fn (imil) => 
-        List.fold (IMil.Cfg.getCfgs (imil), 0, 
-                fn ((f, cfg), sz) => sz + IMil.Cfg.getSize (imil, cfg))
+        List.fold (IMil.IFunc.getIFuncs (imil), 0, 
+                fn ((f, cfg), sz) => sz + IMil.IFunc.getSize (imil, cfg))
 
-    val getInstrFun : IMil.t * IMil.instr -> Mil.variable =
-     fn (imil, i) => IMil.Cfg.getFName (imil, IMil.Instr.getCfg (imil, i))
+    val getInstrFun : IMil.t * IMil.iInstr -> Mil.variable =
+     fn (imil, i) => IMil.IFunc.getFName (imil, IMil.IInstr.getIFunc (imil, i))
 
-    val getInstrBlockLabel : IMil.t * IMil.instr -> Mil.label =
+    val getInstrBlockLabel : IMil.t * IMil.iInstr -> Mil.label =
      fn (imil, i) => 
-        #1 (IMil.Block.getLabel' (imil, IMil.Instr.getBlock (imil, i)))
+        #1 (IMil.IBlock.getLabel' (imil, IMil.IInstr.getIBlock (imil, i)))
 
   end
   
   (* Profiling information. *)
   structure ProfInfo =
   struct
-
+(*
     structure MilCfg = MilCfgF (type env      = PD.t
                                 val getConfig = PD.getConfig
                                 val passname  = passname
                                 val indent    = 2)
-    
+*)
+(*    
     structure MilCallGraph = 
     MilCallGraphF (type env           = PD.t
                    val config         = PD.getConfig
                    val layoutVariable = fn (e, v) => L.str ""
                    val indent         = 2)
-    
+*)    
+
     structure Profiler = MilProfilerF (type env         = PD.t
                                        val getConfig    = PD.getConfig
                                        val passname     = passname

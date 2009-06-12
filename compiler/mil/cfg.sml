@@ -9,6 +9,8 @@ sig
     type label = Mil.label
     type block = Mil.block
 
+    val tGetSi : t -> Mil.symbolInfo
+
     val compareNode : node * node -> order
     structure NodeDict : DICT where type key = node
 
