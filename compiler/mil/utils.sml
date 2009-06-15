@@ -2942,7 +2942,6 @@ struct
             val es = Vector.tabulate (m, genOne)
           in es
           end
-
     in
 
     fun outEdges t =

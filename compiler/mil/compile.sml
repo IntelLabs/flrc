@@ -65,12 +65,12 @@ struct
       in cis
       end
 
-  val disabled = "JKR"
+  val disabled = "JR"
   val enabled = fn c => not (String.contains (disabled, c))
   val filter = fn s => String.keepAll (s, enabled)
   val o0String = filter "fst"
   val o1String = filter "Sfst"
-  val o2String = filter "SVSISVSIBfst"
+  val o2String = filter "SVSISVSIKBfst"
   val o3String = filter "VSCSVSIRDSCSVLSRSIKBfst"
 
   val o0Control = Option.valOf (parseControl o0String)

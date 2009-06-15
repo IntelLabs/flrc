@@ -321,17 +321,18 @@ struct
                 | M.CClosure {cls, code}  => SOME cls
                 | M.CDirectClosure {cls, code} => SOME cls
         in
-(*
-          case IMil.Use.toTransfer (i)
-           of SOME (M.TInterProc {callee, ret, fx}) => 
-              case callee 
-               of M.IpCall {call, args} => callConv call
-                | M.IpEval {typ, eval} => NONE
-(*            | SOME (M.TTailCall (conv, _, _))   => callConv conv*)
-            | _ => NONE
-*)
-          NONE
+          case IMil.IInstr.toTransfer i
+           of SOME (M.TInterProc {callee, ret, fx}) =>
+              (case callee 
+                of M.IpCall {call, args} => callConv call
+                 | M.IpEval {typ, eval} => NONE)
+            | SOME (M.TGoto t) => fail ("getCallTarget", "goto target?")
+            | SOME (M.TCase cs) => fail ("getCallTarget", "constant switch target?")
+            | SOME (M.TReturn r) => fail ("getCallTarget", "return target?")
+            | SOME (M.TCut c) => fail ("getCallTarget", "Cut target?")
+            | _ => fail ("getCallTarget", "no target?")
         end
+
         
     val getFunSize : IMil.t * Mil.variable -> int = 
      fn (imil, f) => IMil.IFunc.getSize (imil, IMil.IFunc.getIFuncByName (imil, f))
@@ -523,6 +524,7 @@ struct
     val addCallSites : t * Mil.variable * (Mil.label * csInfo) list -> unit =
      fn (callSitesInfo as T {callSites=allCallSites, ...}, f, csList) =>
         let
+          val () = Debug.print (d, "addCAllSites\n")
           val FI {callSites=funCallSites, ...} = getFunInfo (callSitesInfo, f)
           val () = funCallSites := LD.insertAll (!funCallSites, csList) 
           val () = allCallSites := LD.insertAll (!allCallSites, csList) 
@@ -532,6 +534,7 @@ struct
     val isRecursive : t * Mil.variable -> bool = 
      fn (callSitesInfo, f) =>
         let
+          val () = Debug.print (d, "isRecursive\n")
           val FI {recursive, ...} = getFunInfo (callSitesInfo, f)
         in
           recursive
@@ -540,6 +543,7 @@ struct
     val getFunFreq : t * Mil.variable -> ProfInfo.Profiler.absFrequency ref =
      fn (callSitesInfo, f) => 
         let
+          val () = Debug.print (d, "getFunFreq\n")
           val FI {freq, ...} = getFunInfo (callSitesInfo, f)
         in
           freq
@@ -548,6 +552,7 @@ struct
     val getFunCallSites : t * Mil.variable -> csInfo LD.t =
      fn (callSitesInfo, f) => 
         let
+          val () = Debug.print (d, "getFunCallSites\n")
           val FI {callSites, ...} = getFunInfo (callSitesInfo, f)
         in
           !callSites
@@ -556,6 +561,7 @@ struct
     val getFunSize : t * Mil.variable -> int =
      fn (callSitesInfo, f) => 
         let
+          val () = Debug.print (d, "getFunSize\n")
           val FI {size, ...} = getFunInfo (callSitesInfo, f)
         in
           !size
@@ -564,6 +570,7 @@ struct
     val incFunSize : t * Mil.variable * int -> unit =
      fn (callSitesInfo, f, sz) =>
         let
+          val () = Debug.print (d, "incFunSize\n")
           val FI {size, ...} = getFunInfo (callSitesInfo, f)
           in
           size := !size + sz
@@ -629,6 +636,7 @@ struct
               in
                 (f, fInfo)
               end
+
           val cfgs = IMil.Enumerate.T.funcs (imil)
           val funInfoList = List.map (cfgs, doCfg)
         in

@@ -633,7 +633,8 @@ functor MilProfilerF (type env
               let
                 val b = valOf (MilCfg.nodeGetBlock (cfg, n))
               in
-                fail ("getBoolSuccessors", "not implemented")
+                NONE
+(*                fail ("getBoolSuccessors", "not implemented")*)
 (*
                 case MilUtils.Block.getBoolSuccessors (b)
                  of NONE => NONE
