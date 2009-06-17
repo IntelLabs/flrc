@@ -22,6 +22,7 @@ sig
     val layoutTyp                  : Mil.typ layout
     val layoutFieldSize            : Mil.fieldSize layout
     val layoutFieldKind            : Mil.fieldKind layout
+    val layoutFieldKinds           : Mil.fieldKind vector layout
     val layoutFieldKindShort       : Mil.fieldKind layout
     val layoutFieldDescriptor      : Mil.fieldDescriptor layout
     val layoutFieldDescriptorShort : Mil.fieldDescriptor layout
@@ -340,6 +341,9 @@ struct
         of M.FkRef => L.str "r"
          | M.FkBits fs => L.str ("b" ^ Int.toString (MU.FieldSize.numBits fs))
 
+   fun layoutFieldKinds (env, fks) = 
+       LU.parenSeq (layoutVector (env, layoutFieldKindShort, fks))
+
    fun layoutFieldDescriptor (env, M.FD {kind, var}) =
        L.seq [layoutFieldKind (env, kind), layoutFieldVarianceShort (env, var)]
 
@@ -617,9 +621,13 @@ struct
            end
          | M.RhsThunkValue {typ, thunk, ofVal} =>
            let
-             val thunk = layoutThunkVarO (env, thunk, typ)
-             val ofVal = layoutOperand (env, ofVal)
-             val l = L.seq [L.str "ThunkMkVal", LU.parenSeq (thunk @ [ofVal])]
+             val typ =
+                 if showThunkTyp env
+                 then L.seq [layoutFieldKindShort (env, typ), L.str ";"]
+                 else L.empty
+             val ofVal = L.seq [typ, layoutOperand (env, ofVal)]
+             val l = L.seq [L.str "ThunkMkVal", LU.parenSeq ([ofVal])]
+             val l = addInit (env, l, thunk)
            in l
            end
          | M.RhsThunkGetValue {typ, thunk} =>
@@ -1084,6 +1092,7 @@ struct
    val layoutTyp                  = wrap layoutTyp
    val layoutFieldSize            = wrap layoutFieldSize
    val layoutFieldKind            = wrap layoutFieldKind
+   val layoutFieldKinds           = wrap layoutFieldKinds
    val layoutFieldKindShort       = wrap layoutFieldKindShort
    val layoutFieldDescriptor      = wrap layoutFieldDescriptor
    val layoutFieldDescriptorShort = wrap layoutFieldDescriptorShort

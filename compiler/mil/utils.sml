@@ -67,6 +67,7 @@ sig
   sig
     type 'a t = 'a Mil.callConv
     val compare : 'a Compare.t -> 'a t Compare.t
+    val layout : ('a -> Layout.t) -> ('a t -> Layout.t)
     val eq : ('a * 'a -> bool) -> ('a t * 'a t -> bool)
     val map : 'a t * ('a -> 'b) -> 'b t
     val foreach : 'a t * ('a -> unit) -> unit
@@ -139,7 +140,10 @@ sig
     val numBits : Config.t * t -> int option
     val numBytes : Config.t * t -> int option
     val traceabilitySize : Config.t * t -> traceabilitySize
+    val fromTraceabilitySize : traceabilitySize -> t
     val traceability : Config.t * t -> traceability option
+    val traceabilityFromTraceabilitySize : traceabilitySize -> traceability option
+    val subTraceabilitySize : Config.t * traceabilitySize * traceabilitySize -> bool
     val isCore : t -> bool
     val compare : t Compare.t
     val eq : t * t -> bool
@@ -946,6 +950,8 @@ sig
 
     val compare : t Compare.t
     val eq : t * t -> bool
+    val layout : Mil.symbolInfo * t -> Layout.t 
+
     structure Dict : DICT where type key = t
     structure ImpDict : DICT_IMP where type key = t
   end (* structure Id *)
@@ -1575,6 +1581,26 @@ struct
         in Compare.C.equal (compare cmpA)
         end
 
+    fun layout layout' cc = 
+        let
+         fun ct (s, v, vs) =
+             let
+               val i = layout' v
+               val l = Vector.toListMap (vs, layout')
+               val fst = Layout.seq [i, Layout.str ";"]
+               val rest = Layout.separateRight (l, ",")
+               val l = 
+                   Layout.seq [Layout.str s,
+                               LayoutUtils.paren (Layout.mayAlign (fst :: rest))]
+             in l
+             end
+        in
+          case cc
+           of M.CcCode => Layout.str "Code"
+            | M.CcClosure {cls, fvs} => ct ("Closure", cls, fvs)
+            | M.CcThunk {thunk, fvs} => ct ("Thunk", thunk, fvs)
+        end
+
     fun map (cc, f) =
         case cc
          of M.CcCode => M.CcCode
@@ -1856,8 +1882,19 @@ struct
           | M.TPType {kind, over}        => TsRef
           | M.TPRef t                    => TsRef
 
-    fun valueSize (config, t) =
-        case traceabilitySize (config, t)
+    fun fromTraceabilitySize ts =
+        (case ts
+          of TsAny       => M.TAny
+           | TsAnyS vs   => M.TAnyS vs
+           | TsBits vs   => M.TBits vs
+           | TsPtr       => M.TPtr
+           | TsNonRefPtr => M.TPtr
+           | TsRef       => M.TRef
+           | TsNone      => M.TNone
+           | TsMask et   => M.TViMask et)
+
+    fun valueSizeFromTraceabilitySize (config, ts) =
+        case ts
          of TsAny       => NONE
           | TsAnyS vs   => SOME vs
           | TsBits vs   => SOME vs
@@ -1867,22 +1904,50 @@ struct
           | TsNone      => NONE
           | TsMask vet  => NONE
 
+    fun valueSize (config, t) =  valueSizeFromTraceabilitySize (config, traceabilitySize (config, t))
+
     fun numBytes (config, t) =
         Option.map (valueSize (config, t), ValueSize.numBytes)
 
     fun numBits (config, t) =
         Option.map (valueSize (config, t), ValueSize.numBits)
 
-    fun traceability (c, t) =
-        case traceabilitySize (c, t)
-         of TsAny       => NONE
-          | TsAnyS vs   => NONE
-          | TsBits vs   => SOME TBits
-          | TsPtr       => NONE
-          | TsNonRefPtr => SOME TBits
-          | TsRef       => SOME TRef
-          | TsNone      => NONE
-          | TsMask vet  => SOME TBits
+    fun traceabilityFromTraceabilitySize ts =
+        (case ts
+          of TsAny       => NONE
+           | TsAnyS vs   => NONE
+           | TsBits vs   => SOME TBits
+           | TsPtr       => NONE
+           | TsNonRefPtr => SOME TBits
+           | TsRef       => SOME TRef
+           | TsNone      => NONE
+           | TsMask vet  => SOME TBits)
+
+    fun traceability (c, t) = traceabilityFromTraceabilitySize (traceabilitySize (c, t))
+
+    fun subTraceabilitySize (config, ts1, ts2) = 
+        (case (ts1, ts2)
+          of (TsNone, _) => true
+           | (_, TsNone) => false
+           | (_, TsAny) => true
+           | (TsAny, _) => false
+           | (_, TsAnyS vs) => 
+             (case valueSizeFromTraceabilitySize (config, ts1)
+               of SOME vs' => vs' = vs
+                | NONE => false)
+           | (TsAnyS _, _) => false
+           | (TsBits vs1, TsBits vs2) => vs1 = vs2
+           | (_, TsBits _) => false
+           | (TsBits _, _) => false
+           | (TsMask vit1, TsMask vit2) => VI.equalElemTypes (vit1, vit2)
+           | (_, TsMask _) => false
+           | (TsMask _, _) => false
+           | (_, TsPtr) => true
+           | (TsPtr, _) => false
+           | (TsNonRefPtr, TsNonRefPtr) => true
+           | (_, TsNonRefPtr) => false
+           | (TsNonRefPtr, _) => false
+           | (TsRef, TsRef) => true)
 
     fun isCore t =
         case t
@@ -4002,6 +4067,16 @@ struct
            | (G v1, G v2) => Compare.variable (v1, v2))
 
     val eq = Compare.C.equal compare
+
+    structure L = Layout
+    val layout = 
+        fn (si, id) => 
+           (case id
+             of L l => L.seq [L.str "L_",SymbolInfo.layoutLabel (si, l)]
+              | I i => L.seq [L.str "I_",Int.layout i]
+              | T l => L.seq [L.str "T_",SymbolInfo.layoutLabel (si, l)]
+              | G v => L.seq [L.str "G_",SymbolInfo.layoutVariable (si, v)])
+
     structure Dict = DictF (struct
                               type t = t
                               val compare = compare

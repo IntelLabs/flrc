@@ -28,6 +28,7 @@ local
         rep-node.sml
         rep-summary.sml
         rep-analyze.sml
+        rep-reconstruct.sml
         rep-show.sml
         rep.sml
 

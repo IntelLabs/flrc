@@ -749,16 +749,7 @@ struct
       fn (config, t) => 
          let
            val ts = MU.Typ.traceabilitySize (config, t)
-           val t = 
-               (case ts
-                 of MU.Typ.TsAny       => M.TAny
-                  | MU.Typ.TsAnyS vs   => M.TAnyS vs
-                  | MU.Typ.TsBits vs   => M.TBits vs
-                  | MU.Typ.TsPtr       => M.TPtr
-                  | MU.Typ.TsNonRefPtr => M.TPtr
-                  | MU.Typ.TsRef       => M.TRef
-                  | MU.Typ.TsNone      => M.TNone
-                  | MU.Typ.TsMask et   => M.TViMask et)
+           val t = MU.Typ.fromTraceabilitySize ts
          in t
          end
 
