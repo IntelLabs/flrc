@@ -538,30 +538,17 @@ struct
       in state
       end
 
-  fun removeImp (imil, e as (a, b)) =
+  fun removeImp (d, imil, e as (a, b)) =
       let
         fun removeTarget (imil, ns as {on, cases, default}, e as (a, b)) =
             let
               fun noteq (arm as (_, M.T {block, arguments})) = 
                   not (block = getLabel (imil, b) )
 
-              val debugset = ["L594x", "L5270x"]
-              val removeset = ["L594x"]
-
-              fun debugeq x = x = ID.labelString(getLabel(imil, a))
-              fun debugBlock () = not (List.exists (removeset, debugeq))
-
-              val () = if debugBlock() then print ("removeTarget here\n") else ()
-
-              val newcases = Vector.keepAll (cases, noteq)
-              val newns = {on=on, cases=newcases, default=default}
+(*              val newns = {on=on, cases=Vector.keepAll (cases, noteq), default=default}*)
+              val () = PD.click (d, "RemoveBranch")
             in 
-(*              if Vector.length(newcases) > 0 then newns else ns*)
-
-              if debugBlock()
-              then newns
-              else ns
-
+              {on=on, cases=Vector.keepAll (cases, noteq), default=default}
             end
 
         fun replacePSumCaseInstr (imil, e as (a, b), ns as {on, cases, default}) =
@@ -575,12 +562,7 @@ struct
 
               val nmt = IMil.MTransfer nt
               val () = IMil.IInstr.replaceMil (imil, instr, nmt)
-(*             
-              val nmt = IMil.MTransfer nt
-              val ni = IMil.IInstr.new' (imil, nmt)
-              val nmi = IMil.IInstr.getMil (imil, ni)
-              val newinstr = IMil.IInstr.replaceMil' (imil, instr, nmi)
-*)        
+
               val () = printNewInstr (imil, nmt)
             in ()
             end
@@ -597,11 +579,7 @@ struct
              
               val nmt = IMil.MTransfer nt
               val () = IMil.IInstr.replaceMil (imil, instr, nmt)
-(*
-              val ni = IMil.IInstr.new' (imil, nmt)
-              val nmi = IMil.IInstr.getMil (imil, ni)
-              val newinstr = IMil.IInstr.replaceMil' (imil, instr, nmi)
-*)        
+
               val () = printNewInstr (imil, nmt)
             in ()
             end
@@ -613,21 +591,21 @@ struct
                      | _ => ())
       end
 
-  fun checkRedundant (imil, e as (a, b), ps) =
+  fun checkRedundant (d, imil, e as (a, b), ps) =
       if getEdgePSState (imil, e, ps) = Impossible 
-      then removeImp (imil, e)
+      then removeImp (d, imil, e)
       else ()
 
-  fun checkEdgePS (imil, dict, e as (a, b)) =
+  fun checkEdgePS (d, imil, dict, e as (a, b)) =
       if isPSumCase (imil, a, b) orelse isTCase (imil, a, b) then
         case LD.lookup (dict, getLabel (imil, a))
-         of SOME ps => checkRedundant (imil, e, ps)
+         of SOME ps => checkRedundant (d, imil, e, ps)
           | _ => ()
       else ()
 
-  fun checkBlockPS (imil, dict, a) =
+  fun checkBlockPS (d, imil, dict, a) =
       let
-        fun checkEdgePS' e = checkEdgePS (imil, dict, e)
+        fun checkEdgePS' e = checkEdgePS (d, imil, dict, e)
 
         val outEdges = List.map(IMil.IBlock.succs (imil, a), fn b => (a, b))
       in 
@@ -652,7 +630,7 @@ struct
         end
       else ()
 
-  fun rcbrCfg (imil, cfg) =
+  fun rcbrCfg (d, imil, cfg) =
       let
         val cn = IMil.IFunc.getFName(imil, cfg)
         val () = dbgPrint("cfg:" ^ ID.variableString' (cn) ^ "\n")
@@ -669,14 +647,14 @@ struct
 
         val () = dbgPrint ("finish propagatePS\n")
 
-        fun checkBlockPS' b = checkBlockPS (imil, !gDict, b)
+        fun checkBlockPS' b = checkBlockPS (d, imil, !gDict, b)
       in 
         Tree.foreachPre(dom, checkBlockPS')
       end
 
   fun program (imil, d) = 
       let
-        fun rcbrCfg' (cfg) = rcbrCfg (imil, cfg)
+        fun rcbrCfg' (cfg) = rcbrCfg (d, imil, cfg)
         val () = List.foreach (IMil.Enumerate.T.funcs imil, rcbrCfg')
 
         val () = debugShowPost (d, imil)
