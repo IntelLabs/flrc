@@ -903,6 +903,7 @@ struct
             end
           | M.TPtr => (NONE, NONE)
           | M.TRef => (NONE, NONE)
+          | M.TPAny => (NONE, NONE)
           | M.TNone => (NONE, NONE)
           | M.TPFunction {args, ress, ...} => (SOME args, SOME ress)
           | _ =>

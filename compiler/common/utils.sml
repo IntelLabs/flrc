@@ -321,6 +321,7 @@ structure LayoutUtils = struct
     fun parenSeq   bs = sequence ("(",")",",") bs
     fun bracketSeq bs = sequence ("[","]",",") bs
     fun braceSeq   bs = sequence ("{","}",",") bs
+    fun angleSeq   bs = sequence ("<",">",",") bs
 
     fun paren        b = L.seq [L.str "(", b, L.str ")"]
     fun bracket      b = L.seq [L.str "[", b, L.str "]"]

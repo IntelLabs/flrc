@@ -94,11 +94,11 @@ struct
       in (debugD, debug)
       end
 
-  val (checkPhaseD, checkPhase) =
-      mkDebug ("check-phase", "Check IR between each phase", 0)
+  val (checkPhasesD, checkPhases) =
+      mkDebug ("check-phases", "Check IR between each phase", 0)
 
-  val (showPhaseD, showPhase) =
-      mkDebug ("show-phase", "Show IR between each phase", 0)
+  val (showPhasesD, showPhases) =
+      mkDebug ("show-phases", "Show IR between each phase", 0)
 
   val (showReductionsD, showReductions) = 
       mkDebug ("show", "Show each successful reduction attempt", 1)
@@ -112,7 +112,7 @@ struct
   val (showIrD, showIr) =
       mkDebug ("show-ir", "Show IR after each successful reduction", 2)
 
-  val debugs = [debugPassD, showEachD, showReductionsD, showIrD, checkIrD, showPhaseD, checkPhaseD]
+  val debugs = [debugPassD, showEachD, showReductionsD, showIrD, checkIrD, showPhasesD, checkPhasesD]
 
   val mkLogFeature : string * string * int -> (Config.Feature.feature * (PassData.t -> bool)) = 
    fn (tag, description, level) =>
@@ -129,8 +129,8 @@ struct
       in (featureD, feature)
       end
 
-  val (statPhaseF, statPhase) = 
-      mkLogFeature ("stat-phase", "Show stats between each phase", 2)
+  val (statPhasesF, statPhases) = 
+      mkLogFeature ("stat-phases", "Show stats between each phase", 2)
 
   val mkFeature : string * string -> (Config.Feature.feature * (PassData.t -> bool)) = 
    fn (tag, description) =>
@@ -160,7 +160,7 @@ struct
   val (skipRecursiveF, skipRecursive) = 
       mkFeature ("skip-recursive", "Skip recursive analysis")
 
-  val features = [statPhaseF, noIterateF, skipUnreachableF, skipSimplifyF, skipCfgF, skipEscapeF, skipRecursiveF]
+  val features = [statPhasesF, noIterateF, skipUnreachableF, skipSimplifyF, skipCfgF, skipEscapeF, skipRecursiveF]
 
   structure Click = 
   struct
@@ -2238,9 +2238,9 @@ struct
   val postPhase = 
    fn (d, imil) => 
       let
-        val () = if statPhase d then Stats.report (PD.getStats d) else ()
-        val () = if checkPhase d then IMil.T.check imil else ()
-        val () = if showPhase d then MilLayout.printGlobalsOnly (PD.getConfig d, IMil.T.unBuild imil) else ()
+        val () = if statPhases d then Stats.report (PD.getStats d) else ()
+        val () = if checkPhases d then IMil.T.check imil else ()
+        val () = if showPhases d then MilLayout.printGlobalsOnly (PD.getConfig d, IMil.T.unBuild imil) else ()
       in ()
       end
 
