@@ -202,9 +202,10 @@ struct
          ("ThunkInitCode",    "Thunk code ptrs killed"         ), 
          ("ThunkSpawnFX",     "Spawn fx pruned"                ),
          ("ThunkToThunkVal",  "Thunks made Thunk Values"       ),
-         ("ThunkValueBeta",    "ThunkValues beta reduced"      ),
+         ("ThunkValueBeta",   "ThunkValues beta reduced"       ),
          ("ThunkValueEta",    "ThunkValues eta reduced"        ),
-         ("TupleSub",         "Tuple subscripts reduced"       ),
+         ("TupleBeta",        "Tuple subscripts reduced"       ),
+         ("TupleField",       "Tuple sub/set -> project"       ),
          ("Unreachable",      "Unreachable objects killed"     )
         ]
     val globalNm = 
@@ -283,7 +284,8 @@ struct
     val thunkToThunkVal = clicker "ThunkToThunkVal"
     val thunkValueBeta = clicker "ThunkValueBeta"
     val thunkValueEta = clicker "ThunkValueEta"
-    val tupleSub = clicker "TupleSub"
+    val tupleBeta = clicker "TupleBeta"
+    val tupleField = clicker "TupleField"
     val unreachable = clicker "Unreachable"
 
     val wrap : (PD.t -> unit) * ((PD.t * I.t * WS.ws) * 'a -> 'b option) 
@@ -1638,7 +1640,38 @@ struct
 
     val tuple = fn (state, (i, dests, r)) => NONE
 
-    val tupleSub = 
+    val tupleField = 
+     fn {dec, con} => 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dests, r)) =>
+              let
+                val (tf, remainder) = dec r
+                val fi = MU.TupleField.field tf
+                val td = MU.TupleField.tupDesc tf
+                val tup = MU.TupleField.tup tf
+                val idx = 
+                    (case fi 
+                      of M.FiVariable p => 
+                         <@ IntArb.toInt <! MU.Constant.Dec.cIntegral <! MU.Simple.Dec.sConstant @@ p
+                       | _ => Try.fail ())
+                val fields = MU.TupleDescriptor.fixedFields td
+                val fd = <@ MU.TupleDescriptor.array td
+                val extras = Vector.new (idx + 1, fd)
+                val idx = Vector.length fields + idx
+                val fi = M.FiFixed idx
+                val td = M.TD {fixed = Vector.concat [fields, extras],
+                               array = NONE}
+                val tf = M.TF {tupDesc = td, tup = tup, field = fi}
+                val rhs = con (tf, remainder)
+                val mil = Mil.I {dests = dests, n = 0, rhs = rhs}
+                val () = IInstr.replaceInstruction (imil, i, mil)
+              in []
+              end
+        in try (Click.tupleField, f)
+        end
+
+    val tupleBeta = 
         let
           val f = 
            fn ((d, imil, ws), (i, dests, tf)) =>
@@ -1663,10 +1696,24 @@ struct
                 val () = IInstr.delete (imil, i)
               in []
               end
-        in try (Click.tupleSub, f)
+        in try (Click.tupleBeta, f)
         end
 
-    val tupleSet = fn (state, (i, dests, r)) => NONE
+    val tupleSub = 
+        let
+          val tupleField = 
+              tupleField {dec = fn (tupField) => (tupField, ()),
+                          con = fn (tupField, ()) => M.RhsTupleSub tupField}
+        in tupleBeta or tupleField
+        end
+
+    val tupleSet = 
+        let
+          val tupleField = 
+              tupleField {dec = fn {tupField, ofVal} => (tupField, ofVal),
+                          con = fn (tupField, ofVal) => M.RhsTupleSet {tupField = tupField, ofVal = ofVal}}
+        in tupleField
+        end
 
     val tupleInited = fn (state, (i, dests, r)) => NONE
 

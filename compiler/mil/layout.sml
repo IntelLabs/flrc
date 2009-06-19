@@ -213,9 +213,9 @@ struct
                     semiCommaLP (f (env, v), layoutVector (env, f, vs))]
        in
          case cc
-          of M.CcCode => L.str "Code"
-           | M.CcClosure {cls, fvs} => ct ("Closure", cls, fvs)
-           | M.CcThunk {thunk, fvs} => ct ("Thunk", thunk, fvs)
+          of M.CcCode => L.str "CcCode"
+           | M.CcClosure {cls, fvs} => ct ("CcClosure", cls, fvs)
+           | M.CcThunk {thunk, fvs} => ct ("CcThunk", thunk, fvs)
        end
 
    fun layoutTypKind (env, tk) = LU.char (MU.TypKind.toChar tk)
