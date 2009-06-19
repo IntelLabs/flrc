@@ -374,12 +374,11 @@ struct
   fun propagatePS (gDict, imil, tree) =
       let
         val domEdges = getDomTreeEdges tree
-        fun isDomEdge e = List.exists (domEdges, fn x => x = e)
+        fun getInDomEdge tgtBlock = List.keepAll (domEdges, fn (a, b) => b = tgtBlock)
 
         fun travNode (a) =
             let
-              val inEdges = List.keepAll(IMil.IBlock.inEdges(imil, a), isDomEdge)
-(*              val inEdges = IMil.IBlock.inEdges(imil, a)*)
+              val inEdges = getInDomEdge a
 
               fun foldf (e as (p, a), ps) =
                   let
@@ -529,7 +528,6 @@ struct
   fun rcbrCfg (d, imil, cfg) =
       let
         val gDict = ref LD.empty
-        val () = dbgPrint("cfg:" ^ ID.variableString' (IMil.IFunc.getFName(imil, cfg)) ^ "\n")
         val () = splitCriticalEdge (imil, cfg)
         val () = layoutCfg (imil, cfg)
         val dom = IMil.IFunc.getDomTree (imil, cfg)
