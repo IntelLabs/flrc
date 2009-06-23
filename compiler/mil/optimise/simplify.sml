@@ -947,8 +947,13 @@ struct
       val mergeBlocks =
           let
             val f = 
-             fn ((d, imil, ws), (i, (l, parms), pred)) => 
+             fn ((d, imil, ws), (i, (l, parms))) => 
                 let
+                  val () = Try.V.isEmpty parms
+                  val pred = 
+                      (case IInstr.preds (imil, i)
+                        of [pred] => pred
+                         | _ => Try.fail ())
                   val () = 
                       (case IBlock.succs (imil, pred)
                         of [_] => ()
@@ -968,7 +973,7 @@ struct
       val killParameters =
           let
             val f = 
-             fn ((d, imil, ws), (i, (l, parms), (preds, pcount))) => 
+             fn ((d, imil, ws), (i, (l, parms))) => 
                 let
                   (* This is mostly straightforward: just look for parameters
                    * that are either unused, or are the same on all in-edges.  
@@ -981,6 +986,9 @@ struct
                    *        1 => goto B2 (3)
                    *        2 => goto B2 (4)
                    *)
+                  val pcount = Vector.length parms
+                  val () = Try.require (pcount > 0)
+                  val preds = IInstr.preds (imil, i)
                   val () = Try.require (not (List.isEmpty preds))
                   val ts =  List.map (preds, fn p => IBlock.getTransfer (imil, p))
                   val tfs = List.map (ts, <@ IInstr.toTransfer)
@@ -1073,13 +1081,8 @@ struct
           in try (Click.killParameters, f)
           end
 
-      val labelOpts = 
-          Try.lift
-          (fn (s as (d, imil, ws), (i, (l, parms))) => 
-              (case (IInstr.preds (imil, i), Vector.length parms)
-                of ([pred], 0) => <@ mergeBlocks (s, (i, (l, parms), pred))
-                 | (_, 0) => Try.fail ()
-                 | r => <@ killParameters (s, (i, (l, parms), r))))
+      val labelOpts = mergeBlocks or killParameters
+
     end (* structure LabelOpts *)
 
 
@@ -2315,11 +2318,13 @@ struct
   val trimCfgs = 
    fn (d, imil, ws) =>
       let
-        val addUsedBy = 
+        val addWork = 
          fn b => 
             let
               val used = IBlock.getUsedBy (imil, b)
               val () = WS.addItems (ws, used)
+              val labels = List.map (IBlock.succs (imil, b), fn b => IBlock.getLabel (imil, b))
+              val () = List.foreach (labels, fn l => WS.addInstr (ws, l))
             in ()
             end
         val kill = 
@@ -2334,7 +2339,7 @@ struct
             let
               val () = MilCfgSimplify.function' (d, imil, ws, iFunc)
               val dead = IFunc.unreachable (imil, iFunc)
-              val () = List.foreach (dead, addUsedBy)
+              val () = List.foreach (dead, addWork)
               val () = List.foreach (dead, kill)
             in ()
             end
