@@ -955,6 +955,13 @@ sig
     structure Dict : DICT where type key = t
     structure ImpDict : DICT_IMP where type key = t
   end (* structure Id *)
+
+  structure FlatTyp :
+  sig
+    (* Flat typs are the nullary super-types of the general types *)
+    val fromTyp : Mil.typ -> Mil.typ
+  end (* structure FlatTyp *)
+              
 end;
 
 functor Intp(val sgn : IntArb.signed
@@ -4086,5 +4093,39 @@ struct
                                     val compare = compare
                                   end)
   end (* structure Id *)
+
+  structure FlatTyp =
+  struct
+    (* Flat typs are the nullary super-types of the general types *)
+    val fromTyp =
+     fn t => 
+        (case t
+          of M.TAny                       => t
+           | M.TAnyS vs                   => t
+           | M.TPtr                       => t
+           | M.TRef                       => t
+           | M.TBits vs                   => t
+           | M.TNone                      => t
+           | M.TRat                       => t
+           | M.TInteger                   => t
+           | M.TName                      => t
+           | M.TIntegral sz               => t
+           | M.TFloat                     => t
+           | M.TDouble                    => t
+           | M.TViVector et               => t
+           | M.TViMask et                 => t
+           | M.TCode {cc, args, ress}     => M.TPtr
+           | M.TTuple {pok, fixed, array} => (case pok of M.PokNone => M.TRef | _ => M.TPAny)
+           | M.TIdx                       => M.TRef
+           | M.TContinuation ts           => M.TPtr
+           | M.TThunk t                   => M.TRef
+           | M.TPAny                      => M.TPAny
+           | M.TPFunction {args, ress}    => M.TPAny
+           | M.TPSum nts                  => M.TPAny
+           | M.TPType {kind, over}        => M.TPAny
+           | M.TPRef t                    => M.TPAny)
+
+  end (* structure FlatTyp *)
+              
 
 end
