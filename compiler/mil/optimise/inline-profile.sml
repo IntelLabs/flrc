@@ -217,7 +217,7 @@ struct
         if Config.debug andalso debugPass (PD.getConfig d) then
           print (passname ^ ": " ^ msg )
         else ()
-             
+
     val printLayout : PD.t * Layout.t -> unit = 
      fn (d, l) =>
         if Config.debug andalso debugPass (PD.getConfig d) then
@@ -521,8 +521,8 @@ struct
          of SOME funInfo => funInfo
           | NONE => fail ("getFunInfo", "Could not find info for function.")
                     
-    val addCallSites : t * Mil.variable * (Mil.label * csInfo) list -> unit =
-     fn (callSitesInfo as T {callSites=allCallSites, ...}, f, csList) =>
+    val addCallSites : PD.t * t * Mil.variable * (Mil.label * csInfo) list -> unit =
+     fn (d, callSitesInfo as T {callSites=allCallSites, ...}, f, csList) =>
         let
           val () = Debug.print (d, "addCAllSites\n")
           val FI {callSites=funCallSites, ...} = getFunInfo (callSitesInfo, f)
@@ -531,8 +531,8 @@ struct
         in ()
         end
 
-    val isRecursive : t * Mil.variable -> bool = 
-     fn (callSitesInfo, f) =>
+    val isRecursive : PD.t * t * Mil.variable -> bool = 
+     fn (d, callSitesInfo, f) =>
         let
           val () = Debug.print (d, "isRecursive\n")
           val FI {recursive, ...} = getFunInfo (callSitesInfo, f)
@@ -540,8 +540,8 @@ struct
           recursive
         end
 
-    val getFunFreq : t * Mil.variable -> ProfInfo.Profiler.absFrequency ref =
-     fn (callSitesInfo, f) => 
+    val getFunFreq : PD.t * t * Mil.variable -> ProfInfo.Profiler.absFrequency ref =
+     fn (d, callSitesInfo, f) => 
         let
           val () = Debug.print (d, "getFunFreq\n")
           val FI {freq, ...} = getFunInfo (callSitesInfo, f)
@@ -549,8 +549,8 @@ struct
           freq
         end          
 
-    val getFunCallSites : t * Mil.variable -> csInfo LD.t =
-     fn (callSitesInfo, f) => 
+    val getFunCallSites : PD.t * t * Mil.variable -> csInfo LD.t =
+     fn (d, callSitesInfo, f) => 
         let
           val () = Debug.print (d, "getFunCallSites\n")
           val FI {callSites, ...} = getFunInfo (callSitesInfo, f)
@@ -558,8 +558,8 @@ struct
           !callSites
         end          
 
-    val getFunSize : t * Mil.variable -> int =
-     fn (callSitesInfo, f) => 
+    val getFunSize : PD.t * t * Mil.variable -> int =
+     fn (d, callSitesInfo, f) => 
         let
           val () = Debug.print (d, "getFunSize\n")
           val FI {size, ...} = getFunInfo (callSitesInfo, f)
@@ -567,8 +567,8 @@ struct
           !size
         end          
         
-    val incFunSize : t * Mil.variable * int -> unit =
-     fn (callSitesInfo, f, sz) =>
+    val incFunSize : PD.t * t * Mil.variable * int -> unit =
+     fn (d, callSitesInfo, f, sz) =>
         let
           val () = Debug.print (d, "incFunSize\n")
           val FI {size, ...} = getFunInfo (callSitesInfo, f)
@@ -703,8 +703,8 @@ struct
      *  For every call site cs in C:
      *    Freq cs = Freq cs * redFactor 
      *)
-    val inlineUpdate : t * csInfo * (Mil.label * IMil.iInstr) LD.t -> unit =
-     fn (callSitesInfo, inlinedCS, blkMapping) =>
+    val inlineUpdate : PD.t * t * csInfo * (Mil.label * IMil.iInstr) LD.t -> unit =
+     fn (d, callSitesInfo, inlinedCS, blkMapping) =>
         let
           val srcFun = getSrcFun (inlinedCS)
           val tgtFun = getTgtFun (inlinedCS)
@@ -738,20 +738,21 @@ struct
                       in
                         SOME (newBlk, newCSInfo)
                       end
-                val orgCSList = LD.toList (getFunCallSites (callSitesInfo, 
+                val orgCSList = LD.toList (getFunCallSites (d,
+                                                            callSitesInfo, 
                                                             tgtFun))
                 val newCSList = List.keepAllMap (orgCSList, buildNewCallSite)
               in
                 LD.fromList (newCSList)
               end
           (* Duplicate the call sites in the inlined function *)
-          val orgCallSites = getFunCallSites (callSitesInfo, tgtFun)
+          val orgCallSites = getFunCallSites (d, callSitesInfo, tgtFun)
           val newCallSites = duplicateCallSites (orgCallSites)
 
           (* Update the execution frequencies: original and new ones.
            * newFreq tgtFun = oldFreq tgtFun - inlinedCS freq
            * redFactor = newFreq tgtFun / oldFreq tgtFun *)
-          val tgtFunFreq = getFunFreq (callSitesInfo, tgtFun)
+          val tgtFunFreq = getFunFreq (d, callSitesInfo, tgtFun)
           val oldFreq = !tgtFunFreq
           val inlinedCSFreq = getFreq (inlinedCS)
           val newFreq = oldFreq - inlinedCSFreq
@@ -770,7 +771,7 @@ struct
            *    callSite Freq = callSite Freq * (1 - redFactor) *)
           val () = LD.foreach (newCallSites, updateCSFreq (1.0 - redFactor))
           (* Insert the new call sites into the source function. *)
-          val () = addCallSites (callSitesInfo, srcFun, 
+          val () = addCallSites (d, callSitesInfo, srcFun, 
                                  LD.toList newCallSites)
         in
           ()
@@ -937,8 +938,8 @@ struct
               val execFreq  = CallSitesInfo.getFreq   (csInfo)
               val isRecCall = CallSitesInfo.isRecCall (csInfo)
               val tgtFun    = CallSitesInfo.getTgtFun (csInfo)
-              val isRecFunc = CallSitesInfo.isRecursive (callSitesInfo, tgtFun)
-              val tgtFunSz  = CallSitesInfo.getFunSize  (callSitesInfo, tgtFun)
+              val isRecFunc = CallSitesInfo.isRecursive (d, callSitesInfo, tgtFun)
+              val tgtFunSz  = CallSitesInfo.getFunSize  (d, callSitesInfo, tgtFun)
               fun noRecInlining (f) = getRecInliningCount (info, f) >=
                                       recCallLimit (info)
             in
@@ -1009,8 +1010,9 @@ struct
         selectBestCallSite (d, imil, info)
       end
 
-  fun updateCallSitesInfo (PI {callSites, newBlocksMap, 
-                               inlinedCS, ...}, imil) =
+  fun updateCallSitesInfo (d, 
+                           PI {callSites, newBlocksMap, inlinedCS, ...}, 
+                           imil) =
       case !inlinedCS
        of SOME cs => 
           let
@@ -1019,19 +1021,19 @@ struct
             val () = newBlocksMap := nil
             val () = inlinedCS := NONE
           in
-            CallSitesInfo.inlineUpdate (!callSites, cs, blkMapping)
+            CallSitesInfo.inlineUpdate (d, !callSites, cs, blkMapping)
           end
         | NONE => ()
       
   (* Update the current budget and function sizes assuming we are
    * inlining cs. *)
-  fun updateSizes (info as PI {currBudget, callSites, ...}, csInfo) = 
+  fun updateSizes (d, info as PI {currBudget, callSites, ...}, csInfo) = 
       let
         (* Update source function size *)
         val srcFun = CallSitesInfo.getSrcFun  (csInfo)
         val tgtFun = CallSitesInfo.getTgtFun  (csInfo)
-        val tgtSz  = CallSitesInfo.getFunSize (!callSites, tgtFun)
-        val ()     = CallSitesInfo.incFunSize (!callSites, srcFun, tgtSz)
+        val tgtSz  = CallSitesInfo.getFunSize (d, !callSites, tgtFun)
+        val ()     = CallSitesInfo.incFunSize (d, !callSites, srcFun, tgtSz)
       in
         (* Update the current budget size *)
         currBudget := !currBudget - tgtSz
@@ -1064,7 +1066,7 @@ struct
       let
         val () = incIterations (info)
         val lastInlined = getInlinedCS (info)
-        val () = updateCallSitesInfo (info, imil)
+        val () = updateCallSitesInfo (d, info, imil)
         val () = printCallGraph (info, d, imil, lastInlined)
         val bestCS = selectBestCallSite (d, imil, info)
         val allowOpt = not (Feature.noOptimizer (PD.getConfig d))
@@ -1085,7 +1087,7 @@ struct
               val () = if CallSitesInfo.isRecCall (csInfo) 
                        then incRecInliningCount (info, tgtFun)
                        else ()
-              val () = updateSizes (info, csInfo)
+              val () = updateSizes (d, info, csInfo)
               val () = PD.click (d, "ProfileCallSitesInlined")
               val () = Debug.printLayout (d, 
                              L.seq [L.str "Inlining: ",
