@@ -516,7 +516,7 @@ struct
           L.align (List.map (VD.toList funInfoDict, layoutFunInfo))
         end
 
-    fun getFunInfo (T {funInfoDict, ...}, f) = 
+    fun getFunInfo (T {funInfoDict, ...}, f : Mil.variable) =
         case VD.lookup (funInfoDict, f)
          of SOME funInfo => funInfo
           | NONE => fail ("getFunInfo", "Could not find info for function.")
@@ -531,10 +531,14 @@ struct
         in ()
         end
 
-    val isRecursive : PD.t * t * Mil.variable -> bool = 
-     fn (d, callSitesInfo, f) =>
+    val isRecursive : IMil.t * PD.t * t * Mil.variable -> bool = 
+     fn (imil, d, callSitesInfo, f) =>
         let
           val () = Debug.print (d, "isRecursive\n")
+          val mil as Mil.P {globals, symbolTable, ...} = IMil.T.unBuild imil
+          val () = LU.printLayout ( ML.layoutVariable (PD.getConfig d, 
+                                                      Identifier.SymbolInfo.SiTable symbolTable, 
+                                                      f))
           val FI {recursive, ...} = getFunInfo (callSitesInfo, f)
         in
           recursive
@@ -938,7 +942,7 @@ struct
               val execFreq  = CallSitesInfo.getFreq   (csInfo)
               val isRecCall = CallSitesInfo.isRecCall (csInfo)
               val tgtFun    = CallSitesInfo.getTgtFun (csInfo)
-              val isRecFunc = CallSitesInfo.isRecursive (d, callSitesInfo, tgtFun)
+              val isRecFunc = CallSitesInfo.isRecursive (imil, d, callSitesInfo, tgtFun)
               val tgtFunSz  = CallSitesInfo.getFunSize  (d, callSitesInfo, tgtFun)
               fun noRecInlining (f) = getRecInliningCount (info, f) >=
                                       recCallLimit (info)

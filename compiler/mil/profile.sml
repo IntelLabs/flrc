@@ -632,16 +632,14 @@ functor MilProfilerF (type env
           fun getBoolSuccessors (n) = 
               let
                 val b = valOf (MilCfg.nodeGetBlock (cfg, n))
+                val () = print ("zying1 getBoolSuccessors\n")
               in
-                NONE
 (*                fail ("getBoolSuccessors", "not implemented")*)
-(*
                 case MilUtils.Block.getBoolSuccessors (b)
                  of NONE => NONE
                   | SOME (trueDst, falseDst) => 
                     SOME (MilCfg.labelGetNode (cfg, trueDst),
                           MilCfg.labelGetNode (cfg, falseDst))
-*)
               end
 
           fun blockHasCall (n) = 
