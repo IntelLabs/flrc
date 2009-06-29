@@ -41,7 +41,7 @@ local
         imil.sml
         utils2.sml
 
-(*        profile.sml *)
+        profile.sml 
 
         dataflow-analysis.sml
         dependence-analysis.sml
@@ -75,7 +75,7 @@ in
         structure PObjectModelHigh
         structure PObjectModelLow
 
-(*        functor MilProfilerF*)
+        functor MilProfilerF
         functor MilDataFlowAnalysisF
         functor MilDependenceAnalysisF
         functor MilShapeAnalysisF
