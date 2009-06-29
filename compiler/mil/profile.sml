@@ -588,11 +588,13 @@ functor MilProfilerF (type env
           val loops = MilLoop.build (getConfig env, si, cfg, lbdomtree)
 
           (* XXX EB: Debug only *)
-          (* val () = Debug.printLayout (MilCfg.Loop.layout (loops)) *)
+(*          val () = Debug.printLayout (env, MilLoop.layout (loops))*)
 
-          val allNodes = MilLoop.allNodes (loops)
+          val loops' = MilLoop.genAllNodes loops
+          val allNodes = MilLoop.allNodes loops'
 (*          val exitNodes = MilLoop.exits (env, loops, allNodes)*)
-          val exitNodes = MilLoop.allExits loops
+          val loops' = MilLoop.genExits loops'
+          val exitNodes = MilLoop.allExits loops'
           val (loopHeaders, loopExitEdges) = analyzeLoops (allNodes, exitNodes)
 
           fun isLoopExit (n, s) = 
@@ -632,9 +634,7 @@ functor MilProfilerF (type env
           fun getBoolSuccessors (n) = 
               let
                 val b = valOf (MilCfg.nodeGetBlock (cfg, n))
-                val () = print ("zying1 getBoolSuccessors\n")
               in
-(*                fail ("getBoolSuccessors", "not implemented")*)
                 case MilUtils.Block.getBoolSuccessors (b)
                  of NONE => NONE
                   | SOME (trueDst, falseDst) => 

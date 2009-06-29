@@ -520,11 +520,15 @@ struct
         case VD.lookup (funInfoDict, f)
          of SOME funInfo => funInfo
           | NONE => fail ("getFunInfo", "Could not find info for function.")
+
+    fun isFunExist (T {funInfoDict, ...}, f : Mil.variable) = 
+        case VD.lookup (funInfoDict, f)
+         of SOME funInfo => true
+          | NONE => false
                     
     val addCallSites : PD.t * t * Mil.variable * (Mil.label * csInfo) list -> unit =
      fn (d, callSitesInfo as T {callSites=allCallSites, ...}, f, csList) =>
         let
-          val () = Debug.print (d, "addCAllSites\n")
           val FI {callSites=funCallSites, ...} = getFunInfo (callSitesInfo, f)
           val () = funCallSites := LD.insertAll (!funCallSites, csList) 
           val () = allCallSites := LD.insertAll (!allCallSites, csList) 
@@ -534,7 +538,6 @@ struct
     val isRecursive : IMil.t * PD.t * t * Mil.variable -> bool = 
      fn (imil, d, callSitesInfo, f) =>
         let
-          val () = Debug.print (d, "isRecursive\n")
           val mil as Mil.P {globals, symbolTable, ...} = IMil.T.unBuild imil
           val () = LU.printLayout ( ML.layoutVariable (PD.getConfig d, 
                                                       Identifier.SymbolInfo.SiTable symbolTable, 
@@ -547,7 +550,6 @@ struct
     val getFunFreq : PD.t * t * Mil.variable -> ProfInfo.Profiler.absFrequency ref =
      fn (d, callSitesInfo, f) => 
         let
-          val () = Debug.print (d, "getFunFreq\n")
           val FI {freq, ...} = getFunInfo (callSitesInfo, f)
         in
           freq
@@ -556,7 +558,6 @@ struct
     val getFunCallSites : PD.t * t * Mil.variable -> csInfo LD.t =
      fn (d, callSitesInfo, f) => 
         let
-          val () = Debug.print (d, "getFunCallSites\n")
           val FI {callSites, ...} = getFunInfo (callSitesInfo, f)
         in
           !callSites
@@ -565,7 +566,6 @@ struct
     val getFunSize : PD.t * t * Mil.variable -> int =
      fn (d, callSitesInfo, f) => 
         let
-          val () = Debug.print (d, "getFunSize\n")
           val FI {size, ...} = getFunInfo (callSitesInfo, f)
         in
           !size
@@ -574,7 +574,6 @@ struct
     val incFunSize : PD.t * t * Mil.variable * int -> unit =
      fn (d, callSitesInfo, f, sz) =>
         let
-          val () = Debug.print (d, "incFunSize\n")
           val FI {size, ...} = getFunInfo (callSitesInfo, f)
           in
           size := !size + sz
@@ -623,7 +622,7 @@ struct
               end
           fun doCfg (cfg) = 
               let
-                val f = IMil.IFunc.getFName (imil, cfg)
+                val f : Mil.variable = IMil.IFunc.getFName (imil, cfg)
                 val entryBlk = IMil.IFunc.getStart (imil, cfg)
                 val entryLabel = #1 (IMil.IBlock.getLabel' (imil, entryBlk))
                 (* XXX EB: If it do not find the frequency for some reason and 
@@ -918,7 +917,8 @@ struct
         val ref callSitesInfo = getCallSitesInfo (info)
         val currBudget = getCurrBudget (info)
         val minExecFreq = getMinExecFreq (info)
-        (* XXX EB: Debug code. Keep it for a while
+        (* XXX EB: Debug code. Keep it for a while *)
+        val () = Debug.print (d, "selectBestCallSite\n")
         val () = Debug.print (d, "Size budget = " ^ 
                                  Int.toString (currBudget) ^ "\n");
         val () = Debug.print (d, "Min exec freq = " ^ 
@@ -927,7 +927,7 @@ struct
         (* Print the call sites information. *)
         val () = Debug.printLayout (d, CallSitesInfo.layout (callSitesInfo, 
                                                              imil))
-        --- *)
+        (* --- *)
         val bestCS = ref NONE
         fun selectCS (cs) = bestCS := SOME cs
         fun isBestCS (_, csi) =
@@ -942,20 +942,22 @@ struct
               val execFreq  = CallSitesInfo.getFreq   (csInfo)
               val isRecCall = CallSitesInfo.isRecCall (csInfo)
               val tgtFun    = CallSitesInfo.getTgtFun (csInfo)
-              val isRecFunc = CallSitesInfo.isRecursive (imil, d, callSitesInfo, tgtFun)
-              val tgtFunSz  = CallSitesInfo.getFunSize  (d, callSitesInfo, tgtFun)
+(*              val isRecFunc = CallSitesInfo.isRecursive (imil, d, callSitesInfo, tgtFun)*)
+(*              val tgtFunSz  = CallSitesInfo.getFunSize  (d, callSitesInfo, tgtFun)*)
               fun noRecInlining (f) = getRecInliningCount (info, f) >=
                                       recCallLimit (info)
             in
-              if CallSitesInfo.inlined (csInfo) then
+              if not (CallSitesInfo.isFunExist (callSitesInfo, tgtFun)) then
+                false
+              else if CallSitesInfo.inlined (csInfo) then
                 false
               else if IntInf.< (execFreq, minExecFreq) then
                 false
-              else if tgtFunSz > currBudget then
+              else if CallSitesInfo.getFunSize (d, callSitesInfo, tgtFun) > currBudget then
                 false
-              else if isRecCall andalso noRecInlining tgtFun then
+              else if CallSitesInfo.isRecursive (imil, d, callSitesInfo, tgtFun) andalso noRecInlining tgtFun then
                 false
-              else if isRecFunc andalso noRecursiveFuncs (info) then
+              else if CallSitesInfo.isRecursive (imil, d, callSitesInfo, tgtFun)  andalso noRecursiveFuncs (info) then
                 false
               else
                 true
@@ -970,6 +972,7 @@ struct
         fun analyzeCSDbg (cs as (blk, csInfo)) = 
             let
               val l = L.seq [CallSitesInfo.layoutCSInfo (imil, csInfo)]
+              val () = LU.printLayout l
             in
               if not (validCS (cs)) then
                 Debug.printLayout (d, L.seq [L.str "NOT VALID: ", l])
@@ -979,8 +982,10 @@ struct
                 (Debug.printLayout (d, L.seq [L.str "BEST SO FAR: ", l]);
                  selectCS (cs))
             end
-            
-        val () = CallSitesInfo.foreach (callSitesInfo, analyzeCS)
+
+        val csi as CallSitesInfo.T {funInfoDict, callSites} = callSitesInfo
+
+        val () = CallSitesInfo.foreach (callSitesInfo, analyzeCSDbg)
         val () = Time.report (d, "select best call site", startTime)
       in
         case !bestCS
