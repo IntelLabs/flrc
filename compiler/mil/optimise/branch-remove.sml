@@ -332,12 +332,24 @@ struct
         fun getPCasePS (imil, a, b, {on, cases, default}) =
             case Vector.peek (cases, eq)
              of SOME (n, t) => SOME (SOME on, SOME (RName n), true, true)
-              | _ => NONE
+              | _ => if Vector.length (cases) = 1 then 
+                       let
+                         val (n, t) = Vector.last cases
+                       in
+                         SOME (SOME on, SOME (RName n), false, true)
+                       end
+                     else NONE
 
         fun getTCasePS (imil, a, b, {on, cases, default}) =
             case Vector.peek (cases, eq)
              of SOME (n, t) => SOME (SOME on, SOME (RCons n), true, true)
-              | _ => NONE
+              | _ => if Vector.length (cases) = 1 then 
+                       let
+                         val (n, t) = Vector.last cases
+                       in
+                         SOME (SOME on, SOME (RCons n), false, true)
+                       end
+                     else NONE
 
         val pso = case getTransMil (imil, a)
                   of IMil.MTransfer t =>
@@ -458,6 +470,11 @@ struct
             let
               fun noteq (arm as (_, M.T {block, arguments})) = not (block = getLabel (imil, b) )
               val () = PD.click (d, "RemoveBranch")
+              val newdefault = case default
+                                of SOME M.T {block, _} => if block = getLabel (imil, b) 
+                                                      then NONE
+                                                      else default
+                                 | _ => NONE
             in 
               {on=on, cases=Vector.keepAll (cases, noteq), default=default}
             end
