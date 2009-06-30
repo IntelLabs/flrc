@@ -538,10 +538,6 @@ struct
     val isRecursive : IMil.t * PD.t * t * Mil.variable -> bool = 
      fn (imil, d, callSitesInfo, f) =>
         let
-          val mil as Mil.P {globals, symbolTable, ...} = IMil.T.unBuild imil
-          val () = LU.printLayout ( ML.layoutVariable (PD.getConfig d, 
-                                                      Identifier.SymbolInfo.SiTable symbolTable, 
-                                                      f))
           val FI {recursive, ...} = getFunInfo (callSitesInfo, f)
         in
           recursive
@@ -972,7 +968,6 @@ struct
         fun analyzeCSDbg (cs as (blk, csInfo)) = 
             let
               val l = L.seq [CallSitesInfo.layoutCSInfo (imil, csInfo)]
-              val () = LU.printLayout l
             in
               if not (validCS (cs)) then
                 Debug.printLayout (d, L.seq [L.str "NOT VALID: ", l])
