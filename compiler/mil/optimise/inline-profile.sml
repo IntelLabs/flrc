@@ -972,7 +972,6 @@ struct
         fun analyzeCSDbg (cs as (blk, csInfo)) = 
             let
               val l = L.seq [CallSitesInfo.layoutCSInfo (imil, csInfo)]
-              val () = LU.printLayout l
             in
               if not (validCS (cs)) then
                 Debug.printLayout (d, L.seq [L.str "NOT VALID: ", l])
@@ -985,7 +984,7 @@ struct
 
         val csi as CallSitesInfo.T {funInfoDict, callSites} = callSitesInfo
 
-        val () = CallSitesInfo.foreach (callSitesInfo, analyzeCSDbg)
+        val () = CallSitesInfo.foreach (callSitesInfo, analyzeCS)
         val () = Time.report (d, "select best call site", startTime)
       in
         case !bestCS
