@@ -17,75 +17,23 @@ struct
 
   val passname = "MilRemoveBranch"
 
-  val stats = [("RemoveBranch", "Redudant Conditional Branch Removal")]
+  val stats = [(passname, "Redudant Conditional Branch Removal")]
 
   fun fail (f, m) = Fail.fail (passname, f, m)
   fun assert (f, m, b) = if b then fail (f, m) else ()
 
-  structure M = Mil
-  structure PD = PassData
+  structure M   = Mil
+  structure PD  = PassData
+  structure L   = Layout
   structure LU  = LayoutUtils
   structure ID  = Identifier
-  structure LD = ID.LabelDict
+  structure LD  = ID.LabelDict
 
   datatype psCond =
            RCons of M.constant
          | RName of ID.name
 
-  fun printOpnd opnd =
-      (case opnd
-        of M.SVariable v => print (ID.variableString' v)
-         | M.SConstant c => 
-           (case c 
-             of M.CName n => print ("SConstant " ^ ID.nameString' n)
-              | M.CRat n => fail ("SConstant ", "rat" )
-              | M.CInteger n => fail ("SConstant ", "integer" )
-              | M.CIntegral n => print ("SConstant " ^ IntArb.stringOf n )
-              | M.CFloat n => fail ("SConstant ", "float" )
-              | M.CDouble n => fail ("SConstant ", "double" )
-              | M.CViVector n => fail ("SConstant ", "vivector" )
-              | M.CViMask n => fail ("SConstant ", "vimask" )
-              | M.CPok n => fail ("SConstant ", "pok" )
-              | M.COptionSetEmpty => fail ("SConstant ", "optionsetempty" )
-              | CTypePH => fail ("SConstant ", "typeph" )))
-      
-  fun printOpndOp opndo =
-      case opndo
-       of SOME opnd => printOpnd opnd
-        | NONE => print ("others ")
-
-  fun printOpndOpPair (opndo1, opndo2, eq) =
-      let
-        val () = printOpndOp opndo1
-        val () = if eq = true then print " == " else print " <> "
-        val () = printOpndOp opndo2
-        val () = print "\n"
-      in ()
-      end
-
-  fun printCond cond = 
-      case cond
-       of RName n => print (ID.nameString' n)
-        | RCons c => (case c
-                       of M.CName n => print (ID.nameString' n)
-                        | M.CIntegral i => print(IntArb.stringOf i)
-                        | M.CFloat f => print(Real32.toString f)
-                        | M.CDouble d => print (Real64.toString d)
-                        | _ => fail ("RCons", "unknown"))
-  
-  fun printCondOp condo =
-      case condo
-       of SOME cond => printCond cond
-        | NONE => print ("unknown")
-
-  fun printCondOpPair (condo1, condo2, eq) =
-      let
-        val () = printCondOp condo1
-        val () = if eq = true then print " == " else print " <> "
-        val () = printCondOp condo2
-        val () = print "\n"
-      in ()
-      end
+  fun getLabel (imil, b) = #1 (IMil.IBlock.getLabel' (imil, b))
 
   fun psOpndCompare (o1, o2) =
       case (o1, o2)
@@ -118,138 +66,192 @@ struct
                             val compare = psCompare 
                           end)
 
-  type edge = IMil.iBlock * IMil.iBlock
-
   datatype psState =
            Redundant  (* a->b while c=x and ps (c=x, ...)*)
          | Impossible (* a->b while c=x and ps (c=y, ...*)
          | Unknown    (* a->b while c=x and ps (no c )*)
 
-  val (debugPassD, debugPass) = Config.Debug.mk (passname, "debug the Mil branch removal pass")
+  structure Debug =
+  struct
+    val (debugPassD, debugPass) = Config.Debug.mk (passname, "debug the Mil branch removal pass")
 
-  fun debugPrint () = false
-  fun dbgPrint s = if debugPrint() then print s else ()
+    fun prints (d, s) = if Config.debug andalso debugPass (PD.getConfig d) then print s else ()
 
-  fun debugShowPre (d, imil, fname)  = 
-      if Config.debug andalso debugPass (PD.getConfig d) then
-        if (Config.debugLevel (PD.getConfig d, passname)) > 0 then 
+    fun printLayout (d, l) = if Config.debug andalso debugPass (PD.getConfig d) then
+                               LU.printLayout (L.seq [L.str (passname ^ ": "), l])
+                             else ()
+
+    fun debugShowPre (d, imil, fname)  = 
+        if Config.debug andalso debugPass (PD.getConfig d) then
+          if (Config.debugLevel (PD.getConfig d, passname)) > 0 then 
+            let
+              val () = prints (d, "before branch removal:\n")
+              val () = printLayout (d, IMil.IFunc.layout (imil, IMil.IFunc.getIFuncByName (imil, fname)))
+              val () = prints (d, "\n")
+            in ()
+            end
+          else 
+            let
+              val () = prints (d, "Branch removal: ")
+              val () = printLayout (d, IMil.Layout.var (imil, fname))
+              val () = prints (d, "\n")
+            in ()
+            end
+        else ()
+             
+    fun debugShowPost (d, imil)  = 
+        if Config.debug andalso 
+           debugPass (PD.getConfig d) andalso
+           (Config.debugLevel (PD.getConfig d, passname)) > 1 then 
           let
-            val () = print ("before branch removal:\n")
-            val () = LU.printLayout (IMil.IFunc.layout (imil, IMil.IFunc.getIFuncByName (imil, fname)))
-            val () = print "\n"
-          in ()
-          end
-        else 
-          let
-            val () = dbgPrint ("Branch removal: ")
-            val () = LU.printLayout (IMil.Layout.var (imil, fname))
-            val () = print "\n"
+            val () = prints (d, ("after branch removal:\n"))
+            (*          val mil = IMil.unBuild imil
+             val () = MilLayout.printGlobalsOnly (PD.getConfig d, mil)*)
+            val () = prints (d, "\n")
           in ()
           end
         else ()
 
-  fun debugShowPost (d, imil)  = 
-      if Config.debug andalso 
-         debugPass (PD.getConfig d) andalso
-         (Config.debugLevel (PD.getConfig d, passname)) > 1 then 
+    fun printEdge (d, imil, (a, b)) =
+        prints (d, "[" ^ ID.labelString (getLabel (imil, a)) ^ "->" ^ ID.labelString (getLabel (imil, b)) ^ "] ")
+
+    fun printOpnd (d, opnd) =
+        (case opnd
+          of M.SVariable v => prints (d, ID.variableString' v)
+           | M.SConstant c => 
+             (case c 
+               of M.CName n         => prints (d, "SConstant " ^ ID.nameString' n)
+                | M.CRat n          => fail ("SConstant ", "rat" )
+                | M.CInteger n      => fail ("SConstant ", "integer" )
+                | M.CIntegral n     => prints (d, "SConstant " ^ IntArb.stringOf n )
+                | M.CFloat n        => fail ("SConstant ", "float" )
+                | M.CDouble n       => fail ("SConstant ", "double" )
+                | M.CViVector n     => fail ("SConstant ", "vivector" )
+                | M.CViMask n       => fail ("SConstant ", "vimask" )
+                | M.CPok n          => fail ("SConstant ", "pok" )
+                | M.COptionSetEmpty => fail ("SConstant ", "optionsetempty" )
+                | CTypePH           => fail ("SConstant ", "typeph" )))
+
+    fun printOpndOp (d, opndo) = case opndo
+                                  of SOME opnd => printOpnd (d, opnd)
+                                   | NONE => prints (d, "others ")
+
+    fun printOpndOpPair (d, opndo1, opndo2, eq) =
         let
-          val () = print ("after branch removal:\n")
-(*          val mil = IMil.unBuild imil
-          val () = MilLayout.printGlobalsOnly (PD.getConfig d, mil)*)
-          val () = print "\n"
+          val () = printOpndOp (d, opndo1)
+          val () = if eq = true then prints (d, " == ") else prints (d, " <> ")
+          val () = printOpndOp (d, opndo2)
+          val () = prints (d, "\n")
         in ()
         end
-      else ()
 
-  fun getLabel (imil, b) = #1 (IMil.IBlock.getLabel' (imil, b))
-
-  fun printEdge (imil, (a, b)) =
-      if debugPrint() then
-        print ("[" ^ ID.labelString (getLabel (imil, a)) ^ "->" ^ ID.labelString (getLabel (imil, b)) ^ "] ")
-      else ()
-
-  fun printBlockPS (imil, (a, es)) = 
-      if debugPrint() then
+    fun printCond (d, cond) = 
+        case cond
+         of RName n => prints (d, ID.nameString' n)
+          | RCons c => (case c
+                         of M.CName n => prints (d, ID.nameString' n)
+                          | M.CIntegral i => prints (d, IntArb.stringOf i)
+                          | M.CFloat f => prints (d, Real32.toString f)
+                          | M.CDouble dou => prints (d, Real64.toString dou)
+                          | _ => fail ("RCons", "unknown"))
+  
+    fun printCondOp (d, condo) =
+        case condo
+         of SOME cond => printCond (d, cond)
+          | NONE => prints (d, "unknown")
+                    
+    fun printCondOpPair (d, condo1, condo2, eq) =
         let
-          val la = getLabel (imil, a)
-          val sa = ID.labelString la
-          val () = print ("[" ^ sa ^ "] ")
-          fun printEdge' (e) = printEdge (imil, e)
-          val () = List.foreach (es, printEdge')
-          val () = print ("\n")
+          val () = printCondOp (d, condo1)
+          val () = if eq = true then prints (d, " == ") else prints (d, " <> ")
+          val () = printCondOp (d, condo2)
+          val () = prints (d, "\n")
         in ()
         end
-      else ()
-
-  fun printPS (opndo, condo, b, s) =
-      if debugPrint() then
+        
+    fun printBlockPS (d, imil, (a, es)) = 
         let
-          val () = print ("(")
-          val () = printOpndOp opndo                     
-          val () = if b then print (" = ") else print (" <> ")
-          val () = printCondOp condo
-          val () = print (")")
+          val () = prints (d, "[" ^ ID.labelString (getLabel (imil, a)) ^ "] ")
+          val () = List.foreach (es, fn e => printEdge (d, imil, e))
+          val () = prints (d, "\n")
         in ()
         end
-      else ()
 
-  fun printPSSet (k, ps) = 
-      if debugPrint() then
+    fun printPS (d, (opndo, condo, b, s)) =
         let
-          val () = print ("Block Predict Set Dict:")
-          val () = print ("[" ^ (ID.labelString k) ^ "]")
-          val () = PSSet.foreach (ps, printPS)
-          val () = print ("\n")
+          val () = prints (d, "(")
+          val () = printOpndOp (d, opndo                     )
+          val () = if b then prints (d, " = ") else prints (d, " <> ")
+          val () = printCondOp (d, condo)
+          val () = prints (d, ")")
         in ()
         end
-      else ()
 
-  fun printEdgePSState (imil, e as (a, b), ps, state) =
-      if debugPrint() then
+    fun printPSSet (d, k, ps) = 
+        let
+          val () = prints (d, "Block Predict Set Dict:[" ^ (ID.labelString k) ^ "]")
+          val () = PSSet.foreach (ps, fn x => printPS (d, x))
+          val () = prints (d, "\n")
+        in ()
+        end
+
+    fun printEdgePSState (d, imil, e as (a, b), ps, state) =
         let
           val () = case state 
-                    of Redundant => print ("redundant edge: ")
-                     | Unknown => print ("unknown edge: ")
-                     | Impossible => print ("impossible edge: ")
+                    of Redundant => prints (d, "redundant edge: ")
+                     | Unknown => prints (d, "unknown edge: ")
+                     | Impossible => prints (d, "impossible edge: ")
                                      
-          val () = printEdge (imil, e)
-          val () = printPSSet (getLabel(imil, a), ps)
+          val () = printEdge (d, imil, e)
+          val () = printPSSet (d, getLabel(imil, a), ps)
                    
           val instr = IMil.IBlock.getTransfer(imil, a)
-          val () = LU.printLayout (IMil.IInstr.layout (imil, instr))
-          val () = print("\n")
+          val () = printLayout (d, IMil.IInstr.layout (imil, instr))
+          val () = prints (d, "\n")
         in ()
         end
-      else ()
 
-  fun printOrigInstr (imil, e as (a, b), instr) =
-      if debugPrint() then
+    fun printOrigInstr (d, imil, e as (a, b), instr) =
         let
-          val () = print ("\nremove " ^ ID.labelString(getLabel(imil, b)) ^ " in " ^ ID.labelString(getLabel(imil, a)) ^ "\n")
-          val () = LU.printLayout (IMil.IInstr.layout (imil, instr))
+          val () = prints (d, "\nremove " ^ ID.labelString(getLabel(imil, b)) ^ " in " ^ ID.labelString(getLabel(imil, a)) ^ "\n")
+          val () = printLayout (d, IMil.IInstr.layout (imil, instr))
         in ()
         end
-      else ()
 
-  fun printNewInstr (imil, newinstr) =
-      if debugPrint() then
+    fun printNewInstr (d, imil, newinstr) =
         let
-          val () = print ("replace with new PSumCase instruction\n")
-          val () = LU.printLayout (IMil.IInstr.layoutMil (imil, newinstr))
-          val () = print ("\n")
+          val () = prints (d, "replace with new PSumCase instruction\n")
+          val () = printLayout (d, IMil.IInstr.layoutMil (imil, newinstr))
+          val () = prints (d, "\n")
         in ()
         end
-      else ()
 
-  fun layoutCfg (imil, cfg) =
-      if debugPrint() then
-        let
-          val cn = ID.variableString'(IMil.IFunc.getFName (imil, cfg))
-          val () = LU.writeLayout (IMil.IFunc.layout (imil, cfg), "cfg" ^ cn ^ ".cfg" )
-          val ()  = LU.writeLayout (IMil.IFunc.layoutDot (imil, cfg), "cfg" ^ cn ^ ".dot" )
-        in ()
-        end
-      else ()
+    fun layoutCfg (d, imil, cfg) =
+        if Config.debug andalso debugPass (PD.getConfig d) then
+          let
+            val cn = ID.variableString'(IMil.IFunc.getFName (imil, cfg))
+            val () = LU.writeLayout (IMil.IFunc.layout (imil, cfg), cn ^ ".cfg" )
+            val ()  = LU.writeLayout (IMil.IFunc.layoutDot (imil, cfg), cn ^ ".dot" )
+          in ()
+          end
+        else ()
+
+    fun layoutTreeDot (d, imil, cfg, t) = 
+        if Config.debug andalso debugPass (PD.getConfig d) then
+          let
+            val cfgname = "dom" ^ ID.variableString'(IMil.IFunc.getFName (imil, cfg)) ^ ".dot" 
+            fun labelNode n = [Dot.NodeOption.Label[(ID.labelString(getLabel(imil, n)), Dot.Center)], 
+                               Dot.NodeOption.Shape Dot.Ellipse]
+            val graphOptions = [Dot.GraphOption.Size {width=8.5, height=10.0},
+                                Dot.GraphOption.Page {width=8.5, height=11.0},
+                                Dot.GraphOption.Orientation Dot.Landscape]
+            val () = LU.writeLayout (Tree.layoutDot (t, {nodeOptions = labelNode, options = graphOptions, title = cfgname}), 
+                                     cfgname)
+          in ()
+          end
+        else ()
+
+  end
 
   (*
    *	Split critical edges.  
@@ -324,7 +326,7 @@ struct
   (* create edge PS set, variable set
    * (variable, (equal? (true or false), condition))
    *)
-  fun getEdgePS (imil, e as (a, b)) =
+  fun getEdgePS (d, imil, e as (a, b)) =
       let
         fun eq (n, M.T {block, arguments}) = block = getLabel (imil, b)
 
@@ -333,12 +335,26 @@ struct
             case Vector.peek (cases, eq)
              of SOME (n, t) => SOME (SOME on, SOME (RName n), true, true)
               | _ => NONE
-
+(*              | _ => if Vector.length (cases) = 1 then 
+                       let
+                         val (n, t) = Vector.last cases
+                       in
+                         SOME (SOME on, SOME (RName n), false, true)
+                       end
+                     else NONE
+*)
         fun getTCasePS (imil, a, b, {on, cases, default}) =
             case Vector.peek (cases, eq)
              of SOME (n, t) => SOME (SOME on, SOME (RCons n), true, true)
               | _ => NONE
-
+(*              | _ => if Vector.length (cases) = 1 then 
+                       let
+                         val (n, t) = Vector.last cases
+                       in
+                         SOME (SOME on, SOME (RCons n), false, true)
+                       end
+                     else NONE
+*)
         val pso = case getTransMil (imil, a)
                   of IMil.MTransfer t =>
                      (case t
@@ -356,8 +372,8 @@ struct
       in pso
       end
 
-  fun getEdgePSSet (imil, e) : PSSet.t =
-      case getEdgePS (imil, e)
+  fun getEdgePSSet (d, imil, e) : PSSet.t =
+      case getEdgePS (d, imil, e)
        of SOME it => PSSet.insert (PSSet.empty, it)
         | _ => PSSet.empty
 
@@ -371,7 +387,7 @@ struct
       end
 
   (* propagate PS on dom tree *)
-  fun propagatePS (gDict, imil, tree) =
+  fun propagatePS (d, gDict, imil, tree) =
       let
         val domEdges = getDomTreeEdges tree
         fun getInDomEdge tgtBlock = List.keepAll (domEdges, fn (a, b) => b = tgtBlock)
@@ -383,7 +399,7 @@ struct
               fun foldf (e as (p, a), ps) =
                   let
                     val parentSet = LD.lookup(!gDict, getLabel(imil, p))
-                    val thisSet = getEdgePSSet(imil, (p, a))
+                    val thisSet = getEdgePSSet(d, imil, (p, a))
                     val curPS = if isSome (parentSet)
                                 then PSSet.union(valOf parentSet, thisSet)
                                 else thisSet
@@ -398,9 +414,9 @@ struct
         Tree.traverse(tree, travNode)
       end
 
-  fun getEdgePSState (imil, e as (a, b), ps : PSSet.t) =
+  fun getEdgePSState (d, imil, e as (a, b), ps : PSSet.t) =
       let
-        val epso = getEdgePS (imil, e)
+        val epso = getEdgePS (d, imil, e)
 
         fun maybeRedundant ((eopnd, en, eb, es), ps) =
             let
@@ -408,7 +424,7 @@ struct
               fun hasSameCond (item as (v, n, b, s)) = eqCondOp (n, en)
               fun maybeRedundant' x = (hasSameOpnd x) andalso (hasSameCond x)
 
-              val () = if PSSet.exists (ps, maybeRedundant') then dbgPrint "maybeRedundant\n" else ()
+              val () = if PSSet.exists (ps, maybeRedundant') then Debug.prints (d, "maybeRedundant\n") else ()
             in 
               PSSet.exists (ps, maybeRedundant')
             end
@@ -419,7 +435,7 @@ struct
               fun hasSameCond (item as (v, n, b, s)) = eqCondOp (n, en)
               fun maybeImp' x = (hasSameOpnd x) andalso (not (hasSameCond x))
 
-              val () = if PSSet.exists (ps, maybeImp') then dbgPrint "maybeImp\n" else ()
+              val () = if PSSet.exists (ps, maybeImp') then Debug.prints (d, "maybeImp\n") else ()
             in 
               PSSet.exists (ps, maybeImp')
             end
@@ -446,8 +462,8 @@ struct
               end
             else Unknown
                
-        val () = printPSSet(getLabel(imil, a), getEdgePSSet(imil, e))
-        val () = printEdgePSState(imil, e, ps, state)
+        val () = Debug.printPSSet(d, getLabel(imil, a), getEdgePSSet(d, imil, e))
+        val () = Debug.printEdgePSState(d, imil, e, ps, state)
                  
       in state
       end
@@ -457,33 +473,38 @@ struct
         fun removeTarget (imil, ns as {on, cases, default}, e as (a, b)) =
             let
               fun noteq (arm as (_, M.T {block, arguments})) = not (block = getLabel (imil, b) )
-              val () = PD.click (d, "RemoveBranch")
+              val () = PD.click (d, passname)
+              val newdefault = case default
+                                of SOME (arm as M.T {block, arguments}) => if block = getLabel (imil, b) 
+                                                                           then NONE
+                                                                           else default
+                                 | _ => NONE
             in 
               {on=on, cases=Vector.keepAll (cases, noteq), default=default}
             end
 
         fun replacePSumCaseInstr (imil, e as (a, b), ns as {on, cases, default}) =
             let
-              val () = dbgPrint ("find impossible psumcase instruction\n")
+              val () = Debug.prints (d, "find impossible psumcase instruction\n")
               val instr = IMil.IBlock.getTransfer (imil, a)             
-              val () = printOrigInstr (imil, e, instr)
+              val () = Debug.printOrigInstr (d, imil, e, instr)
               val newns = removeTarget (imil, ns, e)
               val nt = M.TPSumCase (newns)
               val nmt = IMil.MTransfer nt
               val () = IMil.IInstr.replaceMil (imil, instr, nmt)
-              val () = printNewInstr (imil, nmt)
+              val () = Debug.printNewInstr (d, imil, nmt)
             in ()
             end
 
         fun replaceTCaseInstr (imil, e as (a, b), cs as {on, cases, default}) =
             let
-              val () = dbgPrint ("find impossible tcase instruction\n")
+              val () = Debug.prints (d, "find impossible tcase instruction\n")
               val instr = IMil.IBlock.getTransfer (imil, a)             
-              val () = printOrigInstr (imil, e, instr)
+              val () = Debug.printOrigInstr (d, imil, e, instr)
               val newns = removeTarget (imil, cs, e)
               val nmt = IMil.MTransfer (M.TCase newns)
               val () = IMil.IInstr.replaceMil (imil, instr, nmt)
-              val () = printNewInstr (imil, nmt)
+              val () = Debug.printNewInstr (d, imil, nmt)
             in ()
             end
 
@@ -495,7 +516,7 @@ struct
       end
 
   fun checkRedundant (d, imil, e as (a, b), ps) =
-      if getEdgePSState (imil, e, ps) = Impossible 
+      if getEdgePSState (d, imil, e, ps) = Impossible 
       then removeImp (d, imil, e)
       else ()
 
@@ -510,29 +531,14 @@ struct
       List.foreach (List.map(IMil.IBlock.succs (imil, a), fn b => (a, b)), 
                     fn e => checkEdgePS (d, imil, dict, e))
 
-  fun layoutTreeDot (imil, cfg, t) = 
-      if debugPrint() then
-        let
-          val cfgname = "dom" ^ ID.variableString'(IMil.IFunc.getFName (imil, cfg)) ^ ".dot" 
-          fun labelNode n = [Dot.NodeOption.Label[(ID.labelString(getLabel(imil, n)), Dot.Center)], 
-                             Dot.NodeOption.Shape Dot.Ellipse]
-          val graphOptions = [Dot.GraphOption.Size {width=8.5, height=10.0},
-                              Dot.GraphOption.Page {width=8.5, height=11.0},
-                              Dot.GraphOption.Orientation Dot.Landscape]
-        in 
-          LU.writeLayout (Tree.layoutDot (t, {nodeOptions = labelNode, options = graphOptions, title = cfgname}), 
-                          cfgname)
-        end
-      else ()
-
   fun rcbrCfg (d, imil, cfg) =
       let
         val gDict = ref LD.empty
         val () = splitCriticalEdge (imil, cfg)
-        val () = layoutCfg (imil, cfg)
+        val () = Debug.layoutCfg (d, imil, cfg)
         val dom = IMil.IFunc.getDomTree (imil, cfg)
-        val () = layoutTreeDot (imil, cfg, dom)
-        val () = propagatePS (gDict, imil, dom)
+        val () = Debug.layoutTreeDot (d, imil, cfg, dom)
+        val () = propagatePS (d, gDict, imil, dom)
       in 
         Tree.foreachPre(dom, fn b => checkBlockPS (d, imil, !gDict, b))
       end
@@ -540,7 +546,7 @@ struct
   fun program (imil, d) = 
       let
         val () = List.foreach (IMil.Enumerate.T.funcs imil, fn cfg => rcbrCfg (d, imil, cfg))
-        val () = debugShowPost (d, imil)
+        val () = Debug.debugShowPost (d, imil)
         val () = PD.report (d, passname)
       in ()
       end
@@ -553,7 +559,7 @@ struct
                      stats       = stats}
 
   val associates = {controls  = [],
-                    debugs    = [debugPassD],
+                    debugs    = [Debug.debugPassD],
                     features  = [],
                     subPasses = []}
 

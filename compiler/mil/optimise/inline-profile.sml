@@ -980,7 +980,7 @@ struct
 
         val csi as CallSitesInfo.T {funInfoDict, callSites} = callSitesInfo
 
-        val () = CallSitesInfo.foreach (callSitesInfo, analyzeCSDbg)
+        val () = CallSitesInfo.foreach (callSitesInfo, analyzeCS)
         val () = Time.report (d, "select best call site", startTime)
       in
         case !bestCS
