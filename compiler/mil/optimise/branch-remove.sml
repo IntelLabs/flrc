@@ -204,7 +204,6 @@ struct
                                      
           val () = printEdge (d, imil, e)
           val () = printPSSet (d, getLabel(imil, a), ps)
-                   
           val instr = IMil.IBlock.getTransfer(imil, a)
           val () = printLayout (d, IMil.IInstr.layout (imil, instr))
           val () = prints (d, "\n")
@@ -326,56 +325,54 @@ struct
   (* create edge PS set, variable set
    * (variable, (equal? (true or false), condition))
    *)
-  fun getEdgePS (d, imil, e as (a, b)) =
-      let
-        fun eq (n, M.T {block, arguments}) = block = getLabel (imil, b)
-
-        (* PSumCase or TCase *)
-        fun getPCasePS (imil, a, b, {on, cases, default}) =
-            case Vector.peek (cases, eq)
-             of SOME (n, t) => SOME (SOME on, SOME (RName n), true, true)
-              | _ => NONE
-(*              | _ => if Vector.length (cases) = 1 then 
-                       let
-                         val (n, t) = Vector.last cases
-                       in
-                         SOME (SOME on, SOME (RName n), false, true)
-                       end
-                     else NONE
-*)
-        fun getTCasePS (imil, a, b, {on, cases, default}) =
-            case Vector.peek (cases, eq)
-             of SOME (n, t) => SOME (SOME on, SOME (RCons n), true, true)
-              | _ => NONE
-(*              | _ => if Vector.length (cases) = 1 then 
-                       let
-                         val (n, t) = Vector.last cases
-                       in
-                         SOME (SOME on, SOME (RCons n), false, true)
-                       end
-                     else NONE
-*)
-        val pso = case getTransMil (imil, a)
-                  of IMil.MTransfer t =>
-                     (case t
-                       of M.TPSumCase ns => getPCasePS (imil, a, b, ns)
-                        | M.TCase sw => getTCasePS (imil, a, b, sw)
-                        | _ => SOME (NONE, NONE, false, false) )
-                   | _ => NONE
-(*
-        val () = printEdge (imil, e)
-        val () = case pso
-                  of SOME ps => printPS ps
-                   | NONE => print "none"
-        val () = print "\n"
-*)
-      in pso
-      end
 
   fun getEdgePSSet (d, imil, e) : PSSet.t =
-      case getEdgePS (d, imil, e)
-       of SOME it => PSSet.insert (PSSet.empty, it)
-        | _ => PSSet.empty
+      let
+        fun getEdgePS (d, imil, e as (a, b)) =
+            let
+              fun eq (n, M.T {block, arguments}) = block = getLabel (imil, b)
+                                                   
+              (* PSumCase or TCase *)
+              fun getPCasePS (imil, a, b, {on, cases, default}) =
+                  case Vector.peek (cases, eq)
+                   of SOME (n, t) => [(SOME on, SOME (RName n), true, true)]
+                    | _ => (case default
+                             of SOME (dt as M.T {block, arguments}) => 
+                                (if block = getLabel (imil, b) then
+                                   List.map (Vector.toList cases, fn (n, t) => (SOME on, SOME (RName n), false, true))
+                                 else [])
+                              | _ => [])
+               
+              fun getTCasePS (imil, a, b, {on, cases, default}) =
+                  case Vector.peek (cases, eq)
+                   of SOME (n, t) => [(SOME on, SOME (RCons n), true, true)]
+                    | _ => (case default
+                             of SOME (dt as M.T {block, arguments}) =>
+                                (if block = getLabel (imil, b) then
+                                   List.map (Vector.toList cases, fn (n, t) => (SOME on, SOME (RCons n), false, true))
+                                 else [])
+                              | _ => [])
+
+              val pso = case getTransMil (imil, a)
+                         of IMil.MTransfer t =>
+                            (case t
+                              of M.TPSumCase ns => getPCasePS (imil, a, b, ns)
+                               | M.TCase sw => getTCasePS (imil, a, b, sw)
+                               | _ => [(NONE, NONE, false, false)])
+                          | _ => []
+            (*
+             val () = printEdge (imil, e)
+             val () = case pso
+                       of SOME ps => printPS ps
+                        | NONE => print "none"
+             val () = print "\n"
+             *)
+            in pso
+            end
+            
+      in
+        PSSet.union (PSSet.empty, PSSet.fromList(getEdgePS (d, imil, e)))
+      end
 
   fun getDomTreeEdges (Tree.T (a, v)) = 
       let
@@ -416,13 +413,14 @@ struct
 
   fun getEdgePSState (d, imil, e as (a, b), ps : PSSet.t) =
       let
-        val epso = getEdgePS (d, imil, e)
+        val eps : PSSet.t = getEdgePSSet (d, imil, e)
 
         fun maybeRedundant ((eopnd, en, eb, es), ps) =
             let
               fun hasSameOpnd (item as (opnd, n, b, s)) = eqOpndOp(opnd, eopnd)
               fun hasSameCond (item as (v, n, b, s)) = eqCondOp (n, en)
-              fun maybeRedundant' x = (hasSameOpnd x) andalso (hasSameCond x)
+              fun isEq (item as (v, n, b, s)) = b = eb
+              fun maybeRedundant' x = (hasSameOpnd x) andalso (hasSameCond x) andalso (isEq x)
 
               val () = if PSSet.exists (ps, maybeRedundant') then Debug.prints (d, "maybeRedundant\n") else ()
             in 
@@ -433,34 +431,44 @@ struct
             let
               fun hasSameOpnd (item as (opnd, n, b, s)) = eqOpndOp(opnd, eopnd)
               fun hasSameCond (item as (v, n, b, s)) = eqCondOp (n, en)
-              fun maybeImp' x = (hasSameOpnd x) andalso (not (hasSameCond x))
+              fun isEq (item as (v, n, b, s)) = b = eb
+              fun maybeImp' x = ((hasSameOpnd x) andalso (not (hasSameCond x)) andalso (isEq x)) 
+                                orelse (((hasSameOpnd x) andalso (hasSameCond x) andalso (not (isEq x))))
 
               val () = if PSSet.exists (ps, maybeImp') then Debug.prints (d, "maybeImp\n") else ()
             in 
               PSSet.exists (ps, maybeImp')
             end
 
-        fun isImpossible (item, ps) = if (not (maybeRedundant (item, ps))) andalso maybeImp (item, ps) 
+        fun isImpossible' (item, ps) = if (not (maybeRedundant (item, ps))) andalso maybeImp (item, ps) 
                                       then true 
                                       else false
 
-        fun isUnknown ((eopnd, en, eb, es), ps) =
+        fun isDefaultEdgePS (item : PSSet.t) = PSSet.exists (item, fn (opnd, n, b, s) => b = false)
+
+        fun isDefaultEdgeImpossible (item, ps) =
             let
-              fun hasSameOpnd (item as (opnd, n, b, s)) = eqOpndOp (opnd, eopnd)
+              fun hasSameOpnd (item, ps) =
+                  let
+                    val firsteps as (eopnd, _, _, _) = List.first (PSSet.toList (item))
+                    val sameOpndPS = PSSet.keepAll (ps, fn (opnd, _, _, _) => eqOpndOp(opnd, eopnd))
+                  in
+                    PSSet.size (sameOpndPS) > 0
+                  end
+
+              val epslist = PSSet.toList item
+              val revepslist = List.map (epslist, fn (opnd, n, b, s) => (opnd, n, not b, s))
+              val intersection = PSSet.intersection (PSSet.fromList epslist, ps)
             in
-              PSSet.exists (ps, fn x => (es = false) orelse (not (hasSameOpnd x)))
+              PSSet.isEmpty (intersection) andalso hasSameOpnd (item, ps)
             end
-   
-        val state = 
-            if isSome(epso) then
-              let
-                val eps = valOf epso
-              in 
-                if isImpossible (eps, ps) then Impossible
-                else if maybeRedundant (eps, ps) then Redundant
-                else Unknown
-              end
-            else Unknown
+
+        fun isImpossible (item : PSSet.t, ps) = 
+            if PSSet.isEmpty item then false
+            else if isDefaultEdgePS item then isDefaultEdgeImpossible (item, ps)
+            else isImpossible' (List.first(PSSet.toList(item)), ps)
+
+        val state = if isImpossible (eps, ps) then Impossible else Unknown
                
         val () = Debug.printPSSet(d, getLabel(imil, a), getEdgePSSet(d, imil, e))
         val () = Debug.printEdgePSState(d, imil, e, ps, state)
