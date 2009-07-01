@@ -20,6 +20,8 @@ struct
 
   val passname = "BackEnd"
 
+  val fail = fn (f, m) => Fail.fail (passname, f, m)
+
    structure Chat = ChatF(type env = Config.t
                           val extract = Utils.Function.id
                           val name = "BackEnd"
@@ -42,9 +44,7 @@ struct
        let
          val pd = case Process.getEnv "PLIB"
                    of SOME d => d
-                    | _ => Fail.fail ("BackEnd",
-                                      "plibdir",
-                                      "$PLIB isn't set")
+                    | _ => fail ("plibdir", "$PLIB isn't set")
        in pd
        end
          
@@ -175,18 +175,22 @@ struct
                | Config.ViSSE => ["P_USE_VI_SSE"]
                | Config.ViLRB => ["P_USE_VI_LRB"]
 
-       in
-         List.concat [runtime, 
-                      vi, 
-                      [ws], 
-                      gc, 
-                      futures, 
-                      debug, 
-                      pbase, 
-                      instr, 
-                      vtbChg,
-                      va]
+         val ds = 
+             List.concat [runtime, 
+                          vi, 
+                          [ws], 
+                          gc, 
+                          futures, 
+                          debug, 
+                          pbase, 
+                          instr, 
+                          vtbChg,
+                          va]
+         val flags = 
+             List.map (ds, fn s => "-D" ^ s)
+       in flags
        end
+
 
    val pillarStack =   2097152  (* Decimal integer in bytes (  0x200000) *)
    val smallStack  =  33554432  (* Decimal integer in bytes ( 0x2000000) *)
@@ -206,387 +210,351 @@ struct
        in s
        end
 
-   fun icc (config : Config.t, fname) = 
+   datatype compiler = CcGCC | CcICC | CcPillar
+   datatype linker = LdGCC | LdICC | LdPillar
+
+   fun sourceFile (config, compiler, fname) = fname^".c"
+
+   fun objectFile (config, compiler, fname) = 
+       (case compiler 
+         of CcGCC  => fname^".o"
+          | CcICC  => fname^".obj"
+          | CcPillar => fname^".obj")
+
+   fun exeFile (config, compiler, fname) = fname^".exe"
+
+   fun compiler (config, compiler) = 
+       (case compiler 
+         of CcGCC  => "gcc"
+          | CcICC  => "icl"
+          | CcPillar => plibexe(config, "pilicl"))
+
+   fun includes (config, compiler) = 
        let
-         val infile = 
-             fname^".c"
-         val outfile = 
-             "-Fo"^fname^".obj"
-               
-         val cc  = "icl"
+         val mcrt = 
+             if useFutures config then
+               [plibinc (config, "mcrt")]
+             else []
 
+         val files = 
+             (case compiler
+              of CcGCC => 
+                 [plibinc (config, "gc-bdw"), rundir config, plibinc (config, "prt")] @ mcrt
+               | CcICC => 
+                 [plibinc (config, "gc-bdw"), rundir config, plibinc (config, "prt")] @ mcrt
+               | CcPillar => 
+                 [rundir config, plibinc (config, "prt"), plibinc (config, "pgc")] @ mcrt)
+         val flags = List.map (files, fn s => "-I" ^ s)
+       in flags
+       end
+
+   structure CcOptions =
+   struct
+     fun out (config, compiler) = ["-c"]
+
+     fun obj ((config, compiler), fname) = 
+         (case compiler 
+           of CcGCC  => ["-o"^fname]
+            | CcICC  => ["-Fo"^fname]
+            | CcPillar => ["-Fo"^fname])
+
+     fun debug (config, compiler) =
+         (case compiler
+           of CcGCC  => if Config.pilDebug config then ["-g"] else []
+            | CcICC  => ["-Zi", "-debug"]
+            | CcPillar => ["-Zi", "-debug"])
+
+     fun opt (config, compiler) =
+         let
+           val level = Config.pilOpt config
+           val ps = 
+               (case compiler
+                 of CcGCC  =>
+                    (case level
+                      of 0 => ["-O0"]
+                       | 1 => ["-O1"]
+                       | 2 => ["-O2"]
+                       | 3 => ["-O3"]
+                       | _ => fail ("gcc", "Bad opt level"))
+                  | CcICC  => 
+                    (case level
+                      of 0 => ["-Od"]
+                       | 1 => ["-O1"]
+                       | 2 => ["-O2"]
+                       | 3 => ["-Ox", "-Qip", "-QaxT", 
+                               "-Qvec-report0", "-Qdiag-disable:cpu-dispatch"]
+                       | _ => fail ("icc", "Bad opt level"))
+                  | CcPillar => 
+                    let
+                      val opts = 
+                          ["-O2", "-Ob0", (* disable inlining*)
+                           "-mP2OPT_pre=false", (* disable PRE *)
+                           "-mCG_opt_mask=0xfffe"]
+                      val () = if level < 2 then
+                                 Chat.warn0 (config, 
+                                             "Ignoring optimization flag to avoid Pillar bug")
+                               else
+                                 ()
+                      val os = 
+                          if level <=3 then
+                            opts
+                          else
+                            fail ("picc", "Bad opt level")
+                    in os
+                    end
+               )
+         in ps
+         end
+
+     fun float (config, compiler) =
+         let
+           val sloppy = Config.sloppyFp config
+           val os = 
+               (case (compiler, sloppy)
+                 of (CcGCC, true)  => ["-ffast-math"]
+                  (* fpmath only works if -msse{|1|2} is set *)
+                  | (CcGCC, false) => ["-ffloat-store", "-mieee-fp", "-mfpmath=sse"] 
+                  (* Pillar doesn't have -Qftz *)
+                  | (CcICC, true)  => ["-fp:fast", "-Qftz"]
+                  | (CcICC, false) => ["-fp:source", "-Qftz-", "-Qprec-div", "-Qprec-sqrt"]
+                  | (CcPillar, true)  => ["-fp:fast"]
+                  | (CcPillar, false) => ["-fp:source", "-Qprec-div", "-Qprec-sqrt"]
+               )
+         in os
+         end
+
+     fun warn (config, compiler) =
+         (case compiler
+           of CcGCC  => [(*"-Wall"*)]
+            | CcICC  => ["-W3", 
+                       "-Qwd 177", (* Unused variable *)
+                       "-Qwd 279"  (* Controlling expression is constant*)
+                      ]
+            | CcPillar => ["-W3", "-Qwd 177", "-Qwd 279"]
+         )
+
+     fun lang (config, compiler) =
+         (case compiler
+           of CcGCC  => ["-std=c99"]
+            | CcICC  => ["-TC", "-Qc99"]
+            | CcPillar => ["-TC", "-Qc99",
+                       "-Qtlsregister:ebx",
+                       "-Qoffsetvsh:0", 
+                       "-Qoffsetusertls:4", 
+                       "-Qoffsetstacklimit:16"]
+        )
+
+     fun mt (config, compiler) =
+         (case compiler
+           of CcGCC  => []
+            | CcICC  => []
+            | CcPillar => ["/MT"])
+
+   end (* structure CcOptions *)
+
+   fun compile (config : Config.t, ccTag, fname) = 
+       let
+         val inFile = sourceFile (config, ccTag, fname)
+         val outFile = objectFile (config, ccTag, fname)
+         val cfg = (config, ccTag)
+         val cc = compiler cfg
          val options = 
-             let
-               val dOpts = ["-Zi", "-debug"]
-                        
-               val oOpts =
-                   case Config.pilOpt config
-                    of 0 => ["-Od"]
-                     | 1 => ["-O1"]
-                     | 2 => ["-O3"]
-                     (* | 3 => ["-O3"]  FIXME: WL: make the default to 4 *)
-                     | 3 => ["-Ox", "-Qip", "-QaxT", 
-                             "-Qvec-report0", "-Qdiag-disable:cpu-dispatch"]
-                     | _ => Fail.fail ("Backend", "icc",
-                                       "Bad opt level")
-                            
-               val fpOpts = 
-                   if Config.sloppyFp config then
-                     ["-fp:fast=2"]
-                   else
-                     ["-fp:strict", "-Qfp-port"]
-                       
-                       (* 177 = unused variable
-                        * 279 = constant controlling expression
-                        *)
-               val wOpts = ["-W3", "-Qwd 177", "-Qwd 279"]
-               val lOpts = ["-TC", "-Qc99", "-c"]
-                           
-               val mOpts = if useFutures config then ["/MT"] else []
-             in List.concat [dOpts, oOpts, fpOpts, wOpts, lOpts, mOpts]
-             end
-
-         val defs = List.map (defines config, fn s => "/D" ^ s)
-
-         val includes = 
-             let
-               val gcinc =
-                   ["-I", plibinc (config, "gc-bdw"), "-I", rundir config]
-               val finc = ["-I", plibinc (config, "prt")]
-               val minc = if useFutures config
-                          then ["-I", plibinc (config, "mcrt")]
-                          else []
-             in gcinc @ finc @ minc
-             end
-         val args =
-             List.concat[options, defs, [infile], includes, [outfile], 
-                         Config.pilcStr config]
+             [
+              CcOptions.out cfg,
+              CcOptions.debug cfg,
+              CcOptions.opt cfg,
+              CcOptions.float cfg,
+              CcOptions.warn cfg,
+              CcOptions.lang cfg,
+              CcOptions.mt cfg
+              ]
+         val options = List.concat options
+         val defs = defines config
+         val incs = includes cfg
+         val args = [options, defs, [inFile], incs, CcOptions.obj (cfg, outFile), Config.pilcStr config]
+         val args = List.concat args
          val cleanup = fn () => if Config.keepPil config then ()
-                                else File.remove infile
+                                else File.remove inFile
        in (cc, args, cleanup)
        end
 
+   fun linker (config, ld) = 
+       (case ld
+         of LdGCC  => "gcc"
+          | LdICC  => "icl"
+          | LdPillar => plibexe(config, "pilink"))
 
-   fun gcc (config : Config.t, fname) = 
+   structure LdOptions =
+   struct
+     fun exe ((config, ld), fname) = 
+         (case ld
+           of LdGCC  => ["-o"^fname]
+            | LdICC  => ["-Fe"^fname]
+            | LdPillar => ["-out:"^fname])
+
+     fun link (config, ld) = 
+         (case ld
+           of LdGCC  => []
+            | LdICC  => ["-link"]
+            | LdPillar => []
+         )
+
+     fun opt (config, ld) = 
+         (case ld
+           of LdGCC  => ["-O2"]
+            | LdICC  => []
+            | LdPillar => []
+         )
+
+     fun stack (config, ld) = 
+         (case ld
+           of LdGCC  => ["--stack="^(stackStr config)]
+            | LdICC  => ["-stack:"^(stackStr config)]
+            | LdPillar => ["-stack:"^(stackStr config)]
+         )
+
+     fun control (config, ld) = 
+         (case ld
+           of LdGCC  => []
+            | LdICC  => ["-nologo", "-INCREMENTAL:NO"]
+            | LdPillar => ["-nologo", "-INCREMENTAL:NO"]
+         )
+
+     fun debug (config, ld) = 
+         (case ld
+           of LdGCC  => ["-g"]
+            | LdICC  => ["-debug"]
+            | LdPillar => ["-debug"]
+         )
+
+   end (* structure CcOptions *)
+
+   fun gcLibraries (config, ldTag) = 
        let
-         val infile = 
-             fname^".c"
-         val outfile = 
-             "-o"^fname^".o"
-               
-         val cc  = "gcc"
-         val options = 
-             let
-               val dOpts =
-                   if Config.pilDebug config then
-                     ["-g"]
-                   else
-                     []
-                        
-               val oOpts =
-                   case Config.pilOpt config
-                    of 0 => ["-O0"]
-                     | 1 => ["-O1"]
-                     | 2 => ["-O2"]
-                     | 3 => ["-O3"]
-                     | _ => Fail.fail ("Backend", "gcc",
-                                       "Bad opt level")
-                            
-               val fpOpts = 
-                   if Config.sloppyFp config then
-                     ["-ffast-math"]
-                   else
-                     ["-ffloat-store"]
-                       
 
-               val wOpts = [(*"-Wall"*)]
-               val lOpts = ["-std=c99", "-c"]
+         val mt = useFutures config
+         val debug = Config.pilDebug config
+         val gcs = #style (Config.gc config)
+         fun agc (config, debug) =
+             (case (Config.agc config, debug)
+               of (Config.AgcGcMf, true)  => pliblib (config, "gc-mfd.lib")
+                | (Config.AgcTgc, true)   => pliblib (config, "gc-tgcd.lib")
+                | (Config.AgcCgc, true)   => pliblib (config, "gc-cgcd.lib")
+                | (Config.AgcGcMf, false) => pliblib (config, "gc-mf.lib")
+                | (Config.AgcTgc, false)  => pliblib (config, "gc-tgc.lib")
+                | (Config.AgcCgc, false)  => pliblib (config, "gc-cgc.lib"))
 
-             in List.concat [dOpts, oOpts, fpOpts, wOpts, lOpts]
-             end
+         val libs =
+             (case (gcs, ldTag, mt, debug)
+               of (Config.GcsNone, _, _, _) => []
 
-         val defs = List.map (defines config, fn s => "-D" ^ s)
-         val includes =
-             ["-I", plibinc (config, "gc-bdw"), "-I", rundir config] @
-             ["-I", plibinc (config, "prt")] @ (* for toolkit futures *)
-             (if useFutures config
-              then ["-I", plibinc (config, "mcrt")]
-              else [])
-         val args =
-             List.concat[options, defs, [infile], includes, [outfile],
-                         Config.pilcStr config ]
-         val cleanup = fn () => if Config.keepPil config then ()
-                                else File.remove infile
-       in (cc, args, cleanup)
+                | (Config.GcsConservative, LdGCC, _, true)       => [pliblib (config, "libgc-bdwd.a")]
+                | (Config.GcsConservative, LdGCC, _, false)      => [pliblib (config, "libgc-bdw.a")]
+                | (Config.GcsConservative, LdICC, true, true)   => [pliblib (config, "gc-bdw-dlld.lib")]
+                | (Config.GcsConservative, LdICC, true, false)  => [pliblib (config, "gc-bdw-dll.lib")]
+                | (Config.GcsConservative, LdICC, false, true)  => [pliblib (config, "gc-bdwd.lib")]
+                | (Config.GcsConservative, LdICC, false, false) => [pliblib (config, "gc-bdw.lib")]
+                | (Config.GcsConservative, LdPillar, _, _)  =>
+                  fail ("gcLibraries", "Conservative GC not supported on Pillar")
+
+                | (Config.GcsAccurate, LdPillar, _, _) => 
+                  [pliblib (config, "pgcd.lib"), "imagehlp.lib", agc (config, debug)]
+                | (Config.GcsAccurate, _, _, _) => 
+                  fail ("gcLibraries", "Accurate GC not supported on C"))
+       in libs
        end
 
-   fun picc (config : Config.t, fname) = 
+   fun futureLibraries (config, ldTag) = 
        let
-         val infile = 
-             fname^".c"
-         val outfile = 
-             "-Fo"^fname^".obj"
+         val mt = useFutures config
+         val debug = Config.pilDebug config
+         val nm =
+             case (mt, debug)
+              of (false, false) => "sequential"
+               | (false, true ) => "sequentiald"
+               | (true,  false) => "parallel"
+               | (true,  true ) => "paralleld"
+         val file = 
+             (case ldTag
+               of LdGCC => "ptkfutures_gcc_" ^ nm ^ ".lib"
+                | LdICC => "ptkfutures_" ^ nm ^ ".lib"
+                | LdPillar => "ptkfutures_pillar_" ^ nm ^ ".obj")
 
-         val cmd = plibexe(config, "pilicl")
-
-         val options = 
-             let
-               val dOpts = ["-Zi", "-debug"]
-
-               val () = if (Config.pilOpt config) < 2 then
-                          Chat.warn0 (config, 
-                                      "Ignoring optimization flag to avoid Pillar bug")
-                        else
-                          ()
-               val oOpts =
-                   case Config.pilOpt config
-                    of 0 => ["-O2", "-Ob0"]
-                     | 1 => ["-O2", "-Ob0"]
-                     | 2 => ["-O2", "-Ob0"]
-                     | 3 => ["-O2", "-Ob0"] 
-                     | _ => Fail.fail ("Backend", "picc",
-                                       "Bad opt level")
-
-               val fpOpts = 
-                   if Config.sloppyFp config then
-                     ["-fp:fast=2"]
-                   else
-                     ["-fp:strict", "-Qfp-port"]
-
-               val wOpts = ["-W3", "-Qwd 177", "-Qwd 279", "-Qwd 188"]
-               val lOpts = ["-TC", "-Qc99", "-c", 
-                            "-mP2OPT_pre=false", (* disable PRE *)
-                            "-mCG_opt_mask=0xfffe",
-                            "/Qtlsregister:ebx",
-                            "/Qoffsetvsh:0", 
-                            "/Qoffsetusertls:4", 
-                            "/Qoffsetstacklimit:16"]
-               val mOpts = ["/MT"]
-             in List.concat [dOpts, oOpts, fpOpts, wOpts, lOpts, mOpts]
-             end
-         val defs = List.map (defines config, fn s => "/D" ^ s)
-         val includes = ["-I", rundir config,
-                         "-I", plibinc (config, "prt"),
-                         "-I", plibinc (config, "pgc")] @
-                        (if useFutures config
-                         then ["-I", plibinc (config, "mcrt")]
-                         else [])
-         val args =
-             List.concat[options, defs, [infile], includes, [outfile],
-                         Config.pilcStr config]
-         val cleanup = fn () => if Config.keepPil config then ()
-                                else File.remove infile
-       in (cmd, args, cleanup)
+       in
+         [pliblib (config, file)]
        end
 
-
-   fun ilink(config : Config.t, fname) =  
+   fun runtimeLibraries (config, ldTag) = 
        let
-         val infile = 
-             fname^".obj"
-         val outfile = 
-             "/Fe"^fname^".exe"
-
-         val ld  = "icl"
-
-         val options = 
-             let
-               val opts = ["/link",
-                           "/nologo", 
-                           "/INCREMENTAL:NO",
-                           (* "/NODEFAULTLIB:libcmt", *)
-                           "/stack:"^(stackStr config)]
-               val dOpts = ["/debug"]
-             in List.concat [opts, dOpts]
-             end
-
-         val uobjs = []
+         val debug = Config.pilDebug config
+         val mt = useFutures config
          val libs = 
-             let
-               val mt = useFutures config
-               val debug = Config.pilDebug config
-               val gclibs =
-                   case #style (Config.gc config)
-                    of Config.GcsNone => []
-                     | Config.GcsConservative =>
-                       (case (mt, debug) 
-                         of (true, true)   => 
-                            [pliblib (config, "gc-bdw-dlld.lib")]
-                          | (true, false)  => 
-                            [pliblib (config, "gc-bdw-dll.lib")]
-                          | (false, true)  => [pliblib (config, "gc-bdwd.lib")]
-                          | (false, false) => [pliblib (config, "gc-bdw.lib")])
-                     | Config.GcsAccurate =>
-                       Fail.fail ("BackEnd", "ilink", 
-                                  "accurate GC not supported on C")
-               val flibs =
-                   (if mt
-                    then [pliblib (config, "mcrtd.lib")]
-                    else []) @
-                   let
-                     val nm =
-                         case (mt, debug)
-                          of (false, false) => "sequential"
-                           | (false, true ) => "sequentiald"
-                           | (true, false) => "parallel"
-                           | (true, true ) => "paralleld"
-                   in
-                     [pliblib (config, "ptkfutures_" ^ nm ^ ".lib")]
-                   end
-             in List.concat [["user32.lib"], gclibs @ flibs]
-             end
-         val args = List.concat[[outfile], [infile], options, uobjs, libs,
-                                Config.linkStr config]
+             (case (ldTag, debug)
+               of (LdPillar, true)  => [pliblib (config, "pillard.lib")]
+                | (LdPillar, false) => [pliblib (config, "pillar.lib")] 
+                | (LdICC, _) => ["user32.lib"] 
+                | _ => [])
+         val mcrt = 
+             if ((ldTag = LdPillar) orelse mt) then
+               if debug then
+                 [pliblib (config, "mcrtd.lib")]
+               else  
+                 [pliblib (config, "mcrt.lib")]
+             else
+               []
+       in mcrt @ libs
+       end
+
+   fun libraries (config, ldTag) = 
+       let
+         val mt = useFutures config
+         val debug = Config.pilDebug config
+
+         val (prtBegin, prtEnd) = 
+             (case (ldTag, debug)
+               of (LdPillar, true)  => ([pliblib (config, "crt_prtbegind.obj")], [pliblib (config, "crt_prtendd.obj")])
+                | (LdPillar, false) => ([pliblib (config, "crt_prtbegin.obj")], [pliblib (config, "crt_prtend.obj")])
+                | _ => ([], []))
+
+         val gcLibs = gcLibraries (config, ldTag)
+         val futureLibs = futureLibraries (config, ldTag)
+         val runtimeLibs = runtimeLibraries (config, ldTag)
+         val pre = prtBegin
+         val post = 
+             List.concat [prtEnd, gcLibs, futureLibs, runtimeLibs]
+       in (pre, post)
+       end
+
+   fun link (config, ccTag, ldTag, fname) = 
+       let
+         val inFile = objectFile (config, ccTag, fname)
+         val outFile = exeFile (config, ldTag, fname)
+         val cfg = (config, ldTag)
+         val ld = linker cfg
+         val options = List.concat [LdOptions.link cfg,
+                                    LdOptions.opt cfg, 
+                                    LdOptions.stack cfg,
+                                    LdOptions.control cfg,
+                                    LdOptions.debug cfg]
+         val (preLibs, postLibs) = libraries (config, ldTag)
+         val args = List.concat [LdOptions.exe (cfg, outFile), 
+                                 preLibs,
+                                 [inFile],
+                                 postLibs,
+                                 options, 
+                                 Config.linkStr config]
          val cleanup = fn () => if Config.keepObj config then ()
-                                else File.remove infile
+                                else File.remove inFile
        in (ld, args, cleanup)
        end
 
+   fun icc (config, fname)  = compile (config, CcICC, fname)
+   fun gcc (config, fname)  = compile (config, CcGCC, fname)
+   fun picc (config, fname) = compile (config, CcPillar, fname)
 
-   fun ld(config : Config.t, fname) = 
-       let
-         val infile = 
-             fname^".o"
-         val outfile = 
-             "-o"^fname^".exe"
-
-         val ld  = "gcc"
-         val options = ["-O2", "--stack="^(stackStr config)]
-         val uobjs = [] 
-         val libs = 
-             let
-               val gclibs =
-                   case (#style (Config.gc config), Config.pilDebug config)
-                    of (Config.GcsNone, _) => []
-                     | (Config.GcsConservative, true) =>
-                       [pliblib (config, "libgc-bdwd.a")]
-                     | (Config.GcsConservative, false) =>
-                       [pliblib (config, "libgc-bdw.a")]
-                     | (Config.GcsAccurate, _) =>
-                       Fail.fail ("BackEnd", "ld",
-                                  "accurate GC not supported on C")
-               val flibs =
-                   (if useFutures config
-                    then [pliblib (config, "mcrtd.lib")] 
-                    else []) @
-                   let
-                     val mt = useFutures config
-                     val nm =
-                         case (mt, Config.pilDebug config)
-                          of (false, false) => "sequential"
-                           | (false, true ) => "sequentiald"
-                           | (true,  false) => "parallel"
-                           | (true,  true ) => "paralleld"
-                   in
-                     [pliblib (config, "ptkfutures_gcc_" ^ nm ^ ".lib")]
-                   end
-             in List.concat [gclibs, flibs]
-             end
-
-         val args = List.concat[options, [infile], uobjs, libs, [outfile],
-                                Config.linkStr config]
-         val cleanup = fn () => if Config.keepObj config then ()
-                                else File.remove infile
-       in (ld, args, cleanup)
-       end
-
-   fun plink(config : Config.t, fname) =  
-       let
-         val infile = 
-             fname^".obj"
-         val outfile = 
-             "/out:"^fname^".exe"
-
-         val cmd = plibexe(config, "pilink")
-
-         val options = 
-             let
-               val opts =
-                   ["/nologo", 
-                    "/INCREMENTAL:NO",
-                    (* "/NODEFAULTLIB:libcmt", *)
-                    "/stack:"^(stackStr config)]          
-               val dOpts = ["/debug"]
-             in List.concat [opts, dOpts]
-             end
-
-         val mlibs =
-             let
-               val flibs =
-                   let
-                     val mt = useFutures config
-                     val nm =
-                         case (mt, Config.pilDebug config)
-                          of (false, false) => "sequential"
-                           | (false, true ) => "sequentiald"
-                           | (true,  false) => "parallel"
-                           | (true,  true ) => "paralleld"
-                   in
-                     [pliblib (config, "ptkfutures_pillar_" ^ nm ^ ".obj")]
-                   end
-             in flibs
-             end
-         val mobjs = [infile]
-         val ulibs = 
-             let
-               val gclibs =
-                   case (#style (Config.gc config), Config.pilDebug config)
-                    of (Config.GcsNone, _) => []
-                     | (Config.GcsConservative, _) =>
-                       Fail.fail ("BackEnd", "plink",
-                                  "conservative GC not supported on Pillar")
-                     | (Config.GcsAccurate, true) =>
-                       [
-                        pliblib (config, "pgcd.lib"),
-                        "imagehlp.lib",
-                        case Config.agc config
-                         of Config.AgcGcMf => pliblib (config, "gc-mfd.lib")
-                          | Config.AgcTgc  => pliblib (config, "gc-tgcd.lib")
-                          | Config.AgcCgc  => pliblib (config, "gc-cgcd.lib")
-                       ]
-                     | (Config.GcsAccurate, false) =>
-                       [
-                        pliblib (config, "pgc.lib"),
-                        "imagehlp.lib",
-                        case Config.agc config
-                         of Config.AgcGcMf => pliblib (config, "gc-mf.lib")
-                          | Config.AgcTgc  => pliblib (config, "gc-tgc.lib")
-                          | Config.AgcCgc  => pliblib (config, "gc-cgc.lib")
-                       ]
-             in gclibs
-             end
-         val uobjs = []
-         val prtlib = if Config.pilDebug config then
-                        pliblib (config, "pillard.lib")
-                      else  
-                        pliblib (config, "pillar.lib")
-         val mcrtlib = if Config.pilDebug config then
-                         pliblib (config, "mcrtd.lib")
-                       else  
-                         pliblib (config, "mcrt.lib")
-
-         val prtbegin = if Config.pilDebug config then 
-                          pliblib (config, "crt_prtbegind.obj")
-                        else
-                          pliblib (config, "crt_prtbegin.obj")
-         val prtend = if Config.pilDebug config then
-                        pliblib (config, "crt_prtendd.obj")
-                      else  
-                        pliblib (config, "crt_prtend.obj")
-
-         val args = List.concat[[outfile],
-                                [prtbegin],
-                                mobjs, mlibs,
-                                [prtend],
-                                uobjs, ulibs,
-                                [prtlib, mcrtlib],
-                                options,
-                                Config.linkStr config]
-
-         val cleanup = fn () => if Config.keepObj config then ()
-                                else File.remove infile
-       in (cmd, args, cleanup)
-       end
+   fun ilink(config : Config.t, fname) = link (config, CcICC, LdICC, fname)
+   fun ld(config : Config.t, fname)    = link (config, CcGCC, LdGCC, fname)
+   fun plink(config : Config.t, fname) = link (config, CcPillar, LdPillar, fname)
 
    fun compile (config : Config.t, fname) =
        let 
