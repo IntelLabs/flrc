@@ -325,7 +325,6 @@ struct
   (* create edge PS set, variable set
    * (variable, (equal? (true or false), condition))
    *)
-
   fun getEdgePSSet (d, imil, e) : PSSet.t =
       let
         fun getEdgePS (d, imil, e as (a, b)) =
@@ -353,23 +352,15 @@ struct
                                  else [])
                               | _ => [])
 
-              val pso = case getTransMil (imil, a)
-                         of IMil.MTransfer t =>
-                            (case t
-                              of M.TPSumCase ns => getPCasePS (imil, a, b, ns)
-                               | M.TCase sw => getTCasePS (imil, a, b, sw)
-                               | _ => [(NONE, NONE, false, false)])
-                          | _ => []
-            (*
-             val () = printEdge (imil, e)
-             val () = case pso
-                       of SOME ps => printPS ps
-                        | NONE => print "none"
-             val () = print "\n"
-             *)
-            in pso
+            in
+              case getTransMil (imil, a)
+               of IMil.MTransfer t =>
+                  (case t
+                    of M.TPSumCase ns => getPCasePS (imil, a, b, ns)
+                     | M.TCase sw => getTCasePS (imil, a, b, sw)
+                     | _ => [(NONE, NONE, false, false)])
+                | _ => []
             end
-            
       in
         PSSet.union (PSSet.empty, PSSet.fromList(getEdgePS (d, imil, e)))
       end
