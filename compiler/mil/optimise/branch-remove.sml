@@ -496,20 +496,49 @@ struct
    *)
   fun checkBlockPSExt (d, imil, psDict, a) = 
       let
-        fun replaceTarget (a, b, c) =
+        fun replaceCase (a : IMil.iBlock, b: IMil.iBlock, c: IMil.iBlock, instr, tCase, t as {on, cases, default}) =
             let
-              val at = IMil.IBlock.getTransfer' (imil, a)
-              val () = case at
-                        of M.TGoto t => ()
-                         | M.TCase t => ()
-                         | M.TInterProc t => ()
-                         | M.TReturn t => ()
-                         | M.TCut t => ()
-                         | M.TPSumCase t => ()
+              val newcases = 
+                  Vector.map (cases, 
+                           fn (ct, M.T {block, arguments}) => if block = getLabel (imil, b) 
+                                                             then 
+                                                               let
+                                                                 val () = Debug.prints (d, "extension replace case target\n")
+                                                               in (ct, M.T {block=getLabel(imil, c), arguments=arguments})
+                                                               end
+                                                             else (ct, M.T {block=block, arguments=arguments}))
+              val newdefault = 
+                  (case default
+                    of NONE => default
+                     | SOME (M.T {block, arguments}) => if block = getLabel (imil, b)
+                                                        then
+                                                          let
+                                                            val () = Debug.prints (d, "extension replace default target\n")
+                                                          in SOME (M.T {block=getLabel (imil, c), arguments = arguments})
+                                                          end
+                                                        else default)
+              val instr = IMil.IBlock.getTransfer (imil, a)
+              val () = Debug.printOrigInstr (d, imil, (a, b), instr)
+              val newinstr = IMil.MTransfer (tCase {on=on, cases=newcases, default=default})
+              val () = IMil.IInstr.replaceMil (imil, instr, newinstr)
+              val () = Debug.printNewInstr (d, imil, newinstr)
             in ()
             end
 
-        fun checkConsequentEdges (a, b, c) =
+        fun replaceTarget (a : IMil.iBlock, b : IMil.iBlock, c : IMil.iBlock) =
+            let
+              val instr = IMil.IBlock.getTransfer' (imil, a)
+              val () = case instr
+                        of M.TGoto t => ()
+                         | M.TCase t => replaceCase (a, b, c, instr, M.TCase, t)
+                         | M.TInterProc t => ()
+                         | M.TReturn t => ()
+                         | M.TCut t => ()
+                         | M.TPSumCase t => replaceCase (a, b, c, instr, M.TPSumCase, t)
+            in ()
+            end
+
+        fun checkConsequentEdges (a : IMil.iBlock, b : IMil.iBlock, c : IMil.iBlock) =
             let
               val bc_ps = getEdgePSSet (d, imil, (b, c))
               val ab_ps = getEdgePSSet (d, imil, (a, b))
@@ -530,6 +559,7 @@ struct
                                   | Mil.TPSumCase _ => true))
                    then
                      let
+(*
                        val () = Debug.prints (d, "maybe redundant extension\n")
                        val al = IMil.IBlock.layout (imil, a)
                        val bl = IMil.IBlock.layout (imil, b)
@@ -537,7 +567,8 @@ struct
                        val () = Debug.printLayout (d, L.seq [L.str "\na:", al])
                        val () = Debug.printLayout (d, L.seq [L.str "\nb:", bl])
                        val () = Debug.printLayout (d, L.seq [L.str "\nc:", cl])
-                     in ()
+*)
+                     in replaceTarget (a, b, c)
                      end
                    else ()
                  | _ => ())
