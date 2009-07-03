@@ -496,7 +496,7 @@ struct
    *)
   fun checkBlockPSExt (d, imil, psDict, a) = 
       let
-        fun replaceCase (a : IMil.iBlock, b: IMil.iBlock, c: IMil.iBlock, instr, tCase, t as {on, cases, default}) =
+        fun replaceCase (a, b, c, instr, tCase, t as {on, cases, default}) =
             let
               val newcases = 
                   Vector.map (cases, 
@@ -525,11 +525,23 @@ struct
             in ()
             end
 
-        fun replaceTarget (a : IMil.iBlock, b : IMil.iBlock, c : IMil.iBlock) =
+        fun replaceGoto (a, b, c, instr, t as M.T {block, arguments}) =
+            let
+              val newtarget = if block = getLabel (imil, b) then M.T {block=getLabel (imil, c), arguments=arguments}
+                              else t
+              val instr = IMil.IBlock.getTransfer (imil, a)
+              val () = Debug.printOrigInstr (d, imil, (a, b), instr)
+              val newinstr = IMil.MTransfer (M.TGoto(newtarget))
+              val () = IMil.IInstr.replaceMil (imil, instr, newinstr)
+              val () = Debug.printNewInstr (d, imil, newinstr)
+            in ()
+            end
+
+        fun replaceTarget (a, b, c) =
             let
               val instr = IMil.IBlock.getTransfer' (imil, a)
               val () = case instr
-                        of M.TGoto t => ()
+                        of M.TGoto t => () (*replaceGoto (a, b, c, instr, t)*)
                          | M.TCase t => replaceCase (a, b, c, instr, M.TCase, t)
                          | M.TInterProc t => ()
                          | M.TReturn t => ()
@@ -538,7 +550,7 @@ struct
             in ()
             end
 
-        fun checkConsequentEdges (a : IMil.iBlock, b : IMil.iBlock, c : IMil.iBlock) =
+        fun checkConsequentEdges (a, b, c) =
             let
               val bc_ps = getEdgePSSet (d, imil, (b, c))
               val ab_ps = getEdgePSSet (d, imil, (a, b))
