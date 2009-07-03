@@ -314,6 +314,7 @@ struct
       end
 
   (* propagate PS on dom tree *)
+(*
   fun propagatePS (d, gDict, imil, tree) =
       let
         val domEdges = getDomTreeEdges tree
@@ -340,7 +341,7 @@ struct
       in
         Tree.traverse(tree, travNode)
       end
-
+*)
   fun propagatePS' (d, gDict, imil, tree) =
       let
         fun doTree (Tree.T (a, children), ancestors) =
@@ -374,7 +375,6 @@ struct
   fun maybeRedundant (d, eps, psset) =
       let
         fun maybeRedundant' x = (hasSameOpnd (x, eps)) andalso (hasSameCond (x, eps)) andalso (isEq (x, eps))
-        val () = if PSSet.exists (psset, maybeRedundant') then Debug.prints (d, "maybeRedundant\n") else ()
       in 
         PSSet.exists (psset, maybeRedundant')
       end
@@ -383,7 +383,7 @@ struct
       let
         val reveps = (eopnd, en, not eb, es)
         val r = (maybeRedundant (d, eps, psset)) andalso (not (maybeRedundant(d, reveps, psset)))
-      in ()
+      in r
       end
 
   fun maybeImp (d, eps, psset) = (* impossible *)
@@ -446,7 +446,7 @@ struct
                                  | _ => NONE
               val () = PD.click (d, passname)
             in 
-              {on=on, cases=Vector.keepAll (cases, noteq), default=default}
+              {on=on, cases=Vector.keepAll (cases, noteq), default=newdefault}
             end
 
         fun replaceInstr (imil, e as (a, b), tCase, ns) =
@@ -477,20 +477,96 @@ struct
   fun checkBlockPS (d, imil, dict, a) =
       List.foreach (List.map(IMil.IBlock.succs (imil, a), fn b => (a, b)), 
                     fn e => checkEdgePS (d, imil, dict, e))
+
+  (* RCBR extension
+   *
+   * example:
+   * L1:
+   *   ...
+   *   goto L2;
+   * L2:
+   *   case v {10 => goto L3; ...}
+   *
+   * If v=10 in L1, then we could make L1 go straight to L3 instead of L2.
+   *
+   * simple algorithm:
+   * Consider edge (a->b->c), if PS(b->c) is redundant in (PS(a) union PS(a->b)), 
+   * and b is empty block only with transfer instruction, 
+   * then we can make (a->c) directly.
+   *)
+  fun checkBlockPSExt (d, imil, psDict, a) = 
+      let
+        fun replaceTarget (a, b, c) =
+            let
+              val at = IMil.IBlock.getTransfer' (imil, a)
+              val () = case at
+                        of M.TGoto t => ()
+                         | M.TCase t => ()
+                         | M.TInterProc t => ()
+                         | M.TReturn t => ()
+                         | M.TCut t => ()
+                         | M.TPSumCase t => ()
+            in ()
+            end
+
+        fun checkConsequentEdges (a, b, c) =
+            let
+              val bc_ps = getEdgePSSet (d, imil, (b, c))
+              val ab_ps = getEdgePSSet (d, imil, (a, b))
+              val a_pso = LD.lookup(!psDict, getLabel(imil, a))
+            in 
+              (case a_pso
+                of SOME a_ps =>
+                   if (List.fold (PSSet.toList(bc_ps), 
+                                  true, 
+                               fn (eps, r) => (isRedundant(d, eps, PSSet.union(a_ps, ab_ps)) andalso r))
+                       andalso IMil.IBlock.isEmpty (imil, b)
+                       andalso (case IMil.IBlock.getTransfer'(imil, b)
+                                 of Mil.TGoto _ => true
+                                  | Mil.TCase _ => true
+                                  | Mil.TInterProc _ => false
+                                  | Mil.TReturn _ => false
+                                  | Mil.TCut _ => false
+                                  | Mil.TPSumCase _ => true))
+                   then
+                     let
+                       val () = Debug.prints (d, "maybe redundant extension\n")
+                       val al = IMil.IBlock.layout (imil, a)
+                       val bl = IMil.IBlock.layout (imil, b)
+                       val cl = IMil.IBlock.layout (imil, c)
+                       val () = Debug.printLayout (d, L.seq [L.str "\na:", al])
+                       val () = Debug.printLayout (d, L.seq [L.str "\nb:", bl])
+                       val () = Debug.printLayout (d, L.seq [L.str "\nc:", cl])
+                     in ()
+                     end
+                   else ()
+                 | _ => ())
+            end
+
+        fun checkEdge (a, b) =
+            let
+              val clist = IMil.IBlock.succs (imil, b)
+            in 
+              List.foreach (clist, fn c => checkConsequentEdges (a, b, c))
+            end
+
+        val blist = IMil.IBlock.succs (imil, a)
+        val () = List.foreach (blist, fn b => checkEdge (a, b))
+      in ()
+      end
   
   fun rcbrCfg (d, imil, cfg) =
       let
-        val gDict = ref LD.empty
         val () = splitCriticalEdge (imil, cfg)
         val () = Debug.layoutCfg (d, imil, cfg)
         val dom = IMil.IFunc.getDomTree (imil, cfg)
         val () = Debug.layoutTreeDot (d, imil, cfg, dom)
-        val () = propagatePS (d, gDict, imil, dom)
+        val psDict = ref LD.empty
+        val () = propagatePS' (d, psDict, imil, dom)
 
-        val gDict' = ref LD.empty
-        val () = propagatePS' (d, gDict', imil, dom)
+        val () = Tree.foreachPre (dom, fn b => checkBlockPSExt (d, imil, psDict, b))
       in 
-        Tree.foreachPre(dom, fn b => checkBlockPS (d, imil, !gDict', b))
+        Tree.foreachPre(dom, fn b => checkBlockPS (d, imil, !psDict, b))
       end
 
   fun program (imil, d) = 
@@ -514,44 +590,5 @@ struct
                     subPasses = []}
 
   val pass = Pass.mkOptPass (description, associates, BothMil.mkIMilPass program)
-
-  (* RCBR extension
-   *
-   * example:
-   * L1:
-   *   ...
-   *   goto L2;
-   * L2:
-   *   case v {10 => goto L3; ...}
-   *
-   * If v=10 in L1, then we could make L1 go straight to L3 instead of L2.
-   *
-   * simple algorithm:
-   * Consider edge (a->b->c), if PS(b->c) is redundant in (PS(a) union PS(a->b) ), 
-   * and b is empty block only with transfer instruction, 
-   * then we can make (a->c) directly.
-   *)
-  fun checkBlockPSExt (d, imil, dict, a) = 
-      let
-        fun checkDualEdges (d, imil, dict, a, b, c) =
-            let
-              val bc_ps = getEdgePSSet (d, imil, (b, c))
-              val ab_ps = getEdgePSSet (d, imil, (a, b))
-              val a_ps = LD.lookup(!dict, getLabel(imil, a))
-            in 
-              if PSSet.size (bc_ps) = 1 then () else ()
-            end
-
-        fun checkEdge (d, imil, dict, a, b) =
-            let
-              val clist = IMil.IBlock.succs (imil, b)
-            in 
-              List.foreach (clist, fn c => checkDualEdges (d, imil, dict, a, b, c))
-            end
-
-        val blist = IMil.IBlock.succs (imil, a)
-        val () = List.foreach (blist, fn b => checkEdge (d, imil, dict, a, b))
-      in ()
-      end
 
 end
