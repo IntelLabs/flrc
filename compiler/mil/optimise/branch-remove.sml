@@ -341,6 +341,32 @@ struct
         Tree.traverse(tree, travNode)
       end
 
+  fun propagatePS' (d, gDict, imil, tree) =
+      let
+        fun doTree (Tree.T (a, children), ancestors) =
+            let
+              fun doOne ((ancestorL, ancestor), ps) =
+                  let
+                    val ancestorSet = LD.lookup (!gDict, ancestorL)
+                    val thisSet = getEdgePSSet (d, imil, (ancestor, a))
+                    val curPS =
+                        case ancestorSet
+                         of NONE             => thisSet
+                          | SOME ancestorSet => PSSet.union (ancestorSet, thisSet)
+                    val ps = PSSet.union (ps, curPS)
+                  in ps
+                  end
+              val ps = List.fold (ancestors, PSSet.empty, doOne)
+              val al = getLabel (imil, a)
+              val () = gDict := LD.insert (!gDict, al, ps)
+              val ancestors' = (al, a)::ancestors
+              val () = Vector.foreach (children, fn c => doTree (c, ancestors'))
+            in ()
+            end
+        val () = doTree (tree, [])
+      in ()
+      end
+
   fun hasSameOpnd (eps1 as (opnd1, n1, b1, s1), eps2 as (opnd2, n2, b2, s2)) = eqOpndOp (opnd1, opnd2)
   fun hasSameCond (eps1 as (opnd1, n1, b1, s1), eps2 as (opnd2, n2, b2, s2)) = eqCondOp (n1, n2)
   fun isEq (eps1 as (opnd1, n1, b1, s1), eps2 as (opnd2, n2, b2, s2)) = b1 = b2
@@ -408,17 +434,17 @@ struct
       in state
       end
 
-  fun removeImp (d, imil, e as (a, b)) =
+  fun removeImp (d, imil, e as (a, b), tCase, sw, psset) =
       let
         fun removeTarget (imil, ns as {on, cases, default}, e as (a, b)) =
             let
               fun noteq (arm as (_, M.T {block, arguments})) = not (block = getLabel (imil, b) )
-              val () = PD.click (d, passname)
               val newdefault = case default
                                 of SOME (arm as M.T {block, arguments}) => if block = getLabel (imil, b) 
                                                                            then NONE
                                                                            else default
                                  | _ => NONE
+              val () = PD.click (d, passname)
             in 
               {on=on, cases=Vector.keepAll (cases, noteq), default=default}
             end
@@ -434,22 +460,17 @@ struct
             in ()
             end
 
-      in case IMil.IBlock.getTransfer' (imil, a)
-          of M.TPSumCase ns => replaceInstr(imil, e, M.TPSumCase, ns)
-           | M.TCase cs => replaceInstr(imil, e, M.TCase, cs)
-           | _ => ()
+      in 
+        if getEdgePSState (d, imil, e, psset) = Impossible then 
+          replaceInstr (imil, e, tCase, sw)
+        else () 
       end
-
-  fun checkRedundant (d, imil, e as (a, b), ps) =
-      if getEdgePSState (d, imil, e, ps) = Impossible 
-      then removeImp (d, imil, e)
-      else ()
 
   fun checkEdgePS (d, imil, dict, e as (a, b)) =
       case LD.lookup (dict, getLabel (imil, a))
        of SOME psset => (case IMil.IBlock.getTransfer' (imil, a)
-                          of M.TPSumCase ns => checkRedundant (d, imil, e, psset)
-                           | M.TCase cs => checkRedundant (d, imil, e, psset)
+                          of M.TPSumCase ns => removeImp (d, imil, e, M.TPSumCase, ns, psset)
+                           | M.TCase cs => removeImp (d, imil, e, M.TCase, cs, psset)
                            | _ => ())
         | _ => ()
       
@@ -457,30 +478,6 @@ struct
       List.foreach (List.map(IMil.IBlock.succs (imil, a), fn b => (a, b)), 
                     fn e => checkEdgePS (d, imil, dict, e))
   
-  fun checkSwitch (d, imil, cfg, dict, a, t, sw) =
-      case LD.lookup (dict, getLabel (imil, a))
-       of SOME ps => ()
-        | _ => ()
-  and checkSwitchA (d, imil, cfg, dict, a, t, sw as {on, cases, default}, ps) =
-      let
-        fun keepTarget (M.T {block, ...}) = 
-            getEdgePSState (d, imil, (a, IMil.IFunc.getBlockByLabel (imil, cfg, block)), ps) <> Impossible
-
-        fun keepCase (_, t) = keepTarget t
-        val cases = Vector.keepAll (cases, keepCase)
-(*        val default = Option.keep (default, doTarget)*)
-        val t1 = IMil.IInstr.replaceMil (imil, 
-                                         IMil.IBlock.getTransfer (imil, a), 
-                                         IMil.MTransfer (t {on=on, cases=cases, default=default}))
-      in ()
-      end
-
-  fun checkBlockPS'' (d, imil, cfg, dict, a) =
-      case IMil.IBlock.getTransfer' (imil, a)
-       of M.TCase cs => checkSwitch (d, imil, cfg, dict, a, M.TCase, cs)
-        | M.TPSumCase ns => checkSwitch (d, imil, cfg, dict, a, M.TPSumCase, ns)
-        | _ => ()
-
   fun rcbrCfg (d, imil, cfg) =
       let
         val gDict = ref LD.empty
@@ -489,8 +486,11 @@ struct
         val dom = IMil.IFunc.getDomTree (imil, cfg)
         val () = Debug.layoutTreeDot (d, imil, cfg, dom)
         val () = propagatePS (d, gDict, imil, dom)
+
+        val gDict' = ref LD.empty
+        val () = propagatePS' (d, gDict', imil, dom)
       in 
-        Tree.foreachPre(dom, fn b => checkBlockPS (d, imil, !gDict, b))
+        Tree.foreachPre(dom, fn b => checkBlockPS (d, imil, !gDict', b))
       end
 
   fun program (imil, d) = 
