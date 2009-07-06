@@ -264,6 +264,12 @@ struct
             | CcICC  => ["-Zi", "-debug"]
             | CcPillar => ["-Zi", "-debug"])
 
+     fun arch (config, compiler) = 
+         (case compiler
+           of CcGCC => ["-msse3"] (* without -msse, we should use -ffloat-store in float*)
+            | CcICC => ["-QxT"]
+            | CcPillar => ["-QxB"])
+
      fun opt (config, compiler) =
          let
            val level = Config.pilOpt config
@@ -281,7 +287,7 @@ struct
                       of 0 => ["-Od"]
                        | 1 => ["-O1"]
                        | 2 => ["-O2"]
-                       | 3 => ["-Ox", "-Qip", "-QaxT", 
+                       | 3 => ["-O3", "-Qip",
                                "-Qvec-report0", "-Qdiag-disable:cpu-dispatch"]
                        | _ => fail ("icc", "Bad opt level"))
                   | CcPillar => 
@@ -313,12 +319,13 @@ struct
                (case (compiler, sloppy)
                  of (CcGCC, true)  => ["-ffast-math"]
                   (* fpmath only works if -msse{|1|2} is set *)
-                  | (CcGCC, false) => ["-ffloat-store", "-mieee-fp", "-mfpmath=sse"] 
+                  (* without -msse, we should use -ffloat-store*)
+                  | (CcGCC, false) => ["-mieee-fp", "-mfpmath=sse"] 
                   (* Pillar doesn't have -Qftz *)
                   | (CcICC, true)  => ["-fp:fast", "-Qftz"]
-                  | (CcICC, false) => ["-fp:source", "-Qftz-", "-Qprec-div", "-Qprec-sqrt"]
+                  | (CcICC, false) => ["-fp:source", "-Qftz-", "-Qprec-div", "-Qprec-sqrt", "-Qvec-"]
                   | (CcPillar, true)  => ["-fp:fast"]
-                  | (CcPillar, false) => ["-fp:source", "-Qprec-div", "-Qprec-sqrt"]
+                  | (CcPillar, false) => ["-fp:source", "-Qprec-div", "-Qprec-sqrt", "-Qvec-"]
                )
          in os
          end
@@ -347,8 +354,8 @@ struct
      fun mt (config, compiler) =
          (case compiler
            of CcGCC  => []
-            | CcICC  => []
-            | CcPillar => ["/MT"])
+            | CcICC  => if useFutures config then ["-MT"] else []
+            | CcPillar => ["-MT"])
 
    end (* structure CcOptions *)
 
@@ -362,6 +369,7 @@ struct
              [
               CcOptions.out cfg,
               CcOptions.debug cfg,
+              CcOptions.arch cfg,
               CcOptions.opt cfg,
               CcOptions.float cfg,
               CcOptions.warn cfg,
@@ -521,7 +529,7 @@ struct
          val runtimeLibs = runtimeLibraries (config, ldTag)
          val pre = prtBegin
          val post = 
-             List.concat [prtEnd, gcLibs, futureLibs, runtimeLibs]
+             List.concat [futureLibs, prtEnd, gcLibs, runtimeLibs]
        in (pre, post)
        end
 
