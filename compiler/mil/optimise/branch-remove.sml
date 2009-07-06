@@ -372,13 +372,9 @@ struct
   fun diffEq   (eps1, eps2) = (hasSameOpnd (eps1, eps2)) andalso (     hasSameCond (eps1, eps2))  andalso (not (isEq (eps1, eps2)))
 
   fun isRedundant (d, eps, psset) =
-      let
-        fun samePS' x   = samePS (x, eps)
-        fun diffCond' x = diffCond (x, eps)
-        fun diffEq' x   = diffEq (x, eps)
-      in 
-        PSSet.exists (psset, samePS') andalso (not (PSSet.exists (psset, diffCond'))) andalso (not (PSSet.exists (psset, diffEq')))
-      end
+      PSSet.exists (psset, fn x => samePS (x, eps)) 
+      andalso (not (PSSet.exists (psset, fn x => diffCond (x, eps)))) 
+      andalso (not (PSSet.exists (psset, fn x => diffEq (x, eps))))
 
   fun maybeImp (d, eps, psset) = PSSet.exists (psset, fn x => (diffCond (x, eps)) orelse (diffEq(x, eps)))
 
