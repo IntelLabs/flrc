@@ -59,7 +59,6 @@ struct
 
   (* Aliases *)
   structure PD   = PassData
-  structure MOU  = MilOptUtils
   structure M    = Mil
   structure L    = Layout
   structure LU   = LayoutUtils
@@ -74,7 +73,7 @@ struct
   (* Reports a fail message and exit the program. *)
   fun fail (f, m) = Fail.fail ("inline-profile.sml ", f, m)
 
-  type callId = IMil.instr
+  type callId = IMil.iInstr
 
   (* Module controls. *)
   structure Control =
@@ -218,7 +217,7 @@ struct
         if Config.debug andalso debugPass (PD.getConfig d) then
           print (passname ^ ": " ^ msg )
         else ()
-             
+
     val printLayout : PD.t * Layout.t -> unit = 
      fn (d, l) =>
         if Config.debug andalso debugPass (PD.getConfig d) then
@@ -251,7 +250,7 @@ struct
     val checkIMil : PD.t * IMil.t -> unit =
      fn (d, imil) =>
         if Config.debug andalso debugPass (PD.getConfig d) then 
-          IMil.check imil
+          IMil.T.check imil
         else 
           ()
   end
@@ -313,53 +312,62 @@ struct
   structure Util =
   struct
 
-    val getCallTarget : IMil.t * IMil.instr -> Mil.variable option =
+    val getCallTarget : IMil.t * IMil.iInstr -> Mil.variable option =
      fn (imil, i) =>
         let
           fun callConv conv = 
               case conv
                of M.CCode f               => SOME f
-                | M.CDirectClosure (f, c) => SOME f
-                | _ => NONE
+                | M.CClosure {cls, code}  => SOME cls
+                | M.CDirectClosure {cls, code} => SOME cls
         in
-          case MOU.iinstrToTransfer (imil, i)
-           of SOME (M.TCall (conv, _, _, _, _)) => callConv conv
-            | SOME (M.TTailCall (conv, _, _))   => callConv conv
-            | _ => NONE
+          case IMil.IInstr.toTransfer i
+           of SOME (M.TInterProc {callee, ret, fx}) =>
+              (case callee 
+                of M.IpCall {call, args} => callConv call
+                 | M.IpEval {typ, eval} => NONE)
+            | SOME (M.TGoto t) => fail ("getCallTarget", "goto target?")
+            | SOME (M.TCase cs) => fail ("getCallTarget", "constant switch target?")
+            | SOME (M.TReturn r) => fail ("getCallTarget", "return target?")
+            | SOME (M.TCut c) => fail ("getCallTarget", "Cut target?")
+            | _ => fail ("getCallTarget", "no target?")
         end
+
         
     val getFunSize : IMil.t * Mil.variable -> int = 
-     fn (imil, f) => IMil.Cfg.getSize (imil, IMil.Cfg.getCfgByName (imil, f))
+     fn (imil, f) => IMil.IFunc.getSize (imil, IMil.IFunc.getIFuncByName (imil, f))
                                              
     val getProgSize : IMil.t -> int =
      fn (imil) => 
-        List.fold (IMil.Cfg.getCfgs (imil), 0, 
-                fn ((f, cfg), sz) => sz + IMil.Cfg.getSize (imil, cfg))
+        List.fold (IMil.IFunc.getIFuncs (imil), 0, 
+                fn ((f, cfg), sz) => sz + IMil.IFunc.getSize (imil, cfg))
 
-    val getInstrFun : IMil.t * IMil.instr -> Mil.variable =
-     fn (imil, i) => IMil.Cfg.getFName (imil, IMil.Instr.getCfg (imil, i))
+    val getInstrFun : IMil.t * IMil.iInstr -> Mil.variable =
+     fn (imil, i) => IMil.IFunc.getFName (imil, IMil.IInstr.getIFunc (imil, i))
 
-    val getInstrBlockLabel : IMil.t * IMil.instr -> Mil.label =
+    val getInstrBlockLabel : IMil.t * IMil.iInstr -> Mil.label =
      fn (imil, i) => 
-        #1 (IMil.Block.getLabel' (imil, IMil.Instr.getBlock (imil, i)))
+        #1 (IMil.IBlock.getLabel' (imil, IMil.IInstr.getIBlock (imil, i)))
 
   end
   
   (* Profiling information. *)
   structure ProfInfo =
   struct
-
+(*
     structure MilCfg = MilCfgF (type env      = PD.t
                                 val getConfig = PD.getConfig
                                 val passname  = passname
                                 val indent    = 2)
-    
+*)
+(*    
     structure MilCallGraph = 
     MilCallGraphF (type env           = PD.t
                    val config         = PD.getConfig
                    val layoutVariable = fn (e, v) => L.str ""
                    val indent         = 2)
-    
+*)    
+
     structure Profiler = MilProfilerF (type env         = PD.t
                                        val getConfig    = PD.getConfig
                                        val passname     = passname
@@ -374,7 +382,7 @@ struct
     val build : PD.t * IMil.t  -> t =
      fn (d, imil) =>
         let
-          val mil = IMil.unBuild (imil)
+          val mil = IMil.T.unBuild (imil)
           val (milEdgProbs, _, milAbsFreqs) = Profiler.computeProfilingInfo (d, mil)
         in
           T {milAbsFreqs = milAbsFreqs,
@@ -394,7 +402,7 @@ struct
                      milAbsFreqs = (blkAbsFreq, edgAbsFreq)}) =>
         let
           val env = PD.getConfig d
-          val mil as Mil.P {globals, symbolTable=smt, ...} = IMil.unBuild imil
+          val mil as Mil.P {globals, symbolTable=smt, ...} = IMil.T.unBuild imil
           val globalsList = VD.toList globals
           fun getBBFreqStr (b) = 
               case LD.lookup (blkAbsFreq, b)
@@ -410,10 +418,12 @@ struct
                     | SOME prob => SOME ("P " ^ Real.toString (prob))
           fun layoutFunc (f : Mil.variable, code) =
               let
-                val header = L.seq [L.str "G ", ML.layoutVar (env, smt, f),
+                val si = Identifier.SymbolInfo.SiTable smt
+                val header = L.seq [L.str "G ", ML.layoutVariable (env, si, f),
                                     L.str " = "]
-                val body = ML.layoutCode' (env, smt, code, SOME getBBFreqStr,
-                                           SOME getEdgProbStr)
+(*                val body = ML.layoutCode' (env, si, code, SOME getBBFreqStr,
+                                           SOME getEdgProbStr)*)
+                val body = ML.layoutCode (env, si, code)
               in
                 L.mayAlign [header, LU.indent body]
               end
@@ -445,7 +455,7 @@ struct
     val getFreq    : csInfo -> ProfInfo.Profiler.absFrequency = 
      fn (I i) => !(#freq i)
     val isRecCall  : csInfo -> bool = 
-     fn (I {srcFun, tgtFun, ...}) => MilCmp.variable (srcFun, tgtFun) = EQUAL
+     fn (I {srcFun, tgtFun, ...}) => MilUtils.Compare.variable (srcFun, tgtFun) = EQUAL
     val getTgtFun  : csInfo -> Mil.variable = fn (I i) => #tgtFun i
     val getSrcFun  : csInfo -> Mil.variable = fn (I i) => #srcFun i
     val getCallId  : csInfo -> callId = fn (I i) => #callId i
@@ -453,11 +463,11 @@ struct
     val layoutCSInfo : IMil.t  * csInfo -> Layout.t =
      fn (imil, I {freq, srcFun, tgtFun, inlined, callId}) =>
         let
-          val st         = IMil.getST imil
-          val srcFunLay  = ID.layoutVariable (srcFun, st)
+          val si         = IMil.T.getSi imil
+          val srcFunLay  = ID.layoutVariable' srcFun
           val blk        = Util.getInstrBlockLabel (imil, callId)
           val blkLay     = Identifier.layoutLabel blk
-          val tgtFunLay  = ID.layoutVariable (tgtFun, st)
+          val tgtFunLay  = ID.layoutVariable' tgtFun
           val freqLay    = IntInf.layout (!freq)
           val inlinedLay = if !inlined then L.str " inlined"
                            else L.str ""
@@ -486,8 +496,8 @@ struct
         let
           fun layoutFunInfo (f, FI {freq, size, recursive, callSites}) = 
               let
-                val st      = IMil.getST imil
-                val funLay  = ID.layoutVariable (f, st)
+                val si      = IMil.T.getSi imil
+                val funLay  = ID.layoutVariable' f
                 val freqLay = IntInf.layout (!freq)
                 val sizeLay = Int.layout (!size)
                 val csList  = LD.toList (!callSites)
@@ -506,13 +516,18 @@ struct
           L.align (List.map (VD.toList funInfoDict, layoutFunInfo))
         end
 
-    fun getFunInfo (T {funInfoDict, ...}, f) = 
+    fun getFunInfo (T {funInfoDict, ...}, f : Mil.variable) =
         case VD.lookup (funInfoDict, f)
          of SOME funInfo => funInfo
           | NONE => fail ("getFunInfo", "Could not find info for function.")
+
+    fun isFunExist (T {funInfoDict, ...}, f : Mil.variable) = 
+        case VD.lookup (funInfoDict, f)
+         of SOME funInfo => true
+          | NONE => false
                     
-    val addCallSites : t * Mil.variable * (Mil.label * csInfo) list -> unit =
-     fn (callSitesInfo as T {callSites=allCallSites, ...}, f, csList) =>
+    val addCallSites : PD.t * t * Mil.variable * (Mil.label * csInfo) list -> unit =
+     fn (d, callSitesInfo as T {callSites=allCallSites, ...}, f, csList) =>
         let
           val FI {callSites=funCallSites, ...} = getFunInfo (callSitesInfo, f)
           val () = funCallSites := LD.insertAll (!funCallSites, csList) 
@@ -520,40 +535,40 @@ struct
         in ()
         end
 
-    val isRecursive : t * Mil.variable -> bool = 
-     fn (callSitesInfo, f) =>
+    val isRecursive : IMil.t * PD.t * t * Mil.variable -> bool = 
+     fn (imil, d, callSitesInfo, f) =>
         let
           val FI {recursive, ...} = getFunInfo (callSitesInfo, f)
         in
           recursive
         end
 
-    val getFunFreq : t * Mil.variable -> ProfInfo.Profiler.absFrequency ref =
-     fn (callSitesInfo, f) => 
+    val getFunFreq : PD.t * t * Mil.variable -> ProfInfo.Profiler.absFrequency ref =
+     fn (d, callSitesInfo, f) => 
         let
           val FI {freq, ...} = getFunInfo (callSitesInfo, f)
         in
           freq
         end          
 
-    val getFunCallSites : t * Mil.variable -> csInfo LD.t =
-     fn (callSitesInfo, f) => 
+    val getFunCallSites : PD.t * t * Mil.variable -> csInfo LD.t =
+     fn (d, callSitesInfo, f) => 
         let
           val FI {callSites, ...} = getFunInfo (callSitesInfo, f)
         in
           !callSites
         end          
 
-    val getFunSize : t * Mil.variable -> int =
-     fn (callSitesInfo, f) => 
+    val getFunSize : PD.t * t * Mil.variable -> int =
+     fn (d, callSitesInfo, f) => 
         let
           val FI {size, ...} = getFunInfo (callSitesInfo, f)
         in
           !size
         end          
         
-    val incFunSize : t * Mil.variable * int -> unit =
-     fn (callSitesInfo, f, sz) =>
+    val incFunSize : PD.t * t * Mil.variable * int -> unit =
+     fn (d, callSitesInfo, f, sz) =>
         let
           val FI {size, ...} = getFunInfo (callSitesInfo, f)
           in
@@ -568,13 +583,17 @@ struct
           (* Check call convention. *)
           fun chkCallConv conv = case conv
                                   of M.CCode f               => true
-                                   | M.CDirectClosure (f, c) => true
+                                   | M.CDirectClosure {cls, code} => true
                                    | _ => false
         in
           (* Check transfer. Only TCall and TTailCall are inlineable. *)
-          case MOU.iinstrToTransfer (imil, i)
-           of SOME (M.TCall (conv, _, _, _, _)) => chkCallConv conv
-            | SOME (M.TTailCall (conv, _, _))   => chkCallConv conv
+          case IMil.IInstr.toTransfer (i)
+           of SOME (M.TInterProc {callee, ret, fx}) => 
+              (case callee 
+                of M.IpCall {call, args} => chkCallConv call
+                 | _ => false)
+(*              SOME (M.TCall (conv, _, _, _, _)) => chkCallConv conv
+            | SOME (M.TTailCall (conv, _, _))   => chkCallConv conv*)
             | _ => false
         end
 
@@ -599,24 +618,25 @@ struct
               end
           fun doCfg (cfg) = 
               let
-                val f = IMil.Cfg.getFName (imil, cfg)
-                val entryBlk = IMil.Cfg.getStart (imil, cfg)
-                val entryLabel = #1 (IMil.Block.getLabel' (imil, entryBlk))
+                val f : Mil.variable = IMil.IFunc.getFName (imil, cfg)
+                val entryBlk = IMil.IFunc.getStart (imil, cfg)
+                val entryLabel = #1 (IMil.IBlock.getLabel' (imil, entryBlk))
                 (* XXX EB: If it do not find the frequency for some reason and 
                  * fail, it would be safe to use the default value as 0. *)
                 val freq = valOf (ProfInfo.getExecFreq (profInfo, entryLabel))
                 val size = Util.getFunSize (imil, f)
-                val tfs = IMil.Enumerate.Cfg.transfers (imil, cfg)
+                val tfs = IMil.Enumerate.IFunc.transfers (imil, cfg)
                 val cs  = List.keepAll (tfs, fn i => inlineableCS (d, imil, i))
                 val callSites = LD.fromList (List.map (cs, doCallSite))
                 val fInfo = FI {freq      = ref freq,
                                 size      = ref size,
-                                recursive = IMil.Cfg.getRecursive (imil, cfg),
+                                recursive = IMil.IFunc.getRecursive (imil, cfg),
                                 callSites = ref callSites}
               in
                 (f, fInfo)
               end
-          val cfgs = IMil.Enumerate.T.cfgs (imil)
+
+          val cfgs = IMil.Enumerate.T.funcs (imil)
           val funInfoList = List.map (cfgs, doCfg)
         in
           VD.fromList (funInfoList)
@@ -682,8 +702,8 @@ struct
      *  For every call site cs in C:
      *    Freq cs = Freq cs * redFactor 
      *)
-    val inlineUpdate : t * csInfo * (Mil.label * IMil.instr) LD.t -> unit =
-     fn (callSitesInfo, inlinedCS, blkMapping) =>
+    val inlineUpdate : PD.t * t * csInfo * (Mil.label * IMil.iInstr) LD.t -> unit =
+     fn (d, callSitesInfo, inlinedCS, blkMapping) =>
         let
           val srcFun = getSrcFun (inlinedCS)
           val tgtFun = getTgtFun (inlinedCS)
@@ -717,20 +737,21 @@ struct
                       in
                         SOME (newBlk, newCSInfo)
                       end
-                val orgCSList = LD.toList (getFunCallSites (callSitesInfo, 
+                val orgCSList = LD.toList (getFunCallSites (d,
+                                                            callSitesInfo, 
                                                             tgtFun))
                 val newCSList = List.keepAllMap (orgCSList, buildNewCallSite)
               in
                 LD.fromList (newCSList)
               end
           (* Duplicate the call sites in the inlined function *)
-          val orgCallSites = getFunCallSites (callSitesInfo, tgtFun)
+          val orgCallSites = getFunCallSites (d, callSitesInfo, tgtFun)
           val newCallSites = duplicateCallSites (orgCallSites)
 
           (* Update the execution frequencies: original and new ones.
            * newFreq tgtFun = oldFreq tgtFun - inlinedCS freq
            * redFactor = newFreq tgtFun / oldFreq tgtFun *)
-          val tgtFunFreq = getFunFreq (callSitesInfo, tgtFun)
+          val tgtFunFreq = getFunFreq (d, callSitesInfo, tgtFun)
           val oldFreq = !tgtFunFreq
           val inlinedCSFreq = getFreq (inlinedCS)
           val newFreq = oldFreq - inlinedCSFreq
@@ -749,7 +770,7 @@ struct
            *    callSite Freq = callSite Freq * (1 - redFactor) *)
           val () = LD.foreach (newCallSites, updateCSFreq (1.0 - redFactor))
           (* Insert the new call sites into the source function. *)
-          val () = addCallSites (callSitesInfo, srcFun, 
+          val () = addCallSites (d, callSitesInfo, srcFun, 
                                  LD.toList newCallSites)
         in
           ()
@@ -765,7 +786,7 @@ struct
            callSites    : CallSitesInfo.t ref,
            recInlining  : int ref VD.t,
            inlinedCS    : CallSitesInfo.csInfo option ref,
-           newBlocksMap : (Mil.label * (Mil.label * IMil.instr)) list ref,
+           newBlocksMap : (Mil.label * (Mil.label * IMil.iInstr)) list ref,
            initPrgSize  : int,
            initBudget   : int,
            currBudget   : int ref,
@@ -861,12 +882,12 @@ struct
   val associateCallToCallId : policyInfo * (* The inline information. *)
                               IMil.t     * (* The imil program. *)
                               callId     * (* Call site being inlined. *)
-                              IMil.block * (* Block being copied. *)
-                              IMil.block   (* The copy. *) -> unit =
+                              IMil.iBlock * (* Block being copied. *)
+                              IMil.iBlock   (* The copy. *) -> unit =
    fn (info as PI {newBlocksMap, ...}, imil, call, orgBlk', newBlk') =>
       let
-        val orgBlk = #1 (IMil.Block.getLabel' (imil, orgBlk'))
-        val newBlk = #1 (IMil.Block.getLabel' (imil, newBlk'))
+        val orgBlk = #1 (IMil.IBlock.getLabel' (imil, orgBlk'))
+        val newBlk = #1 (IMil.IBlock.getLabel' (imil, newBlk'))
         val callSites = getCallSitesInfo (info)
         val csInfo = CallSitesInfo.getCSInfo (!callSites, orgBlk)
         (* XXX EB: Debug code. Keep it for a while
@@ -879,7 +900,7 @@ struct
         case csInfo
          of SOME cs => (* Only add relevant mapping: call sites *)
             let
-              val callInstr = IMil.Block.getTransfer (imil, newBlk')
+              val callInstr = IMil.IBlock.getTransfer (imil, newBlk')
             in
               newBlocksMap := (orgBlk, (newBlk, callInstr ))::(!newBlocksMap)
             end
@@ -892,7 +913,8 @@ struct
         val ref callSitesInfo = getCallSitesInfo (info)
         val currBudget = getCurrBudget (info)
         val minExecFreq = getMinExecFreq (info)
-        (* XXX EB: Debug code. Keep it for a while
+        (* XXX EB: Debug code. Keep it for a while *)
+        val () = Debug.print (d, "selectBestCallSite\n")
         val () = Debug.print (d, "Size budget = " ^ 
                                  Int.toString (currBudget) ^ "\n");
         val () = Debug.print (d, "Min exec freq = " ^ 
@@ -901,7 +923,7 @@ struct
         (* Print the call sites information. *)
         val () = Debug.printLayout (d, CallSitesInfo.layout (callSitesInfo, 
                                                              imil))
-        --- *)
+        (* --- *)
         val bestCS = ref NONE
         fun selectCS (cs) = bestCS := SOME cs
         fun isBestCS (_, csi) =
@@ -916,20 +938,22 @@ struct
               val execFreq  = CallSitesInfo.getFreq   (csInfo)
               val isRecCall = CallSitesInfo.isRecCall (csInfo)
               val tgtFun    = CallSitesInfo.getTgtFun (csInfo)
-              val isRecFunc = CallSitesInfo.isRecursive (callSitesInfo, tgtFun)
-              val tgtFunSz  = CallSitesInfo.getFunSize  (callSitesInfo, tgtFun)
+(*              val isRecFunc = CallSitesInfo.isRecursive (imil, d, callSitesInfo, tgtFun)*)
+(*              val tgtFunSz  = CallSitesInfo.getFunSize  (d, callSitesInfo, tgtFun)*)
               fun noRecInlining (f) = getRecInliningCount (info, f) >=
                                       recCallLimit (info)
             in
-              if CallSitesInfo.inlined (csInfo) then
+              if not (CallSitesInfo.isFunExist (callSitesInfo, tgtFun)) then
+                false
+              else if CallSitesInfo.inlined (csInfo) then
                 false
               else if IntInf.< (execFreq, minExecFreq) then
                 false
-              else if tgtFunSz > currBudget then
+              else if CallSitesInfo.getFunSize (d, callSitesInfo, tgtFun) > currBudget then
                 false
-              else if isRecCall andalso noRecInlining tgtFun then
+              else if CallSitesInfo.isRecursive (imil, d, callSitesInfo, tgtFun) andalso noRecInlining tgtFun then
                 false
-              else if isRecFunc andalso noRecursiveFuncs (info) then
+              else if CallSitesInfo.isRecursive (imil, d, callSitesInfo, tgtFun)  andalso noRecursiveFuncs (info) then
                 false
               else
                 true
@@ -953,7 +977,9 @@ struct
                 (Debug.printLayout (d, L.seq [L.str "BEST SO FAR: ", l]);
                  selectCS (cs))
             end
-            
+
+        val csi as CallSitesInfo.T {funInfoDict, callSites} = callSitesInfo
+
         val () = CallSitesInfo.foreach (callSitesInfo, analyzeCS)
         val () = Time.report (d, "select best call site", startTime)
       in
@@ -965,7 +991,7 @@ struct
   (* XXX EB: Debug function. Remove it latter. *)
   fun printIMilDbg (d, imil) = 
       let
-        val mil = IMil.unBuild imil
+        val mil = IMil.T.unBuild imil
         val l = MilLayout.layout (PD.getConfig d, mil)
         val () = Debug.print (d, "Print IMIL at inline-profile\n")
         val () = Debug.printLayout (d, l)
@@ -988,8 +1014,9 @@ struct
         selectBestCallSite (d, imil, info)
       end
 
-  fun updateCallSitesInfo (PI {callSites, newBlocksMap, 
-                               inlinedCS, ...}, imil) =
+  fun updateCallSitesInfo (d, 
+                           PI {callSites, newBlocksMap, inlinedCS, ...}, 
+                           imil) =
       case !inlinedCS
        of SOME cs => 
           let
@@ -998,19 +1025,19 @@ struct
             val () = newBlocksMap := nil
             val () = inlinedCS := NONE
           in
-            CallSitesInfo.inlineUpdate (!callSites, cs, blkMapping)
+            CallSitesInfo.inlineUpdate (d, !callSites, cs, blkMapping)
           end
         | NONE => ()
       
   (* Update the current budget and function sizes assuming we are
    * inlining cs. *)
-  fun updateSizes (info as PI {currBudget, callSites, ...}, csInfo) = 
+  fun updateSizes (d, info as PI {currBudget, callSites, ...}, csInfo) = 
       let
         (* Update source function size *)
         val srcFun = CallSitesInfo.getSrcFun  (csInfo)
         val tgtFun = CallSitesInfo.getTgtFun  (csInfo)
-        val tgtSz  = CallSitesInfo.getFunSize (!callSites, tgtFun)
-        val ()     = CallSitesInfo.incFunSize (!callSites, srcFun, tgtSz)
+        val tgtSz  = CallSitesInfo.getFunSize (d, !callSites, tgtFun)
+        val ()     = CallSitesInfo.incFunSize (d, !callSites, srcFun, tgtSz)
       in
         (* Update the current budget size *)
         currBudget := !currBudget - tgtSz
@@ -1043,7 +1070,7 @@ struct
       let
         val () = incIterations (info)
         val lastInlined = getInlinedCS (info)
-        val () = updateCallSitesInfo (info, imil)
+        val () = updateCallSitesInfo (d, info, imil)
         val () = printCallGraph (info, d, imil, lastInlined)
         val bestCS = selectBestCallSite (d, imil, info)
         val allowOpt = not (Feature.noOptimizer (PD.getConfig d))
@@ -1064,7 +1091,7 @@ struct
               val () = if CallSitesInfo.isRecCall (csInfo) 
                        then incRecInliningCount (info, tgtFun)
                        else ()
-              val () = updateSizes (info, csInfo)
+              val () = updateSizes (d, info, csInfo)
               val () = PD.click (d, "ProfileCallSitesInlined")
               val () = Debug.printLayout (d, 
                              L.seq [L.str "Inlining: ",

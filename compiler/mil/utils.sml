@@ -624,6 +624,7 @@ sig
     val targets : t -> {blocks : Mil.label Vector.t, exits : bool}
     val successors : t -> {blocks : Identifier.LabelSet.t, exits : bool}
     val cuts : t -> Cuts.t
+    val getBoolSuccessors : Mil.block -> (Mil.label * Mil.label) option
   end
 
   structure CodeBody :
@@ -3014,7 +3015,6 @@ struct
             val es = Vector.tabulate (m, genOne)
           in es
           end
-
     in
 
     fun outEdges t =
@@ -3199,6 +3199,30 @@ struct
     fun successors b = Transfer.successors (transfer b)
 
     fun cuts b = Transfer.cuts (transfer b)
+
+    fun getBoolTargets (targets : (Mil.constant * Mil.target) Vector.t) =
+        if Vector.length (targets) = 2 then
+          let 
+            fun isTrue (c) = Compare.constant (c, Mil.CInteger (IntInf.fromInt 1)) = EQUAL
+            fun isFalse (c) = Compare.constant (c, Mil.CInteger (IntInf.fromInt 0)) = EQUAL
+            val (c1, Mil.T t1) = Vector.sub (targets, 0)
+            val (c2, Mil.T t2) = Vector.sub (targets, 1)
+          in
+            if (isTrue c1 andalso isFalse c2) then 
+              SOME (#block t1, #block t2)
+            else if (isFalse c1 andalso isTrue c2) then 
+              SOME (#block t2, #block t1)
+            else
+              NONE
+          end
+        else
+          NONE
+
+    val getBoolSuccessors : Mil.block -> (Mil.label * Mil.label) option = 
+     fn (M.B {transfer, ...}) => case transfer
+                                  of Mil.TCase {on, cases, default} => getBoolTargets cases
+                                   | _ => NONE
+
 
   end
 

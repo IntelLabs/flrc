@@ -46,11 +46,11 @@ signature MIL_PROFILER = sig
     type edgeProb = (probability Mil.LD.t) Mil.LD.t
 
     (* The mil cfg types. *)
-    structure MilCfg : MIL_CFG where type env = env
+(*    structure MilCfg : MIL_CFG*)
 
     (* Creates  a mapping from edges  to probabilities using  a set of
      * heuristics. See Wu et Larus (MICRO-27) for more information. *)
-    val edgeProbabilities : env * MilCfg.Cfg.t -> edgeProb
+    val edgeProbabilities : env * MilCfg.t -> edgeProb
 
     (* Group the all cfg edge probabilities in a single dictionary. If
      * there are duplicated block labels accross cfgs it fails. If the
@@ -60,7 +60,7 @@ signature MIL_PROFILER = sig
     (* Takes an annotatedCFG, assume each function is executed exactly
      * once  and use  the edges  probabilities to  estimate  the local
      * (function) relative execution frequencies. *)
-    val localFrequencies : env * MilCfg.Cfg.t * edgeProb -> cfgRelFreq
+    val localFrequencies : env * MilCfg.t * edgeProb -> cfgRelFreq
 
     (* Group the all cfg local frequencies in a single dictionary.  If
      * there are duplicated block labels accross cfgs it fails. If the
@@ -73,7 +73,7 @@ signature MIL_PROFILER = sig
   structure CG : sig
 
     (* The mil cfg types. *)
-    structure MilCG : MilCallGraph where type env = env
+    structure MilCG : MIL_CALL_GRAPH
 
     (* Functions absolute frequencies. *)
     type funAbsFreq = absFrequency Mil.VD.t
@@ -101,8 +101,8 @@ end
 functor MilProfilerF (type env
                       val getConfig : env -> Config.t
                       val passname : string
-                      structure MilCfg : MIL_CFG where type env = env
-                      structure MilCG  : MilCallGraph where type env = env
+(*                      structure MilCfg : MIL_CFG *)
+                      structure MilCG  : MIL_CALL_GRAPH
                      ) :> MIL_PROFILER where type env = env
 = struct
 
@@ -188,7 +188,7 @@ functor MilProfilerF (type env
                         
     type edgeProb = (probability Mil.LD.t) Mil.LD.t
 
-    structure MilCfg = MilCfg
+(*    structure MilCfg = MilCfg*)
                   
     structure BranchProb = 
     struct
@@ -203,31 +203,31 @@ functor MilProfilerF (type env
              | Other (* Other comparisons. *)
                
       datatype info = Helpers of
-             {cfg               : MilCfg.Cfg.t,
+             {cfg               : MilCfg.t,
               (* Get the  block comparisonType.*)
-              getComparison     : MilCfg.Cfg.node -> comparisonType,
+              getComparison     : MilCfg.node -> comparisonType,
               (* return a list with the back edge successors, and a
                * list with the remaining successors. *)
-              getSuccessors     : MilCfg.Cfg.node -> (MilCfg.Cfg.node list) *
-                                                     (MilCfg.Cfg.node list),
+              getSuccessors     : MilCfg.node -> (MilCfg.node list) *
+                                                     (MilCfg.node list),
               (* Return the  true and false targets if  the block is a
                * boolean case. *)
-              getBoolSuccessors : MilCfg.Cfg.node -> (MilCfg.Cfg.node * 
-                                                      MilCfg.Cfg.node) option,
+              getBoolSuccessors : MilCfg.node -> (MilCfg.node * 
+                                                      MilCfg.node) option,
               (* Return true if one block dominates the other one. *)
-              postDominates     : MilCfg.Cfg.node * MilCfg.Cfg.node -> bool,
+              postDominates     : MilCfg.node * MilCfg.node -> bool,
               (* Return true if the block is a return block. *)
-              isReturnBlock     : MilCfg.Cfg.node -> bool,
+              isReturnBlock     : MilCfg.node -> bool,
               (* Return true if the block has a store instruction. *)
-              blockHasStore     : MilCfg.Cfg.node -> bool,
+              blockHasStore     : MilCfg.node -> bool,
               (* Return true if the block has a call instruction. *)
-              blockHasCall      : MilCfg.Cfg.node -> bool,
+              blockHasCall      : MilCfg.node -> bool,
               (* Return true if the block is a loop header. *)
-              isLoopHeader      : MilCfg.Cfg.node -> bool,
+              isLoopHeader      : MilCfg.node -> bool,
               (* Return true if the block is a loop pre header. *)
-              isLoopPreHeader   : MilCfg.Cfg.node -> bool,
+              isLoopPreHeader   : MilCfg.node -> bool,
               (* Return true if the edge is a loop exit. *)
-              isLoopExit        : MilCfg.Cfg.node * MilCfg.Cfg.node -> bool,
+              isLoopExit        : MilCfg.node * MilCfg.node -> bool,
               (* Return true if the Mil constant is zero. *)
               isZero            : Mil.constant -> bool}
                
@@ -268,9 +268,9 @@ functor MilProfilerF (type env
       (* Takes a cfg, a block and its two successors and return the
        * probability to take the first successor. *)
       type probabilityHeuristic = info * 
-                                  MilCfg.Cfg.node * 
-                                  MilCfg.Cfg.node * 
-                                  MilCfg.Cfg.node -> relFrequency option
+                                  MilCfg.node * 
+                                  MilCfg.node * 
+                                  MilCfg.node -> relFrequency option
 
       (* Return heuristic (RH): Predict a successor that contains a
        * return will not be taken. *)
@@ -358,14 +358,14 @@ functor MilProfilerF (type env
           
       datatype succType = 
            NoSucc
-         | UnreachableSucc of MilCfg.Cfg.node list
+         | UnreachableSucc of MilCfg.node list
          (* Back edges and other successors. *)
-         | BeAndOtherSucc  of MilCfg.Cfg.node list * MilCfg.Cfg.node list
-         | OnlyBackEdges   of MilCfg.Cfg.node list
+         | BeAndOtherSucc  of MilCfg.node list * MilCfg.node list
+         | OnlyBackEdges   of MilCfg.node list
          (* True and false successors in a binary switch block. *)
-         | BoolSuccsNoBe   of MilCfg.Cfg.node * MilCfg.Cfg.node
+         | BoolSuccsNoBe   of MilCfg.node * MilCfg.node
          (* Not binary switch or # of successors is != 2. *)
-         | NotBoolSucc     of MilCfg.Cfg.node list
+         | NotBoolSucc     of MilCfg.node list
 
       (* Check if a block has a call to the exit function. Always
        * false because there is no call to exit function in P. *)
@@ -392,7 +392,7 @@ functor MilProfilerF (type env
               case getBoolSuccessors (info, b)
                of NONE => NotBoolSucc otherSuccs
                 | SOME (trueDst, falseDst) => 
-                  if MilCfg.Cfg.compareNode (trueDst, falseDst) = EQUAL then 
+                  if MilCfg.compareNode (trueDst, falseDst) = EQUAL then 
                     NotBoolSucc [trueDst, falseDst]
                   else
                     BoolSuccsNoBe (trueDst, falseDst)
@@ -404,15 +404,15 @@ functor MilProfilerF (type env
           let
             fun setEdgeProb prob n1 n2 = 
                 let
-                  val l1 = MilCfg.Cfg.nodeGetLabel (cfg, n1)
-                  val l2 = MilCfg.Cfg.nodeGetLabel (cfg, n2)
+                  val l1 = MilCfg.nodeGetLabel (cfg, n1)
+                  val l2 = MilCfg.nodeGetLabel (cfg, n2)
                 in
                   case (l1, l2)
                    of (SOME src, SOME dst) => setEdgeProb' (src, dst, prob)
                     | _ => ()
                 end
                     
-            fun analyzeBlock (b : MilCfg.Cfg.node) = 
+            fun analyzeBlock (b : MilCfg.node) = 
                 case classifySuccessors (info, b)
                  of NoSucc => ()
                   | UnreachableSucc allSuccs =>
@@ -469,7 +469,7 @@ functor MilProfilerF (type env
 
                       (* Debug code. *)
                       fun nodeLabelString (n) = 
-                          case MilCfg.Cfg.nodeGetLabel (cfg, n)
+                          case MilCfg.nodeGetLabel (cfg, n)
                            of SOME l => ID.labelString l
                             | NONE => "?"
                       fun printDebug () =
@@ -493,7 +493,7 @@ functor MilProfilerF (type env
                              bS2Prob := !bS2Prob * (1.0 - bS1TakenProb) / d)
                           end
                       fun hasLabel (b) = 
-                          isSome (MilCfg.Cfg.nodeGetLabel (cfg, b))
+                          isSome (MilCfg.nodeGetLabel (cfg, b))
                       val () = if hasLabel (s1) andalso hasLabel (s2) then
                                  List.foreach (bS1Probs, combineProbabilities)
                                else
@@ -511,36 +511,36 @@ functor MilProfilerF (type env
                        setEdgeProb (!bS2Prob) b s2)
                     end
           in
-            List.foreach (MilCfg.Cfg.nodes cfg, analyzeBlock)
+            List.foreach (MilCfg.nodes cfg, analyzeBlock)
           end
 
     end (* End BranchProb *)
 
     fun compareNodePair ((n1a, n1b), (n2a, n2b)) =
-        case MilCfg.Cfg.compareNode (n1a, n2a)
-         of EQUAL => MilCfg.Cfg.compareNode (n1b, n2b)
+        case MilCfg.compareNode (n1a, n2a)
+         of EQUAL => MilCfg.compareNode (n1b, n2b)
           | result => result
 
     structure NodePairSet = SetF (struct
-                                    type t = MilCfg.Cfg.node * MilCfg.Cfg.node
+                                    type t = MilCfg.node * MilCfg.node
                                     val compare = compareNodePair
                                   end)
 
     structure NodeSet = SetF (struct
-                                type t = MilCfg.Cfg.node
-                                val compare = MilCfg.Cfg.compareNode
+                                type t = MilCfg.node
+                                val compare = MilCfg.compareNode
                               end)
 
-    structure CfgDominanceInfo = DominanceF (type node = MilCfg.Cfg.node
-                                          val compare = MilCfg.Cfg.compareNode)
+    structure CfgDominanceInfo = DominanceF (type node = MilCfg.node
+                                          val compare = MilCfg.compareNode)
                               
     fun buildCfgInfoHelpers (env, cfg) = 
         let
-          val dt = MilCfg.Cfg.getNodeDomTree (cfg, MilCfg.Cfg.entry cfg)
+          val dt = MilCfg.getNodeDomTree (cfg, MilCfg.entry cfg)
           val dom = CfgDominanceInfo.new dt
           fun dominates (n1, n2) = CfgDominanceInfo.dominates (dom, n1, n2)
 
-          val pdt = MilCfg.Cfg.getNodePDomTree (cfg, MilCfg.Cfg.exit cfg)
+          val pdt = MilCfg.getNodePDomTree (cfg, MilCfg.exit cfg)
           val pdom = CfgDominanceInfo.new pdt
           fun postDominates (n1, n2) = CfgDominanceInfo.dominates (pdom, n1, n2)
 
@@ -549,7 +549,7 @@ functor MilProfilerF (type env
                             exitNodes : ID.LabelSet.t ID.LabelDict.t) :
               (NodeSet.t * NodePairSet.t) =
               let
-                fun labelToNode (l) = MilCfg.Cfg.labelGetNode (cfg, l)
+                fun labelToNode (l) = MilCfg.labelGetNode (cfg, l)
 
                 fun doLoopHeader (h : Mil.label, 
                                   myNodes : Mil.block ID.LabelDict.t) =
@@ -561,9 +561,9 @@ functor MilProfilerF (type env
                       fun doOne (node : Mil.label) =
                           let
                             val n = labelToNode (node)
-                            val succs = MilCfg.Cfg.succ (cfg, n)
+                            val succs = MilCfg.succ (cfg, n)
                             fun inLoop (n) = 
-                                case MilCfg.Cfg.nodeGetLabel (cfg, n)
+                                case MilCfg.nodeGetLabel (cfg, n)
                                  of NONE => false
                                   | SOME l => Mil.LD.contains (myNodes, l)
                             val {no = exitSuccs, ...} = 
@@ -583,14 +583,18 @@ functor MilProfilerF (type env
                  NodePairSet.fromList (List.concat exitEdgesLists))
               end
 
-          val lbdomtree = MilCfg.Cfg.getLabelBlockDomTree (cfg)
-          val loops = MilCfg.Loop.build (env, cfg, lbdomtree)
+          val lbdomtree = MilCfg.getLabelBlockDomTree (cfg)
+          val si = MilCfg.tGetSi cfg
+          val loops = MilLoop.build (getConfig env, si, cfg, lbdomtree)
 
           (* XXX EB: Debug only *)
-          (* val () = Debug.printLayout (MilCfg.Loop.layout (loops)) *)
+(*          val () = Debug.printLayout (env, MilLoop.layout (loops))*)
 
-          val allNodes = MilCfg.Loop.allNodes (env, loops)
-          val exitNodes = MilCfg.Loop.exits (env, loops, allNodes)
+          val loops' = MilLoop.genAllNodes loops
+          val allNodes = MilLoop.allNodes loops'
+(*          val exitNodes = MilLoop.exits (env, loops, allNodes)*)
+          val loops' = MilLoop.genExits loops'
+          val exitNodes = MilLoop.allExits loops'
           val (loopHeaders, loopExitEdges) = analyzeLoops (allNodes, exitNodes)
 
           fun isLoopExit (n, s) = 
@@ -601,9 +605,10 @@ functor MilProfilerF (type env
 
           fun isReturnBlock (n) =
               let
-                val blk = valOf (MilCfg.Cfg.nodeGetBlock (cfg, n))
+                val blk = valOf (MilCfg.nodeGetBlock (cfg, n))
               in
-                MilUtils.Block.isReturnBlock (blk) 
+              (*                MilUtils.Block.isReturnBlock (blk) *)
+                fail ("isReturnBlock", "not implemented")
               end
 
           (* EB: Mil blocks do not have store instructions. Therefore, we will
@@ -619,7 +624,7 @@ functor MilProfilerF (type env
            * and other successors. *)
           fun getSuccessors (n) = 
               let
-                val succs = MilCfg.Cfg.succ (cfg, n)
+                val succs = MilCfg.succ (cfg, n)
                 val {no = otherSuccs, yes = backEdgeSuccs} =
                     List.partition (succs, fn s => backEdge (n, s))
               in
@@ -628,24 +633,25 @@ functor MilProfilerF (type env
               
           fun getBoolSuccessors (n) = 
               let
-                val b = valOf (MilCfg.Cfg.nodeGetBlock (cfg, n))
+                val b = valOf (MilCfg.nodeGetBlock (cfg, n))
               in
                 case MilUtils.Block.getBoolSuccessors (b)
                  of NONE => NONE
                   | SOME (trueDst, falseDst) => 
-                    SOME (MilCfg.Cfg.labelGetNode (cfg, trueDst),
-                          MilCfg.Cfg.labelGetNode (cfg, falseDst))
+                    SOME (MilCfg.labelGetNode (cfg, trueDst),
+                          MilCfg.labelGetNode (cfg, falseDst))
               end
 
           fun blockHasCall (n) = 
               let
-                val blk = valOf (MilCfg.Cfg.nodeGetBlock (cfg, n))
+                val blk = valOf (MilCfg.nodeGetBlock (cfg, n))
               in
-                MilUtils.Block.isCallBlock (blk)
+(*                MilUtils.Block.isCallBlock (blk)*)
+                fail ("blockHasCall", "not implemented")
               end
 
           fun isLoopPreHeader (b) = 
-              case MilCfg.Cfg.succ (cfg, b)
+              case MilCfg.succ (cfg, b)
                of [s] => (isLoopHeader (s) andalso dominates (b, s))
                 | _ => false
 
@@ -677,7 +683,7 @@ functor MilProfilerF (type env
                               isZero            = isZero}
         end
         
-    val edgeProbabilities: env * MilCfg.Cfg.t -> edgeRelFreq =
+    val edgeProbabilities: env * MilCfg.t -> edgeRelFreq =
      fn (env, cfg) =>
         let
           val probDict = ref Mil.LD.empty
@@ -772,10 +778,11 @@ functor MilProfilerF (type env
                 loopHeader = ref false,
                 bFreq      = ref 0.0}
 
-        fun getInfo n = 
-            case Graph.Node.getLabel (n) 
-             of SOME (BI info) => info
-              | NONE => fail ("getInfo", "ACFG Node without info?")
+        fun getInfo (n : (BlockInfo, EdgeInfo) Graph.node) = 
+            (case Graph.Node.getLabel (n) 
+              (*                  of SOME (BI info) => info
+                                   | NONE => fail ("getInfo", "ACFG Node without info?"))*)
+              of (BI info) => info)
 
         val getBlock = #block o getInfo
 
@@ -785,6 +792,7 @@ functor MilProfilerF (type env
             buildRefGetSet (#loopHeader, getInfo)
         val (getBFreq, setBFreq) = 
             buildRefGetSet (#bFreq, getInfo)
+
       end
 
       structure Edge = 
@@ -796,9 +804,10 @@ functor MilProfilerF (type env
                 backEdge = ref false}
 
         fun getInfo e = 
-            case Graph.Edge.getLabel (e) 
-             of SOME (EI info) => info
-              | NONE => fail ("getInfo", "ACFG Edge without info?")
+            (case Graph.Edge.getLabel (e) 
+              of EI info => info)
+          (*                  of SOME (EI info) => info
+                               | NONE => fail ("getInfo", "ACFG Edge without info?"))*)
                         
         val (getEFreq, setEFreq)      = buildRefGetSet (#eFreq, getInfo)
         val (getBEProb, setBEProb)    = buildRefGetSet (#beProb, getInfo)
@@ -816,26 +825,26 @@ functor MilProfilerF (type env
 
       (* Builds an annotated cfg from a mil cfg. *)
       fun buildAnnotatedCfg (d   : env,
-                             cfg : MilCfg.Cfg.t) : t =
+                             cfg : MilCfg.t) : t =
           let
             fun mapFromMilCfgToACFG (cfg) = 
                 let
-                  val cfg' : (BlockInfo, EdgeInfo) Graph.t = Graph.new ()
+                  val cfg' : (BlockInfo, EdgeInfo) Graph.t  = Graph.new ()
                   (* Label to Node' dictionary *)
                   val blockDic = ref Mil.LD.empty
                   fun blockToNode' (l) = Mil.LD.lookup (!blockDic, l)
                   (* Node to Node' dictionary *)
-                  val nodeDic = ref MilCfg.Cfg.NodeDict.empty
+                  val nodeDic = ref MilCfg.NodeDict.empty
                   fun nodeToNode' (n) = 
-                      MilCfg.Cfg.NodeDict.lookup (!nodeDic, n)
+                      MilCfg.NodeDict.lookup (!nodeDic, n)
                   (* Process nodes. *)
-                  fun doNode (n : MilCfg.Cfg.node) = 
+                  fun doNode (n : MilCfg.node) = 
                       let
-                        val block = MilCfg.Cfg.nodeGetLabel (cfg, n)
+                        val block = MilCfg.nodeGetLabel (cfg, n)
                         val info  = Node.newInfo (block)
-                        val node' = Graph.newLabeledNode (cfg', info)
+                        val node' = Graph.newNode (cfg', info)
                       in
-                        (nodeDic := MilCfg.Cfg.NodeDict.insert (!nodeDic,
+                        (nodeDic := MilCfg.NodeDict.insert (!nodeDic,
                                                                 n, 
                                                                 node');
                          if isSome (block) then
@@ -844,7 +853,7 @@ functor MilProfilerF (type env
                                                       node')
                          else ())
                       end
-                  val nodes = MilCfg.Cfg.nodes (cfg)
+                  val nodes = MilCfg.nodes (cfg)
                   val () = List.foreach (nodes , doNode)
                   (* Process Edges. *)
                   fun doEdge src dst =
@@ -856,9 +865,9 @@ functor MilProfilerF (type env
                                        prob     = ref 0.0,
                                        backEdge = ref false}
                       in
-                        ignore (Graph.addLabeledEdge (cfg', src', dst', info))
+                        ignore (Graph.addEdge (cfg', src', dst', info))
                       end
-                  fun doOne n = List.foreach (MilCfg.Cfg.succ (cfg, n), 
+                  fun doOne n = List.foreach (MilCfg.succ (cfg, n), 
                                               doEdge n)
                   val () = List.foreach (nodes, doOne)
                 in
@@ -867,19 +876,20 @@ functor MilProfilerF (type env
             (* Map milcfg to annotated cfg (cfg'). *)
             val (cfg', blockToNode', nodeToNode') = mapFromMilCfgToACFG (cfg)
             (* Build loop forest. *)
-            val domTree = MilCfg.Cfg.getLabelBlockDomTree cfg
-            val (MilCfg.Loop.LS loops) = MilCfg.Loop.build (d, cfg, domTree)
-            val loopForest = #loops loops
-            fun getHeader (MilCfg.Loop.L {header, ...}) = 
-                valOf (blockToNode' (header))
-            val loopForest' = 
+            val domTree = MilCfg.getLabelBlockDomTree cfg
+            val si = MilCfg.tGetSi cfg
+            val loops = MilLoop.build (getConfig d, si, cfg, domTree)
+            val loopForest : MilLoop.loop Tree.t vector = MilLoop.getLoops loops
+            fun getHeader (MilLoop.L {header, ...}) = 
+                 valOf (blockToNode' (header))
+            val loopForest' : (BlockInfo, EdgeInfo) Graph.node Tree.t vector = 
                 Vector.map (loopForest, fn t => Tree.map (t, getHeader))
             (* Annotate loop headers. *)
             fun setLoopHeader n = Node.setLoopHeader n true
             val () = Vector.foreach (loopForest', 
                                   fn t => Tree.foreachPre (t, setLoopHeader))
             (* Annotate back Edges. *)
-            val entry' = valOf (nodeToNode' (MilCfg.Cfg.entry cfg))
+            val entry' = valOf (nodeToNode' (MilCfg.entry cfg))
             val domTree = Graph.domTree (cfg', entry')
             val dominance = ACfgDominanceInfo.new (domTree)
             fun annotateBackEdge e = 
@@ -889,7 +899,7 @@ functor MilProfilerF (type env
                   val isBackEdg = ACfgDominanceInfo.dominates (dominance, dst, src)
                   (* Sanity checking. *)
                   val () = if isBackEdg andalso 
-                              not (Node.isLoopHeader (dst)) 
+                              not (Node.isLoopHeader dst) 
                            then 
                              fail ("annotateBackEdge", 
                                    "Back edge points to a non loop header?")
@@ -902,7 +912,7 @@ functor MilProfilerF (type env
           in
             ACFG {graph      = cfg',
                   entry      = entry',
-                  exit       = valOf (nodeToNode' (MilCfg.Cfg.exit cfg)),
+                  exit       = valOf (nodeToNode' (MilCfg.exit cfg)),
                   loopForest = loopForest'}
           end
 
@@ -1075,7 +1085,7 @@ functor MilProfilerF (type env
 
     end (* ACFG *)
 
-    val localFrequencies: env * MilCfg.Cfg.t * edgeProb -> cfgRelFreq =
+    val localFrequencies: env * MilCfg.t * edgeProb -> cfgRelFreq =
      fn (env, cfg, edgesProb) => 
         let
           (* Build the annotated control flow graph. *)
@@ -1158,8 +1168,9 @@ functor MilProfilerF (type env
                                    
         (* Node Info *)
         fun getInfo n = case Graph.Node.getLabel (n) 
-                         of SOME (NI info) => info
-                          | NONE => fail ("getInfo", "SCG Node without info?")
+(*                         of SOME (NI info) => info
+                          | NONE => fail ("getInfo", "SCG Node without info?")*)
+                         of NI info => info
                           
         (* - node function *)
         val getFunc = #func o getInfo
@@ -1190,8 +1201,9 @@ functor MilProfilerF (type env
 
         (* Edge info *)
         fun getInfo e = case Graph.Edge.getLabel (e) 
-                         of SOME (EI info) => info
-                          | NONE => fail ("getInfo", "SCG Edge without info?")
+                             of EI info => info
+(*                         of SOME (EI info) => info
+                          | NONE => fail ("getInfo", "SCG Edge without info?")*)
                           
         (* - backEdge flag *)
         val isBackEdge' = #backedge o getInfo
@@ -1219,7 +1231,7 @@ functor MilProfilerF (type env
       fun new () = 
           let
             val g = Graph.new ()
-            val entry = Graph.newLabeledNode (g, Node.newInfo (NONE))
+            val entry = Graph.newNode (g, Node.newInfo (NONE))
           in
             SCG {entry     = entry,
                  funcNodes = ref Mil.VD.empty,
@@ -1238,7 +1250,7 @@ functor MilProfilerF (type env
                 case f 
                  of NONE => L.str "?? (No func)"
                   | SOME v => layoutVar v
-            fun layoutNode n = 
+            fun layoutNode (n : (nodeInfo, edgeInfo) Graph.node) = 
                 if Graph.Node.equal (n, entry) then
                   L.str "Entry Node"
                 else
@@ -1247,7 +1259,7 @@ functor MilProfilerF (type env
                 let
                   fun layoutEdge e = 
                       let
-                        val tgt = Edge.to e
+                        val tgt : (nodeInfo, edgeInfo) Graph.node = Edge.to e
                         val be  = if Edge.isBackEdge e then
                                     L.str " (BackEdge)"
                                   else
@@ -1281,7 +1293,7 @@ functor MilProfilerF (type env
       (* Node operations *)
       fun newFuncNode (scg : t , f : Mil.variable) = 
           let 
-            val node = Graph.newLabeledNode (getGraph scg, Node.newInfo (SOME f))
+            val node = Graph.newNode (getGraph scg, Node.newInfo (SOME f))
             val funcNodesDic = getFuncNodesDict scg
             val () = funcNodesDic := Mil.VD.insert (!funcNodesDic, f, node)
           in
@@ -1289,7 +1301,7 @@ functor MilProfilerF (type env
           end
       fun hasFuncNode (SCG g, func) = 
           Mil.VD.contains (!(#funcNodes g), func)
-      fun lookupFuncNode (SCG g, func) = 
+      fun lookupFuncNode (SCG g, func : VS.element) = 
           Mil.VD.lookup (!(#funcNodes g), func)
           
       (* Return the nodelist sorted in reverse depth-first order. *)
@@ -1309,7 +1321,7 @@ functor MilProfilerF (type env
                            gfreq = ref 0.0,
                            beProb = ref 0.0}
           in
-            Graph.addLabeledEdge (#graph g, srcN, dstN, info)
+            Graph.addEdge (#graph g, srcN, dstN, info)
           end
           
       structure CGDominanceInfo = DominanceF (type node = node
@@ -1377,11 +1389,13 @@ functor MilProfilerF (type env
        * There is an  entry node and an edge (with freq  = 1) from the
        * entry node to each escaping function.
        *)
-      fun build (d, p, localBlockFreq) : t =
+      fun build (d, p : Mil.t, localBlockFreq) : t =
           let
             (* Build mil call graph. *)
-            val cg = MilCG.program (d, p)
-            val MilCG.CG {funs, calls} = cg
+            val st = MilUtils.Program.symbolTable p
+            val si = Identifier.SymbolInfo.SiTable st
+            val cg = MilCG.program (getConfig d, si, p)
+            val MilCG.CG {funs, calls, callMap} = cg
             (* XXX EB: Debug code. *)
             (* val () = Debug.printLayout (d, MilCG.layout (d, cg)) *)
             val scg = new ()
@@ -1400,7 +1414,7 @@ functor MilProfilerF (type env
                       else
                         newFuncNode (scg, f)
                   val entry = getEntryNode (scg)
-                  fun equalFunc (f1, f2) = MilCmp.variable (f1, f2) = EQUAL
+                  fun equalFunc (f1, f2) = MilUtils.Compare.variable (f1, f2) = EQUAL
                 in 
                   (* Add edge from entry if function escapes or
                    * main function. *)
@@ -1415,9 +1429,15 @@ functor MilProfilerF (type env
                                     | NONE => fail ("requireNode", 
                                                     "Could not find "^
                                                     "required node.")
-            fun processCall (callBlock, MilCG.CI ci) =
+            fun processCall (callBlock : CFG.label , MilCG.CI ci) =
                 let
-                  val srcFun = #inFun ci
+
+(*                  fun funNode f = Option.valOf (VD.lookup (funMap, f))*)
+                  val inFun = Option.valOf (Identifier.LabelDict.lookup (callMap, callBlock))
+(*                  val inFun = funNode inFun*)
+
+                  val srcFun : VS.element = inFun
+
                   val srcNode = requireNode (srcFun)
                   val targets = VS.toList (#knownCallees ci)
                   val nTargets = List.length (targets)
@@ -1448,7 +1468,7 @@ functor MilProfilerF (type env
                   List.foreach (targets, processEdge)
                 end
 
-            val () = Mil.LD.foreach (calls, processCall)
+            val () = Mil.LD.foreach (calls : MilCG.callInfo ID.LabelDict.t, processCall)
           in
             scg
           end
@@ -1579,7 +1599,7 @@ functor MilProfilerF (type env
               case Mil.VD.lookup (cgFunAbsFreq, f)
                of SOME freq => Real.fromIntInf (freq)
                 | _ => 0.0
-          fun updateFunctionFreqs (f, Mil.F {body=Mil.CFG (_, blocks), ...}) =
+          fun updateFunctionFreqs (f, Mil.F {body=Mil.CB {entry, blocks}, ...}) =
               let
                 val relFuncFreq = getRelFuncFreq (f)
                 fun updateBlockFuncFreq (l, _) =
@@ -1635,7 +1655,9 @@ functor MilProfilerF (type env
       let
         fun getCodeProfile (code as Mil.F {body, ...}) = 
             let
-              val cfg       = CFG.MilCfg.Cfg.build (body)
+              val st = MilUtils.Program.symbolTable p
+              val si = Identifier.SymbolInfo.SiTable st
+              val cfg       = MilCfg.build (getConfig d, si, body)
               val edgProb   = CFG.edgeProbabilities (d, cfg)
               val localFreq = CFG.localFrequencies (d, cfg, edgProb)
             in
