@@ -76,7 +76,7 @@ struct
     fun prints (d, s) = if Config.debug andalso debugPass (PD.getConfig d) then print s else ()
 
     fun printLayout (d, l) = if Config.debug andalso debugPass (PD.getConfig d) then
-                               LU.printLayout (L.seq [L.str (passname ^ ": "), l])
+                               LU.printLayout l
                              else ()
 
     fun debugShowPre (d, imil, fname)  = 
@@ -178,7 +178,7 @@ struct
     fun printPS (d, (opndo, condo, b, s)) =
         let
           val () = prints (d, "(")
-          val () = printOpndOp (d, opndo                     )
+          val () = printOpndOp (d, opndo)
           val () = if b then prints (d, " = ") else prints (d, " <> ")
           val () = printCondOp (d, condo)
           val () = prints (d, ")")
@@ -209,19 +209,15 @@ struct
         end
 
     fun printOrigInstr (d, imil, e as (a, b), instr) =
-        let
-          val () = prints (d, "\nremove " ^ ID.labelString(getLabel(imil, b)) ^ " in " ^ ID.labelString(getLabel(imil, a)) ^ "\n")
-          val () = printLayout (d, IMil.IInstr.layout (imil, instr))
-        in ()
-        end
+        printLayout (d, L.seq [L.str "remove ", 
+                               L.str (ID.labelString(getLabel(imil, b))), 
+                               L.str " in ", 
+                               L.str (ID.labelString(getLabel(imil, a))),
+                               L.str "\n", 
+                               IMil.IInstr.layout (imil, instr)])
 
     fun printNewInstr (d, imil, newinstr) =
-        let
-          val () = prints (d, "replace with new PSumCase instruction\n")
-          val () = printLayout (d, IMil.IInstr.layoutMil (imil, newinstr))
-          val () = prints (d, "\n")
-        in ()
-        end
+        printLayout (d, L.seq [L.str("=>\n"), IMil.IInstr.layoutMil (imil, newinstr), L.str("\n")])
 
     fun layoutCfg (d, imil, cfg) =
         if Config.debug andalso debugPass (PD.getConfig d) then
@@ -374,16 +370,14 @@ struct
 
   fun maybeRedundant (d, eps, psset) =
       let
-        fun maybeRedundant' x = (hasSameOpnd (x, eps)) andalso (hasSameCond (x, eps)) andalso (isEq (x, eps))
-      in 
-        PSSet.exists (psset, maybeRedundant')
-      end
+        fun samePS x   = (hasSameOpnd (x, eps)) andalso (     hasSameCond (x, eps))  andalso (     isEq (x, eps))
+        fun diffCond x = (hasSameOpnd (x, eps)) andalso (not (hasSameCond (x, eps))) andalso (     isEq(x, eps))
+        fun diffEq x   = (hasSameOpnd (x, eps)) andalso (     hasSameCond (x, eps))  andalso (not (isEq (x, eps)))
 
-  fun isRedundant (d, eps as (eopnd, en, eb, es), psset) =
-      let
-        val reveps = (eopnd, en, not eb, es)
-        val r = (maybeRedundant (d, eps, psset)) andalso (not (maybeRedundant(d, reveps, psset)))
-      in r
+        fun maybeRedundant' x = samePS (x) andalso (not (diffCond (x))) andalso (not (diffEq (x)))
+
+      in 
+        PSSet.exists (psset, samePS) andalso PSSet.exists (psset, diffCond) andalso PSSet.exists (psset, diffEq)
       end
 
   fun maybeImp (d, eps, psset) = (* impossible *)
@@ -527,6 +521,7 @@ struct
 
         fun replaceGoto (a, b, c, instr, t as M.T {block, arguments}) =
             let
+              val () = Debug.prints (d, "extension replace goto target " ^ ID.labelString (getLabel (imil, b)) ^ "\n")
               val newtarget = if block = getLabel (imil, b) then M.T {block=getLabel (imil, c), arguments=arguments}
                               else t
               val instr = IMil.IBlock.getTransfer (imil, a)
@@ -541,7 +536,7 @@ struct
             let
               val instr = IMil.IBlock.getTransfer' (imil, a)
               val () = case instr
-                        of M.TGoto t => () (*replaceGoto (a, b, c, instr, t)*)
+                        of M.TGoto t => replaceGoto (a, b, c, instr, t)
                          | M.TCase t => replaceCase (a, b, c, instr, M.TCase, t)
                          | M.TInterProc t => ()
                          | M.TReturn t => ()
@@ -560,7 +555,7 @@ struct
                 of SOME a_ps =>
                    if (List.fold (PSSet.toList(bc_ps), 
                                   true, 
-                               fn (eps, r) => (isRedundant(d, eps, PSSet.union(a_ps, ab_ps)) andalso r))
+                               fn (eps, r) => (maybeRedundant(d, eps, PSSet.union(a_ps, ab_ps)) andalso r))
                        andalso IMil.IBlock.isEmpty (imil, b)
                        andalso (case IMil.IBlock.getTransfer'(imil, b)
                                  of Mil.TGoto _ => true
@@ -569,19 +564,7 @@ struct
                                   | Mil.TReturn _ => false
                                   | Mil.TCut _ => false
                                   | Mil.TPSumCase _ => true))
-                   then
-                     let
-(*
-                       val () = Debug.prints (d, "maybe redundant extension\n")
-                       val al = IMil.IBlock.layout (imil, a)
-                       val bl = IMil.IBlock.layout (imil, b)
-                       val cl = IMil.IBlock.layout (imil, c)
-                       val () = Debug.printLayout (d, L.seq [L.str "\na:", al])
-                       val () = Debug.printLayout (d, L.seq [L.str "\nb:", bl])
-                       val () = Debug.printLayout (d, L.seq [L.str "\nc:", cl])
-*)
-                     in replaceTarget (a, b, c)
-                     end
+                   then replaceTarget (a, b, c)
                    else ()
                  | _ => ())
             end
