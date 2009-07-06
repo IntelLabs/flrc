@@ -366,24 +366,23 @@ struct
 
   fun hasSameOpnd (eps1 as (opnd1, n1, b1, s1), eps2 as (opnd2, n2, b2, s2)) = eqOpndOp (opnd1, opnd2)
   fun hasSameCond (eps1 as (opnd1, n1, b1, s1), eps2 as (opnd2, n2, b2, s2)) = eqCondOp (n1, n2)
-  fun isEq (eps1 as (opnd1, n1, b1, s1), eps2 as (opnd2, n2, b2, s2)) = b1 = b2
+  fun isEq        (eps1 as (opnd1, n1, b1, s1), eps2 as (opnd2, n2, b2, s2)) = b1 = b2
+  fun samePS   (eps1, eps2) = (hasSameOpnd (eps1, eps2)) andalso (     hasSameCond (eps1, eps2))  andalso (     isEq (eps1, eps2))
+  fun diffCond (eps1, eps2) = (hasSameOpnd (eps1, eps2)) andalso (not (hasSameCond (eps1, eps2))) andalso (     isEq(eps1, eps2))
+  fun diffEq   (eps1, eps2) = (hasSameOpnd (eps1, eps2)) andalso (     hasSameCond (eps1, eps2))  andalso (not (isEq (eps1, eps2)))
 
-  fun maybeRedundant (d, eps, psset) =
+  fun isRedundant (d, eps, psset) =
       let
-        fun samePS x   = (hasSameOpnd (x, eps)) andalso (     hasSameCond (x, eps))  andalso (     isEq (x, eps))
-        fun diffCond x = (hasSameOpnd (x, eps)) andalso (not (hasSameCond (x, eps))) andalso (     isEq(x, eps))
-        fun diffEq x   = (hasSameOpnd (x, eps)) andalso (     hasSameCond (x, eps))  andalso (not (isEq (x, eps)))
-
-        fun maybeRedundant' x = samePS (x) andalso (not (diffCond (x))) andalso (not (diffEq (x)))
-
+        fun samePS' x   = samePS (x, eps)
+        fun diffCond' x = diffCond (x, eps)
+        fun diffEq' x   = diffEq (x, eps)
       in 
-        PSSet.exists (psset, samePS) andalso PSSet.exists (psset, diffCond) andalso PSSet.exists (psset, diffEq)
+        PSSet.exists (psset, samePS') andalso (not (PSSet.exists (psset, diffCond'))) andalso (not (PSSet.exists (psset, diffEq')))
       end
 
   fun maybeImp (d, eps, psset) = (* impossible *)
       let
-        fun maybeImp' x = ((hasSameOpnd (x, eps) andalso (not (hasSameCond (x, eps))) andalso (isEq (x, eps))) 
-                           orelse (((hasSameOpnd (x, eps)) andalso (hasSameCond (x, eps)) andalso (not (isEq (x, eps))))))
+        fun maybeImp' x = (diffCond (x, eps)) orelse (diffEq(x, eps))
                           
         val () = if PSSet.exists (psset, maybeImp') then Debug.prints (d, "maybeImp\n") else ()
       in 
@@ -394,7 +393,7 @@ struct
       let
         val epset = getEdgePSSet (d, imil, e)
 
-        fun isImpossible' (item, psset) = (not (maybeRedundant (d, item, psset))) andalso maybeImp (d, item, psset)
+        fun isImpossible' (item, psset) = (not (isRedundant (d, item, psset))) andalso maybeImp (d, item, psset)
 
         fun isDefaultEdgePS (item : PSSet.t) = PSSet.exists (item, fn (opnd, n, b, s) => b = false)
 
@@ -536,7 +535,7 @@ struct
             let
               val instr = IMil.IBlock.getTransfer' (imil, a)
               val () = case instr
-                        of M.TGoto t => replaceGoto (a, b, c, instr, t)
+                        of M.TGoto t => () (* replaceGoto (a, b, c, instr, t) *)
                          | M.TCase t => replaceCase (a, b, c, instr, M.TCase, t)
                          | M.TInterProc t => ()
                          | M.TReturn t => ()
@@ -555,7 +554,7 @@ struct
                 of SOME a_ps =>
                    if (List.fold (PSSet.toList(bc_ps), 
                                   true, 
-                               fn (eps, r) => (maybeRedundant(d, eps, PSSet.union(a_ps, ab_ps)) andalso r))
+                               fn (eps, r) => (isRedundant(d, eps, PSSet.union(a_ps, ab_ps)) andalso r))
                        andalso IMil.IBlock.isEmpty (imil, b)
                        andalso (case IMil.IBlock.getTransfer'(imil, b)
                                  of Mil.TGoto _ => true
