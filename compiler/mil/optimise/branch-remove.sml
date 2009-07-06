@@ -380,20 +380,11 @@ struct
         PSSet.exists (psset, samePS') andalso (not (PSSet.exists (psset, diffCond'))) andalso (not (PSSet.exists (psset, diffEq')))
       end
 
-  fun maybeImp (d, eps, psset) = (* impossible *)
-      let
-        fun maybeImp' x = (diffCond (x, eps)) orelse (diffEq(x, eps))
-                          
-        val () = if PSSet.exists (psset, maybeImp') then Debug.prints (d, "maybeImp\n") else ()
-      in 
-        PSSet.exists (psset, maybeImp')
-      end
+  fun maybeImp (d, eps, psset) = PSSet.exists (psset, fn x => (diffCond (x, eps)) orelse (diffEq(x, eps)))
 
   fun getEdgePSState (d, imil, e as (a, b), psset) =
       let
         val epset = getEdgePSSet (d, imil, e)
-
-        fun isImpossible' (item, psset) = (not (isRedundant (d, item, psset))) andalso maybeImp (d, item, psset)
 
         fun isDefaultEdgePS (item : PSSet.t) = PSSet.exists (item, fn (opnd, n, b, s) => b = false)
 
@@ -417,7 +408,7 @@ struct
         fun isImpossible (item : PSSet.t, psset) = 
             if PSSet.isEmpty item then false
             else if isDefaultEdgePS item then isDefaultEdgeImpossible (item, psset)
-            else isImpossible' (List.first(PSSet.toList(item)), psset)
+            else maybeImp (d, List.first(PSSet.toList(item)), psset)
 
         val state = if isImpossible (epset, psset) then Impossible else Unknown
                
