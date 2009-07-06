@@ -453,17 +453,20 @@ static float pLsrPString2Float(PlsrPAny a)
     return f;
 }
 
-static PlsrPAny pLsrPFloat2StringT(float f)
-{
-    char str[20];
-    sprintf(str, "%f", f);
-    return pLsrCStringToPStringT(str);
-}
 
-static PlsrPAny pLsrPFloat2StringD(float f)
+static PlsrPAny pLsrPFloat2StringT(float f, PlsrRational p)
 {
-    char str[20];
-    sprintf(str, "%f", f);
+    uintp pi = pLsrUIntpFromRational(p);
+    char str[100];
+    sprintf(str, "%.*f", pi, f);
+    return pLsrCStringToPStringT(str);
+}                
+
+static PlsrPAny pLsrPFloat2StringD(float f, PlsrRational p)
+{
+    uintp pi = pLsrUIntpFromRational(p);
+    char str[100];
+    sprintf(str, "%.*f", pi, f);
     return pLsrCStringToPStringD(str);
 }
 
