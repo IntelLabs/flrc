@@ -254,7 +254,7 @@ struct
    *    (and hence each successor is in a 1:1 correspondence with the outedges).
    *)
 
-  fun splitCriticalEdge (imil, cfg) =
+  fun splitCriticalEdge (imil, ifunc) =
       let
         fun splitBlockCE b =
             let
@@ -273,7 +273,7 @@ struct
               List.foreach (findInCE b, splitEdge)
             end
       in 
-        List.foreach(IMil.IFunc.getBlocks(imil, cfg), splitBlockCE)
+        List.foreach(IMil.IFunc.getBlocks(imil, ifunc), splitBlockCE)
       end
 
   (* create edge PS set, variable set
@@ -477,7 +477,7 @@ struct
    * and b is empty block only with transfer instruction, 
    * then we can make (a->c) directly.
    *)
-  fun checkBlockPSExt (d, imil, ifunc, psDict, a) = 
+  fun checkBlockPSExt (d, imil, psDict, a) = 
       let
         fun replaceCase (a, b, c, instr, tCase, t as {on, cases, default}) =
             let
@@ -542,12 +542,12 @@ struct
             let
               val instr = IMil.IBlock.getTransfer' (imil, a)
               val () = case instr
-                        of M.TGoto t => () (* replaceGoto (a, b, c, instr, t)*)
-                         | M.TCase t => replaceCase (a, b, c, instr, M.TCase, t)
+                        of M.TGoto t => replaceGoto (a, b, c, instr, t)
+                         | M.TCase t => () (*replaceCase (a, b, c, instr, M.TCase, t)*)
                          | M.TInterProc t => ()
                          | M.TReturn t => ()
                          | M.TCut t => ()
-                         | M.TPSumCase t => replaceCase (a, b, c, instr, M.TPSumCase, t)
+                         | M.TPSumCase t => () (*replaceCase (a, b, c, instr, M.TPSumCase, t)*)
             in ()
             end
 
@@ -607,7 +607,7 @@ struct
         val psDict = ref LD.empty
         val () = propagatePS' (d, psDict, imil, dom)
 
-        val () = Tree.foreachPre (dom, fn b => checkBlockPSExt (d, imil, ifunc, psDict, b))
+        val () = Tree.foreachPre (dom, fn b => checkBlockPSExt (d, imil, psDict, b))
       in
         Tree.foreachPre(dom, fn b => checkBlockPS (d, imil, !psDict, b))
       end
