@@ -477,7 +477,7 @@ struct
    * and b is empty block only with transfer instruction, 
    * then we can make (a->c) directly.
    *)
-  fun checkBlockPSExt (d, imil, psDict, a) = 
+  fun checkBlockPSExt (d, imil, ifunc, psDict, a) = 
       let
         fun replaceCase (a, b, c, instr, tCase, t as {on, cases, default}) =
             let
@@ -508,60 +508,66 @@ struct
             in ()
             end
 
-        fun replaceGoto (a, b, c, instr, t as M.T {block, arguments}) =
+        fun checkDominance (a, b, c) =
             let
-            in
-              if labelString(imil, a) = "L222" then
-                let
-                  val () = Debug.prints (d, "rcbr extension " 
-                                            ^ labelString(imil, a) ^ "=>"
-                                            ^ labelString(imil, b) ^ "=>"
-                                            ^ labelString(imil, c) ^ "\n")
-                  val bc_ps = getEdgePSSet (d, imil, (b, c))
-                  val ab_ps = getEdgePSSet (d, imil, (a, b))
-                  val a_pso = LD.lookup(!psDict, getLabel(imil, a))
-                  val () = Debug.printPSSet (d, labelString(imil, b) ^ "=>" ^ labelString(imil, c), bc_ps)
-                  val () = case a_pso 
-                            of SOME a_ps => Debug.printPSSet (d, "a_ps u ab_ps", PSSet.union(a_ps, ab_ps))
-                             | NONE => ()
-                                       
-                  val () = Debug.prints (d, "extension replace goto target " ^ labelString (imil, b) ^ "\n")
-                  val newtarget = if block = getLabel (imil, b) then M.T {block=getLabel (imil, c), arguments=arguments}
-                                  else t
-                  val instr = IMil.IBlock.getTransfer (imil, a)
-                  val () = Debug.printOrigInstr (d, imil, (a, b), instr)
-                  val newinstr = IMil.MTransfer (M.TGoto(newtarget))
-                  val () = IMil.IInstr.replaceMil (imil, instr, newinstr)
-                  val () = Debug.printNewInstr (d, imil, newinstr)
-                in ()
-                end
-              else ()
+              val mil as Mil.P {globals, symbolTable, entry} = IMil.T.unBuild imil
+              val (_, mglobal) = IMil.IFunc.unBuild ifunc
+            in 
+              case mglobal
+               of Mil.GCode cc => 
+                  let
+                    val mcode as Mil.F {fx,escapes,recursive,cc,args,rtyps,body} = cc
+                    val si = ID.SymbolInfo.SiTable symbolTable
+                    val cfg = MilCfg.build (PD.getConfig d, si, body) 
+                    val lbdomtree = MilCfg.getLabelBlockDomTree cfg
+                    val ldomtree = Tree.map (lbdomtree, fn (l, _) => l)
+                    val ldominfo = MilCfg.LabelDominance.new ldomtree
+                  in (MilCfg.LabelDominance.dominates (ldominfo, getLabel(imil, a), getLabel(imil, b)))
+                     andalso (MilCfg.LabelDominance.dominates (ldominfo, getLabel(imil, b), getLabel(imil, c)))
+                  end
+                | _ => false
             end
+            
+        fun replaceGoto (a, b, c, instr, t as M.T {block, arguments}) =
+            if checkDominance (a, b, c) then
+              let
+                val () = Debug.prints (d, "rcbr extension " 
+                                          ^ labelString(imil, a) ^ "=>"
+                                          ^ labelString(imil, b) ^ "=>"
+                                          ^ labelString(imil, c) ^ "\n")
+                val bc_ps = getEdgePSSet (d, imil, (b, c))
+                val ab_ps = getEdgePSSet (d, imil, (a, b))
+                val a_pso = LD.lookup(!psDict, getLabel(imil, a))
+                val () = Debug.printPSSet (d, labelString(imil, b) ^ "=>" ^ labelString(imil, c), bc_ps)
+                val () = case a_pso 
+                          of SOME a_ps => Debug.printPSSet (d, "a_ps u ab_ps", PSSet.union(a_ps, ab_ps))
+                           | NONE => ()
+                                     
+                val () = Debug.prints (d, "extension replace goto target " ^ labelString (imil, b) ^ "\n")
+                val newtarget = if block = getLabel (imil, b) then M.T {block=getLabel (imil, c), arguments=arguments}
+                                else t
+                val instr = IMil.IBlock.getTransfer (imil, a)
+                val () = Debug.printOrigInstr (d, imil, (a, b), instr)
+                val newinstr = IMil.MTransfer (M.TGoto(newtarget))
+                val () = IMil.IInstr.replaceMil (imil, instr, newinstr)
+                val () = Debug.printNewInstr (d, imil, newinstr)
+              in ()
+              end
+            else ()
 
         fun replaceTarget (a, b, c) =
             let
               val instr = IMil.IBlock.getTransfer' (imil, a)
               val () = case instr
                         of M.TGoto t => replaceGoto (a, b, c, instr, t)
-                         | M.TCase t => () (*replaceCase (a, b, c, instr, M.TCase, t)*)
+                         | M.TCase t => replaceCase (a, b, c, instr, M.TCase, t)
                          | M.TInterProc t => ()
                          | M.TReturn t => ()
                          | M.TCut t => ()
-                         | M.TPSumCase t => () (*replaceCase (a, b, c, instr, M.TPSumCase, t)*)
+                         | M.TPSumCase t => replaceCase (a, b, c, instr, M.TPSumCase, t)
             in ()
             end
 
-(*
-        fun checkDominance (a, b, c) =
-            let
-              val cfg = IMil.IFunc.getCfg (imil, ifunc)
-              val lbdomtree = MilCfg.getLabelBlockDomTree cfg
-              val ldomtree = Tree.map (lbdomtree, fn (l, b) => l)
-              val ldominfo = MilCfg.LabelDominance.new ldomtree
-
-            in ()
-            end
-*)            
         fun checkConsequentEdges (a, b, c) =
             let
               val bc_ps = getEdgePSSet (d, imil, (b, c))
@@ -607,7 +613,7 @@ struct
         val psDict = ref LD.empty
         val () = propagatePS' (d, psDict, imil, dom)
 
-        val () = Tree.foreachPre (dom, fn b => checkBlockPSExt (d, imil, psDict, b))
+        val () = Tree.foreachPre (dom, fn b => checkBlockPSExt (d, imil, ifunc, psDict, b))
       in
         Tree.foreachPre(dom, fn b => checkBlockPS (d, imil, !psDict, b))
       end
