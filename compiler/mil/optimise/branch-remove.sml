@@ -26,6 +26,7 @@ struct
   structure LU  = LayoutUtils
   structure ID  = Identifier
   structure LD  = ID.LabelDict
+  structure LDOM = MilCfg.LabelDominance
 
   datatype psCond =
            RCons of M.constant
@@ -374,8 +375,7 @@ struct
   fun diffEq   (eps1, eps2) = (hasSameOpnd (eps1, eps2)) andalso (     hasSameCond (eps1, eps2))  andalso (not (isEq (eps1, eps2)))
 
   fun isRedundant (d, eps, psset) =
-      hasRealOpnd (eps)
-      andalso PSSet.exists (psset, fn x => samePS (x, eps)) 
+      PSSet.exists (psset, fn x => samePS (x, eps)) 
       andalso (not (PSSet.exists (psset, fn x => diffCond (x, eps)))) 
       andalso (not (PSSet.exists (psset, fn x => diffEq (x, eps))))
 
@@ -479,39 +479,13 @@ struct
    *)
   fun checkBlockPSExt (d, imil, ifunc, psDict, a) = 
       let
-        fun replaceCase (a, b, c, instr, tCase, t as {on, cases, default}) =
-            let
-              val newcases = 
-                  Vector.map (cases, 
-                           fn (ct, M.T {block, arguments}) => if block = getLabel (imil, b) 
-                                                             then 
-                                                               let
-                                                                 val () = Debug.prints (d, "extension replace case target\n")
-                                                               in (ct, M.T {block=getLabel(imil, c), arguments=arguments})
-                                                               end
-                                                             else (ct, M.T {block=block, arguments=arguments}))
-              val newdefault = 
-                  (case default
-                    of NONE => default
-                     | SOME (M.T {block, arguments}) => if block = getLabel (imil, b)
-                                                        then
-                                                          let
-                                                            val () = Debug.prints (d, "extension replace default target\n")
-                                                          in SOME (M.T {block=getLabel (imil, c), arguments = arguments})
-                                                          end
-                                                        else default)
-              val instr = IMil.IBlock.getTransfer (imil, a)
-              val () = Debug.printOrigInstr (d, imil, (a, b), instr)
-              val newinstr = IMil.MTransfer (tCase {on=on, cases=newcases, default=default})
-              val () = IMil.IInstr.replaceMil (imil, instr, newinstr)
-              val () = Debug.printNewInstr (d, imil, newinstr)
-            in ()
-            end
-
         fun checkDominance (a, b, c) =
             let
               val mil as Mil.P {globals, symbolTable, entry} = IMil.T.unBuild imil
               val (_, mglobal) = IMil.IFunc.unBuild ifunc
+              val al = getLabel (imil, a)
+              val bl = getLabel (imil, b)
+              val cl = getLabel (imil, c)
             in 
               case mglobal
                of Mil.GCode cc => 
@@ -521,13 +495,47 @@ struct
                     val cfg = MilCfg.build (PD.getConfig d, si, body) 
                     val lbdomtree = MilCfg.getLabelBlockDomTree cfg
                     val ldomtree = Tree.map (lbdomtree, fn (l, _) => l)
-                    val ldominfo = MilCfg.LabelDominance.new ldomtree
-                  in (MilCfg.LabelDominance.dominates (ldominfo, getLabel(imil, a), getLabel(imil, b)))
-                     andalso (MilCfg.LabelDominance.dominates (ldominfo, getLabel(imil, b), getLabel(imil, c)))
+                    val ldom = LDOM.new ldomtree
+                  in 
+                    if ((LDOM.contains (ldom, al)) andalso (LDOM.contains (ldom, bl)) andalso (LDOM.contains (ldom, cl)))
+                    then (LDOM.dominates (ldom, al, bl)) andalso (LDOM.dominates (ldom, bl, bl))
+                    else false
                   end
                 | _ => false
             end
             
+        fun replaceCase (a, b, c, instr, tCase, t as {on, cases, default}) =
+            if checkDominance (a, b, c) then
+              let
+                val newcases = 
+                    Vector.map (cases, 
+                             fn (ct, M.T {block, arguments}) => if block = getLabel (imil, b) 
+                                                                then 
+                                                                  let
+                                                                    val () = Debug.prints (d, "extension replace case target\n")
+                                                                  in (ct, M.T {block=getLabel(imil, c), arguments=arguments})
+                                                                  end
+                                                                else (ct, M.T {block=block, arguments=arguments}))
+                val newdefault = 
+                    (case default
+                      of NONE => default
+                       | SOME (M.T {block, arguments}) => if block = getLabel (imil, b)
+                                                          then
+                                                            let
+                                                              val () = Debug.prints (d, "extension replace default target\n")
+                                                            in SOME (M.T {block=getLabel (imil, c), arguments = arguments})
+                                                            end
+                                                          else default)
+                val instr = IMil.IBlock.getTransfer (imil, a)
+                val () = Debug.printOrigInstr (d, imil, (a, b), instr)
+                val newinstr = IMil.MTransfer (tCase {on=on, cases=newcases, default=default})
+                val () = IMil.IInstr.replaceMil (imil, instr, newinstr)
+                val () = Debug.printNewInstr (d, imil, newinstr)
+                val () = PD.click (d, passname)
+              in ()
+              end
+            else ()
+
         fun replaceGoto (a, b, c, instr, t as M.T {block, arguments}) =
             if checkDominance (a, b, c) then
               let
@@ -558,15 +566,15 @@ struct
         fun replaceTarget (a, b, c) =
             let
               val instr = IMil.IBlock.getTransfer' (imil, a)
-              val () = case instr
-                        of M.TGoto t => replaceGoto (a, b, c, instr, t)
-                         | M.TCase t => replaceCase (a, b, c, instr, M.TCase, t)
-                         | M.TInterProc t => ()
-                         | M.TReturn t => ()
-                         | M.TCut t => ()
-                         | M.TPSumCase t => replaceCase (a, b, c, instr, M.TPSumCase, t)
-            in ()
-            end
+            in
+              case instr
+               of M.TGoto t => () (* replaceGoto (a, b, c, instr, t)*)(*fixme: this fails 0006, turn off now*)
+                | M.TCase t => replaceCase (a, b, c, instr, M.TCase, t)
+                | M.TInterProc t => ()
+                | M.TReturn t => ()
+                | M.TCut t => ()
+                | M.TPSumCase t => replaceCase (a, b, c, instr, M.TPSumCase, t)
+            end 
 
         fun checkConsequentEdges (a, b, c) =
             let
