@@ -6,8 +6,6 @@ sig
   type info
   type env
 
-  structure MilCfg : MIL_CFG
-
   val debugs : Config.Debug.debug list
 
   (* requires entry to dominate all blocks in the set of blocks
@@ -53,8 +51,6 @@ functor MilDataFlowAnalysisF (
   val passname : string
   val indent : int
 
-  structure MilCfg : MIL_CFG
-
   val deriveConstant : env * Mil.constant -> info
   val deriveInstr : env
                     * (Mil.variable -> info)
@@ -85,8 +81,7 @@ functor MilDataFlowAnalysisF (
   val layoutInfo : env * info -> Layout.t
 ) :> MIL_DATAFLOW_ANALYSIS where type env = env 
                              and type info = info 
-                             and type MilCfg.LabelDominance.t =
-                                      MilCfg.LabelDominance.t 
+
 = struct
   val mypassname = passname ^ ":DFA"
 
@@ -101,7 +96,6 @@ functor MilDataFlowAnalysisF (
   structure L = Layout
   structure LU = LayoutUtils
   structure M = Mil
-  structure MilCfg = MilCfg
   structure DomInfo = MilCfg.LabelDominance
   structure I = Identifier
   structure LS = Identifier.LabelSet

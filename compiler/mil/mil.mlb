@@ -40,13 +40,9 @@ local
         imil-t.sml
         imil.sml
         utils2.sml
-
         profile.sml 
-
         dataflow-analysis.sml
         dependence-analysis.sml
-        shape-analysis.sml
-
 in
         functor MilAnalyseF
         functor MilRewriterF
@@ -78,5 +74,4 @@ in
         functor MilProfilerF
         functor MilDataFlowAnalysisF
         functor MilDependenceAnalysisF
-        functor MilShapeAnalysisF
 end
