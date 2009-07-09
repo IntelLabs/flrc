@@ -25,6 +25,8 @@ sig
   val union : t * t -> t*)
   val intersection : t * t -> t
 
+  val out : t -> {lower : IntInf.t option, upper : IntInf.t option}
+
   val layout : t -> Layout.t
 
 end;
@@ -83,6 +85,8 @@ struct
       in
         if isEmpty ir then empty else ir
       end
+
+  fun out (IR {lower, upper}) = {lower = lower, upper = upper}
 
   local
     structure L = Layout
