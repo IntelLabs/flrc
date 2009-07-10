@@ -129,6 +129,11 @@ functor MilDataFlowAnalysisF (
         print msg
       else ()
 
+  structure Debug =
+  struct
+    fun trace s = print ("DFA tracing function: " ^ s ^ "\n")
+  end
+
   (*
    * state manipulation functions
    *)
