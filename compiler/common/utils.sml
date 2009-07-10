@@ -1601,9 +1601,8 @@ sig
 
   val get : 'a t -> 'a option
 
-  val join : {lub : 'a * 'a -> 'a option,
-              mkTop : 'a -> 'a} 
-             -> ('a t * 'a t -> 'a t)
+  (* If no lub, result it top *)
+  val join : {lub : 'a * 'a -> 'a option} -> ('a t * 'a t -> 'a t)
 
   val layout : ('a -> Layout.t) -> ('a t -> Layout.t)
   val equal : ('a * 'a -> bool) -> ('a t * 'a t -> bool)
@@ -1631,27 +1630,19 @@ struct
         of Elt e => SOME e
          | _ => NONE)
 
-  val rec topify = 
-   fn mkTop => 
-   fn t => 
-      (case t
-        of Top => Top
-         | Bot => Top
-         | Elt t => (mkTop t;Top))
       
   val rec join = 
-   fn {lub, mkTop} => 
+   fn {lub} => 
    fn (t1, t2) => 
       case (t1, t2)
-       of (Top, _) => topify mkTop t2
-        | (_, Top) => topify mkTop t1
+       of (Top, _) => Top
+        | (_, Top) => Top
         | (Bot, _) => t2
         | (_, Bot) => t1
         | (Elt e1, Elt e2) => 
           (case lub (e1, e2)
             of SOME e => Elt e
-             | NONE => (topify mkTop t1;
-                        topify mkTop t2))
+             | NONE => Top)
 
   local 
     structure L = Layout
@@ -1704,9 +1695,11 @@ end;
  * structure.
  *)
 functor RecLatticeFn(type 'a element
-                     val mkTop : 'a * ('a -> 'a) -> 'a element -> unit
+                     (* Given the join operation on the lattice, 
+                      * return the least upper bound of the elements if it exists.  
+                      * *)
                      val lub : (('a * 'a) -> 'a) -> 
-                                'a element * 'a element -> 'a element option)
+                               'a element * 'a element -> 'a element option)
         :>
          sig
            type t
@@ -1749,25 +1742,17 @@ struct
         of Elt e => SOME e
          | _ => NONE)
 
-  val rec topify = 
-      fn t => 
-         (case t
-           of Top => Top
-            | Bot => Top
-            | Elt t => (mkTop (Top, topify) t;Top))
-
   val rec join = 
    fn (t1, t2) => 
       case (t1, t2)
-       of (Top, _) => topify t2
-        | (_, Top) => topify t1
+       of (Top, _) => Top
+        | (_, Top) => Top
         | (Bot, _) => t2
         | (_, Bot) => t1
         | (Elt e1, Elt e2) => 
           (case lub join (e1, e2)
             of SOME e => Elt e
-             | NONE => (topify t1;
-                        topify t2))
+             | NONE => Top)
 
   local 
     structure L = Layout
@@ -1795,13 +1780,14 @@ end
 (* Basic non-recursive lattice
  *)
 functor LatticeFn(type element
-                  val mkTop : element -> unit
-                  val lub : element * element -> element option)
+                  val lub : element * element -> element option
+                  )
         :> LATTICE where type element = element = 
 struct
-  structure Lat = RecLatticeFn (type 'a element = element
-                                val mkTop = fn _ => mkTop
-                                val lub = fn _ => lub)
+  structure Lat = RecLatticeFn (struct
+                                  type 'a element = element
+                                  val lub = fn _ => lub
+                                end)
   open Lat
 end;
 
@@ -1809,16 +1795,14 @@ end;
  * for use in creating flat latttices 
  *)
 functor MkFlatFuns(type element
-                   val mkTop : element -> unit
-                   val equal : element * element -> bool) 
+                   val equal : element * element -> bool
+                   ) 
 : sig
     type element = element
-    val mkTop : element -> unit
     val lub : element * element -> element option
   end = 
 struct
   type element = element
-  val mkTop = mkTop
   val lub = 
    fn (a, b) => 
       if equal (a, b) then SOME a else NONE
@@ -1827,13 +1811,14 @@ end;
 (* Make a flat lattice, where lub(a, b) exists iff a = b
  *)
 functor FlatLatticeFn(type element
-                      val mkTop : element -> unit
-                      val equal : element * element -> bool) 
+                      val equal : element * element -> bool
+                      ) 
         :> LATTICE where type element = element = 
 struct
-  structure Lat = LatticeFn(MkFlatFuns(type element = element
-                                       val mkTop = mkTop
-                                       val equal = equal))
+  structure Lat = LatticeFn(MkFlatFuns(struct 
+                                         type element = element
+                                         val equal = equal
+                                       end))
   open Lat
 end;
 
@@ -1845,9 +1830,6 @@ end;
 functor LatticeVectorLatticeFn(structure Lattice : LATTICE)
         :> LATTICE where type element = Lattice.t Vector.t = 
 struct
-  val mkTop = 
-   fn v => Vector.foreach (v, fn a => ignore (Lattice.join (a, Lattice.top)))
-
   val lub = 
    fn (a, b) => 
       if Vector.length a = Vector.length b then
@@ -1855,9 +1837,10 @@ struct
       else 
         NONE
 
-  structure Lat = LatticeFn(type element = Lattice.t Vector.t
-                            val mkTop = mkTop
-                            val lub = lub)
+  structure Lat = LatticeFn(struct
+                              type element = Lattice.t Vector.t
+                              val lub = lub
+                            end)
   open Lat
 end;
 
@@ -1866,16 +1849,10 @@ end;
 * NONE and SOME are unrelated, SOMEs are related according to the
 * meet/join of their contents *)
 functor OptionLatticeFn(type element
-                        val mkTop : element -> unit
-                        val lub : element * element -> element option)
+                        val lub : element * element -> element option
+                        )
         :> LATTICE where type element = element option =
 struct
-  val mkTop = 
-   fn a =>
-      case a
-       of SOME v => mkTop v
-        | NONE => ()
-
   val lub = 
       (fn (a, b) => 
           (case (a, b)
@@ -1884,9 +1861,10 @@ struct
                Option.map(lub (a, b), SOME)
              | _ => NONE))
 
-  structure Lattice = LatticeFn(type element = element option
-                                val mkTop = mkTop
-                                val lub = lub)
+  structure Lattice = LatticeFn(struct
+                                  type element = element option
+                                  val lub = lub
+                                end)
   open Lattice
 end;
 
@@ -1894,13 +1872,14 @@ end;
  * of the option type are related only by equality
  *)
 functor FlatOptionLatticeFn(type element
-                            val mkTop : element -> unit
-                            val equal : element * element -> bool)
+                            val equal : element * element -> bool
+                            )
         :> LATTICE where type element = element option =
 struct
-  structure Lat = OptionLatticeFn(MkFlatFuns(type element = element
-                                             val mkTop = mkTop
-                                             val equal = equal))
+  structure Lat = OptionLatticeFn(MkFlatFuns(struct
+                                               type element = element
+                                               val equal = equal
+                                             end))
   open Lat
 end
 

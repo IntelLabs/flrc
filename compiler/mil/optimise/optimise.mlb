@@ -28,6 +28,7 @@ local
         rep-analyze.sml
         rep-reconstruct.sml
         rep-show.sml
+        rep-flowgraph.sml
         rep.sml
         vectorize.sml
         branch-remove.sml

@@ -94,6 +94,8 @@ struct
        and ('a, 'b) node = N of {uniqueId : int,
                                  outEdges : ('a, 'b) edge List.t ref,
                                  inEdges  : ('a, 'b) edge List.t ref,
+                                 preds    : ('a, 'b) node List.t ref, (* no duplicates *)
+                                 succs    : ('a, 'b) node List.t ref, (* no duplicates *)
                                  label    : 'a ref}
                                 
        and ('a, 'b) edge = E of {uniqueId : int,
@@ -121,19 +123,11 @@ struct
     val equal    = fn (n1, n2) => (compare (n1, n2) = EQUAL)
     val inEdges  = fn (N n) => !(#inEdges n)
     val outEdges = fn (N n) => !(#outEdges n)
+    val preds    = fn (N n) => !(#preds n)
+    val succs    = fn (N n) => !(#succs n)
     val getEdges : ('a, 'b) node * ('a, 'b) node -> ('a, 'b) edge List.t =
      fn (a, b) =>
         List.keepAll (outEdges (a), fn (e) => equal (Edge.to (e), b))
-
-    (* XXX EB: We may need a more efficient implementation. *)
-    val succs = 
-     fn (n) => 
-        Utils.uniqueList (List.map (outEdges (n), Edge.to), equal)
-
-    (* XXX EB: We may need a more efficient implementation. *)
-    val preds = 
-     fn (n) => 
-        Utils.uniqueList (List.map (inEdges (n), Edge.from), equal)
 
     val setLabel = fn (N n, v) => (#label n) := v
     val getLabel = fn (N n) => !(#label n)
@@ -149,20 +143,34 @@ struct
         newId
       end
       
-  fun filterOutEdge (list, e) = 
-      List.keepAll (list, fn e' => not (Edge.equal (e, e')))
+  fun filterEdge (list, e) = 
+      List.remove (list, fn e' => Edge.equal (e, e'))
 
-  fun filterOutNode (list, n) = 
-      List.keepAll (list, fn n' => not (Node.equal (n, n')))
+  fun filterNode (list, n) = 
+      List.remove (list, fn n' => Node.equal (n, n'))
 
   fun getNodeId (N n) = #uniqueId n
 
   fun getEdgeId (E e) = #uniqueId e
 
-  fun addNodeInEdge (N n, edge) = (#inEdges n) := edge::(!(#inEdges n))
+  fun addNodeInEdge (N n, edge) = 
+      let
+        val () = (#inEdges n) := edge::(!(#inEdges n))
+        val () = case List.peek (!(#preds n), fn n => Node.equal (n, Edge.from edge))
+                  of SOME _ => ()
+                   | NONE => (#preds n) := (Edge.from edge) :: (!(#preds n))
+      in ()
+      end
                                   
-  fun addNodeOutEdge (N n, edge) = (#outEdges n) := edge::(!(#outEdges n))
-                                   
+  fun addNodeOutEdge (N n, edge) = 
+      let
+        val () = (#outEdges n) := edge::(!(#outEdges n))
+        val () = case List.peek (!(#succs n), fn n => Node.equal (n, Edge.to edge))
+                  of SOME _ => ()
+                   | NONE => (#succs n) := (Edge.to edge) :: (!(#succs n))
+      in ()
+      end
+
   (* Graph: Edges operations. *)
   val addEdge : ('a, 'b) t * ('a, 'b) node * ('a, 'b) node * 'b -> ('a, 'b) edge =
    fn (G g, src, dst, label) =>
@@ -182,14 +190,23 @@ struct
   val deleteEdge =
    fn (G g, E e) =>
       let
-        val N src = #from e
+        val from as (N src) = #from e
+        val to as (N dst) = #to e
+        val isFrom = fn n => Node.equal (n, from)
+        val isTo = fn n => Node.equal (n, to)
+
         val outEdges = #outEdges src
-        val () = outEdges := filterOutEdge (!outEdges, E e)
-        val N dst = #to e
+        val () = outEdges := filterEdge (!outEdges, E e)
+        val () = if List.exists (!outEdges, isTo o Edge.to) then ()
+                 else (#succs src) := List.remove (!(#succs src), isTo)
+
         val inEdges = #inEdges dst
-        val () = inEdges := filterOutEdge (!inEdges, E e)
+        val () = inEdges := filterEdge (!inEdges, E e)
+        val () = if List.exists (!inEdges, isFrom o Edge.from) then ()
+                 else (#preds dst) := List.remove (!(#preds dst), isFrom)
+
         val edges = #edges g
-        val () = edges := filterOutEdge (!edges, E e)
+        val () = edges := filterEdge (!edges, E e)
       in ()
       end
 
@@ -202,6 +219,8 @@ struct
         val node = N {uniqueId = generateId (G g),
                       outEdges = ref nil,
                       inEdges  = ref nil,
+                      preds    = ref nil, 
+                      succs    = ref nil,
                       label    = ref label}
         val nodes = #nodes g
         val () = nodes := node::(!nodes)
@@ -217,7 +236,7 @@ struct
         val () = List.foreach (adjEdges, fn e => deleteEdge (G g, e))
         (* Remove the node from the graph. *)
         val nodes = #nodes g
-        val () = nodes := filterOutNode (!nodes, N n)
+        val () = nodes := filterNode (!nodes, N n)
       in ()
       end
 
@@ -240,6 +259,8 @@ struct
               N {uniqueId = uniqueId,
                  outEdges = ref nil,
                  inEdges  = ref nil,
+                 preds    = ref nil,
+                 succs    = ref nil,
                  label    = ref newLabel}
             end
         val newNodes = List.map (nodes (G g), mapNode)
@@ -417,7 +438,7 @@ struct
         fun visit (n) = visited := IntDict.insert (!visited, getNodeId (n), ())
         val () = Tree.foreachPre (tree, visit)
       in
-        List.keepAll (nodes (g), not o visitedNode)
+        List.removeAll (nodes (g), visitedNode)
       end
 
   val postOrderDfs : ('a, 'b) t * ('a, 'b) node -> ('a, 'b) node List.t =
