@@ -369,10 +369,7 @@ functor MilDataFlowAnalysisF (
 
         fun goTarget (E env, st, M.T {block, arguments}) =
             let
-              val () = dbgPrint (E env, "goTarget\n")
-
-              val argnfo = deriveBlock (#env env, stateDict (#env env, st), 
-                                        block, arguments)
+              val argnfo = deriveBlock (#env env, stateDict (#env env, st), block, arguments)
               val () = if envValidTarget (E env, block) then 
                          let
                            val () = projectArgs (E env, st, block, argnfo, m)
@@ -389,10 +386,7 @@ functor MilDataFlowAnalysisF (
             end 
         fun goSwitch (E env, st, {on, cases, default}) =
             let
-              val () = dbgPrint (E env, "goSwitch\n")
-
-              val () = Vector.foreach (cases, 
-                                       fn (_, t) => goTarget (E env, st, t))
+              val () = Vector.foreach (cases, fn (_, t) => goTarget (E env, st, t))
               val () = Option.app (default, fn (t) => goTarget (E env, st, t))
             in ()
             end
@@ -431,8 +425,7 @@ functor MilDataFlowAnalysisF (
     
   and inferBlock (env, st, M.B {instructions, transfer, ...}, m) = 
       let
-        val () = Vector.foreach (instructions, 
-                                 fn i => inferInstruction (env, st, i))
+        val () = Vector.foreach (instructions, fn i => inferInstruction (env, st, i))
         val () = inferTransfer (env, st, transfer, m)
       in () 
       end
