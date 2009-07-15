@@ -229,37 +229,37 @@ struct
   structure Double =
   struct
 
-    val td = B.td (M.FkBits M.Fs64)
+    val td = B.td (M.FkDouble)
 
     val typ = B.t (M.PokDouble, M.TDouble)
 
-    fun mk (c, opnd) = B.box (c, M.PokDouble, M.FkBits M.Fs64, opnd)
+    fun mk (c, opnd) = B.box (c, M.PokDouble, M.FkDouble, opnd)
 
     fun mkGlobal (c, d) =
-        B.boxGlobal (c, M.PokDouble, M.FkBits M.Fs64,
+        B.boxGlobal (c, M.PokDouble, M.FkDouble,
                      M.SConstant (M.CDouble d))
 
     val ofValIndex = B.ofValIndex
 
-    fun extract (c, v) = B.unbox (c, M.FkBits M.Fs64, v)
+    fun extract (c, v) = B.unbox (c, M.FkDouble, v)
 
   end
 
   structure Float =
   struct
 
-    val td = B.td (M.FkBits M.Fs32)
+    val td = B.td (M.FkFloat)
 
     val typ = B.t (M.PokFloat, M.TFloat)
 
-    fun mk (c, opnd) = B.box (c, M.PokFloat, M.FkBits M.Fs32, opnd)
+    fun mk (c, opnd) = B.box (c, M.PokFloat, M.FkFloat, opnd)
 
     fun mkGlobal (c, f) =
-        B.boxGlobal (c, M.PokFloat, M.FkBits M.Fs32, M.SConstant (M.CFloat f))
+        B.boxGlobal (c, M.PokFloat, M.FkFloat, M.SConstant (M.CFloat f))
 
     val ofValIndex = B.ofValIndex
 
-    fun extract (c, v) = B.unbox (c, M.FkBits M.Fs32, v)
+    fun extract (c, v) = B.unbox (c, M.FkFloat, v)
 
   end
 

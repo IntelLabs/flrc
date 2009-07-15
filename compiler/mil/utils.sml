@@ -1200,6 +1200,12 @@ struct
          of (M.FkRef,      M.FkRef     ) => EQUAL
           | (M.FkRef,      _           ) => LESS
           | (_,            M.FkRef     ) => GREATER
+          | (M.FkFloat,    M.FkFloat   ) => EQUAL
+          | (M.FkFloat,    _           ) => LESS
+          | (_,            M.FkFloat   ) => GREATER
+          | (M.FkDouble,   M.FkDouble  ) => EQUAL
+          | (M.FkDouble,      _        ) => LESS
+          | (_,            M.FkDouble  ) => GREATER
           | (M.FkBits fs1, M.FkBits fs2) => fieldSize (fs1, fs2)
 
     fun fieldDescriptor (M.FD fd1, M.FD fd2) =
@@ -2101,6 +2107,8 @@ struct
         case fk
          of M.FkRef => FieldSize.ptrSize config
           | M.FkBits fs => fs
+          | M.FkFloat => M.Fs32
+          | M.FkDouble => M.Fs64
 
     fun valueSize (config, fk) = FieldSize.toValueSize (fieldSize (config, fk))
     fun numBits   (config, fk) = FieldSize.numBits     (fieldSize (config, fk))
@@ -2110,6 +2118,8 @@ struct
         case fk
          of M.FkRef    => TRef
           | M.FkBits _ => TBits
+          | M.FkFloat  => TBits
+          | M.FkDouble => TBits
 
     fun isRef fk = traceabilityIsRef (traceability fk)
 
@@ -2117,6 +2127,8 @@ struct
         case fk
          of M.FkRef     => "ref"
           | M.FkBits fs => "bits" ^ (Int.toString (FieldSize.numBits fs))
+          | M.FkFloat   => "float"
+          | M.FkDouble  => "double"
 
     val compare = Compare.fieldKind
     val eq = Compare.C.equal compare
@@ -2142,14 +2154,18 @@ struct
 
     fun toTraceSize (c, fk) =
         (case fk
-          of M.FkRef => Typ.TsRef
-           | M.FkBits fs => Typ.TsBits (FieldSize.toValueSize fs))
+          of M.FkRef     => Typ.TsRef
+           | M.FkBits fs => Typ.TsBits (FieldSize.toValueSize fs)
+           | M.FkFloat   => Typ.TsBits (FieldSize.toValueSize M.Fs32)
+           | M.FkDouble  => Typ.TsBits (FieldSize.toValueSize M.Fs64))
 
     fun fromTyp (c, t) = fromTraceSize (c, Typ.traceabilitySize (c, t))
     fun toTyp fk = 
         (case fk
-          of M.FkRef => M.TRef
-           | M.FkBits fs => M.TBits (FieldSize.toValueSize fs))
+          of M.FkRef     => M.TRef
+           | M.FkBits fs => M.TBits (FieldSize.toValueSize fs)
+           | M.FkFloat   => M.TFloat
+           | M.FkDouble  => M.TDouble)
   end
 
   structure FieldDescriptor =

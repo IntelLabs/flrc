@@ -78,7 +78,7 @@ struct
 
   datatype fieldSize = Fs8 | Fs16 | Fs32 | Fs64
 
-  datatype fieldKind = FkRef | FkBits of fieldSize
+  datatype fieldKind = FkRef | FkBits of fieldSize | FkFloat | FkDouble
 
   datatype fieldDescriptor = FD of {kind : fieldKind, var : fieldVariance}
 
