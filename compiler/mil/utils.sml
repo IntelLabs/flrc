@@ -214,6 +214,7 @@ sig
     val toTraceSize : Config.t * t -> Typ.traceabilitySize 
       (* pre: result determined *)
     val fromTyp : Config.t * Typ.t -> t (* pre: result determined *)
+    val fromTyp' : Config.t * Typ.t -> t option
     val toTyp : t -> Typ.t 
   end
 
@@ -2159,14 +2160,46 @@ struct
            | M.FkFloat   => Typ.TsBits (FieldSize.toValueSize M.Fs32)
            | M.FkDouble  => Typ.TsBits (FieldSize.toValueSize M.Fs64))
 
-    fun fromTyp (c, t) = fromTraceSize (c, Typ.traceabilitySize (c, t))
+    val vsToFs = FieldSize.fromValueSize
+    fun fromTyp' (c, t) =
+        (case t
+          of M.TAny                       => NONE
+           | M.TAnyS vs                   => SOME (M.FkBits (vsToFs vs))
+           | M.TPtr                       => SOME (M.FkBits (FieldSize.ptrSize c))
+           | M.TRef                       => SOME M.FkRef
+           | M.TBits vs                   => SOME (M.FkBits (vsToFs vs))
+           | M.TNone                      => NONE
+           | M.TRat                       => SOME M.FkRef
+           | M.TInteger                   => SOME M.FkRef
+           | M.TName                      => SOME M.FkRef
+           | M.TIntegral sz               => SOME (M.FkBits (FieldSize.intArb (IntArb.typSize sz)))
+           | M.TFloat                     => SOME M.FkFloat
+           | M.TDouble                    => SOME M.FkDouble
+           | M.TViVector et               => NONE
+           | M.TViMask et                 => NONE
+           | M.TCode {cc, args, ress}     => SOME (M.FkBits (FieldSize.ptrSize c))
+           | M.TTuple {pok, fixed, array} => SOME M.FkRef
+           | M.TIdx                       => SOME M.FkRef
+           | M.TContinuation ts           => SOME (M.FkBits (FieldSize.ptrSize c))
+           | M.TThunk t                   => SOME M.FkRef
+           | M.TPAny                      => SOME M.FkRef
+           | M.TPFunction {args, ress}    => SOME M.FkRef
+           | M.TPSum nts                  => SOME M.FkRef
+           | M.TPType {kind, over}        => SOME M.FkRef
+           | M.TPRef t                    => SOME M.FkRef)
+
+    fun fromTyp (c, t) =
+        (case fromTyp' (c, t)
+          of SOME fk => fk
+           | NONE => Fail.fail ("MilUtils.FieldKind", "fromTyp", "No field kind for typ"))
+
     fun toTyp fk = 
         (case fk
           of M.FkRef     => M.TRef
            | M.FkBits fs => M.TBits (FieldSize.toValueSize fs)
            | M.FkFloat   => M.TFloat
            | M.FkDouble  => M.TDouble)
-  end
+  end (* structure FieldKind *)
 
   structure FieldDescriptor =
   struct
