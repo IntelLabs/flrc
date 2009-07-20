@@ -70,8 +70,8 @@ struct
   val filter = fn s => String.keepAll (s, enabled)
   val o0String = filter "fst"
   val o1String = filter "Sfst"
-  val o2String = filter "SVSISVSIJKBfst"
-  val o3String = filter "VSCSVSIRDSCSVLSRSIJKBfst"
+  val o2String = filter "SVSISVSISBSfst"
+  val o3String = filter "VSCSVSIRDSCSVLSRSIJKSBSfst"
 
   val o0Control = Option.valOf (parseControl o0String)
   val o1Control = Option.valOf (parseControl o1String)

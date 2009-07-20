@@ -797,6 +797,18 @@ struct
   datatype initAnalysis = IaUndetermined | IaOperand of M.operand | IaUnknown
   datatype loopAnalysis = LaUndetermined | LaIv of Rat.t | LaUnknown
 
+  fun layoutInitAnalysis (env, ia) =
+      case ia
+       of IaUndetermined => Layout.str "undet"
+        | IaOperand opnd => MilLayout.layoutOperand (getConfig env, getSi env, opnd)
+        | IaUnknown      => Layout.str "unknown"
+
+  fun layoutLoopAnalysis la =
+      case la
+       of LaUndetermined => Layout.str "undet"
+        | LaIv r         => Rat.layout r
+        | LaUnknown      => Layout.str "unknown"
+
   fun genBasicInductionVariables (state, env, cfg, ls) =
       let
         val LS {loops, ...} = ls
@@ -867,7 +879,7 @@ struct
                            if Rat.equals (m, Rat.one) andalso var = p andalso Rat.equals (c, step)
                            then (p, ia, la)
                            else (p, ia, LaUnknown))
-                    | LaUknown => (p, ia, la)
+                    | LaUnknown => (p, ia, la)
               fun unknown (p, _, _) = (p, IaUnknown, LaUnknown)
               fun doPred (pred, a) =
                   case Cfg.nodeGetLabelBlock (cfg, pred)
