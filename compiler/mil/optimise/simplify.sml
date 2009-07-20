@@ -1958,7 +1958,7 @@ struct
           val f = 
            fn ((d, imil, ws), (i, dests, {bool, ofVal})) =>
               let
-                val c = <@ MU.Simple.Dec.sConstant ofVal
+                val c = <@ MU.Simple.Dec.sConstant bool
                 val rhs = 
                     (case MU.Bool.toBool (PD.getConfig d, c)
                       of SOME true => M.RhsPSetNew ofVal

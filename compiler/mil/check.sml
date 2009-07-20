@@ -453,6 +453,10 @@ struct
             if MU.FieldSize.toValueSize fs = vs then () else err ()
           | (M.FkBits fs, MUT.TsNonRefPtr) =>
             if fs = MU.FieldSize.ptrSize (getConfig e) then () else err ()
+          | (M.FkFloat, MUT.TsBits vs) =>
+            if M.Vs32 = vs then () else err ()
+          | (M.FkDouble, MUT.TsBits vs) =>
+            if M.Vs64 = vs then () else err ()
           | (_, MUT.TsNone) => ()
           | _ => err ()
       end

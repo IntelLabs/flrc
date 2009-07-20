@@ -50,7 +50,7 @@ struct
              | M.PokThunk     => "VThunkTag"
              | M.PokRef       => "VRefTag")
         
-    fun pObjKindVtable pok =
+    fun pObjKindVTable pok =
         Pil.identifier
           (case pok
             of M.PokNone      => "pLsrVTableNone"
@@ -64,7 +64,7 @@ struct
              | M.PokSum       => "pLsrPSumVTable"
              | M.PokOptionSet => "pLsrPSetVTable"
              | M.PokType      => "pLsrPTypeVTable"
-             | M.PokThunk     => "pLsrThunkValVTable"
+             | M.PokThunk     => Fail.fail ("Runtime", "pObjKindVtable", "Must use Thunk.vTable")
              | M.PokRef       => "pLsrPRefVTable")
 
     val alwaysMutable   = Pil.identifier "PGC_ALWAYS_MUTABLE"
@@ -439,6 +439,8 @@ struct
             Fail.unimplemented ("Runtime.Thunk", "typ", "B16")
           | M.FkBits M.Fs32 => "32"
           | M.FkBits M.Fs64 => "64"
+          | M.FkFloat       => "Float"
+          | M.FkDouble      => "Double"
 
     fun boxedTyp    fk = Pil.identifier ("PlsrThunkB"           ^ typ fk)
     fun unboxedTyp  fk = Pil.identifier ("PlsrThunkU"           ^ typ fk)
@@ -454,7 +456,7 @@ struct
     fun return      fk = Pil.identifier ("pLsrThunkReturn"      ^ typ fk)
     fun cut         fk = Pil.identifier ("pLsrThunkCut"         ^ typ fk)
     fun fixedSize   fk = Pil.identifier ("pLsrThunkFixedSize"   ^ typ fk)
-
+    fun vTable      fk = Pil.identifier ("pLsrThunkValVTable"   ^ typ fk)
   end
 
   val pmain = Pil.identifier "__pmain"

@@ -340,6 +340,8 @@ struct
        case fk
         of M.FkRef => L.str "r"
          | M.FkBits fs => L.str ("b" ^ Int.toString (MU.FieldSize.numBits fs))
+         | M.FkFloat => L.str "f"
+         | M.FkDouble => L.str "d"
 
    fun layoutFieldKinds (env, fks) = 
        LU.parenSeq (layoutVector (env, layoutFieldKindShort, fks))
