@@ -292,21 +292,24 @@ struct
                        | _ => fail ("icc", "Bad opt level"))
                   | CcPillar => 
                     let
+                      val oLevel = 
+                          (case level
+                            of 0 => "-Od"
+                             | 1 => 
+                               let
+                                 val () = Chat.warn0 (config, 
+                                                      "Ignoring optimization flag to avoid Pillar bug")
+                               in "-O2"
+                               end
+                             | 2 => "-O2"
+                             | 3 => "-O2"
+                             | _ => fail ("picc", "Bad opt level"))
+
                       val opts = 
-                          ["-O2", "-Ob0", (* disable inlining*)
+                          [oLevel, "-Ob0", (* disable inlining*)
                            "-mP2OPT_pre=false", (* disable PRE *)
                            "-mCG_opt_mask=0xfffe"]
-                      val () = if level < 2 then
-                                 Chat.warn0 (config, 
-                                             "Ignoring optimization flag to avoid Pillar bug")
-                               else
-                                 ()
-                      val os = 
-                          if level <=3 then
-                            opts
-                          else
-                            fail ("picc", "Bad opt level")
-                    in os
+                    in opts
                     end
                )
          in ps
