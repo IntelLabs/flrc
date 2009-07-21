@@ -18,6 +18,7 @@ sig
   val layout : t -> Layout.t
   val bytes : size -> int
   val bits : size -> int
+  val typSize : typ -> size
   val equalTyps : typ * typ -> bool
   val compareSizes : size * size -> order
   val compareSigns : signed * signed -> order
@@ -139,6 +140,8 @@ struct
 
   fun bits sz =
       case sz of S8 => 8 | S16 => 16 | S32 => 32 | S64 => 64
+
+  fun typSize (T (sz, _)) = sz
 
   fun range (t as (T (sz, signed))) =
       let

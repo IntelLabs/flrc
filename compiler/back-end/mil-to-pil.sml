@@ -803,7 +803,8 @@ struct
                 else
                   ()
             val idx = off div ws
-            val () = Array.update (frefs, idx, true)
+            val isRef = MU.FieldKind.isRef typ
+            val () = Array.update (frefs, idx, isRef)
             val frefs = Array.toVector frefs
             val n =
                 case no
