@@ -479,7 +479,8 @@ struct
    *)
   fun checkBlockPSExt (d, imil, ifunc, psDict, a) = 
       let
-        fun checkDominance (a, b, c) =
+        fun checkDominance (a, b, c) = true
+        fun checkDominance1 (a, b, c) =
             let
               val mil as Mil.P {globals, symbolTable, entry} = IMil.T.unBuild imil
               val (_, mglobal) = IMil.IFunc.unBuild ifunc
