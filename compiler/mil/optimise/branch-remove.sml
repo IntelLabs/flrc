@@ -312,34 +312,6 @@ struct
       end
 
   (* propagate PS on dom tree *)
-(*
-  fun propagatePS (d, gDict, imil, tree) =
-      let
-        val domEdges = getDomTreeEdges tree
-        fun getInDomEdge tgtBlock = List.keepAll (domEdges, fn (a, b) => b = tgtBlock)
-
-        fun travNode (a) =
-            let
-              val inEdges = getInDomEdge a
-
-              fun foldf (e as (p, a), ps) =
-                  let
-                    val parentSet = LD.lookup(!gDict, getLabel(imil, p))
-                    val thisSet = getEdgePSSet(d, imil, (p, a))
-                    val curPS = if isSome (parentSet)
-                                then PSSet.union(valOf parentSet, thisSet)
-                                else thisSet
-                  in PSSet.union(ps, curPS)
-                  end
-
-              val ps = List.fold(inEdges, PSSet.empty, foldf)
-              val () = gDict := LD.insert (!gDict, getLabel(imil, a), ps)
-            in fn () => ()
-            end
-      in
-        Tree.traverse(tree, travNode)
-      end
-*)
   fun propagatePS' (d, gDict, imil, tree) =
       let
         fun doTree (Tree.T (a, children), ancestors) =
