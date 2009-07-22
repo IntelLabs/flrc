@@ -479,7 +479,8 @@ struct
    *)
   fun checkBlockPSExt (d, imil, ifunc, psDict, a) = 
       let
-        fun checkDominance (a, b, c) =
+        fun checkDominance (a, b, c) = true
+        fun checkDominance1 (a, b, c) =
             let
               val mil as Mil.P {globals, symbolTable, entry} = IMil.T.unBuild imil
               val (_, mglobal) = IMil.IFunc.unBuild ifunc
@@ -528,7 +529,7 @@ struct
                                                           else default)
                 val instr = IMil.IBlock.getTransfer (imil, a)
                 val () = Debug.printOrigInstr (d, imil, (a, b), instr)
-                val newinstr = IMil.MTransfer (tCase {on=on, cases=newcases, default=default})
+                val newinstr = IMil.MTransfer (tCase {on=on, cases=newcases, default=newdefault})
                 val () = IMil.IInstr.replaceMil (imil, instr, newinstr)
                 val () = Debug.printNewInstr (d, imil, newinstr)
                 val () = PD.click (d, passname)

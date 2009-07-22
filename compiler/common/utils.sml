@@ -619,7 +619,7 @@ sig
   val modify : 'a t * ('a -> 'a) -> unit
   val copy : 'a t -> 'a t
   val copyWith : 'a t * (key * 'a -> 'b) -> 'b t
-
+  val clear : 'a t -> unit
 end
 
 
@@ -659,7 +659,7 @@ struct
       case D.choose (!d)
        of SOME (dnew, l, a) => (d := dnew;SOME (l, a))
         | NONE => NONE
-
+  fun clear d = d := D.empty
 end
 
 structure ImpIntDict =

@@ -487,9 +487,13 @@ struct
           val tfsRef = thunkFixedSize (state, env, M.FkRef)
           val thunkSizeRef = mk (RT.Thunk.fixedSize M.FkRef, tfsRef)
           val tfs32 = thunkFixedSize (state, env, M.FkBits M.Fs32)
-          val thunkSize64 = mk (RT.Thunk.fixedSize (M.FkBits M.Fs32), tfs32)
+          val thunkSize32 = mk (RT.Thunk.fixedSize (M.FkBits M.Fs32), tfs32)
           val tfs64 = thunkFixedSize (state, env, M.FkBits M.Fs64)
-          val thunkSize32 = mk (RT.Thunk.fixedSize (M.FkBits M.Fs64), tfs64)
+          val thunkSize64 = mk (RT.Thunk.fixedSize (M.FkBits M.Fs64), tfs64)
+          val tfsFloat = thunkFixedSize (state, env, M.FkFloat)
+          val thunkSizeFloat = mk (RT.Thunk.fixedSize M.FkFloat, tfsFloat)
+          val tfsDouble = thunkFixedSize (state, env, M.FkDouble)
+          val thunkSizeDouble = mk (RT.Thunk.fixedSize M.FkDouble, tfsDouble)
           val smallRationalMin = mk (RT.Rat.smallMin, 
                                      IntInf.toInt RT.Rat.optMin)
           val smallRationalMax = mk (RT.Rat.smallMax, 
@@ -503,7 +507,7 @@ struct
                           arrayIIdxOffset, arrayIBaseSize,
                           funCodeOffset, funSize,
                           sumTagOffset, sumValOffset, sumSize,
-                          thunkSizeRef, thunkSize32, thunkSize64,
+                          thunkSizeRef, thunkSize32, thunkSize64, thunkSizeFloat, thunkSizeDouble,
                           smallRationalMax, smallRationalMin]
         end
 
@@ -754,7 +758,7 @@ struct
 
     fun genVtable (state, env, no, vtd as M.VTD {pok, ...}, nebi) =
         if vtTagOnly env then
-          Pil.E.namedConstant (RT.VT.pObjKindVtable pok)
+          Pil.E.namedConstant (RT.VT.pObjKindVTable pok)
         else
           let
             val vti = deriveVtInfo (state, env, no, vtd, nebi)
@@ -764,7 +768,7 @@ struct
 
     fun genVtableThunk (state, env, no, typ, fks) =
         if vtTagOnly env then
-          Pil.E.namedConstant (RT.VT.pObjKindVtable M.PokThunk)
+          Pil.E.namedConstant (RT.Thunk.vTable typ)
         else
           let
             val fs = OM.thunkSize (state, env, typ, fks)
@@ -799,7 +803,8 @@ struct
                 else
                   ()
             val idx = off div ws
-            val () = Array.update (frefs, idx, true)
+            val isRef = MU.FieldKind.isRef typ
+            val () = Array.update (frefs, idx, isRef)
             val frefs = Array.toVector frefs
             val n =
                 case no
