@@ -529,7 +529,7 @@ struct
                                                           else default)
                 val instr = IMil.IBlock.getTransfer (imil, a)
                 val () = Debug.printOrigInstr (d, imil, (a, b), instr)
-                val newinstr = IMil.MTransfer (tCase {on=on, cases=newcases, default=default})
+                val newinstr = IMil.MTransfer (tCase {on=on, cases=newcases, default=newdefault})
                 val () = IMil.IInstr.replaceMil (imil, instr, newinstr)
                 val () = Debug.printNewInstr (d, imil, newinstr)
                 val () = PD.click (d, passname)
