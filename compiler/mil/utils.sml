@@ -59,10 +59,6 @@ sig
     val global           : Mil.global t
   end
 
-  datatype traceability = TRef | TBits
-
-  val traceabilityIsRef : traceability -> bool
-
   structure CallConv :
   sig
     type 'a t = 'a Mil.callConv
@@ -123,10 +119,10 @@ sig
     val eq : t * t -> bool
   end
 
-  structure Typ :
+  structure TraceabilitySize :
   sig
-    type t = Mil.typ
-    datatype traceabilitySize =
+    datatype traceability = TRef | TBits
+    datatype t =
         TsAny
       | TsAnyS of ValueSize.t
       | TsBits of ValueSize.t
@@ -135,15 +131,23 @@ sig
       | TsRef
       | TsNone
       | TsMask of Mil.VI.elemType
-    val stringOfTraceabilitySize : traceabilitySize -> string
+    val toString : t -> string
+    val traceabilityIsRef : traceability -> bool
+    val traceability : t -> traceability option
+    val valueSize : Config.t * t -> ValueSize.t option
+    val subTS : Config.t * t * t -> bool
+  end
+
+  structure Typ :
+  sig
+
+    type t = Mil.typ
     val valueSize : Config.t * t -> ValueSize.t option
     val numBits : Config.t * t -> int option
     val numBytes : Config.t * t -> int option
-    val traceabilitySize : Config.t * t -> traceabilitySize
-    val fromTraceabilitySize : traceabilitySize -> t
-    val traceability : Config.t * t -> traceability option
-    val traceabilityFromTraceabilitySize : traceabilitySize -> traceability option
-    val subTraceabilitySize : Config.t * traceabilitySize * traceabilitySize -> bool
+    val traceabilitySize : Config.t * t -> TraceabilitySize.t
+    val fromTraceabilitySize : TraceabilitySize.t -> t
+    val traceability : Config.t * t -> TraceabilitySize.traceability option
     val isCore : t -> bool
     val compare : t Compare.t
     val eq : t * t -> bool
@@ -204,15 +208,14 @@ sig
     val valueSize : Config.t * t -> ValueSize.t
     val numBits : Config.t * t -> int
     val numBytes : Config.t * t -> int
-    val traceability : t -> traceability
+    val traceability : t -> TraceabilitySize.traceability
     val isRef : t -> bool
     val toString : t -> string
     val compare : t Compare.t
     val eq : t * t -> bool
     val nonRefPtr : Config.t -> t
-    val fromTraceSize : Config.t * Typ.traceabilitySize -> t
-    val toTraceSize : Config.t * t -> Typ.traceabilitySize 
-      (* pre: result determined *)
+    val fromTraceSize : Config.t * TraceabilitySize.t -> t
+    val toTraceSize : Config.t * t -> TraceabilitySize.t (* pre: result determined *)
     val fromTyp : Config.t * Typ.t -> t (* pre: result determined *)
     val fromTyp' : Config.t * Typ.t -> t option
     val toTyp : t -> Typ.t 
@@ -225,7 +228,7 @@ sig
     val valueSize : Config.t * t -> ValueSize.t
     val numBits : Config.t * t -> int
     val numBytes : Config.t * t -> int
-    val traceability : t -> traceability
+    val traceability : t -> TraceabilitySize.traceability
     val isRef : t -> bool
     val kind : t -> FieldKind.t
     val var : t -> FieldVariance.t
@@ -563,20 +566,13 @@ sig
     datatype kind =
         OekGoto of {args : Operand.t Vector.t}
       | OekCase of {on : Operand.t, eq : Constant.t, args : Operand.t Vector.t}
-      | OekCaseDefault of {
-          on    : Operand.t,
-          cases : Constant.t Vector.t,
-          args  : Operand.t Vector.t
-        }
-      | OekInterProcRet of
-        {callee : InterProc.t, rets : Mil.variable Vector.t, fx : Mil.effects}
+      | OekCaseDefault of {on    : Operand.t, cases : Constant.t Vector.t, args  : Operand.t Vector.t}
+      | OekInterProcRet of {callee : InterProc.t, rets : Mil.variable Vector.t, fx : Mil.effects}
       | OekInterProcTail of {callee : InterProc.t, fx : Mil.effects}
       | OekReturn of Operand.t Vector.t
       | OekCut
-      | OekPSumCase of
-        {on : Operand.t, eq : Mil.name, args : Operand.t Vector.t}
-      | OekPSumCaseDefault of
-        {on : Operand.t, cases : Mil.name Vector.t, args : Operand.t Vector.t}
+      | OekPSumCase of {on : Operand.t, eq : Mil.name, args : Operand.t Vector.t}
+      | OekPSumCaseDefault of {on : Operand.t, cases : Mil.name Vector.t, args : Operand.t Vector.t}
     datatype dest = OedBlock of Mil.label | OedExit
     datatype t = OE of {kind : kind, dest : dest}
     val target : t -> Mil.label option
@@ -782,8 +778,8 @@ sig
     val fromBool : Config.t * bool -> Constant.t
     val toBool : Config.t * Constant.t -> bool option
     (* XXX NG: mark which one is true and which false *)
-    val ifS : Config.t * Operand.t * Target.t * Target.t -> Constant.t Switch.t
-    val ifT : Config.t * Operand.t * Target.t * Target.t -> Transfer.t
+    val ifS : Config.t * Operand.t * {trueT : Target.t, falseT : Target.t} -> Constant.t Switch.t
+    val ifT : Config.t * Operand.t * {trueT : Target.t, falseT : Target.t} -> Transfer.t
   end
 
   structure Boxed :
@@ -945,15 +941,16 @@ sig
   structure Id : 
   sig
     datatype t = 
-             L of Mil.label    (* block label *)
-           | I of int          (* numbered instruction *)
-           | T of Mil.label    (* block transfer *)
-           | G of Mil.variable (* global *)
+        L of Mil.label    (* block label *)
+      | I of int          (* numbered instruction *)
+      | T of Mil.label    (* block transfer *)
+      | G of Mil.variable (* global *)
 
     val compare : t Compare.t
     val eq : t * t -> bool
     val layout : Mil.symbolInfo * t -> Layout.t 
 
+    structure Set : SET where type element = t
     structure Dict : DICT where type key = t
     structure ImpDict : DICT_IMP where type key = t
   end (* structure Id *)
@@ -1575,13 +1572,6 @@ struct
 
   end
 
-  datatype traceability = TRef | TBits
-
-  fun traceabilityIsRef t =
-      case t
-       of TRef  => true
-        | TBits => false
-
   structure CallConv =
   struct
 
@@ -1815,8 +1805,90 @@ struct
 
   end
 
+  structure TraceabilitySize =
+  struct
+
+    datatype traceability = TRef | TBits
+
+    datatype t =
+        TsAny
+      | TsAnyS of ValueSize.t
+      | TsBits of ValueSize.t
+      | TsPtr
+      | TsNonRefPtr
+      | TsRef
+      | TsNone
+      | TsMask of Mil.VI.elemType
+
+    fun toString ts =
+        case ts
+         of TsAny       => "Any"
+          | TsAnyS vs   => "Any" ^ ValueSize.toString vs
+          | TsBits vs   => "Bits" ^ Int.toString (ValueSize.numBits vs)
+          | TsPtr       => "Ptr"
+          | TsNonRefPtr => "NonRefPtr"
+          | TsRef       => "Ref"
+          | TsNone      => "None"
+          | TsMask vet  => "Mask(" ^ VI.stringOfElemTypeShort vet ^ ")"
+
+    fun traceabilityIsRef t =
+        case t
+         of TRef  => true
+          | TBits => false
+
+    fun traceability ts =
+        case ts
+         of TsAny       => NONE
+          | TsAnyS vs   => NONE
+          | TsBits vs   => SOME TBits
+          | TsPtr       => NONE
+          | TsNonRefPtr => SOME TBits
+          | TsRef       => SOME TRef
+          | TsNone      => NONE
+          | TsMask vet  => SOME TBits
+
+    fun valueSize (config, ts) =
+        case ts
+         of TsAny       => NONE
+          | TsAnyS vs   => SOME vs
+          | TsBits vs   => SOME vs
+          | TsPtr       => SOME (ValueSize.ptrSize config)
+          | TsNonRefPtr => SOME (ValueSize.ptrSize config)
+          | TsRef       => SOME (ValueSize.ptrSize config)
+          | TsNone      => NONE
+          | TsMask vet  => NONE
+
+    fun subTS (config, ts1, ts2) = 
+        case (ts1, ts2)
+         of (TsNone, _) => true
+          | (_, TsNone) => false
+          | (_, TsAny) => true
+          | (TsAny, _) => false
+          | (_, TsAnyS vs) => 
+            (case valueSize (config, ts1)
+              of SOME vs' => vs' = vs
+               | NONE => false)
+          | (TsAnyS _, _) => false
+          | (TsBits vs1, TsBits vs2) => vs1 = vs2
+          | (_, TsBits _) => false
+          | (TsBits _, _) => false
+          | (TsMask vit1, TsMask vit2) => VI.equalElemTypes (vit1, vit2)
+          | (_, TsMask _) => false
+          | (TsMask _, _) => false
+          | (TsPtr, TsPtr) => true
+          | (_, TsPtr) => true
+          | (TsPtr, _) => false
+          | (TsNonRefPtr, TsNonRefPtr) => true
+          | (_, TsNonRefPtr) => false
+          | (TsNonRefPtr, _) => false
+          | (TsRef, TsRef) => true
+
+  end
+
   structure Typ =
   struct
+
+    structure TS = TraceabilitySize
 
     type t = Mil.typ
 
@@ -1847,122 +1919,53 @@ struct
           | M.TPRef t                    => 
      *)
 
-    datatype traceabilitySize =
-        TsAny
-      | TsAnyS of ValueSize.t
-      | TsBits of ValueSize.t
-      | TsPtr
-      | TsNonRefPtr
-      | TsRef
-      | TsNone
-      | TsMask of VectorInstructions.elemType
-
-    fun stringOfTraceabilitySize ts =
-        case ts
-         of TsAny       => "Any"
-          | TsAnyS vs   => "Any" ^ ValueSize.toString vs
-          | TsBits vs   => "Bits" ^ Int.toString (ValueSize.numBits vs)
-          | TsPtr       => "Ptr"
-          | TsNonRefPtr => "NonRefPtr"
-          | TsRef       => "Ref"
-          | TsNone      => "None"
-          | TsMask vet  => "Mask(" ^ VectorInstructions.stringOfElemTypeShort vet ^ ")"
-
     fun integral (IntArb.T (sz, _)) = ValueSize.intArb sz
 
     fun traceabilitySize (c, t) =
         case t
-         of M.TAny                       => TsAny
-          | M.TAnyS vs                   => TsAnyS vs
-          | M.TPtr                       => TsPtr
-          | M.TRef                       => TsRef
-          | M.TBits vs                   => TsBits vs
-          | M.TNone                      => TsNone
-          | M.TRat                       => TsRef
-          | M.TInteger                   => TsRef
-          | M.TName                      => TsRef
-          | M.TIntegral sz               => TsBits (integral sz)
-          | M.TFloat                     => TsBits M.Vs32
-          | M.TDouble                    => TsBits M.Vs64
-          | M.TViVector et               => TsBits (ValueSize.vectorSize c)
-          | M.TViMask et                 => TsMask et
-          | M.TCode {cc, args, ress}     => TsNonRefPtr
-          | M.TTuple {pok, fixed, array} => TsRef
-          | M.TIdx                       => TsRef
-          | M.TContinuation ts           => TsNonRefPtr
-          | M.TThunk t                   => TsRef
-          | M.TPAny                      => TsRef
-          | M.TPFunction {args, ress}    => TsRef
-          | M.TPSum nts                  => TsRef
-          | M.TPType {kind, over}        => TsRef
-          | M.TPRef t                    => TsRef
+         of M.TAny                       => TS.TsAny
+          | M.TAnyS vs                   => TS.TsAnyS vs
+          | M.TPtr                       => TS.TsPtr
+          | M.TRef                       => TS.TsRef
+          | M.TBits vs                   => TS.TsBits vs
+          | M.TNone                      => TS.TsNone
+          | M.TRat                       => TS.TsRef
+          | M.TInteger                   => TS.TsRef
+          | M.TName                      => TS.TsRef
+          | M.TIntegral sz               => TS.TsBits (integral sz)
+          | M.TFloat                     => TS.TsBits M.Vs32
+          | M.TDouble                    => TS.TsBits M.Vs64
+          | M.TViVector et               => TS.TsBits (ValueSize.vectorSize c)
+          | M.TViMask et                 => TS.TsMask et
+          | M.TCode {cc, args, ress}     => TS.TsNonRefPtr
+          | M.TTuple {pok, fixed, array} => TS.TsRef
+          | M.TIdx                       => TS.TsRef
+          | M.TContinuation ts           => TS.TsNonRefPtr
+          | M.TThunk t                   => TS.TsRef
+          | M.TPAny                      => TS.TsRef
+          | M.TPFunction {args, ress}    => TS.TsRef
+          | M.TPSum nts                  => TS.TsRef
+          | M.TPType {kind, over}        => TS.TsRef
+          | M.TPRef t                    => TS.TsRef
 
     fun fromTraceabilitySize ts =
         (case ts
-          of TsAny       => M.TAny
-           | TsAnyS vs   => M.TAnyS vs
-           | TsBits vs   => M.TBits vs
-           | TsPtr       => M.TPtr
-           | TsNonRefPtr => M.TPtr
-           | TsRef       => M.TRef
-           | TsNone      => M.TNone
-           | TsMask et   => M.TViMask et)
+          of TS.TsAny       => M.TAny
+           | TS.TsAnyS vs   => M.TAnyS vs
+           | TS.TsBits vs   => M.TBits vs
+           | TS.TsPtr       => M.TPtr
+           | TS.TsNonRefPtr => M.TPtr
+           | TS.TsRef       => M.TRef
+           | TS.TsNone      => M.TNone
+           | TS.TsMask et   => M.TViMask et)
 
-    fun valueSizeFromTraceabilitySize (config, ts) =
-        case ts
-         of TsAny       => NONE
-          | TsAnyS vs   => SOME vs
-          | TsBits vs   => SOME vs
-          | TsPtr       => SOME (ValueSize.ptrSize config)
-          | TsNonRefPtr => SOME (ValueSize.ptrSize config)
-          | TsRef       => SOME (ValueSize.ptrSize config)
-          | TsNone      => NONE
-          | TsMask vet  => NONE
+    fun valueSize (config, t) =  TS.valueSize (config, traceabilitySize (config, t))
 
-    fun valueSize (config, t) =  valueSizeFromTraceabilitySize (config, traceabilitySize (config, t))
+    fun numBytes (config, t) = Option.map (valueSize (config, t), ValueSize.numBytes)
 
-    fun numBytes (config, t) =
-        Option.map (valueSize (config, t), ValueSize.numBytes)
+    fun numBits (config, t) = Option.map (valueSize (config, t), ValueSize.numBits)
 
-    fun numBits (config, t) =
-        Option.map (valueSize (config, t), ValueSize.numBits)
-
-    fun traceabilityFromTraceabilitySize ts =
-        (case ts
-          of TsAny       => NONE
-           | TsAnyS vs   => NONE
-           | TsBits vs   => SOME TBits
-           | TsPtr       => NONE
-           | TsNonRefPtr => SOME TBits
-           | TsRef       => SOME TRef
-           | TsNone      => NONE
-           | TsMask vet  => SOME TBits)
-
-    fun traceability (c, t) = traceabilityFromTraceabilitySize (traceabilitySize (c, t))
-
-    fun subTraceabilitySize (config, ts1, ts2) = 
-        (case (ts1, ts2)
-          of (TsNone, _) => true
-           | (_, TsNone) => false
-           | (_, TsAny) => true
-           | (TsAny, _) => false
-           | (_, TsAnyS vs) => 
-             (case valueSizeFromTraceabilitySize (config, ts1)
-               of SOME vs' => vs' = vs
-                | NONE => false)
-           | (TsAnyS _, _) => false
-           | (TsBits vs1, TsBits vs2) => vs1 = vs2
-           | (_, TsBits _) => false
-           | (TsBits _, _) => false
-           | (TsMask vit1, TsMask vit2) => VI.equalElemTypes (vit1, vit2)
-           | (_, TsMask _) => false
-           | (TsMask _, _) => false
-           | (_, TsPtr) => true
-           | (TsPtr, _) => false
-           | (TsNonRefPtr, TsNonRefPtr) => true
-           | (_, TsNonRefPtr) => false
-           | (TsNonRefPtr, _) => false
-           | (TsRef, TsRef) => true)
+    fun traceability (c, t) = TS.traceability (traceabilitySize (c, t))
 
     fun isCore t =
         case t
@@ -2102,6 +2105,8 @@ struct
   structure FieldKind =
   struct
 
+    structure TS = TraceabilitySize
+
     type t = Mil.fieldKind
 
     fun fieldSize (config, fk) =
@@ -2117,12 +2122,12 @@ struct
 
     fun traceability fk =
         case fk
-         of M.FkRef    => TRef
-          | M.FkBits _ => TBits
-          | M.FkFloat  => TBits
-          | M.FkDouble => TBits
+         of M.FkRef    => TS.TRef
+          | M.FkBits _ => TS.TBits
+          | M.FkFloat  => TS.TBits
+          | M.FkDouble => TS.TBits
 
-    fun isRef fk = traceabilityIsRef (traceability fk)
+    fun isRef fk = TS.traceabilityIsRef (traceability fk)
 
     fun toString fk =
         case fk
@@ -2138,29 +2143,28 @@ struct
 
     fun fromTraceSize (c, ts) =
         let
-          fun err () =
-              Fail.fail ("MilUtils.FieldKind", "fromTraceSize",
-                         "bad trace size " ^ (Typ.stringOfTraceabilitySize ts))
+          fun err () = Fail.fail ("MilUtils.FieldKind", "fromTraceSize", "bad trace size " ^ (TS.toString ts))
         in
           case ts
-           of Typ.TsAny       => err ()
-            | Typ.TsAnyS vs   => err ()
-            | Typ.TsBits vs   => M.FkBits (FieldSize.fromValueSize vs)
-            | Typ.TsPtr       => err ()
-            | Typ.TsNonRefPtr => nonRefPtr c
-            | Typ.TsRef       => M.FkRef
-            | Typ.TsNone      => err ()
-            | Typ.TsMask vs   => err ()
+           of TS.TsAny       => err ()
+            | TS.TsAnyS vs   => err ()
+            | TS.TsBits vs   => M.FkBits (FieldSize.fromValueSize vs)
+            | TS.TsPtr       => err ()
+            | TS.TsNonRefPtr => nonRefPtr c
+            | TS.TsRef       => M.FkRef
+            | TS.TsNone      => err ()
+            | TS.TsMask vs   => err ()
         end
 
     fun toTraceSize (c, fk) =
         (case fk
-          of M.FkRef     => Typ.TsRef
-           | M.FkBits fs => Typ.TsBits (FieldSize.toValueSize fs)
-           | M.FkFloat   => Typ.TsBits (FieldSize.toValueSize M.Fs32)
-           | M.FkDouble  => Typ.TsBits (FieldSize.toValueSize M.Fs64))
+          of M.FkRef     => TS.TsRef
+           | M.FkBits fs => TS.TsBits (FieldSize.toValueSize fs)
+           | M.FkFloat   => TS.TsBits (FieldSize.toValueSize M.Fs32)
+           | M.FkDouble  => TS.TsBits (FieldSize.toValueSize M.Fs64))
 
     val vsToFs = FieldSize.fromValueSize
+
     fun fromTyp' (c, t) =
         (case t
           of M.TAny                       => NONE
@@ -2199,6 +2203,7 @@ struct
            | M.FkBits fs => M.TBits (FieldSize.toValueSize fs)
            | M.FkFloat   => M.TFloat
            | M.FkDouble  => M.TDouble)
+
   end (* structure FieldKind *)
 
   structure FieldDescriptor =
@@ -2215,7 +2220,7 @@ struct
     fun numBytes  (config, fd) = FieldKind.numBytes  (config, kind fd)
 
     fun traceability fd = FieldKind.traceability (kind fd)
-    fun isRef fd = traceabilityIsRef (traceability fd)
+    fun isRef fd = TraceabilitySize.traceabilityIsRef (traceability fd)
 
     fun mutable   fd = FieldVariance.mutable   (var fd)
     fun immutable fd = FieldVariance.immutable (var fd)
@@ -3619,10 +3624,10 @@ struct
         else
           NONE
 
-    fun ifS (c, opnd, tt, ft) =
-        Switch.noDefault (opnd, Vector.new2 ((T c, tt), (F c, ft)))
+    fun ifS (c, opnd, {trueT, falseT}) =
+        Switch.noDefault (opnd, Vector.new2 ((T c, trueT), (F c, falseT)))
 
-    fun ifT (c, opnd, tt, ft) = M.TCase (ifS (c, opnd, tt, ft))
+    fun ifT (c, opnd, x) = M.TCase (ifS (c, opnd, x))
 
   end
 
@@ -4157,14 +4162,16 @@ struct
               | T l => L.seq [L.str "T_",SymbolInfo.layoutLabel (si, l)]
               | G v => L.seq [L.str "G_",SymbolInfo.layoutVariable (si, v)])
 
-    structure Dict = DictF (struct
-                              type t = t
-                              val compare = compare
-                            end)
-    structure ImpDict = DictImpF (struct
-                                    type t = t
-                                    val compare = compare
-                                  end)
+    structure Ord =
+    struct
+      type t = t
+      val compare = compare
+    end
+
+    structure Set = SetF (Ord)
+    structure Dict = DictF (Ord)
+    structure ImpDict = DictImpF (Ord)
+
   end (* structure Id *)
 
   structure FlatTyp =
