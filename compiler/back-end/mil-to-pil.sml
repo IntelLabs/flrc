@@ -1012,7 +1012,7 @@ struct
         val fts =
             case xt
              of NONE => fts
-              | SOME t => fts @ [(RT.Tuple.xtras, Pil.T.array t)]
+              | SOME xt => fts @ [(RT.Tuple.xtras, Pil.T.array xt)]
       in
         Pil.T.strct (NONE, fts)
       end
@@ -1041,11 +1041,11 @@ struct
           let
             val fixed = Vector.map (fixed, #1)
             val fs = genTyps (state, env, fixed)
-            val xs = 
+            val xt =
                 case array
-                 of NONE => NONE
-                  | SOME (t, _) => SOME (genTyp (state, env, t))
-            val t = tupleUnboxedTyp (pok, fs, xs)
+                 of (M.TNone, _) => NONE
+                  | (t, _)       => SOME (genTyp (state, env, t))
+            val t = tupleUnboxedTyp (pok, fs, xt)
           in t
           end
         | M.TIdx => Pil.T.named RT.T.idxU
@@ -1978,7 +1978,7 @@ struct
             val x = genVar (state, env, v)
             val ts = MTT.operands (getConfig env, getSymbolInfo state, inits)
             val tvs = Vector.map (ts, fn t => (t, M.FvReadWrite))
-            val t = M.TTuple {pok = pok, fixed = tvs, array = NONE}
+            val t = MU.Typ.fixedArray (pok, tvs)
             val fs = genTyps (state, env, ts)
             val utt = tupleUnboxedTyp (pok, fs, NONE)
             val ut = Pil.D.typDef (utt, tv)

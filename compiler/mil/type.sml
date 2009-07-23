@@ -185,23 +185,16 @@ struct
                      | (M.FvReadWrite, M.FvReadWrite) => equal (t1, t2)
                fun checkFields idx =
                    if idx < Vector.size ftvs2 then
-                     checkField (Vector.sub (ftvs1, idx),
-                                 Vector.sub (ftvs2, idx)) andalso
+                     checkField (Vector.sub (ftvs1, idx), Vector.sub (ftvs2, idx)) andalso
                      checkFields (idx + 1)
                    else
                      checkArray idx
                and checkArray idx =
-                   case a2
-                    of NONE => true
-                     | SOME tv => checkArray' (idx, tv)
-               and checkArray' (idx, tv) =
                    if idx < Vector.size ftvs1 then
-                     checkField (Vector.sub (ftvs1, idx), tv) andalso
-                     checkArray' (idx + 1, tv)
+                     checkField (Vector.sub (ftvs1, idx), a2) andalso
+                     checkArray (idx + 1)
                    else
-                     case a1
-                      of NONE => false
-                       | SOME tv' => checkField (tv', tv)
+                     checkField (a1, a2)
              in checkFields 0
              end
            | (M.TIdx, M.TIdx) => true
@@ -422,13 +415,13 @@ struct
            val sub = fn (t1, t2) => if subtype (config, t1, t2) then SOME t2 else NONE
 
            val field = 
-               Try.lift 
                (fn ((t1, fv1), (t2, fv2)) => 
                    (case (fv1, fv2)
                      of (M.FvReadOnly, M.FvReadOnly) => (lub (t1, t2), M.FvReadOnly)
-                      | (M.FvReadOnly, M.FvReadWrite) => (<@ sub (t1, t2), M.FvReadOnly)
-                      | (M.FvReadWrite, M.FvReadOnly) => (<@ sub (t2, t1), M.FvReadOnly)
-                      | (M.FvReadWrite, M.FvReadWrite) => (<@ eq (t1, t2), M.FvReadWrite)))
+                      | (M.FvReadOnly, M.FvReadWrite) => (lub (t1, t2), M.FvReadOnly)
+                      | (M.FvReadWrite, M.FvReadOnly) => (lub (t2, t1), M.FvReadOnly)
+                      | (M.FvReadWrite, M.FvReadWrite) =>
+                        if MU.Typ.eq (t1, t2) then (t1, M.FvReadWrite) else (lub (t1, t2), M.FvReadOnly)))
 
           (*
            * LUB: t1 v t2
@@ -449,23 +442,8 @@ struct
                      val (fixed2, extras2) = Utils.Vector.split (fixed2, len)
                      (* One is empty *)
                      val extras = Vector.concat [extras1, extras2]
-                     val help = 
-                      fn (tv1, tv2, truncate) => 
-                         let
-                           val tv = if truncate then NONE else field (tv1, tv2)
-                         in (tv, truncate orelse not (isSome tv))
-                         end
-                     val (fixedO, truncate) = Vector.map2AndFold (fixed1, fixed2, false, help)
-                     val fixed = Vector.keepAllSome fixedO
-                     val array = 
-                         (case (array1, array2, truncate)
-                           of (NONE, _, _) => NONE
-                            | (_, NONE, _) => NONE
-                            | (_, _, true) => NONE
-                            | (SOME f1, SOME f2, _) => 
-                              Try.try 
-                                (fn () =>
-                                    Vector.fold (extras, <@ field (f1, f2), <@ field)))
+                     val fixed = Vector.map2 (fixed1, fixed2, field)
+                     val array = Vector.fold (extras, field (array1, array2), field)
                    in M.TTuple {pok = pok, fixed = fixed, array = array}
                    end)
                
@@ -578,16 +556,9 @@ struct
                          val pok = <@ pObjKind (pok1, pok2)
                          val (fixed2, extras2) = Utils.Vector.split (fixed2, Vector.length fixed1)
                          val fixedA = Vector.map2 (fixed1, fixed2, <@ field)
-                         val fixedB = 
-                             case array1
-                              of SOME f => Vector.map (extras2, fn f2 => (<@ field (f, f2)))
-                               | NONE => extras2
+                         val fixedB = Vector.map (extras2, fn f2 => (<@ field (array1, f2)))
                          val fixed = Vector.concat [fixedA, fixedB]
-                         val array = 
-                             (case (array1, array2)
-                               of (NONE, _) => array2
-                                | (_, NONE) => array1
-                                | (SOME f1, SOME f2) => SOME (<@ field (f1, f2)))
+                         val array = <@ field (array1, array2)
                        in M.TTuple {pok = pok, fixed = fixed, array = array}
                        end)
                
@@ -843,10 +814,8 @@ struct
            | M.GErrorVal t => t
            | M.GIdx _ => M.TIdx
            | M.GTuple {vtDesc, inits} => 
-             M.TTuple {pok = MU.VTableDescriptor.pok vtDesc,
-                       fixed = Vector.map (simples (config, si, inits),
-                                           fn t => (t, M.FvReadWrite)),
-                       array = NONE}
+             MU.Typ.fixedArray (MU.VTableDescriptor.pok vtDesc,
+                                Vector.map (simples (config, si, inits), fn t => (t, M.FvReadWrite)))
            | M.GRat _ => M.TRat
            | M.GInteger _ => M.TInteger
            | M.GThunkValue {typ, ofVal} =>

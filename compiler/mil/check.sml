@@ -190,7 +190,7 @@ struct
                                           end
         | M.TTuple {pok, fixed, array} => let
                                             val () = typVars (s, e, m, fixed)
-                                            val () = typVarO (s, e, m, array)
+                                            val () = typVar (s, e, m, array)
                                           in ()
                                           end
         | M.TIdx                       => ()
@@ -214,11 +214,14 @@ struct
                                           end
         | M.TPType {kind, over}        => typ (s, e, m, over)
         | M.TPRef t                    => typ (s, e, m, t)
-  and typs (s, e, m, ts) = Vector.foreach (ts, fn t => typ (s, e, m, t))
+  and typs (s, e, m, ts) =
+      Vector.foreach (ts, fn t => typ (s, e, m, t))
+  and typVar (s, e, m, (t, _)) =
+      typ (s, e, m, t)
   and typVars (s, e, m, tvs) =
-      Vector.foreach (tvs, fn (t, _) => typ (s, e, m, t))
+      Vector.foreach (tvs, fn tv => typVar (s, e, m, tv))
   and typVarO (s, e, m, tvo) =
-      Option.foreach (tvo, fn (t, _) => typ (s, e, m, t))
+      Option.foreach (tvo, fn tv => typVar (s, e, m, tv))
 
   fun knownTraceSize (s, e, t, msg) =
       case MUT.traceabilitySize (getConfig e, t)
@@ -1261,7 +1264,7 @@ struct
                   val () = assert (s, Vector.length inits = fixedLen + varLen,
                                    fn () => msg () ^ ": wrong number of inits")
                   val tvs = Vector.map (ts, fn t => (t, M.FvReadWrite))
-                  val t = M.TTuple {pok = pok, fixed = tvs, array = NONE}
+                  val t = MU.Typ.fixedArray (pok, tvs)
                 in t
                 end
               | M.GRat r => M.TRat

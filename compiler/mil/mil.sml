@@ -64,7 +64,7 @@ struct
     | TTuple of {
         pok   : pObjKind,
         fixed : (typ * fieldVariance) Vector.t,
-        array : (typ * fieldVariance) option
+        array : (typ * fieldVariance)
       }
     | TIdx
     | TContinuation of typ Vector.t

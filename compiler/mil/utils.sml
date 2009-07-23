@@ -152,6 +152,8 @@ sig
     val compare : t Compare.t
     val eq : t * t -> bool
 
+    val fixedArray : PObjKind.t * (t * FieldVariance.t) Vector.t -> t
+
     structure Dec :
     sig
       val tAny : t -> unit option
@@ -169,11 +171,8 @@ sig
       val tViVector : t -> Mil.VI.elemType option
       val tViMask : t -> Mil.VI.elemType option
       val tCode : t -> {cc : t Mil.callConv, args : t Vector.t, ress : t Vector.t} option
-      val tTuple : t -> {
-                  pok   : Mil.pObjKind,
-                  fixed : (t * Mil.fieldVariance) Vector.t,
-                  array : (t * Mil.fieldVariance) option
-                  } option
+      val tTuple :
+          t -> {pok   : Mil.pObjKind, fixed : (t * Mil.fieldVariance) Vector.t, array : t * Mil.fieldVariance} option
       val tIdx : t -> unit option
       val tContinuation : t -> t Vector.t option
       val tThunk : t -> t option
@@ -1100,14 +1099,9 @@ struct
         let
           val intArb = IntArb.compareTyps
           val viElemType = VI.Compare.elemType
-          val code =
-              C.rec3 (#cc, callConv typ, #args, C.vector typ,
-                      #ress, C.vector typ)
+          val code = C.rec3 (#cc, callConv typ, #args, C.vector typ, #ress, C.vector typ)
           val typVar = C.pair (typ, fieldVariance)
-          val tuple =
-              C.rec3 (#pok, pObjKind,
-                      #fixed, C.vector typVar,
-                      #array, C.option typVar)
+          val tuple = C.rec3 (#pok, pObjKind, #fixed, C.vector typVar, #array, typVar)
           val pclosure = C.rec2 (#args, C.vector typ, #ress, C.vector typ)
           fun psum (x1, x2) = ND.compare (x1, x2, typ)
           val ptype = C.rec2 (#kind, typKind, #over, typ)
@@ -1996,6 +1990,8 @@ struct
 
     val compare = Compare.typ
     val eq = Compare.C.equal compare
+
+    fun fixedArray (pok, tvs) = M.TTuple {pok = pok, fixed = tvs, array = (M.TNone, M.FvReadWrite)}
 
     structure Dec =
     struct
@@ -3634,10 +3630,7 @@ struct
   structure Boxed =
   struct
 
-    fun t (pok, ofTyp) =
-        M.TTuple {pok = pok,
-                  fixed = Vector.new1 (ofTyp, M.FvReadOnly),
-                  array = NONE}
+    fun t (pok, ofTyp) = Typ.fixedArray (pok, Vector.new1 (ofTyp, M.FvReadOnly))
 
     fun td fk =
         let
@@ -3668,12 +3661,10 @@ struct
 
   end
 
-
   structure Tuple =
   struct
 
-    val typ = 
-     fn (pok, ts) => M.TTuple {pok = pok, fixed = ts, array = NONE}
+    fun typ (pok, tvs) = Typ.fixedArray (pok, tvs)
 
     val td =
      fn fds => M.TD {fixed = fds, array = NONE}
@@ -3727,13 +3718,11 @@ struct
           fun addVar t = (t, M.FvReadOnly)
           val tvs = Vector.map (Utils.Vector.cons (Uintp.t c, ts), addVar)
         in
-          M.TTuple {pok = pok, fixed = tvs, array = NONE}
+          Typ.fixedArray (pok, tvs)
         end
 
     fun varTyp (c, pok, t) =
-        M.TTuple {pok = pok,
-                  fixed = Vector.new1 (Uintp.t c, M.FvReadOnly),
-                  array = SOME (t, M.FvReadOnly)}
+        M.TTuple {pok = pok, fixed = Vector.new1 (Uintp.t c, M.FvReadOnly), array = (t, M.FvReadOnly)}
 
     datatype typ = TNot | TFixed of Typ.t Vector.t | TVar of Typ.t
 
@@ -3748,15 +3737,15 @@ struct
           fun stripLen tvs = Vector.map (Vector.dropPrefix (tvs, 1), #1)
         in
           case t
-           of M.TTuple {pok, fixed, array = NONE} =>
+           of M.TTuple {pok, fixed, array = (M.TNone, _)} =>
               if checkLen fixed andalso checkRO fixed
               then TFixed (stripLen fixed)
               else TNot
-          | M.TTuple {pok, fixed, array = SOME (t, M.FvReadOnly)} =>
-            if checkLen fixed andalso Vector.length fixed = 1
-            then TVar t
-            else TNot
-          | _ => TNot
+            | M.TTuple {pok, fixed, array = (t, M.FvReadOnly)} =>
+              if checkLen fixed andalso Vector.length fixed = 1
+              then TVar t
+              else TNot
+            | _ => TNot
         end
             
     fun tdFixed (c, fks) =
@@ -3836,22 +3825,21 @@ struct
         let
           val f = Vector.concat [Vector.new2 (Uintp.t c, M.TIdx), ts]
           val f = Vector.map (f, fn t => (t, M.FvReadOnly))
-        in M.TTuple {pok = pok, fixed = f, array = NONE}
+        in
+          Typ.fixedArray (pok, f)
         end
 
     fun varTyp (c, pok, t) =
         M.TTuple {pok = pok,
-                  fixed = Vector.new2 ((Uintp.t c, M.FvReadOnly),
-                                       (M.TIdx, M.FvReadOnly)),
-                  array = SOME (t, M.FvReadOnly)}
+                  fixed = Vector.new2 ((Uintp.t c, M.FvReadOnly), (M.TIdx, M.FvReadOnly)),
+                  array = (t, M.FvReadOnly)}
 
     fun tdFixed (c, fks) =
         let
           val lenFd = M.FD {kind = Uintp.fieldKind c, var = M.FvReadOnly}
           val idxFd = M.FD {kind = M.FkRef, var = M.FvReadOnly}
           fun doOne fk = M.FD {kind = fk, var = M.FvReadOnly}
-          val fks = Vector.concat [Vector.new2 (lenFd, idxFd),
-                                   Vector.map (fks, doOne)]
+          val fks = Vector.concat [Vector.new2 (lenFd, idxFd), Vector.map (fks, doOne)]
         in
           M.TD {fixed = fks, array = NONE}
         end
@@ -3870,8 +3858,7 @@ struct
           val lenFd = M.FD {kind = Uintp.fieldKind c, var = M.FvReadOnly}
           val idxFd = M.FD {kind = M.FkRef, var = M.FvReadOnly}
           fun doOne fk = M.FD {kind = fk, var = M.FvReadOnly}
-          val fks = Vector.concat [Vector.new2 (lenFd, idxFd),
-                                   Vector.map (fks, doOne)]
+          val fks = Vector.concat [Vector.new2 (lenFd, idxFd), Vector.map (fks, doOne)]
         in
           M.VTD {pok = pok, fixed = fks, array = NONE}
         end
@@ -3885,9 +3872,7 @@ struct
           val idxFd = M.FD {kind = M.FkRef, var = M.FvReadOnly}
           val eltFd = M.FD {kind = fk, var = M.FvReadOnly}
         in
-          M.VTD {pok = pok,
-                 fixed = Vector.new2 (lenFd, idxFd),
-                 array = SOME (lenIndex, eltFd)}
+          M.VTD {pok = pok, fixed = Vector.new2 (lenFd, idxFd), array = SOME (lenIndex, eltFd)}
         end
 
     fun newFixed (c, pok, d, fks, idxVar, os) =
@@ -3919,6 +3904,7 @@ struct
 
   structure Integer =
   struct
+
     val t = Mil.TInteger
 
     val from =
@@ -3957,6 +3943,7 @@ struct
 
   structure Rational =
   struct
+
     val t = Mil.TRat
 
     val from =
@@ -3989,6 +3976,7 @@ struct
 
   structure Def =
   struct
+
     datatype t = 
              DefGlobal of Mil.global
            | DefRhs of Mil.rhs
@@ -4031,11 +4019,13 @@ struct
             of DefGlobal (M.GPSet op1) => SOME op1
              | DefRhs (M.RhsPSetNew op1) => SOME op1
              | _ => NONE)
+
     end (* structure Out *)
   end (* structure Def *)
 
   structure Prims =
   struct
+
     structure P = Prims
 
     structure Dec =
@@ -4059,6 +4049,7 @@ struct
 
     structure Constant =
     struct
+
       val fromMilConstant = 
        fn c => 
           (case c
@@ -4074,7 +4065,6 @@ struct
              | M.COptionSetEmpty => NONE
              | M.CTypePH         => NONE)
 
-
       val toMilGlobal = 
        fn (config, c) => 
           let
@@ -4089,16 +4079,17 @@ struct
               | Prims.CBool b     => simple Bool.fromBool (config, b)
           end
 
-    val toMilConstant = 
-     fn (config, c) =>
-        (case toMilGlobal (config, c)
-          of M.GSimple (M.SConstant c) => SOME c
-           | _ => NONE)
+      val toMilConstant = 
+       fn (config, c) =>
+          (case toMilGlobal (config, c)
+            of M.GSimple (M.SConstant c) => SOME c
+             | _ => NONE)
 
     end (* structure Constant *)
 
     structure Operation =
     struct
+
       val fromMilConstant = 
        fn c => 
           (case Constant.fromMilConstant c
@@ -4128,9 +4119,9 @@ struct
 
   end (* structure Prims *)
 
-
   structure Id =
   struct
+
     datatype t = 
              L of Mil.label    (* block label *)
            | I of int          (* numbered instruction *)
@@ -4154,6 +4145,7 @@ struct
     val eq = Compare.C.equal compare
 
     structure L = Layout
+
     val layout = 
         fn (si, id) => 
            (case id
@@ -4176,6 +4168,7 @@ struct
 
   structure FlatTyp =
   struct
+
     (* Flat typs are the nullary super-types of the general types *)
     val fromTyp =
      fn t => 
@@ -4207,5 +4200,4 @@ struct
 
   end (* structure FlatTyp *)
               
-
 end
