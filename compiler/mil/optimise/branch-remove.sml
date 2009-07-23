@@ -27,6 +27,7 @@ struct
   structure ID  = Identifier
   structure LD  = ID.LabelDict
   structure LDOM = MilCfg.LabelDominance
+  structure I   = Identifier
 
   datatype psCond =
            RCons of M.constant
@@ -479,97 +480,81 @@ struct
    *)
   fun checkBlockPSExt (d, imil, ifunc, psDict, a) = 
       let
-        fun checkDominance (a, b, c) = true
-        fun checkDominance1 (a, b, c) =
+        val mil as Mil.P {globals, symbolTable, entry} = IMil.T.unBuild imil
+        val si = I.SymbolInfo.SiTable symbolTable
+        val config = PD.getConfig d
+                                                               
+        fun layoutConsequentBlocks (a, b, c) =
             let
-              val mil as Mil.P {globals, symbolTable, entry} = IMil.T.unBuild imil
-              val (_, mglobal) = IMil.IFunc.unBuild ifunc
-              val al = getLabel (imil, a)
-              val bl = getLabel (imil, b)
-              val cl = getLabel (imil, c)
-            in 
-              case mglobal
-               of Mil.GCode cc => 
-                  let
-                    val mcode as Mil.F {fx,escapes,recursive,cc,args,rtyps,body} = cc
-                    val si = ID.SymbolInfo.SiTable symbolTable
-                    val cfg = MilCfg.build (PD.getConfig d, si, body) 
-                    val lbdomtree = MilCfg.getLabelBlockDomTree cfg
-                    val ldomtree = Tree.map (lbdomtree, fn (l, _) => l)
-                    val ldom = LDOM.new ldomtree
-                  in 
-                    if ((LDOM.contains (ldom, al)) andalso (LDOM.contains (ldom, bl)) andalso (LDOM.contains (ldom, cl)))
-                    then (LDOM.dominates (ldom, al, bl)) andalso (LDOM.dominates (ldom, bl, bl))
-                    else false
-                  end
-                | _ => false
+              val () = Debug.prints (d, "rcbr extension " 
+                                        ^ labelString(imil, a) ^ " => "
+                                        ^ labelString(imil, b) ^ " => "
+                                        ^ labelString(imil, c) ^ "\n")
+              val bc_ps = getEdgePSSet (d, imil, (b, c))
+              val ab_ps = getEdgePSSet (d, imil, (a, b))
+              val a_pso = LD.lookup(!psDict, getLabel(imil, a))
+              val () = Debug.printPSSet (d, labelString(imil, b) ^ "=>" ^ labelString(imil, c), bc_ps)
+              val () = case a_pso 
+                        of SOME a_ps => Debug.printPSSet (d, "a_ps u ab_ps", PSSet.union(a_ps, ab_ps))
+                         | NONE => ()
+            in ()
             end
-            
+
         fun replaceCase (a, b, c, instr, tCase, t as {on, cases, default}) =
-            if checkDominance (a, b, c) then
-              let
-                val newcases = 
-                    Vector.map (cases, 
-                             fn (ct, M.T {block, arguments}) => if block = getLabel (imil, b) 
-                                                                then 
-                                                                  let
-                                                                    val () = Debug.prints (d, "extension replace case target\n")
-                                                                  in (ct, M.T {block=getLabel(imil, c), arguments=arguments})
-                                                                  end
-                                                                else (ct, M.T {block=block, arguments=arguments}))
-                val newdefault = 
-                    (case default
-                      of NONE => default
-                       | SOME (M.T {block, arguments}) => if block = getLabel (imil, b)
-                                                          then
-                                                            let
-                                                              val () = Debug.prints (d, "extension replace default target\n")
-                                                            in SOME (M.T {block=getLabel (imil, c), arguments = arguments})
-                                                            end
-                                                          else default)
-                val instr = IMil.IBlock.getTransfer (imil, a)
-                val () = Debug.printOrigInstr (d, imil, (a, b), instr)
-                val newinstr = IMil.MTransfer (tCase {on=on, cases=newcases, default=newdefault})
-                val () = IMil.IInstr.replaceMil (imil, instr, newinstr)
-                val () = Debug.printNewInstr (d, imil, newinstr)
-                val () = PD.click (d, passname)
-              in ()
-              end
-            else ()
+            let
+              val cpara = IMil.IBlock.getParameters (imil, c)
+              val newcases = 
+                  Vector.map (cases, 
+                           fn (ct, M.T {block, arguments}) => if block = getLabel (imil, b) 
+                                                              then (ct, MilUtils.Target.fromVars (getLabel(imil, c), cpara))
+                                                              else (ct, M.T {block=block, arguments=arguments}))
+              val newdefault = 
+                  (case default
+                    of NONE => default
+                     | SOME (M.T {block, arguments}) => if block = getLabel (imil, b)
+                                                        then SOME (MilUtils.Target.fromVars (getLabel(imil, c), cpara))
+                                                        else default)
+              val instr = IMil.IBlock.getTransfer (imil, a)
+              val oldInstrLayout = IMil.IInstr.layoutMil (imil, IMil.IInstr.getMil (imil, instr))
+              val newinstr = IMil.MTransfer (tCase {on=on, cases=newcases, default=newdefault})
+              val newInstrLayout = IMil.IInstr.layoutMil (imil, newinstr)
+              val () = IMil.IInstr.replaceMil (imil, instr, newinstr)
+              val () = Debug.printLayout(d, L.seq[L.str "extension replace case:\n", 
+                                                  oldInstrLayout,
+                                                  L.str " =>\n",
+                                                  newInstrLayout])
+              val () = PD.click (d, passname)
+            in ()
+            end
 
         fun replaceGoto (a, b, c, instr, t as M.T {block, arguments}) =
-            if checkDominance (a, b, c) then
-              let
-                val () = Debug.prints (d, "rcbr extension " 
-                                          ^ labelString(imil, a) ^ "=>"
-                                          ^ labelString(imil, b) ^ "=>"
-                                          ^ labelString(imil, c) ^ "\n")
-                val bc_ps = getEdgePSSet (d, imil, (b, c))
-                val ab_ps = getEdgePSSet (d, imil, (a, b))
-                val a_pso = LD.lookup(!psDict, getLabel(imil, a))
-                val () = Debug.printPSSet (d, labelString(imil, b) ^ "=>" ^ labelString(imil, c), bc_ps)
-                val () = case a_pso 
-                          of SOME a_ps => Debug.printPSSet (d, "a_ps u ab_ps", PSSet.union(a_ps, ab_ps))
-                           | NONE => ()
-                                     
-                val () = Debug.prints (d, "extension replace goto target " ^ labelString (imil, b) ^ "\n")
-                val newtarget = if block = getLabel (imil, b) then M.T {block=getLabel (imil, c), arguments=arguments}
-                                else t
-                val instr = IMil.IBlock.getTransfer (imil, a)
-                val () = Debug.printOrigInstr (d, imil, (a, b), instr)
-                val newinstr = IMil.MTransfer (M.TGoto(newtarget))
-                val () = IMil.IInstr.replaceMil (imil, instr, newinstr)
-                val () = Debug.printNewInstr (d, imil, newinstr)
-              in ()
-              end
-            else ()
+            let
+              val para = IMil.IBlock.getParameters (imil, c)
+            in
+              if Vector.size (para) = 0 then
+                let
+                  val newtarget = if block = getLabel (imil, b) then M.T {block=getLabel (imil, c), arguments=Vector.new0()}
+                                  else t
+                  val instr = IMil.IBlock.getTransfer (imil, a)
+                  val oldInstrLayout = IMil.IInstr.layoutMil (imil, IMil.IInstr.getMil (imil, instr))
+                  val newinstr = IMil.MTransfer (M.TGoto(newtarget))
+                  val () = IMil.IInstr.replaceMil (imil, instr, newinstr)
+                  val () = Debug.printLayout(d, L.seq[L.str "extension replace goto:\n", 
+                                                      oldInstrLayout,
+                                                      L.str " =>\n",
+                                                      IMil.IInstr.layoutMil (imil, newinstr)])
+                  val () = PD.click (d, passname)
+                in ()
+                end
+              else ()
+            end
 
         fun replaceTarget (a, b, c) =
             let
               val instr = IMil.IBlock.getTransfer' (imil, a)
             in
               case instr
-               of M.TGoto t => () (* replaceGoto (a, b, c, instr, t)*)(*fixme: this fails 0006, turn off now*)
+               of M.TGoto t => replaceGoto (a, b, c, instr, t) (*fixme: this fails 0006, turn off now*)
                 | M.TCase t => replaceCase (a, b, c, instr, M.TCase, t)
                 | M.TInterProc t => ()
                 | M.TReturn t => ()
@@ -582,6 +567,8 @@ struct
               val bc_ps = getEdgePSSet (d, imil, (b, c))
               val ab_ps = getEdgePSSet (d, imil, (a, b))
               val a_pso = LD.lookup(!psDict, getLabel(imil, a))
+              val bpara = IMil.IBlock.getParameters (imil, b)
+              val cpara = IMil.IBlock.getParameters (imil, c)
             in 
               (case a_pso
                 of SOME a_ps =>
@@ -589,6 +576,8 @@ struct
                                   true, 
                                fn (eps, r) => (isRedundant(d, eps, PSSet.union(a_ps, ab_ps)) andalso r))
                        andalso IMil.IBlock.isEmpty (imil, b)
+                       andalso Vector.size (bpara) = 0
+                       andalso Vector.size (cpara) = 0
                        andalso (case IMil.IBlock.getTransfer'(imil, b)
                                  of Mil.TGoto _ => true
                                   | Mil.TCase _ => true
@@ -623,8 +612,10 @@ struct
         val () = propagatePS' (d, psDict, imil, dom)
 
         val () = Tree.foreachPre (dom, fn b => checkBlockPSExt (d, imil, ifunc, psDict, b))
-      in
-        Tree.foreachPre(dom, fn b => checkBlockPS (d, imil, !psDict, b))
+        val () = Tree.foreachPre (dom, fn b => checkBlockPSExt (d, imil, ifunc, psDict, b))
+
+        val () = Tree.foreachPre(dom, fn b => checkBlockPS (d, imil, !psDict, b))
+      in ()
       end
 
   fun program (imil, d) = 
