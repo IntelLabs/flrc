@@ -266,10 +266,7 @@ struct
                  L.seq [layoutTyp (env, t), layoutFieldVarianceShort (env, fv)]
              val fixed = layoutVector (env, layoutTypVar, fixed)
              val is = semiCommaL (pok, fixed)
-             val array =
-                 case array
-                  of NONE => []
-                   | SOME tv => [LU.bracket (layoutTypVar (env, tv))]
+             val array = [LU.bracket (layoutTypVar (env, array))]
              val is = is @ array
              val l = LU.brace (L.mayAlign is)
            in l

@@ -194,11 +194,8 @@ struct
         | M.TTuple {pok, fixed, array} => 
           let
             val b = pObjToShape pok
-            val arraytyp = (case array 
-                             of SOME (typ, _) => SOME typ 
-                              | NONE => NONE)
-            val tshp = Utils.Option.get (Option.map (arraytyp, typToShape),
-                                         (SAny, SUnknown))
+            val arraytyp = SOME (#1 array)
+            val tshp = Utils.Option.get (Option.map (arraytyp, typToShape), (SAny, SUnknown))
             val a = (SDynamic (sMax (tshp)), SUnknown)
           in 
             merge (a, b)
