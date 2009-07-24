@@ -6,8 +6,6 @@ sig
   type info
   type env
 
-  structure MilCfg : MIL_CFG
-
   val debugs : Config.Debug.debug list
 
   (* requires entry to dominate all blocks in the set of blocks
@@ -53,8 +51,6 @@ functor MilDataFlowAnalysisF (
   val passname : string
   val indent : int
 
-  structure MilCfg : MIL_CFG
-
   val deriveConstant : env * Mil.constant -> info
   val deriveInstr : env
                     * (Mil.variable -> info)
@@ -85,8 +81,7 @@ functor MilDataFlowAnalysisF (
   val layoutInfo : env * info -> Layout.t
 ) :> MIL_DATAFLOW_ANALYSIS where type env = env 
                              and type info = info 
-                             and type MilCfg.LabelDominance.t =
-                                      MilCfg.LabelDominance.t 
+
 = struct
   val mypassname = passname ^ ":DFA"
 
@@ -101,7 +96,6 @@ functor MilDataFlowAnalysisF (
   structure L = Layout
   structure LU = LayoutUtils
   structure M = Mil
-  structure MilCfg = MilCfg
   structure DomInfo = MilCfg.LabelDominance
   structure I = Identifier
   structure LS = Identifier.LabelSet
@@ -134,6 +128,11 @@ functor MilDataFlowAnalysisF (
       if Config.debug andalso (debugPass (getConfig (#env env))) then 
         print msg
       else ()
+
+  structure Debug =
+  struct
+    fun trace s = print ("DFA tracing function: " ^ s ^ "\n")
+  end
 
   (*
    * state manipulation functions
@@ -370,10 +369,7 @@ functor MilDataFlowAnalysisF (
 
         fun goTarget (E env, st, M.T {block, arguments}) =
             let
-              val () = dbgPrint (E env, "goTarget\n")
-
-              val argnfo = deriveBlock (#env env, stateDict (#env env, st), 
-                                        block, arguments)
+              val argnfo = deriveBlock (#env env, stateDict (#env env, st), block, arguments)
               val () = if envValidTarget (E env, block) then 
                          let
                            val () = projectArgs (E env, st, block, argnfo, m)
@@ -390,10 +386,7 @@ functor MilDataFlowAnalysisF (
             end 
         fun goSwitch (E env, st, {on, cases, default}) =
             let
-              val () = dbgPrint (E env, "goSwitch\n")
-
-              val () = Vector.foreach (cases, 
-                                       fn (_, t) => goTarget (E env, st, t))
+              val () = Vector.foreach (cases, fn (_, t) => goTarget (E env, st, t))
               val () = Option.app (default, fn (t) => goTarget (E env, st, t))
             in ()
             end
@@ -432,8 +425,7 @@ functor MilDataFlowAnalysisF (
     
   and inferBlock (env, st, M.B {instructions, transfer, ...}, m) = 
       let
-        val () = Vector.foreach (instructions, 
-                                 fn i => inferInstruction (env, st, i))
+        val () = Vector.foreach (instructions, fn i => inferInstruction (env, st, i))
         val () = inferTransfer (env, st, transfer, m)
       in () 
       end

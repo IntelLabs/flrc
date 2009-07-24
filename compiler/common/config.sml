@@ -298,7 +298,7 @@ structure Config :> CONFIG = struct
     fun timeExecution c               = get (c, #timeExecution)
     fun toolset c                     = get (c, #toolset)
     fun vi c                          = get (c, #vi)
-    fun va c               = get (c, #va)
+    fun va c                          = get (c, #va)
 
     (*** Derived Getters ***)
 
