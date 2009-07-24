@@ -229,6 +229,8 @@ struct
           reportError (s, msg () ^ ": bad traceability and size")
         | TS.TsAnyS _ => reportError (s, msg () ^ ": bad size")
         | TS.TsBits _ => ()
+        | TS.TsFloat => ()
+        | TS.TsDouble => ()
         | TS.TsPtr => reportError (s, msg () ^ ": bad traceability")
         | TS.TsNonRefPtr => ()
         | TS.TsRef => ()
@@ -457,10 +459,8 @@ struct
             if MU.FieldSize.toValueSize fs = vs then () else err ()
           | (M.FkBits fs, TS.TsNonRefPtr) =>
             if fs = MU.FieldSize.ptrSize (getConfig e) then () else err ()
-          | (M.FkFloat, TS.TsBits vs) =>
-            if M.Vs32 = vs then () else err ()
-          | (M.FkDouble, TS.TsBits vs) =>
-            if M.Vs64 = vs then () else err ()
+          | (M.FkFloat, TS.TsFloat) => ()
+          | (M.FkDouble, TS.TsDouble) => ()
           | (_, TS.TsNone) => ()
           | _ => err ()
       end

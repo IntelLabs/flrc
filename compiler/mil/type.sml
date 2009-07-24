@@ -114,12 +114,6 @@ struct
            | M.TPRef _           => true
            | _                   => false
 
-     fun isFloatTyp t =
-         case t
-          of M.TFloat  => true
-           | M.TDouble => true
-           | _         => false
-
      fun subtype (c, t1, t2) =
          case (t1, t2)
           of (_, M.TAny) => true
@@ -133,6 +127,8 @@ struct
                of TS.TsAny       => false
                 | TS.TsAnyS _    => false
                 | TS.TsBits _    => false
+                | TS.TsFloat     => false
+                | TS.TsDouble    => false
                 | TS.TsPtr       => true
                 | TS.TsNonRefPtr => true
                 | TS.TsRef       => true
@@ -143,6 +139,8 @@ struct
                of TS.TsAny       => false
                 | TS.TsAnyS _    => false
                 | TS.TsBits _    => false
+                | TS.TsFloat     => false
+                | TS.TsDouble    => false
                 | TS.TsPtr       => false
                 | TS.TsNonRefPtr => false
                 | TS.TsRef       => true
@@ -152,7 +150,9 @@ struct
              (case MUT.traceabilitySize (c, t1)
                of TS.TsAny       => false
                 | TS.TsAnyS _    => false
-                | TS.TsBits vs'  => not (isFloatTyp t1) andalso MU.ValueSize.compare (vs, vs') = EQUAL
+                | TS.TsBits vs'  => MU.ValueSize.compare (vs, vs') = EQUAL
+                | TS.TsFloat     => false
+                | TS.TsDouble    => false
                 | TS.TsPtr       => false
                 | TS.TsNonRefPtr => false
                 | TS.TsRef       => false

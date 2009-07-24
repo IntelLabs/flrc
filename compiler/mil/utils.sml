@@ -126,6 +126,8 @@ sig
         TsAny
       | TsAnyS of ValueSize.t
       | TsBits of ValueSize.t
+      | TsFloat
+      | TsDouble
       | TsPtr
       | TsNonRefPtr
       | TsRef
@@ -1808,6 +1810,8 @@ struct
         TsAny
       | TsAnyS of ValueSize.t
       | TsBits of ValueSize.t
+      | TsFloat
+      | TsDouble
       | TsPtr
       | TsNonRefPtr
       | TsRef
@@ -1819,6 +1823,8 @@ struct
          of TsAny       => "Any"
           | TsAnyS vs   => "Any" ^ ValueSize.toString vs
           | TsBits vs   => "Bits" ^ Int.toString (ValueSize.numBits vs)
+          | TsFloat     => "Float"
+          | TsDouble    => "Double"
           | TsPtr       => "Ptr"
           | TsNonRefPtr => "NonRefPtr"
           | TsRef       => "Ref"
@@ -1835,6 +1841,8 @@ struct
          of TsAny       => NONE
           | TsAnyS vs   => NONE
           | TsBits vs   => SOME TBits
+          | TsFloat     => SOME TBits
+          | TsDouble    => SOME TBits
           | TsPtr       => NONE
           | TsNonRefPtr => SOME TBits
           | TsRef       => SOME TRef
@@ -1846,6 +1854,8 @@ struct
          of TsAny       => NONE
           | TsAnyS vs   => SOME vs
           | TsBits vs   => SOME vs
+          | TsFloat     => SOME M.Vs32
+          | TsDouble    => SOME M.Vs64
           | TsPtr       => SOME (ValueSize.ptrSize config)
           | TsNonRefPtr => SOME (ValueSize.ptrSize config)
           | TsRef       => SOME (ValueSize.ptrSize config)
@@ -1866,6 +1876,12 @@ struct
           | (TsBits vs1, TsBits vs2) => vs1 = vs2
           | (_, TsBits _) => false
           | (TsBits _, _) => false
+          | (TsFloat, TsFloat) => true
+          | (TsFloat, _) => false
+          | (_, TsFloat) => false
+          | (TsDouble, TsDouble) => true
+          | (TsDouble, _) => false
+          | (_, TsDouble) => false
           | (TsMask vit1, TsMask vit2) => VI.equalElemTypes (vit1, vit2)
           | (_, TsMask _) => false
           | (TsMask _, _) => false
@@ -1927,8 +1943,8 @@ struct
           | M.TInteger                   => TS.TsRef
           | M.TName                      => TS.TsRef
           | M.TIntegral sz               => TS.TsBits (integral sz)
-          | M.TFloat                     => TS.TsBits M.Vs32
-          | M.TDouble                    => TS.TsBits M.Vs64
+          | M.TFloat                     => TS.TsFloat
+          | M.TDouble                    => TS.TsDouble
           | M.TViVector et               => TS.TsBits (ValueSize.vectorSize c)
           | M.TViMask et                 => TS.TsMask et
           | M.TCode {cc, args, ress}     => TS.TsNonRefPtr
@@ -1947,6 +1963,8 @@ struct
           of TS.TsAny       => M.TAny
            | TS.TsAnyS vs   => M.TAnyS vs
            | TS.TsBits vs   => M.TBits vs
+           | TS.TsFloat     => M.TFloat
+           | TS.TsDouble    => M.TDouble
            | TS.TsPtr       => M.TPtr
            | TS.TsNonRefPtr => M.TPtr
            | TS.TsRef       => M.TRef
@@ -2145,6 +2163,8 @@ struct
            of TS.TsAny       => err ()
             | TS.TsAnyS vs   => err ()
             | TS.TsBits vs   => M.FkBits (FieldSize.fromValueSize vs)
+            | TS.TsFloat     => M.FkFloat
+            | TS.TsDouble    => M.FkDouble
             | TS.TsPtr       => err ()
             | TS.TsNonRefPtr => nonRefPtr c
             | TS.TsRef       => M.FkRef
