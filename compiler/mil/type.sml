@@ -13,8 +13,7 @@ sig
     val subtype : Config.t * t * t -> bool
     val lub : Config.t * t * t -> t
     val glb : Config.t * t * t -> t
-    val equalVectorElemType :
-        Config.t * t * VectorInstructions.elemType -> bool
+    val equalVectorElemType : Config.t * t * VectorInstructions.elemType -> bool
   end
 
 
@@ -45,11 +44,6 @@ sig
     val global    : (Mil.global               , Mil.typ             ) typer
   end
 
-
-(*
-  val call      : state * Mil.call -> Mil.typ        
-  val elim      : state * Mil.typ -> Mil.typ
-*)
 end;
 
 structure MilType :> MIL_TYPE =
@@ -88,6 +82,7 @@ struct
 
      type t = Mil.typ
 
+     structure TS = MU.TraceabilitySize
      structure MUT = MU.Typ
 
      fun equal (t1, t2) = MUT.compare (t1, t2) = EQUAL
@@ -110,14 +105,20 @@ struct
 
      fun isPType (c, t) =
          case t
-          of M.TName => true
+          of M.TName             => true
            | M.TTuple {pok, ...} => isPPObjKind (c, pok)
-           | M.TPAny => true
-           | M.TPFunction _ => true
-           | M.TPSum _ => true
-           | M.TPType _ => true
-           | M.TPRef _ => true
-           | _ => false
+           | M.TPAny             => true
+           | M.TPFunction _      => true
+           | M.TPSum _           => true
+           | M.TPType _          => true
+           | M.TPRef _           => true
+           | _                   => false
+
+     fun isFloatTyp t =
+         case t
+          of M.TFloat  => true
+           | M.TDouble => true
+           | _         => false
 
      fun subtype (c, t1, t2) =
          case (t1, t2)
@@ -129,55 +130,50 @@ struct
                 | SOME vs' => MU.ValueSize.compare (vs, vs') = EQUAL)
            | (_, M.TPtr) =>
              (case MUT.traceabilitySize (c, t1)
-               of MUT.TsAny       => false
-                | MUT.TsAnyS _    => false
-                | MUT.TsBits _    => false
-                | MUT.TsPtr       => true
-                | MUT.TsNonRefPtr => true
-                | MUT.TsRef       => true
-                | MUT.TsNone      => true
-                | MUT.TsMask _    => false)
+               of TS.TsAny       => false
+                | TS.TsAnyS _    => false
+                | TS.TsBits _    => false
+                | TS.TsPtr       => true
+                | TS.TsNonRefPtr => true
+                | TS.TsRef       => true
+                | TS.TsNone      => true
+                | TS.TsMask _    => false)
            | (_, M.TRef) =>
              (case MUT.traceabilitySize (c, t1)
-               of MUT.TsAny       => false
-                | MUT.TsAnyS _    => false
-                | MUT.TsBits _    => false
-                | MUT.TsPtr       => false
-                | MUT.TsNonRefPtr => false
-                | MUT.TsRef       => true
-                | MUT.TsNone      => true
-                | MUT.TsMask _    => false)
+               of TS.TsAny       => false
+                | TS.TsAnyS _    => false
+                | TS.TsBits _    => false
+                | TS.TsPtr       => false
+                | TS.TsNonRefPtr => false
+                | TS.TsRef       => true
+                | TS.TsNone      => true
+                | TS.TsMask _    => false)
            | (_, M.TBits vs) =>
              (case MUT.traceabilitySize (c, t1)
-               of MUT.TsAny       => false
-                | MUT.TsAnyS _    => false
-                | MUT.TsBits vs'  => MU.ValueSize.compare (vs, vs') = EQUAL
-                | MUT.TsPtr       => false
-                | MUT.TsNonRefPtr => false
-                | MUT.TsRef       => false
-                | MUT.TsNone      => false
-                | MUT.TsMask _    => false)
+               of TS.TsAny       => false
+                | TS.TsAnyS _    => false
+                | TS.TsBits vs'  => not (isFloatTyp t1) andalso MU.ValueSize.compare (vs, vs') = EQUAL
+                | TS.TsPtr       => false
+                | TS.TsNonRefPtr => false
+                | TS.TsRef       => false
+                | TS.TsNone      => false
+                | TS.TsMask _    => false)
            | (M.TRat, M.TRat) => true
            | (M.TInteger, M.TInteger) => true
            | (M.TName, M.TName) => true
-           | (M.TIntegral t1, M.TIntegral t2) =>
-             IntArb.compareTyps (t1, t2) = EQUAL
+           | (M.TIntegral t1, M.TIntegral t2) => IntArb.compareTyps (t1, t2) = EQUAL
            | (M.TFloat, M.TFloat) => true
            | (M.TDouble, M.TDouble) => true
-           | (M.TViVector vet1, M.TViVector vet2) =>
-             VI.Compare.elemType (vet1, vet2) = EQUAL
-           | (M.TViMask vet1, M.TViMask vet2) =>
-             VI.Compare.elemType (vet1, vet2) = EQUAL
-           | (M.TCode {cc = cc1, args = args1, ress = ress1},
-              M.TCode {cc = cc2, args = args2, ress = ress2}) =>
+           | (M.TViVector vet1, M.TViVector vet2) => VI.Compare.elemType (vet1, vet2) = EQUAL
+           | (M.TViMask vet1, M.TViMask vet2) => VI.Compare.elemType (vet1, vet2) = EQUAL
+           | (M.TCode {cc = cc1, args = args1, ress = ress1}, M.TCode {cc = cc2, args = args2, ress = ress2}) =>
              (* Technically code might be covariant in free variable types.
               * But it probably does not hurt to make them invariant instead.
               *)
              MU.CallConv.compare MUT.compare (cc1, cc2) = EQUAL andalso
              subtypes (c, args2, args1) andalso
              subtypes (c, ress1, ress2)
-           | (M.TTuple {pok = pok1, fixed = ftvs1, array = a1},
-              M.TTuple {pok = pok2, fixed = ftvs2, array = a2}) =>
+           | (M.TTuple {pok = pok1, fixed = ftvs1, array = a1}, M.TTuple {pok = pok2, fixed = ftvs2, array = a2}) =>
              MU.PObjKind.compare (pok1, pok2) = EQUAL andalso
              Vector.size ftvs1 >= Vector.size ftvs2 andalso
              let
@@ -189,32 +185,23 @@ struct
                      | (M.FvReadWrite, M.FvReadWrite) => equal (t1, t2)
                fun checkFields idx =
                    if idx < Vector.size ftvs2 then
-                     checkField (Vector.sub (ftvs1, idx),
-                                 Vector.sub (ftvs2, idx)) andalso
+                     checkField (Vector.sub (ftvs1, idx), Vector.sub (ftvs2, idx)) andalso
                      checkFields (idx + 1)
                    else
                      checkArray idx
                and checkArray idx =
-                   case a2
-                    of NONE => true
-                     | SOME tv => checkArray' (idx, tv)
-               and checkArray' (idx, tv) =
                    if idx < Vector.size ftvs1 then
-                     checkField (Vector.sub (ftvs1, idx), tv) andalso
-                     checkArray' (idx + 1, tv)
+                     checkField (Vector.sub (ftvs1, idx), a2) andalso
+                     checkArray (idx + 1)
                    else
-                     case a1
-                      of NONE => false
-                       | SOME tv' => checkField (tv', tv)
+                     checkField (a1, a2)
              in checkFields 0
              end
            | (M.TIdx, M.TIdx) => true
-           | (M.TContinuation ts1, M.TContinuation ts2) =>
-             subtypes (c, ts2, ts1)
+           | (M.TContinuation ts1, M.TContinuation ts2) => subtypes (c, ts2, ts1)
            | (M.TThunk t1, M.TThunk t2) => subtype (c, t1, t2)
            | (_, M.TPAny) => isPType (c, t1)
-           | (M.TPFunction {args = args1, ress = ress1},
-              M.TPFunction {args = args2, ress = ress2}) =>
+           | (M.TPFunction {args = args1, ress = ress1}, M.TPFunction {args = args2, ress = ress2}) =>
              subtypes (c, args2, args1) andalso subtypes (c, ress1, ress2)
            | (M.TPSum nts1, M.TPSum nts2) =>
              let
@@ -225,8 +212,7 @@ struct
              in
                ND.forall (nts1, checkArm)
              end
-           | (M.TPType {kind = tk1, over = t1},
-              M.TPType {kind = tk2, over = t2}) =>
+           | (M.TPType {kind = tk1, over = t1}, M.TPType {kind = tk2, over = t2}) =>
              MU.TypKind.compare (tk1, tk2) = EQUAL andalso subtype (c, t1, t2)
            | (M.TPRef t1, M.TPRef t2) => equal (t1, t2)
            | _ => false
@@ -247,7 +233,6 @@ struct
            | (M.TFloat                                , VI.ViFloat32) => true
            | (M.TDouble                               , VI.ViFloat64) => true
            | _                                                        => false
-
 
      structure Lub =
      struct
@@ -298,20 +283,9 @@ struct
          let
            val up = fn (t1, t2) => up (config, t1, t2)
            val down = fn (t1, t2) => down (config, t1, t2)
-
-           val eq = 
-            fn (t1, t2) => 
-               if MU.Typ.eq (t1, t2) then 
-                 SOME t1
-               else
-                 NONE
-
+           val eq = fn (t1, t2) => if MU.Typ.eq (t1, t2) then SOME t1 else NONE
            val cc = (* Not sure what the right thing is here, equality is safe *)
-               fn (cc1, cc2) => 
-                  if MU.CallConv.eq MU.Typ.eq (cc1, cc2) then
-                    SOME cc1
-                  else 
-                    NONE
+               fn (cc1, cc2) => if MU.CallConv.eq MU.Typ.eq (cc1, cc2) then SOME cc1 else NONE
            val to = 
                Try.try 
                (fn () => 
@@ -347,16 +321,14 @@ struct
                        end
                       | (M.TThunk t1, M.TThunk t2) => M.TThunk (up (t2, t2))
                       | (M.TPAny, M.TPAny) => M.TPAny
-                      | (M.TPFunction {args = args1, ress = ress1},
-                         M.TPFunction {args = args2, ress = ress2}) => 
+                      | (M.TPFunction {args = args1, ress = ress1}, M.TPFunction {args = args2, ress = ress2}) => 
                         let
                           val args = <@ vector (args1, args2, down)
                           val ress = <@ vector (ress1, ress2, up)
                         in M.TPFunction {args = args, ress = ress}
                         end
                       | (M.TPSum ts1, M.TPSum ts2) => Try.fail () (* handled elsewhere *)
-                      | (M.TPType {kind = kind1, over = over1},
-                         M.TPType {kind = kind2, over = over2}) => 
+                      | (M.TPType {kind = kind1, over = over1}, M.TPType {kind = kind2, over = over2}) => 
                         let
                           val kind = <@ typKind (kind1 ,kind2)
                           val over = up (over1, over2)
@@ -395,11 +367,12 @@ struct
             | SPtr of bool  (* false => TPtr, true => An exact immediate subtype of TPtr *)
             | SPAny of bool (* false => TPAny, true => An exact immediate subtype of TPAny *)
             | SBits of bool (* false => TBits, true => An exact immediate subtype of TBits *)
-            | SMask  (* TMask *)
-            | SAny   (* TAny *)
-            | SSized (* TAnyS *)
-            | SNone  (* TNone *)
-
+            | SFloat  (* TFloat *)
+            | SDouble (* TDouble *)
+            | SMask   (* TMask *)
+            | SAny    (* TAny *)
+            | SSized  (* TAnyS *)
+            | SNone   (* TNone *)
 
      val summarize =
       fn (config, t) => 
@@ -414,8 +387,8 @@ struct
             | M.TInteger                   => SRef true
             | M.TName                      => SRef true
             | M.TIntegral sz               => SBits true
-            | M.TFloat                     => SBits true
-            | M.TDouble                    => SBits true
+            | M.TFloat                     => SFloat
+            | M.TDouble                    => SDouble
             | M.TViVector et               => SBits true
             | M.TViMask et                 => SMask
             | M.TCode {cc, args, ress}     => SPtr true
@@ -438,29 +411,17 @@ struct
          let
            val lub = fn (t1, t2) => lub (config, t1, t2)
            val glb = fn (t1, t2) => glb (config, t1, t2)
-
-           val eq = 
-            fn (t1, t2) => 
-               if MU.Typ.eq (t1, t2) then 
-                 SOME t1
-               else
-                 NONE
-
-           val sub =
-            fn (t1, t2) => 
-               if subtype (config, t1, t2) then 
-                 SOME t2
-               else
-                 NONE
+           val eq = fn (t1, t2) => if MU.Typ.eq (t1, t2) then SOME t1 else NONE
+           val sub = fn (t1, t2) => if subtype (config, t1, t2) then SOME t2 else NONE
 
            val field = 
-               Try.lift 
                (fn ((t1, fv1), (t2, fv2)) => 
                    (case (fv1, fv2)
                      of (M.FvReadOnly, M.FvReadOnly) => (lub (t1, t2), M.FvReadOnly)
-                      | (M.FvReadOnly, M.FvReadWrite) => (<@ sub (t1, t2), M.FvReadOnly)
-                      | (M.FvReadWrite, M.FvReadOnly) => (<@ sub (t2, t1), M.FvReadOnly)
-                      | (M.FvReadWrite, M.FvReadWrite) => (<@ eq (t1, t2), M.FvReadWrite)))
+                      | (M.FvReadOnly, M.FvReadWrite) => (lub (t1, t2), M.FvReadOnly)
+                      | (M.FvReadWrite, M.FvReadOnly) => (lub (t2, t1), M.FvReadOnly)
+                      | (M.FvReadWrite, M.FvReadWrite) =>
+                        if MU.Typ.eq (t1, t2) then (t1, M.FvReadWrite) else (lub (t1, t2), M.FvReadOnly)))
 
           (*
            * LUB: t1 v t2
@@ -481,23 +442,8 @@ struct
                      val (fixed2, extras2) = Utils.Vector.split (fixed2, len)
                      (* One is empty *)
                      val extras = Vector.concat [extras1, extras2]
-                     val help = 
-                      fn (tv1, tv2, truncate) => 
-                         let
-                           val tv = if truncate then NONE else field (tv1, tv2)
-                         in (tv, truncate orelse not (isSome tv))
-                         end
-                     val (fixedO, truncate) = Vector.map2AndFold (fixed1, fixed2, false, help)
-                     val fixed = Vector.keepAllSome fixedO
-                     val array = 
-                         (case (array1, array2, truncate)
-                           of (NONE, _, _) => NONE
-                            | (_, NONE, _) => NONE
-                            | (_, _, true) => NONE
-                            | (SOME f1, SOME f2, _) => 
-                              Try.try 
-                                (fn () =>
-                                    Vector.fold (extras, <@ field (f1, f2), <@ field)))
+                     val fixed = Vector.map2 (fixed1, fixed2, field)
+                     val array = Vector.fold (extras, field (array1, array2), field)
                    in M.TTuple {pok = pok, fixed = fixed, array = array}
                    end)
                
@@ -543,12 +489,18 @@ struct
                               | (SBits ex1, SBits ex2) => M.TBits sz1 (* Same size, both <= Bits *)
                               | (SBits _, _) => M.TAnyS sz1 (* Same size, t2 not <= Bits *)
                               | (_, SBits _) => M.TAnyS sz1 (* Same size, t1 not <= Bits *)
-                              | (SPtr _, _) => M.TPtr (* Same size, t2 <> TAny, TAnyS, TBits, so t2 <= t1*)
-                              | (_, SPtr _) => M.TPtr (* Same size, t1 <> TAny, TAnyS, TBits, so t1 <= t2*)
-                              | (SRef _, _) => M.TRef (* Same size, t2 <> TAny, TAnyS, TBits, TPtr, so t2 <= t1*)
-                              | (_, SRef _) => M.TRef (* Same size, t1 <> TAny, TAnyS, TBits, TPtr, so t1 <= t2*)
-                              | (SPAny _, _) => M.TPAny (* Same size, t2 <> TAny, TAnyS, TBits, TPtr, TRef so t2 <= t1*)
-(*                            | (_, SPAny _) => M.TPAny (* Same size, t1 <> TAny, TAnyS, TBits, TPtr, TRef so t1 <= t2*)
+                              | (SFloat, _) => M.TAnyS M.Vs32 (* Same size, t2 not <= TFloat *)
+                              | (_, SFloat) => M.TAnyS M.Vs32 (* Same size, t1 not <= TFloat *)
+                              | (SDouble, _) => M.TAnyS M.Vs64 (* Same size, t2 not <= TDouble *)
+                              | (_, SDouble) => M.TAnyS M.Vs64 (* Same size, t1 not <= TDouble *)
+                              | (SPtr _, _) => M.TPtr (* Same size, t2 <> TAny, TAnyS, TBits, FP so t2 <= t1*)
+                              | (_, SPtr _) => M.TPtr (* Same size, t1 <> TAny, TAnyS, TBits, FP so t1 <= t2*)
+                              | (SRef _, _) => M.TRef (* Same size, t2 <> TAny, TAnyS, TBits, TPtr, FP so t2 <= t1*)
+                              | (_, SRef _) => M.TRef (* Same size, t1 <> TAny, TAnyS, TBits, TPtr, FP so t1 <= t2*)
+                              | (SPAny _, _) => M.TPAny
+                                                  (* Same size, t2 <> TAny, TAnyS, TBits, TPtr, TRef, FP so t2 <= t1*)
+(*                            | (_, SPAny _) => M.TPAny
+                                                  (* Same size, t1 <> TAny, TAnyS, TBits, TPtr, TRef, FP so t1 <= t2*)
 *)
                            )
                          else
@@ -570,20 +522,8 @@ struct
          let
            val lub = fn (t1, t2) => lub (config, t1, t2)
            val glb = fn (t1, t2) => glb (config, t1, t2)
-
-           val eq = 
-            fn (t1, t2) => 
-               if MU.Typ.eq (t1, t2) then 
-                 SOME t1
-               else
-                 NONE
-
-           val sub =
-            fn (t1, t2) => 
-               if subtype (config, t1, t2) then 
-                 SOME t1
-               else
-                 NONE
+           val eq = fn (t1, t2) => if MU.Typ.eq (t1, t2) then SOME t1 else NONE
+           val sub = fn (t1, t2) => if subtype (config, t1, t2) then SOME t1 else NONE
 
            val field = 
                Try.lift 
@@ -616,16 +556,9 @@ struct
                          val pok = <@ pObjKind (pok1, pok2)
                          val (fixed2, extras2) = Utils.Vector.split (fixed2, Vector.length fixed1)
                          val fixedA = Vector.map2 (fixed1, fixed2, <@ field)
-                         val fixedB = 
-                             case array1
-                              of SOME f => Vector.map (extras2, fn f2 => (<@ field (f, f2)))
-                               | NONE => extras2
+                         val fixedB = Vector.map (extras2, fn f2 => (<@ field (array1, f2)))
                          val fixed = Vector.concat [fixedA, fixedB]
-                         val array = 
-                             (case (array1, array2)
-                               of (NONE, _) => array2
-                                | (_, NONE) => array1
-                                | (SOME f1, SOME f2) => SOME (<@ field (f1, f2)))
+                         val array = <@ field (array1, array2)
                        in M.TTuple {pok = pok, fixed = fixed, array = array}
                        end)
                
@@ -662,6 +595,10 @@ struct
                               | (_, SAny) => t1
                               | (SMask, _) => M.TNone
                               | (_, SMask) => M.TNone
+                              | (SFloat, _) => M.TNone
+                              | (_, SFloat) => M.TNone
+                              | (SDouble, _) => M.TNone
+                              | (_, SDouble) => M.TNone
                               | (SSized, _) => t2 (* Same size *)
                               | (_, SSized) => t1 (* Same size *)
 
@@ -708,19 +645,24 @@ struct
                )
          in t
          end
+
      and rec lub = 
       fn args =>           
          (case structural (lub, glb) args
            of NONE => lubLossy args
             | SOME t => t)
+
      and rec glb = 
       fn args => 
          (case structural (glb, lub) args
            of NONE => glbLossy args
             | SOME t => t)
+
      end (* structure Lub  *)
+
      val lub = Lub.lub
      val glb = Lub.glb
+
    end
 
    structure Prim =
@@ -872,10 +814,8 @@ struct
            | M.GErrorVal t => t
            | M.GIdx _ => M.TIdx
            | M.GTuple {vtDesc, inits} => 
-             M.TTuple {pok = MU.VTableDescriptor.pok vtDesc,
-                       fixed = Vector.map (simples (config, si, inits),
-                                           fn t => (t, M.FvReadWrite)),
-                       array = NONE}
+             MU.Typ.fixedArray (MU.VTableDescriptor.pok vtDesc,
+                                Vector.map (simples (config, si, inits), fn t => (t, M.FvReadWrite)))
            | M.GRat _ => M.TRat
            | M.GInteger _ => M.TInteger
            | M.GThunkValue {typ, ofVal} =>

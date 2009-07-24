@@ -801,11 +801,9 @@ struct
          terminate (state, env, new (state, env), M.TReturn rs)
 
      fun cut (state, env, opnd, args, cuts) =
-         terminate (state, env, new (state, env),
-                    M.TCut {cont = opnd, args = args, cuts = cuts})
+         terminate (state, env, new (state, env), M.TCut {cont = opnd, args = args, cuts = cuts})
 
-     fun uintpLoopCV (state, env, start, i, limit, incr, inits, inargs, body,
-                      resv, outargs) =
+     fun uintpLoopCV (state, env, start, i, limit, incr, inits, inargs, body, resv, outargs) =
        let
          val c = toConfig env
          val ni = relatedVar (state, i, "next", MU.Uintp.t c, false)
@@ -829,14 +827,14 @@ struct
                val tt = M.T {block = entry, arguments = inits'}
                val ft = M.T {block = exit,  arguments = inits}
              in
-               MU.Bool.ifT (toConfig env, M.SVariable nd', tt, ft)
+               MU.Bool.ifT (toConfig env, M.SVariable nd', {trueT = tt, falseT = ft})
              end
          fun exitF (state, env, entry, exit) = 
              let
                val tt = M.T {block = entry, arguments = resv'}
                val ft = M.T {block = exit,  arguments = resv}
              in
-               MU.Bool.ifT (toConfig env, M.SVariable nd, tt, ft)
+               MU.Bool.ifT (toConfig env, M.SVariable nd, {trueT = tt, falseT = ft})
              end
          val (_, _, loop) =
              loop (state, env, enterF, inargs, body, exitF, outargs)

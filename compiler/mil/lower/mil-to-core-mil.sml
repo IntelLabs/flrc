@@ -158,8 +158,8 @@ struct
                 let
                   fun typVar (t, v) = (typ t, v)
                   val tvs = Vector.map (fixed, typVar)
-                  val tvo = Option.map (array, typVar)
-                  val t = M.TTuple {pok = pok, fixed = tvs, array = tvo}
+                  val tv = typVar array
+                  val t = M.TTuple {pok = pok, fixed = tvs, array = tv}
                 in t
                 end
               | M.TIdx => t

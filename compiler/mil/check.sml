@@ -29,6 +29,7 @@ struct
   structure P = Prims
   structure M = Mil
   structure MU = MilUtils
+  structure TS = MU.TraceabilitySize
   structure MUT = MU.Typ
   structure MT = MilType
 
@@ -189,7 +190,7 @@ struct
                                           end
         | M.TTuple {pok, fixed, array} => let
                                             val () = typVars (s, e, m, fixed)
-                                            val () = typVarO (s, e, m, array)
+                                            val () = typVar (s, e, m, array)
                                           in ()
                                           end
         | M.TIdx                       => ()
@@ -213,23 +214,26 @@ struct
                                           end
         | M.TPType {kind, over}        => typ (s, e, m, over)
         | M.TPRef t                    => typ (s, e, m, t)
-  and typs (s, e, m, ts) = Vector.foreach (ts, fn t => typ (s, e, m, t))
+  and typs (s, e, m, ts) =
+      Vector.foreach (ts, fn t => typ (s, e, m, t))
+  and typVar (s, e, m, (t, _)) =
+      typ (s, e, m, t)
   and typVars (s, e, m, tvs) =
-      Vector.foreach (tvs, fn (t, _) => typ (s, e, m, t))
+      Vector.foreach (tvs, fn tv => typVar (s, e, m, tv))
   and typVarO (s, e, m, tvo) =
-      Option.foreach (tvo, fn (t, _) => typ (s, e, m, t))
+      Option.foreach (tvo, fn tv => typVar (s, e, m, tv))
 
   fun knownTraceSize (s, e, t, msg) =
       case MUT.traceabilitySize (getConfig e, t)
-       of MUT.TsAny =>
+       of TS.TsAny =>
           reportError (s, msg () ^ ": bad traceability and size")
-        | MUT.TsAnyS _ => reportError (s, msg () ^ ": bad size")
-        | MUT.TsBits _ => ()
-        | MUT.TsPtr => reportError (s, msg () ^ ": bad traceability")
-        | MUT.TsNonRefPtr => ()
-        | MUT.TsRef => ()
-        | MUT.TsNone => ()
-        | MUT.TsMask _ => ()
+        | TS.TsAnyS _ => reportError (s, msg () ^ ": bad size")
+        | TS.TsBits _ => ()
+        | TS.TsPtr => reportError (s, msg () ^ ": bad traceability")
+        | TS.TsNonRefPtr => ()
+        | TS.TsRef => ()
+        | TS.TsNone => ()
+        | TS.TsMask _ => ()
 
   (* Can we assign a value of type t2 to a variable of type t1?
    * However, t2 is conversative and maybe overly so.
@@ -244,12 +248,12 @@ struct
         fun err () = reportError (s, msg ())
       in
         case (ts1, ts2)
-         of (*(MUT.TsAny, _) => ()
-          | (_, MUT.TsAny) => ()
-          | (MUT.TsAnyS vs1, _) => ?
-          | (_, MUT.TsAnyS vs2) => ?
-          | (MUT.TsBits vs1, MUT.TsBits vs2) =>
-          | (MUT.TsBits vs1, MUT.TsNon
+         of (*(TS.TsAny, _) => ()
+          | (_, TS.TsAny) => ()
+          | (TS.TsAnyS vs1, _) => ?
+          | (_, TS.TsAnyS vs2) => ?
+          | (TS.TsBits vs1, TS.TsBits vs2) =>
+          | (TS.TsBits vs1, TS.TsNon
           | _ => err ()*) _ => ()
       end
 
@@ -448,16 +452,16 @@ struct
         fun err () = reportError (s, msg () ^ ": field kind mismatch")
       in
         case (fd, MUT.traceabilitySize (getConfig e, t))
-         of (M.FkRef, MUT.TsRef) => ()
-          | (M.FkBits fs, MUT.TsBits vs) =>
+         of (M.FkRef, TS.TsRef) => ()
+          | (M.FkBits fs, TS.TsBits vs) =>
             if MU.FieldSize.toValueSize fs = vs then () else err ()
-          | (M.FkBits fs, MUT.TsNonRefPtr) =>
+          | (M.FkBits fs, TS.TsNonRefPtr) =>
             if fs = MU.FieldSize.ptrSize (getConfig e) then () else err ()
-          | (M.FkFloat, MUT.TsBits vs) =>
+          | (M.FkFloat, TS.TsBits vs) =>
             if M.Vs32 = vs then () else err ()
-          | (M.FkDouble, MUT.TsBits vs) =>
+          | (M.FkDouble, TS.TsBits vs) =>
             if M.Vs64 = vs then () else err ()
-          | (_, MUT.TsNone) => ()
+          | (_, TS.TsNone) => ()
           | _ => err ()
       end
 
@@ -1260,7 +1264,7 @@ struct
                   val () = assert (s, Vector.length inits = fixedLen + varLen,
                                    fn () => msg () ^ ": wrong number of inits")
                   val tvs = Vector.map (ts, fn t => (t, M.FvReadWrite))
-                  val t = M.TTuple {pok = pok, fixed = tvs, array = NONE}
+                  val t = MU.Typ.fixedArray (pok, tvs)
                 in t
                 end
               | M.GRat r => M.TRat
@@ -1354,11 +1358,11 @@ struct
            val () = MilLayout.print (config, p)
          in
            Fail.fail ("MilCheck", "program", "Mil code not well formed")
-         end) handle any => 
-                     let
-                       val () = MilLayout.print (config, p)
-                     in raise any
-                     end
-
+         end)
+      handle any => 
+             let
+               val () = MilLayout.print (config, p)
+             in raise any
+             end
 
 end;

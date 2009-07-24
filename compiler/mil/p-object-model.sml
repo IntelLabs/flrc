@@ -434,7 +434,7 @@ struct
           val ct = codeTyp (M.TRef, args, ress)
           val fts = Vector.new1 (ct, M.FvReadOnly)
         in
-          M.TTuple {pok = M.PokFunction, fixed = fts, array = NONE}
+          MU.Typ.fixedArray (M.PokFunction, fts)
         end
 
 
@@ -530,10 +530,7 @@ struct
   structure OptionSet =
   struct
 
-    fun typ t =
-        M.TTuple {pok = M.PokOptionSet,
-                  fixed = Vector.new1 (t, M.FvReadOnly),
-                  array = NONE}
+    fun typ t = MU.Typ.fixedArray (M.PokOptionSet, Vector.new1 (t, M.FvReadOnly))
 
     val ofValIndex = B.ofValIndex
 
@@ -614,10 +611,7 @@ struct
   structure Sum = 
   struct
 
-    fun typ nts =
-        M.TTuple {pok = M.PokSum,
-                  fixed = Vector.new1 (M.TName, M.FvReadOnly),
-                  array = NONE}
+    fun typ nts = MU.Typ.fixedArray (M.PokSum, Vector.new1 (M.TName, M.FvReadOnly))
 
     fun td (c, fk) =
         let
@@ -675,8 +669,7 @@ struct
   structure Type =
   struct
 
-    fun typ t =
-        M.TTuple {pok = M.PokType, fixed = Vector.new0 (), array = NONE}
+    fun typ t = MU.Typ.fixedArray (M.PokType, Vector.new0 ())
 
     val td = M.TD {fixed = Vector.new0 (), array = NONE}
 
