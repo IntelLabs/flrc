@@ -65,6 +65,12 @@ struct
       in cis
       end
 
+  (* Move to 3 levels.  None, simple, aggressive/expensive *)
+  (* *RCIK R VBDL XXX CRfst*)
+  (*  Where XXX is some future stuff *)
+  (* *RCIKRVBDLCRfst *)
+  (* o1 *RCIVBDLfst *)
+  (* add symbol to do simplify between each pass *)
   val disabled = ""
   val enabled = fn c => not (String.contains (disabled, c))
   val filter = fn s => String.keepAll (s, enabled)
