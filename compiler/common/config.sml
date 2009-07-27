@@ -28,7 +28,6 @@ signature CONFIG = sig
   datatype verbosity = VSilent | VQuiet | VInfo | VTop
   datatype wordSize = Ws32 | Ws64
   datatype vectorSize = Vs128 | Vs256 | Vs512
-  datatype vectorIsaCapabilities = Vic of {size : vectorSize}
   datatype vectorArch = ViREF | ViSSE | ViLRB
   datatype t = C of {agc: agcProg,
 		     control_: string StringDict.t,
@@ -63,7 +62,6 @@ signature CONFIG = sig
 		     stack: int option,
 		     stop: stopPoint,
 		     targetWordSize: wordSize,
-                     targetVectorIsa: vectorIsaCapabilities,
 		     thunkScheme: thunkScheme,
 		     timeExecution: string option,
 		     toolset: toolset,
@@ -115,7 +113,6 @@ signature CONFIG = sig
   val stopLt: stopPoint * stopPoint -> bool
   val targetWordSize: t -> wordSize
   val targetWordSize': t -> IntArb.size
-  val targetVectorIsaCapabilities : t -> vectorIsaCapabilities
   val targetVectorSize: t -> vectorSize
   val thunkScheme: t -> thunkScheme
   val timeExecution: t -> string option
@@ -208,7 +205,7 @@ structure Config :> CONFIG = struct
     datatype wordSize = Ws32 | Ws64
 
     datatype vectorSize = Vs128 | Vs256 | Vs512 
-    datatype vectorIsaCapabilities = Vic of {size : vectorSize}
+
     datatype vectorArch = ViREF | ViSSE | ViLRB
 
     type passInfo = {
@@ -264,7 +261,6 @@ structure Config :> CONFIG = struct
          stop             : stopPoint,
          sloppyFp         : bool,
          targetWordSize   : wordSize,
-         targetVectorIsa  : vectorIsaCapabilities,
          thunkScheme      : thunkScheme,
          timeExecution    : string option,
          toolset          : toolset,
@@ -293,7 +289,6 @@ structure Config :> CONFIG = struct
     fun stop c                        = get (c, #stop)
     fun sloppyFp c                    = get (c, #sloppyFp)
     fun targetWordSize c              = get (c, #targetWordSize)
-    fun targetVectorIsaCapabilities c = get (c, #targetVectorIsa)
     fun thunkScheme c                 = get (c, #thunkScheme)
     fun timeExecution c               = get (c, #timeExecution)
     fun toolset c                     = get (c, #toolset)
@@ -369,10 +364,11 @@ structure Config :> CONFIG = struct
          of Ws32 => IntArb.S32
           | Ws64 => IntArb.S64
 
-    fun mkVIsa f =
-     fn config => let val Vic x = targetVectorIsaCapabilities config in f x end
-
-    val targetVectorSize = mkVIsa #size
+    val targetVectorSize = 
+        fn config => case va config 
+                      of ViREF => Vs128
+                       | ViSSE => Vs128
+                       | ViLRB => Vs512
 
    (* These are for controlling internal compiler warnings.  Warnings are used
     * for unexpected conditions which do not prevent correct compilation. 

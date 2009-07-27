@@ -1764,10 +1764,10 @@ struct
     val wordSize = ptrSize
 
     fun vectorSize config =
-        case Config.targetVectorSize config
-         of Config.Vs128 => M.Vs128
-          | Config.Vs256 => M.Vs256
-          | Config.Vs512 => M.Vs512
+        case Config.va config
+         of Config.ViREF => M.Vs128
+          | Config.ViSSE => M.Vs128
+          | Config.ViLRB => M.Vs512
 
     val compare = Compare.valueSize
     val eq = Compare.C.equal compare

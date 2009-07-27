@@ -6,8 +6,6 @@ sig
 
   type size = Config.vectorSize
 
-  type isaCapabilities = Config.vectorIsaCapabilities
-
   datatype elemType =
       ViUInt8   | ViUInt16  | ViUInt32 | ViUInt64
     | ViSInt8   | ViSInt16  | ViSInt32 | ViSInt64
@@ -103,8 +101,6 @@ structure VectorInstructions :> VECTOR_INSTRUCTIONS =
 struct
 
   type size = Config.vectorSize
-
-  type isaCapabilities = Config.vectorIsaCapabilities
 
   datatype elemType =
       ViUInt8   | ViUInt16  | ViUInt32 | ViUInt64
