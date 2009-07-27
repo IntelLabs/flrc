@@ -200,8 +200,7 @@ struct
        (case (Config.stack config, Config.output config)
          of (SOME i, _) => i
           | (NONE, Config.OkPillar) => pillarStack
-          | (NONE, Config.OkC) => 
-            if useFutures config then smallStack else largeStack)
+          | (NONE, Config.OkC) => smallStack)
 
    fun stackStr (config : Config.t) = 
        let
