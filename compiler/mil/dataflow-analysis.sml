@@ -138,12 +138,12 @@ functor MilDataFlowAnalysisF (
    * state manipulation functions
    *)
 
-  fun getStateInfo (env : env, 
-                    st : info VD.t ref, 
-                    v : M.variable) : info option = VD.lookup (!st, v)
-  fun getStateInfoDef (env, st, v) : info = 
-      Utils.Option.get (VD.lookup (!st, v), emptyInfo (env, v))
+  fun getStateInfo (env, st, v) = VD.lookup (!st, v)
+
+  fun getStateInfoDef (env, st, v) = Utils.Option.get (VD.lookup (!st, v), emptyInfo (env, v))
+
   fun setStateInfo (st, v, i) = st := VD.insert (!st, v, i)
+
   fun updateStateInfo (E env, st, v, i) = 
       let
         fun dbgString (prefix, var, info) =
@@ -187,10 +187,9 @@ functor MilDataFlowAnalysisF (
   fun mkLocalEnv (env : env, 
                   funbody : M.codeBody, 
                   restr : LS.t option,
-                  m as M.P {globals, symbolTable, ...} : Mil.t) =
+                  m as M.P {globals, symbolTable, ...}) =
       let
         val config = getConfig env
-
         val si = I.SymbolInfo.SiTable symbolTable
         val cfg = MilCfg.build (config, si, funbody)
         val domtree = MilCfg.getLabelDomTree cfg
@@ -205,12 +204,9 @@ functor MilDataFlowAnalysisF (
      successors as well, so it enters an SCC. *)
   fun envEnterBlock (E env, st, label) =
       let
-        val () = dbgPrint (E env, "ENTER: " ^
-                                  LU.toString (I.layoutLabel (label)) ^
-                                  "\n")
+        val () = dbgPrint (E env, "ENTER: " ^ LU.toString (I.layoutLabel (label)) ^ "\n")
         val M.B {parameters, ...} = envGetBlock (E env, label)
-        val vect = Vector.map (parameters, 
-                               fn (s) => getStateInfoDef (#env env, st, s))
+        val vect = Vector.map (parameters, fn (s) => getStateInfoDef (#env env, st, s))
         val () = #fixinfo env := LD.insert (!(#fixinfo env), label, vect)
         val () = List.push (#current env, label)
       in ()
@@ -219,9 +215,7 @@ functor MilDataFlowAnalysisF (
   (* post-process after leaving a block or SCC *)
   fun envExitBlock (E env, label) =
       let
-        val () = dbgPrint (E env, "EXIT: " ^
-                                  LU.toString (I.layoutLabel (label)) ^
-                                  "\n")
+        val () = dbgPrint (E env, "EXIT: " ^ LU.toString (I.layoutLabel (label)) ^ "\n")
         val () = #fixinfo env := LD.remove (!(#fixinfo env), label)
         val () = #todo env := LS.remove (!(#todo env), label)
         val _ = List.pop (#current env)
@@ -233,14 +227,10 @@ functor MilDataFlowAnalysisF (
   (* process deferred block *)
   fun envDefer (E env, label, args) =
       let
-        val () = dbgPrint (E env, "DEFER: " ^
-                                  LU.toString (I.layoutLabel (label)) ^
-                                  "\n")
-        val new = 
-            case envGetDeferred (E env, label) 
-             of SOME old => 
-                Vector.map2 (old, args, fn (a, b) => mergeInfo (#env env, a, b))
-              | NONE => args
+        val () = dbgPrint (E env, "DEFER: " ^ LU.toString (I.layoutLabel (label)) ^ "\n")
+        val new = case envGetDeferred (E env, label) 
+                   of SOME old => Vector.map2 (old, args, fn (a, b) => mergeInfo (#env env, a, b))
+                    | NONE => args
       in
         #fixinfo env := LD.insert (!(#fixinfo env), label, new)
       end
@@ -263,8 +253,7 @@ functor MilDataFlowAnalysisF (
   (* get ready blocks from todo set *)
   fun envGetTodos (E env) =
       let
-        val {no, yes} = 
-          LS.partition (!(#todo env), fn (l) => envValidTarget (E env, l))
+        val {no, yes} = LS.partition (!(#todo env), fn (l) => envValidTarget (E env, l))
         val () = #todo env := no
       in yes
       end
@@ -272,8 +261,7 @@ functor MilDataFlowAnalysisF (
   (*
    * collect information for global values
    *)
-  fun inferGlobalInfo (genv, st, v, g) =
-      setStateInfo (st, v, deriveGlobal (genv, stateDict (genv, st), g))
+  fun inferGlobalInfo (genv, st, v, g) = setStateInfo (st, v, deriveGlobal (genv, stateDict (genv, st), g))
 
   (*
    * Traversal functions to guide the inference.
@@ -507,8 +495,7 @@ functor MilDataFlowAnalysisF (
                 in ()
                 end
               | _ => ()
-        val () = VD.foreach (globals, 
-                             fn (v, g) => inferFunction (env, st, v, g))
+        val () = VD.foreach (globals, fn (v, g) => inferFunction (env, st, v, g))
       in !st
       end
 end 
