@@ -165,8 +165,8 @@ struct
   structure Integer =
   struct
 
-    val optMax = IntInf.- (IntInf.<< (IntInf.one, 0w30), IntInf.one)
-    val optMin = IntInf.<< (IntInf.one, 0w30)
+    val optMax = MilUtils.Integer.Opt.max
+    val optMin = MilUtils.Integer.Opt.min
 
     fun checkOpt i =
         if IntInf.< (i, optMin) orelse IntInf.> (i, optMax) then
@@ -228,35 +228,41 @@ struct
           | CLe => "LE"
 
     fun getNumArithName (nt, a) =
-        "pLsr" ^ (getNumTypName nt) ^ (getArithName a)
+        "pLsrPrim" ^ (getNumTypName nt) ^ (getArithName a)
 
     fun getNumCompareName (nt, c) =
-        "pLsr" ^ (getNumTypName nt) ^ (getCompareName c)
+        "pLsrPrim" ^ (getNumTypName nt) ^ (getCompareName c)
 
     fun getNumConvertName (nt1, nt2) =
-        "pLsr" ^ (getNumTypName nt1) ^ "From" ^ (getNumTypName nt2)
+        "pLsrPrim" ^ (getNumTypName nt1) ^ "From" ^ (getNumTypName nt2)
 
     fun getPrimName (p, t) =
         case p
          of PNumArith (nt, a)      => getNumArithName (nt, a)
           | PNumCompare (nt, c)    => getNumCompareName (nt, c)
           | PNumConvert (nt1, nt2) => getNumConvertName (nt1, nt2)
-          | PRatNumerator          => "pLsrRatNumerator"
-          | PRatDenominator        => "pLsrRatDenominator"
-          | PEqual                 => "pLsrPEq"
-          | PDom                   => "pLsrPDom"
-          | PNub                   => "pLsrPNub"
-          | PPtrType               => "pLsrPPtrType"
-          | PPtrRead               => "pLsrPPtrRead"
-          | PPtrWrite              => "pLsrPPtrWrite"
-          | PPtrNew                => "pLsrPPtreNew"
-          | PRatToUInt32Checked    => "pLsrRationalToUInt32Checked"
+          | PRatNumerator          => "pLsrPrimRatNumerator"
+          | PRatDenominator        => "pLsrPrimRatDenominator"
+          | PEqual                 => "pLsrPrimPEq"
+          | PDom                   => "pLsrPrimPDom"
+          | PNub                   => "pLsrPrimPNub"
+          | PPtrType               => "pLsrPrimPPtrType"
+          | PPtrRead               => "pLsrPRimPPtrRead"
+          | PPtrWrite              => "pLsrPrimPPtrWrite"
+          | PPtrNew                => "pLsrPrimPPtrNew"
+          | PRatToUIntpChecked     => "pLsrPrimRationalToUInt32Checked"
+
+    fun getDivKindName dk =
+        (case dk
+          of DkT => "T"
+           | DkF => "F"
+           | DkE => "E")
 
     fun getRuntimeName (rt, t) =
         case rt
-         of RtIntDivMod          => "pLsrPIntDivMod" ^ thnk t
-          | RtIntDiv             => "pLsrPIntDiv"
-          | RtIntMod             => "pLsrPIntMod"
+         of RtIntDivMod dk       => "pLsrPIntDivMod" ^ getDivKindName dk ^ thnk t
+          | RtIntDiv dk          => "pLsrPIntDiv" ^ getDivKindName dk 
+          | RtIntMod dk          => "pLsrPIntMod" ^ getDivKindName dk 
           | RtFloatMk            => "pLsrFloatMk"
           | RtFloatToInt         => "pLsrFloatToInt"
           | RtFloatFromInt       => "pLsrFloatFromInt"
@@ -373,6 +379,17 @@ struct
                 | Vi p       => getViName (p, t)
         in Pil.identifier s
         end
+
+    fun call (p, t, d, args) = 
+      let
+        val m = Pil.E.namedConstant (getName (p, t))
+        val s = 
+            Pil.S.expr (case (d, p)
+                         of (SOME d, Prim p) => Pil.E.call (m, d::args)
+                          | (SOME d, _)      => Pil.E.assign (d, Pil.E.call (m, args))
+                          | (NONE, _)        => Pil.E.call (m, args))
+      in s
+      end
 
   end
 

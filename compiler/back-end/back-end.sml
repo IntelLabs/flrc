@@ -98,6 +98,9 @@ struct
        Config.Feature.mk ("Plsr:change-vtables",
                           "do vtable changing for immutability etc.")
 
+   val (usePortableTaggedIntsF, usePortableTaggedInts) = 
+       Config.Feature.mk ("Plsr:portable-tagged-ints",
+                          "tagged ints don't assume two's complement")
 
    fun defines (config : Config.t) =
        let
@@ -175,6 +178,9 @@ struct
                | Config.ViSSE => ["P_USE_VI_SSE"]
                | Config.ViLRB => ["P_USE_VI_LRB"]
 
+         val portableInts =
+             if usePortableTaggedInts config then ["P_PORTABLE_TAGGED_INTS"] else []
+
          val ds = 
              List.concat [runtime, 
                           vi, 
@@ -185,7 +191,8 @@ struct
                           pbase, 
                           instr, 
                           vtbChg,
-                          va]
+                          va,
+                          portableInts]
          val flags = 
              List.map (ds, fn s => "-D" ^ s)
        in flags
@@ -611,7 +618,8 @@ struct
                                    gcAllBarriersF,
                                    instrumentAllocationF,
                                    instrumentVtbAllocationF,
-                                   vtableChangeF],
+                                   vtableChangeF,
+                                   usePortableTaggedIntsF],
                        subPasses = []}
      fun pilCompile ((), pd, basename) =
          compile (PassData.getConfig pd, basename)

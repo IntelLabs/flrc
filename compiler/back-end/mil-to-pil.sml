@@ -1153,8 +1153,7 @@ struct
 
   (*** Primitives ***)
 
-  fun genPrim (state, env, p, t, args) =
-      Pil.E.call (Pil.E.namedConstant (RT.Prim.getName (p, t)), args)
+  fun genPrim (state, env, p, t, d, args) = RT.Prim.call (p, t, d, args)
 
   (*** Operands ***)
 
@@ -1497,8 +1496,11 @@ struct
         case rhs
          of M.RhsSimple s => assignP (genSimple (state, env, s))
           | M.RhsPrim {prim, createThunks, args} =>
-            assign (genPrim (state, env, prim, createThunks,
-                             genOperands(state, env, args)))
+            let
+              val d = Option.map (dest, fn v => genVarE (state, env, v))
+              val args = genOperands(state, env, args)
+            in genPrim (state, env, prim, createThunks, d, args)
+            end
           | M.RhsTuple {vtDesc, inits} =>
             let
               fun doIt v =
