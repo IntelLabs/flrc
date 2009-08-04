@@ -28,6 +28,8 @@ struct
   structure LD  = ID.LabelDict
   structure LDOM = MilCfg.LabelDominance
   structure I   = Identifier
+  structure MU  = MilUtils
+  structure ML  = MilLayout
 
   datatype psCond =
            RCons of M.constant
@@ -450,9 +452,8 @@ struct
    * and b is empty block only with transfer instruction, 
    * then we can make (a->c) directly.
    *)
-  fun checkBlockPSExt (d, imil, ifunc, psDict, a) = 
+  fun checkBlockPSExt (d, m as Mil.P {globals, symbolTable, entry}, imil, ifunc, psDict, a) = 
       let
-        val mil as Mil.P {globals, symbolTable, entry} = IMil.T.unBuild imil
         val si = I.SymbolInfo.SiTable symbolTable
         val config = PD.getConfig d
                                                                
@@ -526,7 +527,7 @@ struct
               val instr = IMil.IBlock.getTransfer' (imil, a)
             in
               case instr
-               of M.TGoto t => replaceGoto (a, b, c, instr, t) (*fixme: this fails 0006, turn off now*)
+               of M.TGoto t => replaceGoto (a, b, c, instr, t)
                 | M.TCase t => replaceCase (a, b, c, instr, M.TCase, t)
                 | M.TInterProc t => ()
                 | M.TReturn t => ()
@@ -551,7 +552,7 @@ struct
                        andalso Vector.size (bpara) = 0
                        andalso Vector.size (cpara) = 0
                        andalso (case IMil.IBlock.getTransfer'(imil, b)
-                                 of Mil.TGoto _ => true
+                                 of Mil.TGoto _ => false
                                   | Mil.TCase _ => true
                                   | Mil.TInterProc _ => false
                                   | Mil.TReturn _ => false
@@ -562,19 +563,13 @@ struct
                  | _ => ())
             end
 
-        fun checkEdge (a, b) =
-            let
-              val clist = IMil.IBlock.succs (imil, b)
-            in 
-              List.foreach (clist, fn c => checkConsequentEdges (a, b, c))
-            end
+        fun checkEdge (a, b) = List.foreach (IMil.IBlock.succs (imil, b), fn c => checkConsequentEdges (a, b, c))
 
-        val blist = IMil.IBlock.succs (imil, a)
-        val () = List.foreach (blist, fn b => checkEdge (a, b))
+        val () = List.foreach (IMil.IBlock.succs (imil, a), fn b => checkEdge (a, b))
       in ()
       end
   
-  fun rcbrCfg (d, imil, ifunc) =
+  fun rcbrCfg (d, m, imil, ifunc) =
       let
         val () = splitCriticalEdge (imil, ifunc)
         val () = Debug.layoutCfg (d, imil, ifunc)
@@ -582,17 +577,17 @@ struct
         val () = Debug.layoutTreeDot (d, imil, ifunc, dom)
         val psDict = ref LD.empty
         val () = propagatePS' (d, psDict, imil, dom)
-
-        val () = Tree.foreachPre (dom, fn b => checkBlockPSExt (d, imil, ifunc, psDict, b))
-        val () = Tree.foreachPre (dom, fn b => checkBlockPSExt (d, imil, ifunc, psDict, b))
-
-        val () = Tree.foreachPre(dom, fn b => checkBlockPS (d, imil, !psDict, b))
+        (* rcbr extension *)
+        val () = Tree.foreachPre (dom, fn b => checkBlockPSExt (d, m, imil, ifunc, psDict, b))
+        (* rcbr *)
+        val () = Tree.foreachPre (dom, fn b => checkBlockPS (d, imil, !psDict, b))
       in ()
       end
 
   fun program (imil, d) = 
       let
-        val () = List.foreach (IMil.Enumerate.T.funcs imil, fn ifunc => rcbrCfg (d, imil, ifunc))
+        val m  = IMil.T.unBuild imil
+        val () = List.foreach (IMil.Enumerate.T.funcs imil, fn ifunc => rcbrCfg (d, m, imil, ifunc))
         val () = Debug.debugShowPost (d, imil)
         val () = PD.report (d, passname)
       in ()
