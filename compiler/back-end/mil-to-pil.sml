@@ -6,6 +6,7 @@
 signature MIL_TO_PIL =
 sig
   val instrumentAllocationSites : Config.t -> bool
+  val assertSmallInts : Config.t -> bool  
   val features : Config.Feature.feature list
   val program : PassData.t * string * Mil.t -> Layout.t
 end;
@@ -2131,8 +2132,17 @@ struct
         Pil.D.staticFunction (rt, genVar (state, env, f), decs, ls, b)
       end
 
+   val (assertSmallIntsF, assertSmallInts) = 
+       Config.Feature.mk ("Plsr:tagged-ints-assert-small",
+                          "use 32 bit ints for rats (checked)")
+       
   fun genStaticIntInf (state, env, i) = 
       let
+        val () = if assertSmallInts (getConfig env) then
+                   Fail.fail ("MilToPil", "genStaticIntInf", 
+                              "Failed small int assertion")
+                 else
+                   ()
         (* Just used to create unique variables for the
          * structure components.  These variables are needed
          * to work around a pillar bug.  -leaf *)
@@ -2470,6 +2480,7 @@ struct
   val features =
       [instrumentAllocationSitesF, 
        instrumentBlocksF, 
-       instrumentFunctionsF]
+       instrumentFunctionsF,
+       assertSmallIntsF]
 
 end;
