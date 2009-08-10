@@ -98,6 +98,14 @@ struct
        Config.Feature.mk ("Plsr:change-vtables",
                           "do vtable changing for immutability etc.")
 
+   val (usePortableTaggedIntsF, usePortableTaggedInts) = 
+       Config.Feature.mk ("Plsr:tagged-ints-portable",
+                          "tagged ints don't assume two's complement")
+
+   val (assumeSmallIntsF, assumeSmallInts) = 
+       Config.Feature.mk ("Plsr:tagged-ints-assume-small",
+                          "use 32 bit ints for rats (unchecked)")
+
 
    fun defines (config : Config.t) =
        let
@@ -158,14 +166,6 @@ struct
               then ["P_INSTRUMENT_VTB_ALC"]
               else []]
 
-         val runtime = 
-             List.concat
-             [
-              if Globals.disableOptimizedRationals config then
-                []
-              else  
-                ["P_USE_TAGGED_RATIONALS"]
-             ]
          val vtbChg =
              if vtableChange config then ["P_DO_VTABLE_CHANGE"] else []
 
@@ -175,9 +175,18 @@ struct
                | Config.ViSSE => ["P_USE_VI_SSE"]
                | Config.ViLRB => ["P_USE_VI_LRB"]
 
+         val taggedIntDefines =
+             (if Globals.disableOptimizedRationals config then
+                []
+              else  
+                ["P_USE_TAGGED_RATIONALS"]) @
+             (if usePortableTaggedInts config then ["P_TAGGED_INT32_PORTABLE"] 
+              else if assumeSmallInts config then ["P_TAGGED_INT32_ASSUME_SMALL"] 
+              else if MilToPil.assertSmallInts config then ["P_TAGGED_INT32_ASSERT_SMALL"]
+              else [])
+
          val ds = 
-             List.concat [runtime, 
-                          vi, 
+             List.concat [vi, 
                           [ws], 
                           gc, 
                           futures, 
@@ -185,7 +194,8 @@ struct
                           pbase, 
                           instr, 
                           vtbChg,
-                          va]
+                          va,
+                          taggedIntDefines]
          val flags = 
              List.map (ds, fn s => "-D" ^ s)
        in flags
@@ -611,7 +621,9 @@ struct
                                    gcAllBarriersF,
                                    instrumentAllocationF,
                                    instrumentVtbAllocationF,
-                                   vtableChangeF],
+                                   vtableChangeF,
+                                   usePortableTaggedIntsF,
+                                   assumeSmallIntsF],
                        subPasses = []}
      fun pilCompile ((), pd, basename) =
          compile (PassData.getConfig pd, basename)

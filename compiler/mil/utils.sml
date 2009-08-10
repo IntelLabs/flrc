@@ -3944,7 +3944,7 @@ struct
     structure Opt = 
     struct
       val max = IntInf.- (IntInf.<< (IntInf.one, 0w30), IntInf.one)
-      val min = IntInf.~ max
+      val min = IntInf.~ (IntInf.<< (IntInf.one, 0w30))
       val integerFits = 
        fn i => IntInf.>= (i, min) andalso IntInf.<= (i, max) 
       val rationalFits = 

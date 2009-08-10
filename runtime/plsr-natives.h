@@ -10,77 +10,107 @@
  * Arithmetic Primitives
  */
 
-static PlsrRational pLsrPIntDiv(PlsrRational a, PlsrRational b)
-{
-    PlsrInteger ai = pLsrIntegerFromRational(a);
-    PlsrInteger bi = pLsrIntegerFromRational(b);
-    PlsrInteger q = pLsrIntegerDiv(ai, bi);
-    return pLsrRationalFromInteger(q);
-}
+#define pLsrPIntMkDiv(Kind, div)                                        \
+    static PlsrRational pLsrPIntDiv##Kind(PlsrRational a, PlsrRational b) \
+    {                                                                   \
+        PlsrInteger ai;                                                 \
+        PlsrInteger bi;                                                 \
+        PlsrInteger q;                                                  \
+        PlsrRational r;                                                 \
+                                                                        \
+        pLsrPrimIntegerFromRational(ai, a);                             \
+        pLsrPrimIntegerFromRational(bi, b);                             \
+        q = div(ai, bi);                                                \
+        pLsrPrimRationalFromInteger(r, q);                              \
+        return r;                                                       \
+    }                                                                   
 
-static PlsrRational pLsrPIntMod(PlsrRational a, PlsrRational b)
-{
-    PlsrInteger ai = pLsrIntegerFromRational(a);
-    PlsrInteger bi = pLsrIntegerFromRational(b);
-    PlsrInteger r = pLsrIntegerMod(ai, bi);
-    return pLsrRationalFromInteger(r);
-}
+pLsrPIntMkDiv(T, pLsrIntegerDivT);
+pLsrPIntMkDiv(F, pLsrIntegerDivF);
+pLsrPIntMkDiv(E, pLsrIntegerDivE);
 
-static PlsrPAny pLsrPIntDivModTD(PlsrPAny (*pair)(PlsrPAny, PlsrPAny),
-                                 PlsrRational a, PlsrRational b) {
-    PlsrInteger ai = pLsrIntegerFromRational(a);
-    PlsrInteger bi = pLsrIntegerFromRational(b);
-    PlsrInteger q = NULL;
-    PlsrInteger r = NULL;
-    pLsrIntegerDivMod(&q, &r, ai, bi);
-    PlsrPAny qr = pLsrPRatFromInteger(q);
-    PlsrPAny rr = pLsrPRatFromInteger(r);
-    return pair(qr, rr);
-}
+#define pLsrPIntMkMod(Kind, mod)                                        \
+    static PlsrRational pLsrPIntMod##Kind(PlsrRational a, PlsrRational b) \
+    {                                                                   \
+        PlsrInteger ai;                                                 \
+        PlsrInteger bi;                                                 \
+        PlsrInteger rem;                                                \
+        PlsrRational r;                                                 \
+                                                                        \
+        pLsrPrimIntegerFromRational(ai, a);                             \
+        pLsrPrimIntegerFromRational(bi, b);                             \
+        rem = mod(ai, bi);                                              \
+        pLsrPrimRationalFromInteger(r, rem);                            \
+        return r;                                                       \
+    }                                                                   
 
-static PlsrPAny pLsrPIntDivModT(PlsrRational a, PlsrRational b)
-{
-    return pLsrPIntDivModTD(pLsrPPairT, a, b);
-}
+pLsrPIntMkMod(T, pLsrIntegerModT);
+pLsrPIntMkMod(F, pLsrIntegerModF);
+pLsrPIntMkMod(E, pLsrIntegerModE);
 
-static PlsrPAny pLsrPIntDivModD(PlsrRational a, PlsrRational b)
-{
-    return pLsrPIntDivModTD(pLsrPPairD, a, b);
-}
+#define pLsrPIntMkDivMod(Kind, TorD, divmod)                            \
+    static PlsrPAny pLsrPIntDivMod##Kind##TorD(PlsrRational a, PlsrRational b) \
+    {                                                                   \
+        PlsrInteger ai;                                                 \
+        PlsrInteger bi;                                                 \
+        pLsrPrimIntegerFromRational(ai, a);                             \
+        pLsrPrimIntegerFromRational(bi, b);                             \
+                                                                        \
+        PlsrInteger q = NULL;                                           \
+        PlsrInteger r = NULL;                                           \
+        divmod(&q, &r, ai, bi);                                         \
+                                                                        \
+        PlsrPAny qr = pLsrPRatFromInteger(q);                           \
+        PlsrPAny rr = pLsrPRatFromInteger(r);                           \
+        return pLsrPPair##TorD(qr, rr);                                 \
+    }
+
+pLsrPIntMkDivMod(T, T, pLsrIntegerDivModT);
+pLsrPIntMkDivMod(F, T, pLsrIntegerDivModF);
+pLsrPIntMkDivMod(E, T, pLsrIntegerDivModE);
+pLsrPIntMkDivMod(T, D, pLsrIntegerDivModT);
+pLsrPIntMkDivMod(F, D, pLsrIntegerDivModF);
+pLsrPIntMkDivMod(E, D, pLsrIntegerDivModE);
 
 /**********************************************************************
  * Pointers
  */
 
-static PlsrPAny pLsrPPtrNewHelper(PlsrPAny a)
+static PlsrPAny pLsrPPtrNewHelperSlow(PlsrPAny a)
 {
     pLsrRuntimeError("PPtrNewHelper unimplemented");
     return 0;
 }
 
-static PlsrPAny pLsrPPtrNew(PlsrPAny a)
+static PlsrPAny pLsrPPtrNewSlow(PlsrPAny a)
 {
     pLsrRuntimeError("PPtrNew unimplemented");
     return 0;
 }
 
-static PlsrPAny pLsrPPtrWrite(PlsrPAny a, PlsrPAny b)
+static PlsrPAny pLsrPPtrWriteSlow(PlsrPAny a, PlsrPAny b)
 {
     pLsrRuntimeError("PPtrWrite unimplemented");
     return 0;
 }
 
-static PlsrPAny pLsrPPtrRead(PlsrPAny a)
+static PlsrPAny pLsrPPtrReadSlow(PlsrPAny a)
 {
     pLsrRuntimeError("PPtrRead unimplemented");
     return 0;
 }
 
-static PlsrPAny pLsrPPtrType(PlsrPAny a)
+static PlsrPAny pLsrPPtrTypeSlow(PlsrPAny a)
 {
     pLsrRuntimeError("PPtrType unimplemented");
     return 0;
 }
+
+#define pLsrPPtrNewHelper(dest, a) ((dest) = pLsrPPtrNewHelperSlow(a))
+#define pLsrPPtrNew(dest, a) ((dest) = pLsrPPtrNewSlow(a))
+#define pLsrPPtrWrite(dest, a, b) ((dest) = pLsrPPtrWriteSlow(a, b))
+#define pLsrPPtrRead(dest, a) ((dest) = pLsrPPtrReadSlow(a))
+#define pLsrPPtrType(dest, a) ((dest) = pLsrPPtrTypeSlow(a))
 
 /**********************************************************************
  * IO
@@ -284,25 +314,33 @@ static PlsrRational pLsrPOpenOut(PlsrPAny a)
 {
     char* filename = pLsrPStringToCString(a);
     uintp f = pLsrOpenOut(filename);
+    PlsrRational r;
     pLsrFreeC(filename);
-    return pLsrRationalFromUIntp(f);
+    pLsrPrimRationalFromUIntp(r, f);
+    return r;
 }
 
 static PlsrRational pLsrPGetStdout()
 {
-  return pLsrRationalFromUIntp((uintp)stdout);
+    PlsrRational r;
+    pLsrPrimRationalFromUIntp(r, (uintp)stdout);
+    return r;
 }
 
 static void pLsrPOutputByte(PlsrRational a, PlsrRational b)
 {
-    uintp ai = pLsrUIntpFromRational(a);
-    uintp bi = pLsrUIntpFromRational(b);
+    uintp ai;
+    uintp bi;
+
+    pLsrPrimUIntpFromRational(ai, a);
+    pLsrPrimUIntpFromRational(bi, b);
     pLsrOutputByte(ai, (char)bi);
 }
 
 static void pLsrPCloseOut(PlsrRational a)
 {
-    uintp ai = pLsrUIntpFromRational(a);
+    uintp ai;
+    pLsrPrimUIntpFromRational(ai, a);
     pLsrCloseOut(ai);
 }
 
@@ -310,25 +348,34 @@ static PlsrRational pLsrPOpenIn(PlsrPAny a)
 {
     char* filename = pLsrPStringToCString(a);
     uintp f = pLsrOpenIn(filename);
+    PlsrRational r;
     pLsrFreeC(filename);
-    return pLsrRationalFromUIntp(f);
+    pLsrPrimRationalFromUIntp(r, f);
+    return r;
 }
 
 static PlsrRational pLsrPGetStdin()
 {
-  return pLsrRationalFromUIntp((uintp)stdin);
+    PlsrRational r;
+    pLsrPrimRationalFromUIntp(r, (uintp)stdin);
+    return r;
 }
 
 static PlsrRational pLsrPInputByte(PlsrRational a)
 {
-    uintp f = pLsrUIntpFromRational(a);
-    uintp c = pLsrInputByte(f);
-    return pLsrRationalFromUIntp(c);
+    uintp f;
+    uintp c;
+    PlsrRational r;
+    pLsrPrimUIntpFromRational(f, a);
+    c = pLsrInputByte(f);
+    pLsrPrimRationalFromUIntp(r, c);
+    return r;
 }
 
 static PlsrPAny pLsrPInputStringT(PlsrRational a, PlsrPAny b)
 {
-    uintp f = pLsrUIntpFromRational(a);
+    uintp f;
+    pLsrPrimUIntpFromRational(f, a);
     char *delimiters = pLsrPStringToCString(b);
     char *s = pLsrInputString(f, delimiters);
     pLsrFreeC(delimiters);
@@ -339,7 +386,8 @@ static PlsrPAny pLsrPInputStringT(PlsrRational a, PlsrPAny b)
 
 static PlsrPAny pLsrPInputStringD(PlsrRational a, PlsrPAny b)
 {
-    uintp f = pLsrUIntpFromRational(a);
+    uintp f;
+    pLsrPrimUIntpFromRational(f, a);
     char *delimiters = pLsrPStringToCString(b);
     char *s = pLsrInputString(f, delimiters);
     pLsrFreeC(delimiters);
@@ -350,7 +398,8 @@ static PlsrPAny pLsrPInputStringD(PlsrRational a, PlsrPAny b)
 
 static PlsrPAny pLsrPInputAllT(PlsrRational a)
 {
-    uintp f = pLsrUIntpFromRational(a);
+    uintp f;
+    pLsrPrimUIntpFromRational(f, a);
     char *s = pLsrInputAll(f);
     PlsrPAny res = pLsrCStringToPStringT(s);
     pLsrFreeC(s);
@@ -359,7 +408,8 @@ static PlsrPAny pLsrPInputAllT(PlsrRational a)
 
 static PlsrPAny pLsrPInputAllD(PlsrRational a)
 {
-    uintp f = pLsrUIntpFromRational(a);
+    uintp f;
+    pLsrPrimUIntpFromRational(f, a);
     char *s = pLsrInputAll(f);
     PlsrPAny res = pLsrCStringToPStringD(s);
     pLsrFreeC(s);
@@ -368,14 +418,16 @@ static PlsrPAny pLsrPInputAllD(PlsrRational a)
 
 static PlsrPBool pLsrPIsEOF(PlsrRational a)
 {
-    uintp f = pLsrUIntpFromRational(a);
+    uintp f;
+    pLsrPrimUIntpFromRational(f, a);
     uintp c = pLsrIsEOF(f);
     return toPlsrPBool(c);
 }
 
 static void pLsrPCloseIn(PlsrRational a)
 {
-    uintp f = pLsrUIntpFromRational(a);
+    uintp f;
+    pLsrPrimUIntpFromRational(f, a);
     pLsrCloseIn(f);
 }
 
@@ -437,7 +489,9 @@ static PlsrRational pLsrPString2Nat(PlsrPAny a)
     char* str = pLsrPStringToCString(a);
     uintp i = pLsrString2Nat (str);
     pLsrFreeC(str);
-    return pLsrRationalFromUIntp(i);
+    PlsrRational r;
+    pLsrPrimRationalFromUIntp(r, i);
+    return r;
 }
 
 static float pLsrString2Float(char *str)
@@ -456,7 +510,8 @@ static float pLsrPString2Float(PlsrPAny a)
 
 static PlsrPAny pLsrPFloat2StringT(float f, PlsrRational p)
 {
-    uintp pi = pLsrUIntpFromRational(p);
+    uintp pi;
+    pLsrPrimUIntpFromRational(pi, p);
     char str[100];
     sprintf(str, "%.*f", pi, f);
     return pLsrCStringToPStringT(str);
@@ -464,7 +519,8 @@ static PlsrPAny pLsrPFloat2StringT(float f, PlsrRational p)
 
 static PlsrPAny pLsrPFloat2StringD(float f, PlsrRational p)
 {
-    uintp pi = pLsrUIntpFromRational(p);
+    uintp pi;
+    pLsrPrimUIntpFromRational(pi, p);
     char str[100];
     sprintf(str, "%.*f", pi, f);
     return pLsrCStringToPStringD(str);
@@ -480,23 +536,27 @@ static PlsrPAny pLsrPFloat2StringD(float f, PlsrRational p)
  * and nub just returns this rat.
  */
 
-static PlsrRational pLsrPNub(PlsrPAny a)
+static PlsrRational pLsrPNubSlow(PlsrPAny a)
 {
     assert(pLsrVTableGetTag(pLsrObjectGetVTable(a)) == VSetTag);
     return (PlsrRational)pLsrPSetGet(a);
 }
 
-static PlsrPAny pLsrPDom(PlsrPAny a)
+#define pLsrPrimPNub(dest, a) ((dest) = pLsrPNubSlow(a))
+
+static PlsrPAny pLsrPDomSlow(PlsrPAny a)
 {
     if (pLsrVTableGetTag(pLsrObjectGetVTable(a)) == VArrayTag) {
-        return
-            pLsrPSetNew
-            ((PlsrObjectB)pLsrRationalFromUIntp(pLsrPArrayOGetLen(a)));
+        PlsrRational r;
+        pLsrPrimRationalFromUIntp(r, pLsrPArrayOGetLen(a));
+        return pLsrPSetNew((PlsrObjectB) r);
     } else {
         pLsrRuntimeError("PDom unimplemented for nonarrays");
         return 0;
     }
 }
+
+#define pLsrPrimPDom(dest, a) ((dest) = pLsrPDomSlow(a))
 
 /**********************************************************************
  * Timers 
@@ -523,7 +583,8 @@ static uint64 pLsrGetCurrentTime()
 
 static void pLsrPResetTimer(PlsrRational i)
 {
-    uintp n = pLsrUIntpFromRational(i);
+    uintp n;
+    pLsrPrimUIntpFromRational(n, i);
   
     t0[n] = pLsrGetCurrentTime();
     // printf("init Timer(%d) at %llu\n", n, t0[n]);
@@ -533,7 +594,8 @@ static float pLsrPGetTimer(PlsrRational i)
 {
     uint64 t1;
     float delta;
-    uintp n = pLsrUIntpFromRational(i);
+    uintp n;
+    pLsrPrimUIntpFromRational(n, i);
     t1 = pLsrGetCurrentTime();
     // printf("get Timer(%d) at %llu\n", n, t1);
 

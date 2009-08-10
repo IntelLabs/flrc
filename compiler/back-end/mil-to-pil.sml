@@ -6,6 +6,7 @@
 signature MIL_TO_PIL =
 sig
   val instrumentAllocationSites : Config.t -> bool
+  val assertSmallInts : Config.t -> bool  
   val features : Config.Feature.feature list
   val program : PassData.t * string * Mil.t -> Layout.t
 end;
@@ -1153,8 +1154,7 @@ struct
 
   (*** Primitives ***)
 
-  fun genPrim (state, env, p, t, args) =
-      Pil.E.call (Pil.E.namedConstant (RT.Prim.getName (p, t)), args)
+  fun genPrim (state, env, p, t, d, args) = RT.Prim.call (p, t, d, args)
 
   (*** Operands ***)
 
@@ -1497,8 +1497,11 @@ struct
         case rhs
          of M.RhsSimple s => assignP (genSimple (state, env, s))
           | M.RhsPrim {prim, createThunks, args} =>
-            assign (genPrim (state, env, prim, createThunks,
-                             genOperands(state, env, args)))
+            let
+              val d = Option.map (dest, fn v => genVarE (state, env, v))
+              val args = genOperands(state, env, args)
+            in genPrim (state, env, prim, createThunks, d, args)
+            end
           | M.RhsTuple {vtDesc, inits} =>
             let
               fun doIt v =
@@ -2129,8 +2132,17 @@ struct
         Pil.D.staticFunction (rt, genVar (state, env, f), decs, ls, b)
       end
 
+   val (assertSmallIntsF, assertSmallInts) = 
+       Config.Feature.mk ("Plsr:tagged-ints-assert-small",
+                          "use 32 bit ints for rats (checked)")
+       
   fun genStaticIntInf (state, env, i) = 
       let
+        val () = if assertSmallInts (getConfig env) then
+                   Fail.fail ("MilToPil", "genStaticIntInf", 
+                              "Failed small int assertion")
+                 else
+                   ()
         (* Just used to create unique variables for the
          * structure components.  These variables are needed
          * to work around a pillar bug.  -leaf *)
@@ -2468,6 +2480,7 @@ struct
   val features =
       [instrumentAllocationSitesF, 
        instrumentBlocksF, 
-       instrumentFunctionsF]
+       instrumentFunctionsF,
+       assertSmallIntsF]
 
 end;
