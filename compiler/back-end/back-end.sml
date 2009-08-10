@@ -104,7 +104,7 @@ struct
 
    val (assumeSmallIntsF, assumeSmallInts) = 
        Config.Feature.mk ("Plsr:tagged-ints-assume-small",
-                          "use 32 bit ints for rats (unchecked)")
+                          "use 32 bit ints for tagged ints (unchecked)")
 
 
    fun defines (config : Config.t) =
@@ -180,6 +180,10 @@ struct
                 []
               else  
                 ["P_USE_TAGGED_RATIONALS"]) @
+             (if Globals.disableOptimizedIntegers config then
+                []
+              else  
+                ["P_USE_TAGGED_INTEGERS"]) @
              (if usePortableTaggedInts config then ["P_TAGGED_INT32_PORTABLE"] 
               else if assumeSmallInts config then ["P_TAGGED_INT32_ASSUME_SMALL"] 
               else if MilToPil.assertSmallInts config then ["P_TAGGED_INT32_ASSERT_SMALL"]

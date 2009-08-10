@@ -168,9 +168,12 @@ struct
     val optMax = MilUtils.Integer.Opt.max
     val optMin = MilUtils.Integer.Opt.min
 
+    val smallMax = Pil.identifier "pLsrPSmallIntegerMax"
+    val smallMin = Pil.identifier "pLsrPSmallIntegerMin"
+
     fun checkOpt i =
         if IntInf.< (i, optMin) orelse IntInf.> (i, optMax) then
-          Fail.fail ("Runtime", "checkOpt", "bad optimised rational")
+          Fail.fail ("Runtime", "checkOpt", "bad optimised integer")
         else
           ()
 
