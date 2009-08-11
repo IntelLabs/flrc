@@ -20,14 +20,14 @@
                                                                         \
         pLsrPrimIntegerFromRational(ai, a);                             \
         pLsrPrimIntegerFromRational(bi, b);                             \
-        q = div(ai, bi);                                                \
+        div(q, ai, bi);                                                 \
         pLsrPrimRationalFromInteger(r, q);                              \
         return r;                                                       \
     }                                                                   
 
-pLsrPIntMkDiv(T, pLsrIntegerDivT);
-pLsrPIntMkDiv(F, pLsrIntegerDivF);
-pLsrPIntMkDiv(E, pLsrIntegerDivE);
+pLsrPIntMkDiv(T, pLsrPrimIntegerDivT);
+pLsrPIntMkDiv(F, pLsrPrimIntegerDivF);
+pLsrPIntMkDiv(E, pLsrPrimIntegerDivE);
 
 #define pLsrPIntMkMod(Kind, mod)                                        \
     static PlsrRational pLsrPIntMod##Kind(PlsrRational a, PlsrRational b) \
@@ -39,14 +39,14 @@ pLsrPIntMkDiv(E, pLsrIntegerDivE);
                                                                         \
         pLsrPrimIntegerFromRational(ai, a);                             \
         pLsrPrimIntegerFromRational(bi, b);                             \
-        rem = mod(ai, bi);                                              \
+        mod(rem, ai, bi);                                                \
         pLsrPrimRationalFromInteger(r, rem);                            \
         return r;                                                       \
     }                                                                   
 
-pLsrPIntMkMod(T, pLsrIntegerModT);
-pLsrPIntMkMod(F, pLsrIntegerModF);
-pLsrPIntMkMod(E, pLsrIntegerModE);
+pLsrPIntMkMod(T, pLsrPrimIntegerModT);
+pLsrPIntMkMod(F, pLsrPrimIntegerModF);
+pLsrPIntMkMod(E, pLsrPrimIntegerModE);
 
 #define pLsrPIntMkDivMod(Kind, TorD, divmod)                            \
     static PlsrPAny pLsrPIntDivMod##Kind##TorD(PlsrRational a, PlsrRational b) \
@@ -58,19 +58,19 @@ pLsrPIntMkMod(E, pLsrIntegerModE);
                                                                         \
         PlsrInteger q = NULL;                                           \
         PlsrInteger r = NULL;                                           \
-        divmod(&q, &r, ai, bi);                                         \
+        divmod(q, r, ai, bi);                                           \
                                                                         \
         PlsrPAny qr = pLsrPRatFromInteger(q);                           \
         PlsrPAny rr = pLsrPRatFromInteger(r);                           \
         return pLsrPPair##TorD(qr, rr);                                 \
     }
 
-pLsrPIntMkDivMod(T, T, pLsrIntegerDivModT);
-pLsrPIntMkDivMod(F, T, pLsrIntegerDivModF);
-pLsrPIntMkDivMod(E, T, pLsrIntegerDivModE);
-pLsrPIntMkDivMod(T, D, pLsrIntegerDivModT);
-pLsrPIntMkDivMod(F, D, pLsrIntegerDivModF);
-pLsrPIntMkDivMod(E, D, pLsrIntegerDivModE);
+pLsrPIntMkDivMod(T, T, pLsrPrimIntegerDivModT);
+pLsrPIntMkDivMod(F, T, pLsrPrimIntegerDivModF);
+pLsrPIntMkDivMod(E, T, pLsrPrimIntegerDivModE);
+pLsrPIntMkDivMod(T, D, pLsrPrimIntegerDivModT);
+pLsrPIntMkDivMod(F, D, pLsrPrimIntegerDivModF);
+pLsrPIntMkDivMod(E, D, pLsrPrimIntegerDivModE);
 
 /**********************************************************************
  * Pointers

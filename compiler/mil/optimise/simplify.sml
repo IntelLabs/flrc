@@ -435,12 +435,12 @@ struct
         end
 
     val optNumeric = 
-     fn (from, click) => 
+     fn (from, disable, click) => 
         let
           val f = 
            fn ((d, imil, ws), (g, v, r)) => 
               let
-                val () = Try.require (not (Globals.disableOptimizedRationals (PD.getConfig d)))
+                val () = Try.require (not (disable (PD.getConfig d)))
                 val c = <@ from r
                 val () = Use.replaceUses (imil, v, (M.SConstant c))
                 val () = IGlobal.delete (imil, g)
@@ -449,8 +449,8 @@ struct
         in try (click, f)
         end
 
-    val optRational = optNumeric (MU.Rational.Opt.fromRational, Click.optRational)
-    val optInteger = optNumeric (MU.Integer.Opt.fromInteger, Click.optInteger)
+    val optRational = optNumeric (MU.Rational.Opt.fromRational, Globals.disableOptimizedRationals, Click.optRational)
+    val optInteger = optNumeric (MU.Integer.Opt.fromInteger, Globals.disableOptimizedIntegers, Click.optInteger)
 
     val rat = optRational
     val integer = optInteger 

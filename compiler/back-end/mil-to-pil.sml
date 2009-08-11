@@ -499,6 +499,10 @@ struct
                                      IntInf.toInt RT.Rat.optMin)
           val smallRationalMax = mk (RT.Rat.smallMax, 
                                      IntInf.toInt RT.Rat.optMax)
+          val smallIntegerMin = mk (RT.Integer.smallMin, 
+                                    IntInf.toInt RT.Integer.optMin)
+          val smallIntegerMax = mk (RT.Integer.smallMax, 
+                                    IntInf.toInt RT.Integer.optMax)
         in
           Pil.D.sequence [fieldsBase, setOffset, setSize, typeSize,
                           ratOffset, ratSize, floatOffset, floatSize,
@@ -509,7 +513,7 @@ struct
                           funCodeOffset, funSize,
                           sumTagOffset, sumValOffset, sumSize,
                           thunkSizeRef, thunkSize32, thunkSize64, thunkSizeFloat, thunkSizeDouble,
-                          smallRationalMax, smallRationalMin]
+                          smallRationalMax, smallRationalMin, smallIntegerMax, smallIntegerMin]
         end
 
   end (* structure OM *)
