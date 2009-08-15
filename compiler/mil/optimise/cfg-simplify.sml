@@ -225,6 +225,7 @@ struct
                   (case tfer
                     of M.TGoto (M.T {block, arguments}) => 
                        let
+                         val () = Try.require (block <> l)
                          val pattern = generalize (parms, arguments)
                          val sc = CGoto (block, pattern)
                        in sc
@@ -260,14 +261,16 @@ struct
                           of SOME contO => 
                              (case contO
                                of SOME (CGoto (l, p)) => 
-                                  let
-                                    val () = changed := true
-                                    val args = instantiate (p, arguments)
-                                    val t = M.T {block = l,
-                                                 arguments = args}
-                                    val () = Click.switchTarget d
-                                  in t
-                                  end
+                                  if (block <> l) then
+                                    let
+                                      val () = changed := true
+                                      val args = instantiate (p, arguments)
+                                      val t = M.T {block = l,
+                                                   arguments = args}
+                                      val () = Click.switchTarget d
+                                    in t
+                                    end
+                                  else t
                                 | _=> t)
                            | NONE => t)
                     val cases = Vector.map (cases, fn (a, tg) => (a, doTarget tg))
@@ -289,6 +292,7 @@ struct
                              (case cont
                                of CGoto (l, p) => 
                                   let
+                                    val () = Try.require (l <> block)
                                     val outargs = instantiate (p, arguments)
                                     val tg = M.T {block = l,
                                                   arguments = outargs}

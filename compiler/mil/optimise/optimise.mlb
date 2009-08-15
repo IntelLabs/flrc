@@ -23,6 +23,7 @@ local
         rep-seq.sml
         rep-base.sml
         rep-object.sml
+        rep-prep.sml
         rep-node.sml
         rep-summary.sml
         rep-analyze.sml
