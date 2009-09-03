@@ -2056,15 +2056,19 @@ struct
             in (d, SOME f)
             end
         fun zeroField (i, _) =
-            if MU.FieldKind.isRef (Vector.sub (fvfks, i)) then
-              let
-                val t = genTyp (state, env, Vector.sub (fvts, i))
-                val f = genThunkFvProjection (state, env, rfk, fvfks, te, i, t)
-                val z = Pil.S.expr (Pil.E.assign (f, Pil.E.int 0))
-              in [z]
-              end
-            else
-              []
+            let
+              val fk = Vector.sub (fvfks, i)
+            in
+              if MU.FieldKind.isRef fk then
+                let
+                  val t = genTyp (state, env, Vector.sub (fvts, i))
+                  val f = genThunkFvProjection (state, env, rfk, fvfks, te, i, t)
+                  val z = Pil.S.expr (writeBarrier (state, env, te, f, Pil.E.int 0, fk, false))
+                in [z]
+                end
+              else
+                []
+            end
         val dec = genVarDec (state, env, thunk)
         val fvsl = Vector.toList fvs
         val unpacks = List.mapi (fvsl, getField)
