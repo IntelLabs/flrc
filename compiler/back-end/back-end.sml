@@ -48,13 +48,9 @@ struct
        in pd
        end
          
+   fun pliblibd config = concatPath (plibdir config, "lib")
 
-   fun pliblib (config, lib) = 
-       let
-         val libd = concatPath (plibdir config, "lib")
-       in 
-         addPath(libd, lib)
-       end
+   fun pliblib (config, lib) = addPath (pliblibd config, lib)
 
    fun plibexe (config, exe) = 
        let
@@ -416,6 +412,20 @@ struct
             | LdICC  => ["-Fe"^fname]
             | LdPillar => ["-out:"^fname])
 
+     fun libPath ((config, ld), dname) =
+         (case ld
+           of LdGCC => [] (*NG: this isn't working ["-L" ^ dname]*)
+            | LdICC => ["/LIBPATH:" ^ dname]
+            | LdPillar => ["/LIBPATH:" ^ dname]
+         )
+
+     fun lib ((config, ld), lname) =
+         (case ld
+           of LdGCC => pliblib (config, lname)
+            | LdICC => lname
+            | LdPillar => lname
+         )
+
      fun link (config, ld) = 
          (case ld
            of LdGCC  => []
@@ -461,28 +471,26 @@ struct
          val gcs = #style (Config.gc config)
          fun agc (config, debug) =
              (case (Config.agc config, debug)
-               of (Config.AgcGcMf, true)  => pliblib (config, "gc-mfd.lib")
-                | (Config.AgcTgc, true)   => pliblib (config, "gc-tgcd.lib")
-                | (Config.AgcCgc, true)   => pliblib (config, "gc-cgcd.lib")
-                | (Config.AgcGcMf, false) => pliblib (config, "gc-mf.lib")
-                | (Config.AgcTgc, false)  => pliblib (config, "gc-tgc.lib")
-                | (Config.AgcCgc, false)  => pliblib (config, "gc-cgc.lib"))
+               of (Config.AgcGcMf, true)  => "gc-mfd.lib"
+                | (Config.AgcTgc, true)   => "gc-tgcd.lib"
+                | (Config.AgcCgc, true)   => "gc-cgcd.lib"
+                | (Config.AgcGcMf, false) => "gc-mf.lib"
+                | (Config.AgcTgc, false)  => "gc-tgc.lib"
+                | (Config.AgcCgc, false)  => "gc-cgc.lib")
 
          val libs =
              (case (gcs, ldTag, mt, debug)
                of (Config.GcsNone, _, _, _) => []
-
-                | (Config.GcsConservative, LdGCC, _, true)       => [pliblib (config, "libgc-bdwd.a")]
-                | (Config.GcsConservative, LdGCC, _, false)      => [pliblib (config, "libgc-bdw.a")]
-                | (Config.GcsConservative, LdICC, true, true)   => [pliblib (config, "gc-bdw-dlld.lib")]
-                | (Config.GcsConservative, LdICC, true, false)  => [pliblib (config, "gc-bdw-dll.lib")]
-                | (Config.GcsConservative, LdICC, false, true)  => [pliblib (config, "gc-bdwd.lib")]
-                | (Config.GcsConservative, LdICC, false, false) => [pliblib (config, "gc-bdw.lib")]
-                | (Config.GcsConservative, LdPillar, _, _)  =>
+                | (Config.GcsConservative, LdGCC, _, true)      => ["libgc-bdwd.a"]
+                | (Config.GcsConservative, LdGCC, _, false)     => ["libgc-bdw.a"]
+                | (Config.GcsConservative, LdICC, true, true)   => ["gc-bdw-dlld.lib"]
+                | (Config.GcsConservative, LdICC, true, false)  => ["gc-bdw-dll.lib"]
+                | (Config.GcsConservative, LdICC, false, true)  => ["gc-bdwd.lib"]
+                | (Config.GcsConservative, LdICC, false, false) => ["gc-bdw.lib"]
+                | (Config.GcsConservative, LdPillar, _, _) =>
                   fail ("gcLibraries", "Conservative GC not supported on Pillar")
-
                 | (Config.GcsAccurate, LdPillar, _, _) => 
-                  [pliblib (config, "pgcd.lib"), "imagehlp.lib", agc (config, debug)]
+                  ["pgcd.lib", "imagehlp.lib", agc (config, debug)]
                 | (Config.GcsAccurate, _, _, _) => 
                   fail ("gcLibraries", "Accurate GC not supported on C"))
        in libs
@@ -504,8 +512,7 @@ struct
                 | LdICC => "ptkfutures_" ^ nm ^ ".lib"
                 | LdPillar => "ptkfutures_pillar_" ^ nm ^ ".obj")
 
-       in
-         [pliblib (config, file)]
+       in [file]
        end
 
    fun runtimeLibraries (config, ldTag) = 
@@ -514,16 +521,16 @@ struct
          val mt = useFutures config
          val libs = 
              (case (ldTag, debug)
-               of (LdPillar, true)  => [pliblib (config, "pillard.lib")]
-                | (LdPillar, false) => [pliblib (config, "pillar.lib")] 
+               of (LdPillar, true)  => ["pillard.lib"]
+                | (LdPillar, false) => ["pillar.lib"] 
                 | (LdICC, _) => ["user32.lib"] 
                 | _ => [])
          val mcrt = 
              if ((ldTag = LdPillar) orelse mt) then
                if debug then
-                 [pliblib (config, "mcrtd.lib")]
+                 ["mcrtd.lib"]
                else  
-                 [pliblib (config, "mcrt.lib")]
+                 ["mcrt.lib"]
              else
                []
        in mcrt @ libs
@@ -533,19 +540,16 @@ struct
        let
          val mt = useFutures config
          val debug = Config.pilDebug config
-
          val (prtBegin, prtEnd) = 
              (case (ldTag, debug)
-               of (LdPillar, true)  => ([pliblib (config, "crt_prtbegind.obj")], [pliblib (config, "crt_prtendd.obj")])
-                | (LdPillar, false) => ([pliblib (config, "crt_prtbegin.obj")], [pliblib (config, "crt_prtend.obj")])
+               of (LdPillar, true)  => (["crt_prtbegind.obj"], ["crt_prtendd.obj"])
+                | (LdPillar, false) => (["crt_prtbegin.obj"], ["crt_prtend.obj"])
                 | _ => ([], []))
-
          val gcLibs = gcLibraries (config, ldTag)
          val futureLibs = futureLibraries (config, ldTag)
          val runtimeLibs = runtimeLibraries (config, ldTag)
          val pre = prtBegin
-         val post = 
-             List.concat [futureLibs, prtEnd, gcLibs, runtimeLibs]
+         val post = List.concat [futureLibs, prtEnd, gcLibs, runtimeLibs]
        in (pre, post)
        end
 
@@ -556,12 +560,15 @@ struct
          val cfg = (config, ldTag)
          val ld = linker cfg
          val options = List.concat [LdOptions.link cfg,
+                                    LdOptions.libPath (cfg, pliblibd config),
                                     LdOptions.opt cfg, 
                                     LdOptions.stack cfg,
                                     LdOptions.control cfg,
                                     LdOptions.debug cfg]
          val (preLibs, postLibs) = libraries (config, ldTag)
-         val args = List.concat [LdOptions.exe (cfg, outFile), 
+         val preLibs = List.map (preLibs, fn l => LdOptions.lib (cfg, l))
+         val postLibs = List.map (postLibs, fn l => LdOptions.lib (cfg, l))
+         val args = List.concat [LdOptions.exe (cfg, outFile),
                                  preLibs,
                                  [inFile],
                                  postLibs,
