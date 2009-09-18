@@ -467,6 +467,7 @@ struct
 
     fun staticValue fk = Pil.identifier ("pLsrThunkStaticValue" ^ typ fk)
     fun new         fk = Pil.identifier ("pLsrThunkNew"         ^ typ fk)
+    fun newValue    fk = Pil.identifier ("pLsrThunkNewValue"    ^ typ fk)
     fun init        fk = Pil.identifier ("pLsrThunkSetInit"     ^ typ fk)
     fun setValue    fk = Pil.identifier ("pLsrThunkSetValue"    ^ typ fk)
     fun spawn       fk = Pil.identifier ("pLsrThunkSpawn"       ^ typ fk)

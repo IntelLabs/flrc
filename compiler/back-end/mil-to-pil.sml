@@ -624,7 +624,7 @@ struct
         * generating it if necessary.
         *)
        val genVtableThunk :
-           state * env * string option * M.fieldKind * M.fieldKind Vector.t
+           state * env * string option * M.fieldKind * M.fieldKind Vector.t * bool * bool
            -> Pil.E.t
      end =
   struct
@@ -689,7 +689,7 @@ struct
           val vtm =
               if mut then
                 VtmAlwaysMutable
-              else if nebi then
+              else if nebi then 
                 VtmAlwaysImmutable
               else
                 VtmCreatedMutable
@@ -771,7 +771,7 @@ struct
           in vt
           end
 
-    fun genVtableThunk (state, env, no, typ, fks) =
+    fun genVtableThunk (state, env, no, typ, fks, backpatch, value) =
         if vtTagOnly env then
           Pil.E.namedConstant (RT.Thunk.vTable typ)
         else
@@ -815,9 +815,17 @@ struct
                 case no
                  of NONE => vtiToName (state, env, M.PokThunk, fs, frefs, NONE)
                   | SOME n => n
+            val mut = 
+                if value then
+                  if backpatch then
+                    VtmCreatedMutable
+                  else
+                    VtmAlwaysImmutable
+                else
+                  VtmAlwaysMutable
             val vti = Vti {name = n, tag = M.PokThunk, fixedSize = fs,
                            fixedRefs = frefs, array = NONE,
-                           mut = VtmAlwaysMutable}
+                           mut = mut}
             val vt = vTableFromInfo (state, env, vti)
           in vt
           end
@@ -1339,14 +1347,30 @@ struct
       else
         NONE
 
+  fun mkThunk0 (state, env, dest, typ, fvs, backpatch, value) = 
+      let
+        val no = mkAllocSiteName (state, env, SOME dest)
+        val vt = VT.genVtableThunk (state, env, no, typ, fvs, backpatch, value)
+        val sz = Pil.E.int (OM.thunkSize (state, env, typ, fvs))
+      in (vt, sz)
+      end
+
   fun mkThunk (state, env, dest, typ, fvs) =
       let
-        val no = mkAllocSiteName (state, env, dest)
-        val vt = VT.genVtableThunk (state, env, no, typ, fvs)
-        val sz = Pil.E.int (OM.thunkSize (state, env, typ, fvs))
+        val (vt, sz) = mkThunk0 (state, env, dest, typ, fvs, true, false)
         val new = Pil.E.namedConstant (RT.Thunk.new typ)
-        val mk = Pil.E.call (new, [vt, sz])
-      in mk
+        val v = genVarE (state, env, dest)
+        val mk = Pil.E.call (new, [v, vt, sz])
+      in Pil.S.expr mk
+      end
+
+  fun mkThunkValue (state, env, dest, typ, fvs, value) =
+      let
+        val (vt, sz) = mkThunk0 (state, env, dest, typ, fvs, false, true)
+        val new = Pil.E.namedConstant (RT.Thunk.newValue typ)
+        val v = genVarE (state, env, dest)
+        val mk = Pil.E.call (new, [v, vt, sz, value])
+      in Pil.S.expr mk
       end
 
   fun genThunkInit (state, env, dest, typ, thunk, code, fvs) =
@@ -1355,20 +1379,16 @@ struct
         val si = getSymbolInfo state
         fun fail s = Fail.fail ("MilToPil", "genRhs", "ThunkInit: " ^ s)
         val (mk, thunk) =
-            case thunk
-             of NONE =>
-                (case dest
-                  of NONE => fail "expecting dest"
-                   | SOME v =>
-                     let
-                       val fvfks = Vector.map (fvs, #1)
-                       val mk = mkThunk (state, env, dest, typ, fvfks)
-                     in (Pil.S.expr mk, v)
-                     end)
-              | SOME v =>
-                if Option.isSome dest
-                then fail "returns no value"
-                else (Pil.S.empty, v)
+            case (thunk, dest)
+             of (NONE, NONE) => fail "expecting dest"
+              | (NONE, SOME v) =>
+                let
+                  val fvfks = Vector.map (fvs, #1)
+                  val mk = mkThunk (state, env, v, typ, fvfks)
+                in (mk, v)
+                end
+              | (SOME v, SOME _) => fail "returns no value"
+              | (SOME v, NONE) => (Pil.S.empty, v)
         val thunk = genVarE (state, env, thunk)
         val code  =
             case code
@@ -1415,25 +1435,24 @@ struct
   fun genThunkValue (state, env, dest, typ, thunk, opnd) =
       let
         fun fail s = Fail.fail ("MilToPil", "genRhs", "ThunkValue: " ^ s)
-        val (mk, thunk) =
-            case thunk
-             of NONE =>
-                (case dest
-                  of NONE => fail "expecting dest"
-                   | SOME v =>
-                     let
-                       val fvfks = Vector.new0 ()
-                       val mk = mkThunk (state, env, dest, typ, fvfks)
-                     in (Pil.S.expr mk, v)
-                     end)
-              | SOME v =>
-                if Option.isSome dest
-                then fail "returns no value"
-                else (Pil.S.empty, v)
-        val t = genVarE (state, env, thunk)
-        val v = genOperand (state, env, opnd)
-        val set = Pil.E.call (Pil.E.variable (RT.Thunk.setValue typ), [t, v])
-        val s = Pil.S.sequence [mk, Pil.S.expr set]
+        val value = genOperand (state, env, opnd)
+        val s =
+            case (thunk, dest)
+             of (NONE, NONE) => fail "expecting dest"
+              | (NONE, SOME v) =>
+                let
+                  val fvfks = Vector.new0 ()
+                  val mk = mkThunkValue (state, env, v, typ, fvfks, value)
+                in mk
+                end
+              | (SOME v, SOME _) => fail "returns no value"
+              | (SOME v, NONE)   => 
+                let
+                  val t = genVarE (state, env, v)
+                  val set = Pil.E.call (Pil.E.variable (RT.Thunk.setValue typ), [t, value])
+                  val s = Pil.S.expr set
+                in s
+                end
       in s
       end
 
@@ -1561,7 +1580,7 @@ struct
             in assignP e
             end
           | M.RhsThunkMk {typ, fvs} =>
-            assignP (mkThunk (state, env, dest, typ, fvs))
+            bind (fn v => mkThunk (state, env, v, typ, fvs))
           | M.RhsThunkInit {typ, thunk, fx, code, fvs} =>
             genThunkInit (state, env, dest, typ, thunk, code, fvs)
           | M.RhsThunkGetFv {typ, fvs, thunk, idx} =>
