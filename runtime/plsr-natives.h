@@ -494,6 +494,35 @@ static PlsrRational pLsrPString2Nat(PlsrPAny a)
     return r;
 }
 
+static PlsrRational pLsrString2Rat(char *str)
+{
+    return pLsrRationalFromCString(str);
+}
+
+static PlsrRational pLsrPString2Rat(PlsrPAny a)
+{
+    char* str = pLsrPStringToCString(a);
+    PlsrRational r = pLsrString2Rat (str);
+    pLsrFreeC(str);
+    return r;
+}
+
+static PlsrPAny pLsrPRat2StringT(PlsrRational r)
+{
+    char* s = pLsrCStringFromRational(r);
+    PlsrPAny o = pLsrCStringToPStringT(s);
+    pLsrFreeC(s);
+    return o;
+}                
+
+static PlsrPAny pLsrPRat2StringD(PlsrRational r)
+{
+    char* s = pLsrCStringFromRational(r);
+    PlsrPAny o = pLsrCStringToPStringD(s);
+    pLsrFreeC(s);
+    return o;
+}                
+
 static float pLsrString2Float(char *str)
 {
   return atof(str);
@@ -506,7 +535,6 @@ static float pLsrPString2Float(PlsrPAny a)
     pLsrFreeC(str);
     return f;
 }
-
 
 static PlsrPAny pLsrPFloat2StringT(float f, PlsrRational p)
 {
