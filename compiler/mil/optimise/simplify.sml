@@ -314,6 +314,22 @@ struct
            in init
            end)
 
+   val getThunkValueContentsFromVariable = 
+       (#ofVal <! MU.Def.Out.thunkValue <! Def.toMilDef o Def.get) 
+         || (#ofVal <! MU.Rhs.Dec.rhsThunkValue o MU.Instruction.rhs <! getUniqueInit)
+
+   val getPFunctionInitCodeFromVariable = 
+       (<@ #code <! MU.Def.Out.pFunction <! Def.toMilDef o Def.get)
+         || (<@ #code <! MU.Rhs.Dec.rhsPFunctionInit o MU.Instruction.rhs <! getUniqueInit)
+
+   val getPFunctionInitFvsFromVariable = 
+       (#fvs <! MU.Def.Out.pFunction <! Def.toMilDef o Def.get)
+         || (#fvs <! MU.Rhs.Dec.rhsPFunctionInit o MU.Instruction.rhs <! getUniqueInit)
+
+   val getThunkInitFromVariable = 
+       (<@ MU.Rhs.Dec.rhsThunkInit <! Def.toRhs o Def.get)
+         || (<@ MU.Rhs.Dec.rhsThunkInit o MU.Instruction.rhs <! getUniqueInit)
+
   
   structure FuncR : REDUCE = 
   struct
@@ -729,10 +745,7 @@ struct
              fn ((d, imil, ws), (i, {callee, ret, fx})) =>
                 let
                   val t = MU.Eval.thunk o #eval <! MU.InterProc.Dec.ipEval @@ callee
-                  val get = (#ofVal <! MU.Def.Out.thunkValue <! Def.toMilDef o Def.get) 
-                         || (#ofVal <! MU.Rhs.Dec.rhsThunkValue o MU.Instruction.rhs <! getUniqueInit)
-                            
-                  val s = <@ get (imil, t)
+                  val s = <@ getThunkValueContentsFromVariable (imil, t)
                   val () = 
                       let
                         val succs = IInstr.succs (imil, i)
@@ -771,9 +784,7 @@ struct
                         of (true, [code]) => code
                          | _ => 
                            let
-                             val get = (<@ #code <! MU.Def.Out.pFunction <! Def.toMilDef o Def.get)
-                                    || (<@ #code <! MU.Rhs.Dec.rhsPFunctionInit o MU.Instruction.rhs <! getUniqueInit)
-                             val code = <@ get (imil, cls)
+                             val code = <@ getPFunctionInitCodeFromVariable (imil, cls)
                            in code
                            end)
                   val call = M.CDirectClosure {cls = cls, code = code}
@@ -790,9 +801,7 @@ struct
                         of (true, [code]) => code
                          | _ => 
                            let
-                             val get = (<@ MU.Rhs.Dec.rhsThunkInit <! Def.toRhs o Def.get)
-                                    || (<@ MU.Rhs.Dec.rhsThunkInit o MU.Instruction.rhs <! getUniqueInit)
-                             val f = <@ #code <! get @@ (imil, thunk)
+                             val f = <@ #code <! getThunkInitFromVariable @@ (imil, thunk)
                            in f
                            end)
                   val eval = M.EDirectThunk {thunk = thunk, code = code}
@@ -1790,13 +1799,8 @@ struct
               let
                 val v = Try.V.singleton dests
                 val fv =
-                    case getUniqueInit (imil, thunk)
-                     of SOME init => 
-                        let
-                          val {fvs, ...} = <@ MU.Rhs.Dec.rhsThunkInit o MU.Instruction.rhs @@ init
-                          val (_, fv) = Try.V.sub (fvs, idx)
-                        in fv
-                        end
+                    case getThunkInitFromVariable (imil, thunk)
+                     of SOME {fvs, ...} => #2 (Try.V.sub (fvs, idx))
                       | NONE => 
                         let
                           val fvs = <@ getClosureOrThunkParameters (imil, thunk)
@@ -1895,13 +1899,8 @@ struct
               let
                 val v = Try.V.singleton dests
                 val fv =
-                    case getUniqueInit (imil, cls)
-                     of SOME init => 
-                        let
-                          val {fvs, ...} = <@ MU.Rhs.Dec.rhsPFunctionInit o MU.Instruction.rhs @@ init
-                          val (_, fv) = Try.V.sub (fvs, idx)
-                        in fv
-                        end
+                    case getPFunctionInitFvsFromVariable (imil, cls)
+                     of SOME fvs => #2 o Try.V.sub @@ (fvs, idx)
                       | NONE => 
                         let
                           val fvs = <@ getClosureOrThunkParameters (imil, cls)
