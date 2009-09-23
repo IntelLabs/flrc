@@ -51,8 +51,8 @@ pLsrPIntMkMod(E, pLsrPrimIntegerModE);
 #define pLsrPIntMkDivMod(Kind, TorD, divmod)                            \
     static PlsrPAny pLsrPIntDivMod##Kind##TorD(PlsrRational a, PlsrRational b) \
     {                                                                   \
-        PlsrInteger ai;                                                 \
-        PlsrInteger bi;                                                 \
+        PlsrInteger ai = NULL;                                          \
+        PlsrInteger bi = NULL;                                          \
         pLsrPrimIntegerFromRational(ai, a);                             \
         pLsrPrimIntegerFromRational(bi, b);                             \
                                                                         \
@@ -60,8 +60,10 @@ pLsrPIntMkMod(E, pLsrPrimIntegerModE);
         PlsrInteger r = NULL;                                           \
         divmod(q, r, ai, bi);                                           \
                                                                         \
-        PlsrPAny qr = pLsrPRatFromInteger(q);                           \
-        PlsrPAny rr = pLsrPRatFromInteger(r);                           \
+        PlsrPAny qr = NULL;                                             \
+        PlsrPAny rr = NULL;                                             \
+        pLsrPRatFromInteger(qr, q);                                     \
+        pLsrPRatFromInteger(rr, r);                                     \
         return pLsrPPair##TorD(qr, rr);                                 \
     }
 
