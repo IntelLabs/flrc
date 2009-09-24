@@ -1860,13 +1860,14 @@ struct
                   val g = Pil.S.empty
                 in (cuts, rtyp, cont, g)
                 end
+        val t = genTyp (state, env, t)
         val thunk = genVarE (state, env, thunk)
         val slowf = Pil.E.namedConstant slowf
         val slowargs = List.map (slowargs, fn v => genVarE (state, env, v))
         val cuts = genCutsTo (state, env, cuts)
         val slowpath = Pil.E.callAlsoCutsTo (env, slowf, slowargs, cuts)
+        val slowpath = Pil.E.cast (t, slowpath)
         val slowpath = cont slowpath
-        val t = genTyp (state, env, t)
         val fastpath = genThunkGetValueE (state, env, fk, t, thunk)
         val fastpath = cont fastpath
         val control =
