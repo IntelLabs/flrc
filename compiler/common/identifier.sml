@@ -144,6 +144,7 @@ sig
     structure NameSet : SET where type element = name
     structure NameDict : DICT where type key = name
     structure LabelSet : SET where type element = label
+    structure LabelLabelSet : SET where type element = label * label
     structure LabelDict : DICT where type key = label
 
     structure ImpVariableDict : DICT_IMP where type key = variable
@@ -347,6 +348,11 @@ struct
     in
     structure LabelSet =
         SetF (Ord)
+    structure LabelLabelSet = 
+        SetF(struct
+               type t = label * label
+               val compare = Compare.pair (labelCompare, labelCompare)
+             end)
     structure LabelDict =
         DictF (Ord)
     structure ImpLabelDict =

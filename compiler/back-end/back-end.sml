@@ -82,6 +82,8 @@ struct
 
    val instrumentAllocationSites = MilToPil.instrumentAllocationSites
 
+   val manageYields = MilToPil.manageYields
+
    val (instrumentAllocationF, instrumentAllocation) =
       Config.Feature.mk ("Plsr:instrument-allocation",
                          "gather allocation statistics")
@@ -357,11 +359,17 @@ struct
            of CcGCC  => ["-std=c99"]
             | CcICC  => ["-TC", "-Qc99"]
             | CcPillar => ["-TC", "-Qc99",
-                       "-Qtlsregister:ebx",
-                       "-Qoffsetvsh:0", 
-                       "-Qoffsetusertls:4", 
-                       "-Qoffsetstacklimit:16"]
+                           "-Qtlsregister:ebx",
+                           "-Qoffsetvsh:0", 
+                           "-Qoffsetusertls:4", 
+                           "-Qoffsetstacklimit:16"]
         )
+
+     fun runtime (config, compiler) = 
+         (case (compiler, manageYields config)
+           of (CcPillar, true) => 
+              ["-Qnoyield"]
+            | _ => [])
 
      fun mt (config, compiler) =
          (case compiler
@@ -386,6 +394,7 @@ struct
               CcOptions.float cfg,
               CcOptions.warn cfg,
               CcOptions.lang cfg,
+              CcOptions.runtime cfg,
               CcOptions.mt cfg
               ]
          val options = List.concat options
