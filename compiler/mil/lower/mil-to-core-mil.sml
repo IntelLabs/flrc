@@ -396,7 +396,7 @@ struct
                   val (aTyps, rTyps) = 
                       case MTT.variable (c, si, cls)
                        of M.TPFunction {args, ress} => (args, ress)
-                        | _ => (Vector.new1 M.TPAny, Vector.new1 M.TPAny)
+                        | _ => (Vector.new1 M.TRef, Vector.new1 M.TPAny)
                   val clst = doTyp (state, env,
                                     M.TPFunction {args = aTyps, ress = rTyps})
                   val aTyps = doTyps (state, env, aTyps)
