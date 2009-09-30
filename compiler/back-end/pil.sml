@@ -498,7 +498,7 @@ struct
                      (List.map (s, LU.indent)) @
                      [L.str "}"])]
 
-    val yield = [L.str "pilYield;"]
+    val yield = [L.str "pilYield();"]
 
     fun continuation (i, is) =
         [L.seq [L.str "continuation ", i, L.tuple is, L.str ":"]]
