@@ -510,16 +510,23 @@ struct
        let
          val mt = useFutures config
          val debug = Config.pilDebug config
+
          val nm =
              case (mt, debug)
               of (false, false) => "sequential"
                | (false, true ) => "sequentiald"
                | (true,  false) => "parallel"
                | (true,  true ) => "paralleld"
+
+         val gcs =
+             (case #style (Config.gc config) 
+               of Config.GcsConservative => "bdw_"
+                | _                      => "")
+
          val file = 
              (case ldTag
-               of LdGCC => "ptkfutures_gcc_" ^ nm
-                | LdICC => "ptkfutures_" ^ nm ^ ".lib"
+               of LdGCC => "ptkfutures_gcc_" ^ gcs ^ nm
+                | LdICC => "ptkfutures_" ^ gcs ^ nm ^ ".lib"
                 | LdPillar => "ptkfutures_pillar_" ^ nm ^ ".obj")
 
        in [file]
