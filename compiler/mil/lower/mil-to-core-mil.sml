@@ -560,16 +560,13 @@ struct
   val nameSmall = 
    fn (config, p) => 
       let
-        val operandsToName = 
-         fn oper => 
-            case oper
-             of M.SConstant c => 
-                (case c
-                  of M.COptionSetEmpty => true
-                   | M.CTypePH => true
-                   | _ => false)
-              | M.SVariable _ => false
-        val p = MilNameSmallValues.program (config, operandsToName, p)
+        val constantsToName = 
+         fn c => 
+            (case c
+              of M.COptionSetEmpty => true
+               | M.CTypePH => true
+               | _ => false)
+        val p = MilNameSmallValues.program (config, constantsToName, p)
       in p
       end
 
