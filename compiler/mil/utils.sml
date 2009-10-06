@@ -429,6 +429,7 @@ sig
     val new : Mil.variable * Mil.rhs -> Mil.instruction
     val new' : Mil.variable vector * Mil.rhs -> Mil.instruction
     val dests : t -> Mil.variable vector
+    val dest : t -> Mil.variable option (* Requires zero/one dest *)
     val n : t -> int
     val rhs : t -> Rhs.t
     val isCore : t -> bool
@@ -2734,10 +2735,18 @@ struct
     type t = Mil.instruction
 
     fun new' (vv, rhs) = M.I {dests = vv, n = 0, rhs = rhs}
+
     fun new (v, rhs) = new' (Vector.new1 v, rhs)
 
     fun dests (M.I {dests, ...}) = dests
+
+    fun dest (M.I {dests, ...}) = 
+        (case Utils.Option.fromVector dests
+          of SOME opt => opt
+           | NONE => Fail.fail ("MilUtils.Instruction", "dest", "More than one destination"))
+
     fun n (M.I {n, ...}) = n
+
     fun rhs  (M.I {rhs,  ...}) = rhs
 
     fun isCore i = Rhs.isCore (rhs i)
