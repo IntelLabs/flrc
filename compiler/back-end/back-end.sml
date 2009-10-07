@@ -82,7 +82,7 @@ struct
 
    val instrumentAllocationSites = MilToPil.instrumentAllocationSites
 
-   val manageYields = MilToPil.manageYields
+   val backendYields = MilToPil.backendYields
 
    val (instrumentAllocationF, instrumentAllocation) =
       Config.Feature.mk ("Plsr:instrument-allocation",
@@ -366,8 +366,8 @@ struct
         )
 
      fun runtime (config, compiler) = 
-         (case (compiler, manageYields config)
-           of (CcPillar, true) => 
+         (case (compiler, backendYields config)
+           of (CcPillar, false) => 
               ["-Qnoyield"]
             | _ => [])
 

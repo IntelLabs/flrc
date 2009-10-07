@@ -6,7 +6,7 @@
 signature MIL_TO_PIL =
 sig
   val instrumentAllocationSites : Config.t -> bool
-  val manageYields : Config.t -> bool
+  val backendYields : Config.t -> bool
   val assertSmallInts : Config.t -> bool  
   val features : Config.Feature.feature list
   val program : PassData.t * string * Mil.t -> Layout.t
@@ -1679,9 +1679,9 @@ struct
       in moves
       end
 
-  val (manageYieldsF, manageYields) =
-      Config.Feature.mk ("PPiler:manage-yields",
-                         "PPiler inserts yield calls on back edges")
+  val (backendYieldsF, backendYields) =
+      Config.Feature.mk ("PPiler:use-backend-yields",
+                         "Rely on backend compiler for yields")
 
   val isBackEdge = 
    fn (state, env, e) => LLS.member (getBackEdges env, e)
@@ -1689,7 +1689,7 @@ struct
   fun genGoto (state, env, cb, src, M.T {block, arguments}) =
       let
         val pre = 
-            if manageYields (getConfig env) andalso isBackEdge (state, env, (src, block)) then
+            if not (backendYields (getConfig env)) andalso isBackEdge (state, env, (src, block)) then
               Pil.S.yield
             else
               Pil.S.empty
@@ -2550,6 +2550,6 @@ struct
        instrumentBlocksF, 
        instrumentFunctionsF,
        assertSmallIntsF,
-       manageYieldsF]
+       backendYieldsF]
 
 end;
