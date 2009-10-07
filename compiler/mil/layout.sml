@@ -916,7 +916,14 @@ struct
            in l
            end
          | M.GSimple simple => layoutSimple (env, simple)
-         | M.GPFunction code => L.seq [L.str "Closure", LU.paren (layoutCodeOption (env, code))]
+         | M.GPFunction {code, fvs} => 
+           let
+             val code = L.seq [layoutCodeOption (env, code), L.str ";"]
+             val fvs = layoutFvsInits (env, fvs, showPFunctionFvs env)
+             val l = code::fvs
+             val l = L.seq [L.str "PFunction", LU.paren (L.mayAlign l)]
+           in l
+           end
          | M.GPSum {tag, typ, ofVal} =>
            let
              val ofVal = layoutSimple (env, ofVal)

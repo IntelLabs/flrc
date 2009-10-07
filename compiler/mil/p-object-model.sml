@@ -109,7 +109,10 @@ end
                   * Mil.variable option
                   * (Mil.fieldKind * Mil.operand) Vector.t
                   -> Mil.rhs
-     val mkGlobal : Config.t * Mil.variable option -> Mil.global
+     val mkGlobal : Config.t 
+                    * Mil.variable option 
+                    * (Mil.fieldKind * Mil.operand) Vector.t 
+                    -> Mil.global
      val init : Config.t
                 * Mil.variable
                 * Mil.variable option
@@ -348,7 +351,7 @@ struct
 
     fun mkInit (c, code, fkos) = M.RhsPFunctionInit {cls = NONE, code = code, fvs = fkos}
 
-    fun mkGlobal (c, code) = M.GPFunction code
+    fun mkGlobal (c, code, fvs) = M.GPFunction {code = code, fvs = fvs}
 
     fun init (c, cls, code, fkos) = [M.RhsPFunctionInit {cls = SOME cls, 
                                                          code = code, 
@@ -476,11 +479,13 @@ struct
           M.RhsTuple {vtDesc = vtd (c, fks), inits = Utils.Vector.cons (code, os)}
         end
 
-    fun mkGlobal (c, vo) =
+    fun mkGlobal (c, vo, fvs) =
         let
           val code = codeOptToCodePtr (c, vo)
+          val (fks, inits) = Vector.unzip fvs
+          val inits = Utils.Vector.cons (code, inits)
         in
-          M.GTuple {vtDesc = vtd (c, Vector.new0 ()), inits = Vector.new1 code}
+          M.GTuple {vtDesc = vtd (c, fks), inits = inits}
         end
 
     fun init (c, cls, vo, fkos) =

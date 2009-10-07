@@ -823,11 +823,11 @@ struct
               VD.insert (globals, x, M.GCode (transformCode (state, env, x, f)))
             else
               globals
-          | M.GPFunction (SOME c) =>
+          | M.GPFunction {code = SOME c, fvs} =>
             let
               val c = if keep (env, c) then SOME c else NONE
             in
-              VD.insert (globals, x, M.GPFunction c)
+              VD.insert (globals, x, M.GPFunction {code = c, fvs = fvs})
             end
           | _ => VD.insert (globals, x, g)
 

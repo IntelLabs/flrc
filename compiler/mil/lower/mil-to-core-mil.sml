@@ -519,10 +519,10 @@ struct
                 else
                   NONE
               | M.GSimple _ => NONE
-              | M.GPFunction vo => 
+              | M.GPFunction {code, fvs} => 
                 if lowerPFunctions then
                   let
-                    val g = POM.Function.mkGlobal (c, vo)
+                    val g = POM.Function.mkGlobal (c, code, fvs)
                   in SOME (v, g)
                   end
                 else

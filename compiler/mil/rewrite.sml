@@ -402,7 +402,9 @@ struct
       let
         fun doGlobal (state, env, (x, global)) = 
             let
+              fun doOp opnd = operand (state, env, opnd)
               fun doVarO vo = Option.map (vo, fn v => variable (state, env, v))
+              fun doFkOps fkos = Vector.map (fkos, fn (fk, opnd) => (fk, doOp opnd))
               val global = 
                   case global
                    of M.GCode f => M.GCode (code (state, env, f))
@@ -417,7 +419,8 @@ struct
                       M.GThunkValue {typ = typ,
                                      ofVal = simple (state, env, ofVal)}
                     | M.GSimple s => M.GSimple (simple (state, env, s))
-                    | M.GPFunction vo => M.GPFunction (doVarO vo)
+                    | M.GPFunction {code, fvs} => M.GPFunction {code = doVarO code,
+                                                                fvs  = doFkOps fvs}
                     | M.GPSum {tag, typ, ofVal} =>
                       M.GPSum {tag = tag, typ = typ,
                                ofVal = simple (state, env, ofVal)}
