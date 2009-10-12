@@ -129,9 +129,11 @@ functor MilDataFlowAnalysisF (
         print msg
       else ()
 
+  fun dbgLayout' (msg) = if Config.debug then LU.printLayout msg else ()
+
   structure Debug =
   struct
-    fun trace s = print ("DFA tracing function: " ^ s ^ "\n")
+    fun trace s = print ("DataFLowAnalyse tracing function: " ^ s ^ "\n")
   end
 
   (*
@@ -166,7 +168,17 @@ functor MilDataFlowAnalysisF (
       end
 
   fun stateDict (env, st) (v) = getStateInfoDef (env, st, v)
-      
+
+  fun layoutStateInfo (env, info) =
+      let
+      in ()
+      end
+
+  fun layoutStateDict (env, st) =
+      let
+(*	  val () = dbgLayout' ( *)
+      in ()
+      end      
   (* XXX WL: Code review here ! *)    
 
   (*
@@ -290,7 +302,7 @@ functor MilDataFlowAnalysisF (
 
   fun goBlock (E env, st, l, m) =
       let
-        fun fix (l, b as M.B {parameters, ...}) = 
+	  fun fix (l, b as M.B {parameters, ...}) = 
             let
               val i = Vector.map (parameters, 
                                   fn (p) => getStateInfoDef (#env env, st, p))
@@ -324,16 +336,12 @@ functor MilDataFlowAnalysisF (
             in 
               if not p then 
                 let
-                  val () = dbgPrint (E env, "ITERATE: " ^
-                                            (LU.toString (I.layoutLabel l)) ^
-                                            "\n")
+                  val () = dbgPrint (E env, "DFA goBlock ITERATE: " ^ (LU.toString (I.layoutLabel l)) ^ "\n")
                 in
                   fix (l, b)
                 end
               else 
-                dbgPrint (E env, "FIXED: " ^
-                                 (LU.toString (I.layoutLabel l)) ^
-                                 "\n")
+                dbgPrint (E env, "DFA goBlock FIXED: " ^ (LU.toString (I.layoutLabel l)) ^ "\n")
             end
         val () = envEnterBlock (E env, st, l)
         val () = fix (l, envGetBlock (E env, l))

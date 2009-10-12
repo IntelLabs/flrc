@@ -370,6 +370,7 @@ struct
           | ViLe et            => "pLsrViLe" ^ genElemTypSuffix et
           | ViSelect et        => "pLsrViSelect" ^ genElemTypSuffix et
           | ViPermute (et, _)  => "pLsrViPermute" ^ genElemTypSuffix et
+          | ViInit et          => "pLsrViInit" ^ genElemTypSuffix et
 
     end
     
