@@ -367,7 +367,13 @@ functor MilAnalyseF (
           | M.GInteger _               => ()
           | M.GThunkValue {typ, ofVal} => analyseSimple (s, e, ofVal)
           | M.GSimple simp             => analyseSimple (s, e, simp)
-          | M.GPFunction vo            => analyseVariableO (s, e, vo)
+          | M.GPFunction {code, fvs}   => 
+            let
+              val () = analyseVariableO (s, e, code)
+              fun doOne (fk, opnd) = analyseOperand (s, e, opnd)
+              val () = Vector.foreach (fvs, doOne)
+            in ()
+            end
           | M.GPSum {tag, typ, ofVal}  => analyseSimple (s, e, ofVal)
           | M.GPSet simp               => analyseSimple (s, e, simp)
       end

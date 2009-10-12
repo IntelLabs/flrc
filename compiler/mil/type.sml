@@ -821,8 +821,8 @@ struct
            | M.GThunkValue {typ, ofVal} =>
              M.TThunk (simple (config, si, ofVal))
            | M.GSimple s => simple (config, si, s)
-           | M.GPFunction NONE => M.TPAny
-           | M.GPFunction (SOME f) => 
+           | M.GPFunction {code = NONE, ...} => M.TPAny
+           | M.GPFunction {code = SOME f, ...} => 
              (case variable (config, si, f)
                of M.TCode {args, ress, ...} =>
                   M.TPFunction {args = args, ress = ress}

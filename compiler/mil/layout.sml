@@ -261,7 +261,7 @@ struct
            end
          | M.TTuple {pok, fixed, array} =>
            let
-             val pok = layoutPObjKindShort (env, pok)
+             val pok = layoutPObjKind (env, pok)
              fun layoutTypVar (env, (t, fv)) =
                  L.seq [layoutTyp (env, t), layoutFieldVarianceShort (env, fv)]
              val fixed = layoutVector (env, layoutTypVar, fixed)
@@ -363,7 +363,7 @@ struct
 
    fun layoutVTableDescriptor (env, M.VTD {pok, fixed, array}) =
        let
-         val pok = layoutPObjKindShort (env, pok)
+         val pok = layoutPObjKind (env, pok)
          val fixed = layoutVector (env, layoutFieldDescriptorShort, fixed)
          val array =
              case array
@@ -427,20 +427,20 @@ struct
              else l
          val l =
              case fi
-              of M.FiFixed idx => L.seq [L.str "sf", Int.layout idx]
+              of M.FiFixed idx => L.seq [L.str "sf:", Int.layout idx]
                | M.FiVariable opnd =>
-                 L.seq [L.str "sv", layoutOperand (env, opnd)]
+                 L.seq [L.str "sv:", layoutOperand (env, opnd)]
                | M.FiViFixed {typ, idx} =>
-                 wrapViElemType (L.seq [L.str "vf", Int.layout idx], typ)
+                 wrapViElemType (L.seq [L.str "vf:", Int.layout idx], typ)
                | M.FiViVariable {typ, idx} =>
                  let
-                   val l = L.seq [L.str "vv", layoutOperand (env, idx)]
+                   val l = L.seq [L.str "vv:", layoutOperand (env, idx)]
                    val l = wrapViElemType (l, typ)
                  in l
                  end
                | M.FiViIndexed {typ, idx} =>
                  let
-                   val l = L.seq [L.str "vi", layoutOperand (env, idx)]
+                   val l = L.seq [L.str "vi:", layoutOperand (env, idx)]
                    val l = wrapViElemType (l, typ)
                  in l
                  end
@@ -916,7 +916,14 @@ struct
            in l
            end
          | M.GSimple simple => layoutSimple (env, simple)
-         | M.GPFunction code => L.seq [L.str "Closure", LU.paren (layoutCodeOption (env, code))]
+         | M.GPFunction {code, fvs} => 
+           let
+             val code = L.seq [layoutCodeOption (env, code), L.str ";"]
+             val fvs = layoutFvsInits (env, fvs, showPFunctionFvs env)
+             val l = code::fvs
+             val l = L.seq [L.str "PFunction", LU.paren (L.mayAlign l)]
+           in l
+           end
          | M.GPSum {tag, typ, ofVal} =>
            let
              val ofVal = layoutSimple (env, ofVal)

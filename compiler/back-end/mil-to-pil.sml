@@ -6,6 +6,7 @@
 signature MIL_TO_PIL =
 sig
   val instrumentAllocationSites : Config.t -> bool
+  val backendYields : Config.t -> bool
   val assertSmallInts : Config.t -> bool  
   val features : Config.Feature.feature list
   val program : PassData.t * string * Mil.t -> Layout.t
@@ -26,6 +27,7 @@ struct
   structure VD = I.VariableDict
   structure ND = I.NameDict
   structure LD = I.LabelDict
+  structure LLS = I.LabelLabelSet
   structure LS = I.LabelSet
   structure M = Mil
   structure MU = MilUtils
@@ -37,9 +39,9 @@ struct
   (*** The pass environment ***)
 
   datatype env =
-      E of {config: Config.t, gdefs : M.globals, func: M.code option}
+      E of {config: Config.t, gdefs : M.globals, func: M.code option, backEdges : LLS.t option}
 
-  fun newEnv (config, gdefs) = E {config = config, func = NONE, gdefs = gdefs}
+  fun newEnv (config, gdefs) = E {config = config, func = NONE, gdefs = gdefs, backEdges = NONE}
 
   fun getConfig (E {config, ...}) = config
 
@@ -67,8 +69,10 @@ struct
 
   fun getFunc (E {func, ...}) = Option.valOf func
 
-  fun pushFunc (E {config, func, gdefs}, f) =
-      E {config = config, func = SOME f, gdefs = gdefs}
+  fun getBackEdges (E {backEdges, ...}) = Option.valOf backEdges
+
+  fun enterFunction (E {config, func, gdefs, backEdges}, f, be) =
+      E {config = config, func = SOME f, gdefs = gdefs, backEdges = SOME be}
 
   (*** Build structures ***)
 
@@ -624,7 +628,7 @@ struct
         * generating it if necessary.
         *)
        val genVtableThunk :
-           state * env * string option * M.fieldKind * M.fieldKind Vector.t
+           state * env * string option * M.fieldKind * M.fieldKind Vector.t * bool * bool
            -> Pil.E.t
      end =
   struct
@@ -689,7 +693,7 @@ struct
           val vtm =
               if mut then
                 VtmAlwaysMutable
-              else if nebi then
+              else if nebi then 
                 VtmAlwaysImmutable
               else
                 VtmCreatedMutable
@@ -771,7 +775,7 @@ struct
           in vt
           end
 
-    fun genVtableThunk (state, env, no, typ, fks) =
+    fun genVtableThunk (state, env, no, typ, fks, backpatch, value) =
         if vtTagOnly env then
           Pil.E.namedConstant (RT.Thunk.vTable typ)
         else
@@ -815,9 +819,17 @@ struct
                 case no
                  of NONE => vtiToName (state, env, M.PokThunk, fs, frefs, NONE)
                   | SOME n => n
+            val mut = 
+                if value then
+                  if backpatch then
+                    VtmCreatedMutable
+                  else
+                    VtmAlwaysImmutable
+                else
+                  VtmAlwaysMutable
             val vti = Vti {name = n, tag = M.PokThunk, fixedSize = fs,
                            fixedRefs = frefs, array = NONE,
-                           mut = VtmAlwaysMutable}
+                           mut = mut}
             val vt = vTableFromInfo (state, env, vti)
           in vt
           end
@@ -1339,14 +1351,30 @@ struct
       else
         NONE
 
+  fun mkThunk0 (state, env, dest, typ, fvs, backpatch, value) = 
+      let
+        val no = mkAllocSiteName (state, env, SOME dest)
+        val vt = VT.genVtableThunk (state, env, no, typ, fvs, backpatch, value)
+        val sz = Pil.E.int (OM.thunkSize (state, env, typ, fvs))
+      in (vt, sz)
+      end
+
   fun mkThunk (state, env, dest, typ, fvs) =
       let
-        val no = mkAllocSiteName (state, env, dest)
-        val vt = VT.genVtableThunk (state, env, no, typ, fvs)
-        val sz = Pil.E.int (OM.thunkSize (state, env, typ, fvs))
+        val (vt, sz) = mkThunk0 (state, env, dest, typ, fvs, true, false)
         val new = Pil.E.namedConstant (RT.Thunk.new typ)
-        val mk = Pil.E.call (new, [vt, sz])
-      in mk
+        val v = genVarE (state, env, dest)
+        val mk = Pil.E.call (new, [v, vt, sz])
+      in Pil.S.expr mk
+      end
+
+  fun mkThunkValue (state, env, dest, typ, fvs, value) =
+      let
+        val (vt, sz) = mkThunk0 (state, env, dest, typ, fvs, false, true)
+        val new = Pil.E.namedConstant (RT.Thunk.newValue typ)
+        val v = genVarE (state, env, dest)
+        val mk = Pil.E.call (new, [v, vt, sz, value])
+      in Pil.S.expr mk
       end
 
   fun genThunkInit (state, env, dest, typ, thunk, code, fvs) =
@@ -1355,20 +1383,16 @@ struct
         val si = getSymbolInfo state
         fun fail s = Fail.fail ("MilToPil", "genRhs", "ThunkInit: " ^ s)
         val (mk, thunk) =
-            case thunk
-             of NONE =>
-                (case dest
-                  of NONE => fail "expecting dest"
-                   | SOME v =>
-                     let
-                       val fvfks = Vector.map (fvs, #1)
-                       val mk = mkThunk (state, env, dest, typ, fvfks)
-                     in (Pil.S.expr mk, v)
-                     end)
-              | SOME v =>
-                if Option.isSome dest
-                then fail "returns no value"
-                else (Pil.S.empty, v)
+            case (thunk, dest)
+             of (NONE, NONE) => fail "expecting dest"
+              | (NONE, SOME v) =>
+                let
+                  val fvfks = Vector.map (fvs, #1)
+                  val mk = mkThunk (state, env, v, typ, fvfks)
+                in (mk, v)
+                end
+              | (SOME v, SOME _) => fail "returns no value"
+              | (SOME v, NONE) => (Pil.S.empty, v)
         val thunk = genVarE (state, env, thunk)
         val code  =
             case code
@@ -1415,25 +1439,24 @@ struct
   fun genThunkValue (state, env, dest, typ, thunk, opnd) =
       let
         fun fail s = Fail.fail ("MilToPil", "genRhs", "ThunkValue: " ^ s)
-        val (mk, thunk) =
-            case thunk
-             of NONE =>
-                (case dest
-                  of NONE => fail "expecting dest"
-                   | SOME v =>
-                     let
-                       val fvfks = Vector.new0 ()
-                       val mk = mkThunk (state, env, dest, typ, fvfks)
-                     in (Pil.S.expr mk, v)
-                     end)
-              | SOME v =>
-                if Option.isSome dest
-                then fail "returns no value"
-                else (Pil.S.empty, v)
-        val t = genVarE (state, env, thunk)
-        val v = genOperand (state, env, opnd)
-        val set = Pil.E.call (Pil.E.variable (RT.Thunk.setValue typ), [t, v])
-        val s = Pil.S.sequence [mk, Pil.S.expr set]
+        val value = genOperand (state, env, opnd)
+        val s =
+            case (thunk, dest)
+             of (NONE, NONE) => fail "expecting dest"
+              | (NONE, SOME v) =>
+                let
+                  val fvfks = Vector.new0 ()
+                  val mk = mkThunkValue (state, env, v, typ, fvfks, value)
+                in mk
+                end
+              | (SOME v, SOME _) => fail "returns no value"
+              | (SOME v, NONE)   => 
+                let
+                  val t = genVarE (state, env, v)
+                  val set = Pil.E.call (Pil.E.variable (RT.Thunk.setValue typ), [t, value])
+                  val s = Pil.S.expr set
+                in s
+                end
       in s
       end
 
@@ -1561,7 +1584,7 @@ struct
             in assignP e
             end
           | M.RhsThunkMk {typ, fvs} =>
-            assignP (mkThunk (state, env, dest, typ, fvs))
+            bind (fn v => mkThunk (state, env, v, typ, fvs))
           | M.RhsThunkInit {typ, thunk, fx, code, fvs} =>
             genThunkInit (state, env, dest, typ, thunk, code, fvs)
           | M.RhsThunkGetFv {typ, fvs, thunk, idx} =>
@@ -1656,15 +1679,27 @@ struct
       in moves
       end
 
-  fun genGoto (state, env, cb, M.T {block, arguments}) =
+  val (backendYieldsF, backendYields) =
+      Config.Feature.mk ("PPiler:use-backend-yields",
+                         "Rely on backend compiler for yields")
+
+  val isBackEdge = 
+   fn (state, env, e) => LLS.member (getBackEdges env, e)
+
+  fun genGoto (state, env, cb, src, M.T {block, arguments}) =
       let
+        val pre = 
+            if not (backendYields (getConfig env)) andalso isBackEdge (state, env, (src, block)) then
+              Pil.S.yield
+            else
+              Pil.S.empty
         val moves = doSsaMoves (state, env, cb, block, arguments)
         val succ = genLabel (state, env, block)
       in
-        Pil.S.sequence [Pil.S.sequence moves, Pil.S.goto succ]
+        Pil.S.sequence [pre, Pil.S.sequence moves, Pil.S.goto succ]
       end
 
-  fun genCase (state, env, cb, {on,cases,default} : Mil.constant Mil.switch) =
+  fun genCase (state, env, cb, src, {on,cases,default} : Mil.constant Mil.switch) =
       let
         val on = genOperand (state, env, on)
         fun isZero c =
@@ -1674,8 +1709,8 @@ struct
         fun doIf ((c, t1), t2) =
             let
               val c' = genConstant (state, env, c)
-              val gt1 = genGoto (state, env, cb, t1)
-              val gt2 = genGoto (state, env, cb, t2)
+              val gt1 = genGoto (state, env, cb, src, t1)
+              val gt2 = genGoto (state, env, cb, src, t2)
               val s =
                   if isZero c then
                     Pil.S.ifThenElse (on, gt2, gt1)
@@ -1686,16 +1721,16 @@ struct
         fun doNameArm (c, t) =
             case c
              of M.CName n => 
-                (Pil.E.int (I.nameNumber n), genGoto (state, env, cb, t))
+                (Pil.E.int (I.nameNumber n), genGoto (state, env, cb, src, t))
               | _ =>
                 Fail.fail ("MilToPil", "genTransfer", "Mixed constants")
         fun doGenArm (c, t) =
-            (genConstant (state, env, c), genGoto (state, env, cb, t))
+            (genConstant (state, env, c), genGoto (state, env, cb, src, t))
       in
         case (Vector.length cases, default)
          of (0, NONE) => Fail.fail ("MilToPil", "genCase", "no cases")
-          | (0, SOME t) => genGoto (state, env, cb, t)
-          | (1, NONE) => genGoto (state, env, cb, #2 (Vector.sub (cases, 0)))
+          | (0, SOME t) => genGoto (state, env, cb, src, t)
+          | (1, NONE) => genGoto (state, env, cb, src, #2 (Vector.sub (cases, 0)))
           | (1, SOME t) => doIf (Vector.sub (cases, 0), t)
           | (2, NONE) =>
             let
@@ -1716,7 +1751,7 @@ struct
               val default =
                   case default
                    of NONE => NONE
-                    | SOME t => SOME (genGoto (state, env, cb, t))
+                    | SOME t => SOME (genGoto (state, env, cb, src, t))
               val res = Pil.S.switch (on, arms, default)
             in res
             end
@@ -1825,13 +1860,14 @@ struct
                   val g = Pil.S.empty
                 in (cuts, rtyp, cont, g)
                 end
+        val t = genTyp (state, env, t)
         val thunk = genVarE (state, env, thunk)
         val slowf = Pil.E.namedConstant slowf
         val slowargs = List.map (slowargs, fn v => genVarE (state, env, v))
         val cuts = genCutsTo (state, env, cuts)
         val slowpath = Pil.E.callAlsoCutsTo (env, slowf, slowargs, cuts)
+        val slowpath = Pil.E.cast (t, slowpath)
         val slowpath = cont slowpath
-        val t = genTyp (state, env, t)
         val fastpath = genThunkGetValueE (state, env, fk, t, thunk)
         val fastpath = cont fastpath
         val control =
@@ -1846,13 +1882,13 @@ struct
        of M.IpCall {call, args} => genCall (state, env, cc, call, args, ret)
         | M.IpEval {typ, eval} => genEval (state, env, cc, typ, eval, ret)
 
-  fun genTransfer (state, env, t) = 
+  fun genTransfer (state, env, src, t) = 
       let
         val M.F {cc, body = cb, rtyps, ...} = getFunc env
       in
         case t
-         of M.TGoto tg => genGoto (state, env, cb, tg)
-          | M.TCase s => genCase (state, env, cb, s)
+         of M.TGoto tg => genGoto (state, env, cb, src, tg)
+          | M.TCase s => genCase (state, env, cb, src, s)
           | M.TInterProc {callee, ret, ...} =>
             genInterProc (state, env, cc, callee, ret)
           | M.TReturn os =>
@@ -1910,7 +1946,7 @@ struct
         val M.B {parameters, instructions, transfer} = block
         val () = addLocals(state, parameters)
         val is = genInstrs(state, env, instructions)
-        val xfer = genTransfer(state, env, transfer)
+        val xfer = genTransfer(state, env, bid, transfer)
       in Pil.S.sequence [label, is, xfer]
       end
 
@@ -2099,10 +2135,34 @@ struct
       Config.Feature.mk ("Pil:instrument-functions",
                          "every function prints its name")
 
+  val findBackEdges =
+   fn (state, env, cb as M.CB {entry, blocks}) =>
+      let
+        (* By invariant, l has not been visited *)
+        val rec visit = 
+            fn (src, (seen, be)) => 
+               let
+                 val seen = LS.insert (seen, src)
+                 val b = MU.CodeBody.block (cb, src)
+                 val {blocks, exits} = MU.Block.successors b
+                 val folder = fn (tgt, s) => visitEdge ((src, tgt), s)
+               in LS.fold (blocks, (seen, be), folder)
+               end
+        and rec visitEdge = 
+         fn (e as (src, tgt), s as (seen, be)) =>
+            if LS.member (seen, tgt) then
+              (seen, LLS.insert (be, e))
+            else
+               visit (tgt, s)
+        val (seen, backEdges) = visit (entry, (LS.empty, LLS.empty))
+      in backEdges
+      end
+
   fun genFunction (state, env, f, func) =
       let
         val M.F {fx, cc, args, rtyps, body, ...} = func
-        val env = pushFunc (env, func)
+        val backEdges = findBackEdges (state, env, body)
+        val env = enterFunction (env, func, backEdges)
         val (decs, ls1, ss) = doCallConv (state, env, func, cc, args)
         val tcc = MU.CallConv.map (cc, fn v => getVarTyp (state, v))
         val rt = genReturnType (state, env, tcc, rtyps)
@@ -2489,6 +2549,7 @@ struct
       [instrumentAllocationSitesF, 
        instrumentBlocksF, 
        instrumentFunctionsF,
-       assertSmallIntsF]
+       assertSmallIntsF,
+       backendYieldsF]
 
 end;

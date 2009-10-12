@@ -287,7 +287,7 @@ struct
     | GThunkValue of {typ : fieldKind, ofVal : simple}
     (* HL *)
     | GSimple     of simple
-    | GPFunction  of variable option (* code pointer, no fvs *)
+    | GPFunction  of {code : variable option, fvs : (fieldKind * simple) Vector.t}
     | GPSum       of {tag : name, typ : fieldKind, ofVal : simple}
     | GPSet       of simple
 

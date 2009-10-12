@@ -91,6 +91,7 @@ signature PIL = sig
     val contEntry : identifier * identifier -> t
     val contCutTo : E.t * identifier list -> t
     val noyield : t -> t
+    val yield : t
     (* Pillar only *)
     val continuation : identifier * identifier list -> t
     val vse : identifier * t -> t
@@ -496,6 +497,8 @@ struct
         [L.mayAlign ([L.str "noyield {"] @
                      (List.map (s, LU.indent)) @
                      [L.str "}"])]
+
+    val yield = [L.str "pilYield();"]
 
     fun continuation (i, is) =
         [L.seq [L.str "continuation ", i, L.tuple is, L.str ":"]]

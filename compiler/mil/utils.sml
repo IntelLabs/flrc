@@ -429,6 +429,7 @@ sig
     val new : Mil.variable * Mil.rhs -> Mil.instruction
     val new' : Mil.variable vector * Mil.rhs -> Mil.instruction
     val dests : t -> Mil.variable vector
+    val dest : t -> Mil.variable option (* Requires zero/one dest *)
     val n : t -> int
     val rhs : t -> Rhs.t
     val isCore : t -> bool
@@ -694,7 +695,8 @@ sig
       val gInteger : t -> IntInf.t option
       val gThunkValue : t -> {typ : Mil.fieldKind, ofVal : Mil.simple} option
       val gSimple : t -> Mil.simple option
-      val gPFunction : t -> Mil.variable option option
+      val gPFunction : t -> {code : Mil.variable option,         
+                             fvs  : (Mil.fieldKind * Mil.operand) Vector.t} option
       val gPSum : t -> {tag : Mil.name, typ : Mil.fieldKind, ofVal : Mil.simple} option
       val gPSet : t -> Mil.simple option
     end (* structure Dec *)
@@ -1530,6 +1532,8 @@ struct
                           #inits, C.vector simple)
       val thunkValue = C.rec2 (#typ, fieldKind, #ofVal, simple)
       val psum = C.rec3 (#tag, name, #typ, fieldKind, #ofVal, simple)
+      val pfunction = C.rec2 (#code, C.option variable,
+                              #fvs, C.vector (C.pair (fieldKind, operand)))
     in
     fun global (g1, g2) =
         case (g1, g2)
@@ -1557,7 +1561,7 @@ struct
           | (M.GSimple     x1, M.GSimple     x2) => simple (x1, x2)
           | (M.GSimple     _ , _               ) => LESS
           | (_               , M.GSimple     _ ) => GREATER
-          | (M.GPFunction  x1, M.GPFunction  x2) => C.option variable (x1, x2)
+          | (M.GPFunction  x1, M.GPFunction  x2) => pfunction (x1, x2)
           | (M.GPFunction  _ , _               ) => LESS
           | (_               , M.GPFunction  _ ) => GREATER
           | (M.GPSum       x1, M.GPSum       x2) => psum (x1, x2)
@@ -2734,10 +2738,18 @@ struct
     type t = Mil.instruction
 
     fun new' (vv, rhs) = M.I {dests = vv, n = 0, rhs = rhs}
+
     fun new (v, rhs) = new' (Vector.new1 v, rhs)
 
     fun dests (M.I {dests, ...}) = dests
+
+    fun dest (M.I {dests, ...}) = 
+        (case Utils.Option.fromVector dests
+          of SOME opt => opt
+           | NONE => Fail.fail ("MilUtils.Instruction", "dest", "More than one destination"))
+
     fun n (M.I {n, ...}) = n
+
     fun rhs  (M.I {rhs,  ...}) = rhs
 
     fun isCore i = Rhs.isCore (rhs i)
@@ -4024,7 +4036,7 @@ struct
       val pFunction =
        fn d =>
           (case d
-            of DefGlobal (M.GPFunction code) => SOME {code = code, fvs = Vector.new0()}
+            of DefGlobal (M.GPFunction r) => SOME r
              | DefRhs (M.RhsPFunctionInit {cls, code, fvs}) => SOME {code = code, fvs = fvs}
              | _ => NONE)
       val pSum =
