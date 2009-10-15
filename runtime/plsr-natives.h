@@ -51,8 +51,8 @@ pLsrPIntMkMod(E, pLsrPrimIntegerModE);
 #define pLsrPIntMkDivMod(Kind, TorD, divmod)                            \
     static PlsrPAny pLsrPIntDivMod##Kind##TorD(PlsrRational a, PlsrRational b) \
     {                                                                   \
-        PlsrInteger ai;                                                 \
-        PlsrInteger bi;                                                 \
+        PlsrInteger ai = NULL;                                          \
+        PlsrInteger bi = NULL;                                          \
         pLsrPrimIntegerFromRational(ai, a);                             \
         pLsrPrimIntegerFromRational(bi, b);                             \
                                                                         \
@@ -60,8 +60,10 @@ pLsrPIntMkMod(E, pLsrPrimIntegerModE);
         PlsrInteger r = NULL;                                           \
         divmod(q, r, ai, bi);                                           \
                                                                         \
-        PlsrPAny qr = pLsrPRatFromInteger(q);                           \
-        PlsrPAny rr = pLsrPRatFromInteger(r);                           \
+        PlsrPAny qr = NULL;                                             \
+        PlsrPAny rr = NULL;                                             \
+        pLsrPRatFromInteger(qr, q);                                     \
+        pLsrPRatFromInteger(rr, r);                                     \
         return pLsrPPair##TorD(qr, rr);                                 \
     }
 
@@ -494,6 +496,35 @@ static PlsrRational pLsrPString2Nat(PlsrPAny a)
     return r;
 }
 
+static PlsrRational pLsrString2Rat(char *str)
+{
+    return pLsrRationalFromCString(str);
+}
+
+static PlsrRational pLsrPString2Rat(PlsrPAny a)
+{
+    char* str = pLsrPStringToCString(a);
+    PlsrRational r = pLsrString2Rat (str);
+    pLsrFreeC(str);
+    return r;
+}
+
+static PlsrPAny pLsrPRat2StringT(PlsrRational r)
+{
+    char* s = pLsrCStringFromRational(r);
+    PlsrPAny o = pLsrCStringToPStringT(s);
+    pLsrFreeC(s);
+    return o;
+}                
+
+static PlsrPAny pLsrPRat2StringD(PlsrRational r)
+{
+    char* s = pLsrCStringFromRational(r);
+    PlsrPAny o = pLsrCStringToPStringD(s);
+    pLsrFreeC(s);
+    return o;
+}                
+
 static float pLsrString2Float(char *str)
 {
   return atof(str);
@@ -506,7 +537,6 @@ static float pLsrPString2Float(PlsrPAny a)
     pLsrFreeC(str);
     return f;
 }
-
 
 static PlsrPAny pLsrPFloat2StringT(float f, PlsrRational p)
 {

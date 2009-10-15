@@ -82,6 +82,8 @@ struct
 
    val instrumentAllocationSites = MilToPil.instrumentAllocationSites
 
+   val backendYields = MilToPil.backendYields
+
    val (instrumentAllocationF, instrumentAllocation) =
       Config.Feature.mk ("Plsr:instrument-allocation",
                          "gather allocation statistics")
@@ -357,11 +359,17 @@ struct
            of CcGCC  => ["-std=c99"]
             | CcICC  => ["-TC", "-Qc99"]
             | CcPillar => ["-TC", "-Qc99",
-                       "-Qtlsregister:ebx",
-                       "-Qoffsetvsh:0", 
-                       "-Qoffsetusertls:4", 
-                       "-Qoffsetstacklimit:16"]
+                           "-Qtlsregister:ebx",
+                           "-Qoffsetvsh:0", 
+                           "-Qoffsetusertls:4", 
+                           "-Qoffsetstacklimit:16"]
         )
+
+     fun runtime (config, compiler) = 
+         (case (compiler, backendYields config)
+           of (CcPillar, false) => 
+              ["-Qnoyield"]
+            | _ => [])
 
      fun mt (config, compiler) =
          (case compiler
@@ -386,6 +394,7 @@ struct
               CcOptions.float cfg,
               CcOptions.warn cfg,
               CcOptions.lang cfg,
+              CcOptions.runtime cfg,
               CcOptions.mt cfg
               ]
          val options = List.concat options
@@ -406,6 +415,7 @@ struct
 
    structure LdOptions =
    struct
+
      fun exe ((config, ld), fname) = 
          (case ld
            of LdGCC  => ["-o"^fname]
@@ -414,14 +424,14 @@ struct
 
      fun libPath ((config, ld), dname) =
          (case ld
-           of LdGCC => [] (*NG: this isn't working ["-L" ^ dname]*)
+           of LdGCC => ["-L" ^ dname]
             | LdICC => ["/LIBPATH:" ^ dname]
             | LdPillar => ["/LIBPATH:" ^ dname]
          )
 
      fun lib ((config, ld), lname) =
          (case ld
-           of LdGCC => pliblib (config, lname)
+           of LdGCC => "-l" ^ lname
             | LdICC => lname
             | LdPillar => lname
          )
@@ -481,8 +491,8 @@ struct
          val libs =
              (case (gcs, ldTag, mt, debug)
                of (Config.GcsNone, _, _, _) => []
-                | (Config.GcsConservative, LdGCC, _, true)      => ["libgc-bdwd.a"]
-                | (Config.GcsConservative, LdGCC, _, false)     => ["libgc-bdw.a"]
+                | (Config.GcsConservative, LdGCC, _, true)      => ["gc-bdwd"]
+                | (Config.GcsConservative, LdGCC, _, false)     => ["gc-bdw"]
                 | (Config.GcsConservative, LdICC, true, true)   => ["gc-bdw-dlld.lib"]
                 | (Config.GcsConservative, LdICC, true, false)  => ["gc-bdw-dll.lib"]
                 | (Config.GcsConservative, LdICC, false, true)  => ["gc-bdwd.lib"]
@@ -500,16 +510,23 @@ struct
        let
          val mt = useFutures config
          val debug = Config.pilDebug config
+
          val nm =
              case (mt, debug)
               of (false, false) => "sequential"
                | (false, true ) => "sequentiald"
                | (true,  false) => "parallel"
                | (true,  true ) => "paralleld"
+
+         val gcs =
+             (case #style (Config.gc config) 
+               of Config.GcsConservative => "bdw_"
+                | _                      => "")
+
          val file = 
              (case ldTag
-               of LdGCC => "ptkfutures_gcc_" ^ nm ^ ".lib"
-                | LdICC => "ptkfutures_" ^ nm ^ ".lib"
+               of LdGCC => "ptkfutures_gcc_" ^ gcs ^ nm
+                | LdICC => "ptkfutures_" ^ gcs ^ nm ^ ".lib"
                 | LdPillar => "ptkfutures_pillar_" ^ nm ^ ".obj")
 
        in [file]
@@ -526,11 +543,14 @@ struct
                 | (LdICC, _) => ["user32.lib"] 
                 | _ => [])
          val mcrt = 
-             if ((ldTag = LdPillar) orelse mt) then
-               if debug then
-                 ["mcrtd.lib"]
-               else  
-                 ["mcrt.lib"]
+             if ldTag = LdPillar orelse mt then
+               if ldTag = LdGCC then
+                 fail ("runtimeLibraries", "gcc does not link with mcrt")
+               else
+                 if debug then
+                   ["mcrtd.lib"]
+                 else  
+                   ["mcrt.lib"]
              else
                []
        in mcrt @ libs
@@ -572,7 +592,7 @@ struct
                                  preLibs,
                                  [inFile],
                                  postLibs,
-                                 options, 
+                                 options,
                                  Config.linkStr config]
          val cleanup = fn () => if Config.keepObj config then ()
                                 else File.remove inFile

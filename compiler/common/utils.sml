@@ -25,6 +25,9 @@ structure Utils = struct
       val conj : ('a -> bool) * ('a -> bool) -> ('a -> bool) =
        fn (f1, f2) => 
        fn a => (f1 a) andalso (f2 a)
+
+      val apply2 : ('a -> 'b) -> ('a * 'a) -> ('b * 'b) = 
+       fn f => fn (a, b) => (f a, f b)
                    
       (* infix 3 @@ *)
       val @@ : ('a -> 'b) * 'a -> 'b = 

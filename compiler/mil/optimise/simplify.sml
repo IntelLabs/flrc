@@ -314,6 +314,22 @@ struct
            in init
            end)
 
+   val getThunkValueContentsFromVariable = 
+       (#ofVal <! MU.Def.Out.thunkValue <! Def.toMilDef o Def.get) 
+         || (#ofVal <! MU.Rhs.Dec.rhsThunkValue o MU.Instruction.rhs <! getUniqueInit)
+
+   val getPFunctionInitCodeFromVariable = 
+       (<@ #code <! MU.Def.Out.pFunction <! Def.toMilDef o Def.get)
+         || (<@ #code <! MU.Rhs.Dec.rhsPFunctionInit o MU.Instruction.rhs <! getUniqueInit)
+
+   val getPFunctionInitFvsFromVariable = 
+       (#fvs <! MU.Def.Out.pFunction <! Def.toMilDef o Def.get)
+         || (#fvs <! MU.Rhs.Dec.rhsPFunctionInit o MU.Instruction.rhs <! getUniqueInit)
+
+   val getThunkInitFromVariable = 
+       (<@ MU.Rhs.Dec.rhsThunkInit <! Def.toRhs o Def.get)
+         || (<@ MU.Rhs.Dec.rhsThunkInit o MU.Instruction.rhs <! getUniqueInit)
+
   
   structure FuncR : REDUCE = 
   struct
@@ -668,7 +684,7 @@ struct
                  * into this closure.  *)
                 val uses = Use.getUses (imil, code)
                 val getCode = (<@ #code <! MU.Rhs.Dec.rhsPFunctionInit <! Use.toRhs)
-                           || (<- o <@ MU.Global.Dec.gPFunction o #2 <! Use.toGlobal)
+                           || (<@ #code <! MU.Global.Dec.gPFunction o #2 <! Use.toGlobal)
                 val isInit = 
                  fn u => 
                     (case getCode u
@@ -686,8 +702,8 @@ struct
                             of I.UseGlobal g => 
                                let
                                  val (v, mg) = <@ IGlobal.toGlobal g
-                                 val code = MU.Global.Dec.gPFunction mg
-                                 val mg = M.GPFunction NONE
+                                 val {code, fvs} = <@ MU.Global.Dec.gPFunction mg
+                                 val mg = M.GPFunction {code = NONE, fvs = fvs}
                                  val () = IGlobal.replaceMil (imil, g, I.GGlobal (v, mg))
                                in ()
                                end
@@ -729,10 +745,7 @@ struct
              fn ((d, imil, ws), (i, {callee, ret, fx})) =>
                 let
                   val t = MU.Eval.thunk o #eval <! MU.InterProc.Dec.ipEval @@ callee
-                  val get = (#ofVal <! MU.Def.Out.thunkValue <! Def.toMilDef o Def.get) 
-                         || (#ofVal <! MU.Rhs.Dec.rhsThunkValue o MU.Instruction.rhs <! getUniqueInit)
-                            
-                  val s = <@ get (imil, t)
+                  val s = <@ getThunkValueContentsFromVariable (imil, t)
                   val () = 
                       let
                         val succs = IInstr.succs (imil, i)
@@ -771,9 +784,7 @@ struct
                         of (true, [code]) => code
                          | _ => 
                            let
-                             val get = (<@ #code <! MU.Def.Out.pFunction <! Def.toMilDef o Def.get)
-                                    || (<@ #code <! MU.Rhs.Dec.rhsPFunctionInit o MU.Instruction.rhs <! getUniqueInit)
-                             val code = <@ get (imil, cls)
+                             val code = <@ getPFunctionInitCodeFromVariable (imil, cls)
                            in code
                            end)
                   val call = M.CDirectClosure {cls = cls, code = code}
@@ -790,9 +801,7 @@ struct
                         of (true, [code]) => code
                          | _ => 
                            let
-                             val get = (<@ MU.Rhs.Dec.rhsThunkInit <! Def.toRhs o Def.get)
-                                    || (<@ MU.Rhs.Dec.rhsThunkInit o MU.Instruction.rhs <! getUniqueInit)
-                             val f = <@ #code <! get @@ (imil, thunk)
+                             val f = <@ #code <! getThunkInitFromVariable @@ (imil, thunk)
                            in f
                            end)
                   val eval = M.EDirectThunk {thunk = thunk, code = code}
@@ -1459,7 +1468,10 @@ struct
                       val g = IGlobal.build (imil, (gv, g))
                       val () = WS.addGlobal (ws, g)
                       val () = Use.replaceUses (imil, v, M.SVariable gv)
-                    in ()
+                      val uses = Use.getUses (imil, gv)
+                      val items = Vector.keepAllMap (uses, Use.toItem)
+                      val items = Vector.toList items
+                    in items
                     end
                     
                 val const = 
@@ -1471,7 +1483,7 @@ struct
                 val consts = 
                  fn ops => Vector.forall (ops, const)
                            
-                val () = 
+                val l = 
                     (case rhs
                       of M.RhsTuple {vtDesc, inits} =>
                          let
@@ -1480,42 +1492,45 @@ struct
                            val () = Try.require (Vector.length inits = MU.VTableDescriptor.numFixed vtDesc)
                            val () = Try.require (Vector.forall (inits, const))
                            val v = Try.V.singleton dests
-                           val () = add (v, M.GTuple {vtDesc = vtDesc, inits = inits})
-                         in ()
+                           val l = add (v, M.GTuple {vtDesc = vtDesc, inits = inits})
+                           (* can ignore l *)
+                         in []
                          end
                        | M.RhsThunkValue {typ, thunk, ofVal} =>
                          let
                            val vOpt = <@ Utils.Option.fromVector dests
                            val dest = <@ Utils.Option.atMostOneOf (thunk, vOpt)
                            val () = Try.require (const ofVal) 
-                           val () = add (dest, M.GThunkValue {typ = typ, ofVal = ofVal})
-                         in ()
+                           val l = add (dest, M.GThunkValue {typ = typ, ofVal = ofVal})
+                         in l
                          end
                        | M.RhsPFunctionInit {cls, code, fvs} =>
                          let
                            val vOpt = <@ Utils.Option.fromVector dests
                            val dest = <@ Utils.Option.atMostOneOf (cls, vOpt)
                            val () = Try.require (Option.forall (code, fn v => Var.isGlobal (imil, v)))
-                           val () = Try.require (Vector.isEmpty fvs)
-                           val () = add (dest, M.GPFunction code)
-                         in ()
+                           val () = Try.require (Vector.forall (fvs, fn (fk, oper) => const oper))
+                           val l = add (dest, M.GPFunction {code = code, fvs = fvs})
+                         in l
                          end
                        | M.RhsPSetNew op1 => 
                          let
                            val () = Try.require (const op1)
                            val v = Try.V.singleton dests
-                           val () = add (v, M.GPSet op1)
-                         in ()
+                           val l = add (v, M.GPSet op1)
+                           (* can ignore l *)
+                         in []
                          end
                        | M.RhsPSum {tag, typ, ofVal} => 
                          let
                            val () = Try.require (const ofVal)
                            val v = Try.V.singleton dests
-                           val () = add (v, M.GPSum {tag = tag, typ = typ, ofVal = ofVal})
-                         in ()
+                           val l = add (v, M.GPSum {tag = tag, typ = typ, ofVal = ofVal})
+                           (* can ignore l *)
+                         in []
                          end
                        | _ => Try.fail ())
-              in []
+              in l
               end
         in try (Click.globalized, f)
         end
@@ -1790,13 +1805,8 @@ struct
               let
                 val v = Try.V.singleton dests
                 val fv =
-                    case getUniqueInit (imil, thunk)
-                     of SOME init => 
-                        let
-                          val {fvs, ...} = <@ MU.Rhs.Dec.rhsThunkInit o MU.Instruction.rhs @@ init
-                          val (_, fv) = Try.V.sub (fvs, idx)
-                        in fv
-                        end
+                    case getThunkInitFromVariable (imil, thunk)
+                     of SOME {fvs, ...} => #2 (Try.V.sub (fvs, idx))
                       | NONE => 
                         let
                           val fvs = <@ getClosureOrThunkParameters (imil, thunk)
@@ -1895,13 +1905,8 @@ struct
               let
                 val v = Try.V.singleton dests
                 val fv =
-                    case getUniqueInit (imil, cls)
-                     of SOME init => 
-                        let
-                          val {fvs, ...} = <@ MU.Rhs.Dec.rhsPFunctionInit o MU.Instruction.rhs @@ init
-                          val (_, fv) = Try.V.sub (fvs, idx)
-                        in fv
-                        end
+                    case getPFunctionInitFvsFromVariable (imil, cls)
+                     of SOME fvs => #2 o Try.V.sub @@ (fvs, idx)
                       | NONE => 
                         let
                           val fvs = <@ getClosureOrThunkParameters (imil, cls)

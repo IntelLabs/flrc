@@ -1278,16 +1278,28 @@ struct
                 in t
                 end
               | M.GSimple simp => simple (s, e, msg, simp)
-              | M.GPFunction vo =>
-                (case vo
-                  of NONE => getTyp (e, x)
-                   | SOME v =>
-                     let
-                       fun msg' () = msg () ^ ": code"
-                       val ct = variableUse (s, e, msg', v)
-                       val t = codeTypToPFunctionTyp (s, e, msg', x, ct)
-                     in t
-                     end)
+              | M.GPFunction {code, fvs} =>
+                let
+                  fun doOne (i, (fk, opnd)) =
+                      let
+                        fun msg' () = msg () ^ ": free variable " ^ Int.toString i
+                        val _ = operand (s, e, msg', opnd)
+                      in ()
+                      end
+                  val () = Vector.foreachi (fvs, doOne)
+                           
+                  val t = 
+                      (case code
+                        of NONE => getTyp (e, x)
+                         | SOME v =>
+                           let
+                             fun msg' () = msg () ^ ": code"
+                             val ct = variableUse (s, e, msg', v)
+                             val t = codeTypToPFunctionTyp (s, e, msg', x, ct)
+                           in t
+                           end)
+                in t
+                end
               | M.GPSum {tag, typ, ofVal} =>
                 let
                   val () = name (s, e, tag)

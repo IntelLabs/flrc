@@ -65,6 +65,7 @@ sig
          (* misc *)
          | ViSelect of elemType
          | ViPermute of elemType * int Vector.t
+         | ViInit of elemType 
 
   datatype t = TVector of elemType | TMask of elemType
   val typeOf : prim -> t list * t
@@ -161,6 +162,8 @@ struct
          (* misc *)
          | ViSelect of elemType
          | ViPermute of elemType * int Vector.t
+         (* init *)
+         | ViInit of elemType
 
   datatype t = TVector of elemType | TMask of elemType
 
@@ -213,6 +216,7 @@ struct
          | ViLe et      => ([TVector et, TVector et], TVector et)
          | ViSelect et  => ([TVector et, TVector et], TVector et)
          | ViPermute (et,  _) => ([TVector et, TVector et], TVector et)
+         | ViInit et    => ([TVector et            ], TVector et)
 
   fun numElemTypeBytes vet =
       case vet
@@ -325,6 +329,7 @@ struct
          | ViLe et       => "ViLe" ^ stringOfElemTypeShort et
          | ViSelect et   => "ViSelect" ^ stringOfElemTypeShort et
          | ViPermute (et, _)  => "ViPermute" ^ stringOfElemTypeShort et
+         | ViInit et     => "ViInit" ^ stringOfElemTypeShort et
 
   fun layoutSize vs = Layout.str (stringOfSize vs)
   fun layoutElemType vet = Layout.str (stringOfElemType vet)
@@ -508,7 +513,10 @@ struct
           | (ViSelect _,   _           ) => GREATER
           | (_,            ViSelect _  ) => LESS
           | (ViPermute (x1, _), ViPermute (x2, _)) => elemType (x1, x2)
-     
+          | (ViInit x1,    ViInit x2   ) => elemType (x1, x2)
+          | (ViInit _,     _           ) => GREATER
+          | (_,            ViInit _    ) => LESS
+
   end
 
   val equalElemTypes = fn (t1, t2) => Compare.elemType (t1, t2) = EQUAL

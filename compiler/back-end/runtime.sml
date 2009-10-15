@@ -297,6 +297,8 @@ struct
           | RtStringToNat        => "pLsrPString2Nat"
           | RtStringToFloat      => "pLsrPString2Float"
           | RtFloatToString      => "pLsrPFloat2String" ^ thnk t
+          | RtRatToString        => "pLsrPRat2String" ^ thnk t
+          | RtStringToRat        => "pLsrPString2Rat"
           | RtResetTimer         => "pLsrPResetTimer"
           | RtGetTimer           => "pLsrPGetTimer"
           | RtVtuneAttach        => "pLsrPVTuneAttach"
@@ -370,6 +372,7 @@ struct
           | ViLe et            => "pLsrViLe" ^ genElemTypSuffix et
           | ViSelect et        => "pLsrViSelect" ^ genElemTypSuffix et
           | ViPermute (et, _)  => "pLsrViPermute" ^ genElemTypSuffix et
+          | ViInit et          => "pLsrViInit" ^ genElemTypSuffix et
 
     end
     
@@ -467,6 +470,7 @@ struct
 
     fun staticValue fk = Pil.identifier ("pLsrThunkStaticValue" ^ typ fk)
     fun new         fk = Pil.identifier ("pLsrThunkNew"         ^ typ fk)
+    fun newValue    fk = Pil.identifier ("pLsrThunkNewValue"    ^ typ fk)
     fun init        fk = Pil.identifier ("pLsrThunkSetInit"     ^ typ fk)
     fun setValue    fk = Pil.identifier ("pLsrThunkSetValue"    ^ typ fk)
     fun spawn       fk = Pil.identifier ("pLsrThunkSpawn"       ^ typ fk)

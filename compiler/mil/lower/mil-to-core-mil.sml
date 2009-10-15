@@ -396,7 +396,7 @@ struct
                   val (aTyps, rTyps) = 
                       case MTT.variable (c, si, cls)
                        of M.TPFunction {args, ress} => (args, ress)
-                        | _ => (Vector.new1 M.TPAny, Vector.new1 M.TPAny)
+                        | _ => (Vector.new1 M.TRef, Vector.new1 M.TPAny)
                   val clst = doTyp (state, env,
                                     M.TPFunction {args = aTyps, ress = rTyps})
                   val aTyps = doTyps (state, env, aTyps)
@@ -519,10 +519,10 @@ struct
                 else
                   NONE
               | M.GSimple _ => NONE
-              | M.GPFunction vo => 
+              | M.GPFunction {code, fvs} => 
                 if lowerPFunctions then
                   let
-                    val g = POM.Function.mkGlobal (c, vo)
+                    val g = POM.Function.mkGlobal (c, code, fvs)
                   in SOME (v, g)
                   end
                 else
@@ -560,16 +560,13 @@ struct
   val nameSmall = 
    fn (config, p) => 
       let
-        val operandsToName = 
-         fn oper => 
-            case oper
-             of M.SConstant c => 
-                (case c
-                  of M.COptionSetEmpty => true
-                   | M.CTypePH => true
-                   | _ => false)
-              | M.SVariable _ => false
-        val p = MilNameSmallValues.program (config, operandsToName, p)
+        val constantsToName = 
+         fn c => 
+            (case c
+              of M.COptionSetEmpty => true
+               | M.CTypePH => true
+               | _ => false)
+        val p = MilNameSmallValues.program (config, constantsToName, p)
       in p
       end
 
