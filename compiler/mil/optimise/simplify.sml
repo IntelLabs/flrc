@@ -381,14 +381,27 @@ struct
                                     let
                                       val {callee, ret, fx} = <@ MU.Transfer.Dec.tInterProc t
                                       val {typ, eval} = <@ MU.InterProc.Dec.ipEval callee
-                                      val {thunk, code} = <@ MU.Eval.Dec.eDirectThunk eval
-                                      val () = Try.require (fname = code)
-                                      val eval = 
-                                          (case action
-                                            of Globalize (gv, oper, iGlobal) => 
-                                               M.EThunk {thunk = gv, code = MU.Codes.none}
-                                             | Reduce i => 
-                                               M.EThunk {thunk = thunk, code = MU.Codes.none})
+                                      val eval =
+                                          (case eval
+                                            of M.EDirectThunk {thunk, code} => 
+                                               let
+                                                 val () = if (fname = code) then () else
+                                                          fail ("ThunkToThunkVal", "Strange code ptr use")
+                                                 val eval = 
+                                                     (case action
+                                                       of Globalize (gv, oper, iGlobal) => 
+                                                          M.EThunk {thunk = gv, code = MU.Codes.none}
+                                                        | Reduce i => 
+                                                          M.EThunk {thunk = thunk, code = MU.Codes.none})
+                                               in eval
+                                               end
+                                             | M.EThunk {thunk, code = {possible, exhaustive}} => 
+                                               let
+                                                 val possible = VS.remove (possible, fname)
+                                                 val code = {possible = possible, exhaustive = false}
+                                                 val eval = M.EThunk {thunk = thunk, code = code}
+                                               in eval
+                                               end)
                                       val callee = M.IpEval {typ = typ, eval = eval}
                                       val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
                                       val () = IInstr.replaceTransfer (imil, i, t)

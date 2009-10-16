@@ -982,7 +982,7 @@ struct
                                     L.str "U => show thunk free variable field kinds",
                                     L.str "v => show vector element types",
                                     L.str "+ => show all of the above"]),
-                L.str "default is none"]
+                L.str "default is c"]
 
    fun parse str =
        let
@@ -993,7 +993,7 @@ struct
          val thunkFvs   = ref false
          val pFunFvs    = ref false
          val pSumTyp    = ref false
-         val codes      = ref false
+         val codes      = ref true
          val symbols    = ref false
          val numbers    = ref false
          fun doOne c =
