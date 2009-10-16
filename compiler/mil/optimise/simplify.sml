@@ -47,7 +47,7 @@ struct
                             type env = PD.t
                             val extract = PD.getConfig
                             val name = passname
-                            val indent = 0
+                            val indent = 2
                           end)
 
   val <- = Try.<-
@@ -780,8 +780,8 @@ struct
                 let
                   val {cls, code = {exhaustive, possible}} = <@ MU.Call.Dec.cClosure call
                   val code = 
-                      (case (exhaustive, VS.toList possible)
-                        of (true, [code]) => code
+                      (case (exhaustive, VS.size possible)
+                        of (true, 1) => valOf (VS.getAny possible)
                          | _ => 
                            let
                              val code = <@ getPFunctionInitCodeFromVariable (imil, cls)
@@ -2372,8 +2372,14 @@ struct
                     of (MCG.Graph.NFun var, false) =>
                        let
                          val iFunc = IFunc.getIFuncByName (imil, var)
-                         val () = IFunc.markNonRecursive (imil, iFunc)
-                         val () = Click.nonRecursive d
+                         val () = 
+                             if IFunc.getRecursive (imil, iFunc) then
+                               let
+                                 val () = IFunc.markNonRecursive (imil, iFunc)
+                                 val () = Click.nonRecursive d
+                               in ()
+                               end
+                             else ()
                        in ()
                        end
                      | _ => ())
