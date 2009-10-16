@@ -30,7 +30,7 @@ functor MilAnalyseF (
 ) :> MilAnalyse where type state = state
                   and type env = env
 = struct
-
+  structure VS = Mil.VS
   structure Chat = ChatF (struct
                           type env = env
                           val extract = config
@@ -230,10 +230,18 @@ functor MilAnalyseF (
       in ()
       end
 
+  fun analyseCodes (s, e, {possible, exhaustive}) = 
+      VS.foreach (possible, fn v => analyseVariable (s, e, v))
+
   fun analyseCall (s, e, c) =
       case c
        of M.CCode v => analyseVariable (s, e, v)
-        | M.CClosure {cls, code} => analyseVariable (s, e, cls)
+        | M.CClosure {cls, code} => 
+          let
+            val () = analyseVariable (s, e, cls)
+            val () = analyseCodes (s, e, code)
+          in ()
+          end
         | M.CDirectClosure {cls, code} =>
           let
             val () = analyseVariable (s, e, cls)
@@ -243,7 +251,12 @@ functor MilAnalyseF (
 
   fun analyseEval (s, e, eval) =
       case eval
-       of M.EThunk {thunk, code} => analyseVariable (s, e, thunk)
+       of M.EThunk {thunk, code} => 
+          let
+            val () = analyseVariable (s, e, thunk)
+            val () = analyseCodes (s, e, code)
+          in ()
+          end
         | M.EDirectThunk {thunk, code} =>
           let
             val () = analyseVariable (s, e, thunk)
