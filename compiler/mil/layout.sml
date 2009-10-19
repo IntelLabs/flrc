@@ -993,7 +993,7 @@ struct
          val thunkFvs   = ref false
          val pFunFvs    = ref false
          val pSumTyp    = ref false
-         val codes      = ref true
+         val codes      = ref false
          val symbols    = ref false
          val numbers    = ref false
          fun doOne c =
@@ -1033,7 +1033,7 @@ struct
        end
 
    fun dft _ = ({binderTyps = false, viElemType = false, tupDesc = false, thunkTyp = false, thunkFvs = false,
-                 pFunFvs = false, pSumTyp = false, codes = false, numbers = false},
+                 pFunFvs = false, pSumTyp = false, codes = true, numbers = false},
                 false)
 
    val (control, controlGet) = Config.Control.mk (modulename, describe, parse, dft)
