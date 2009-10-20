@@ -317,9 +317,12 @@ struct
         let
           fun callConv conv = 
               case conv
-               of M.CCode f               => SOME f
-                | M.CClosure {cls, code}  => SOME cls
-                | M.CDirectClosure {cls, code} => SOME cls
+               of M.CCode f               => 
+                  (case IMil.IFunc.getIFuncByName' (imil, f)
+                    of SOME _ => SOME f
+                     | NONE => NONE)
+                | M.CClosure {cls, code}  => NONE
+                | M.CDirectClosure {cls, code} => SOME code
         in
           case IMil.IInstr.toTransfer i
            of SOME (M.TInterProc {callee, ret, fx}) =>
@@ -581,10 +584,11 @@ struct
     fun inlineableCS (d, imil, i) =
         let
           (* Check call convention. *)
-          fun chkCallConv conv = case conv
-                                  of M.CCode f               => true
-                                   | M.CDirectClosure {cls, code} => true
-                                   | _ => false
+          fun chkCallConv conv = 
+              case conv
+               of M.CCode f                    => isSome (IMil.IFunc.getIFuncByName' (imil, f))
+                | M.CDirectClosure {cls, code} => true
+                | _ => false
         in
           (* Check transfer. Only TCall and TTailCall are inlineable. *)
           case IMil.IInstr.toTransfer (i)
