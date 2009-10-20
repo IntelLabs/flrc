@@ -230,15 +230,19 @@ struct
                         | SOME l => (retNode l,      funNode callee, ())::es
                     else
                       es
-                fun doIndirectCall (caller, callee, rl, es) = 
-                    (root, funNode callee, ())::doDirectCall(caller, callee, rl, es)
-                fun doCall1 (c, MCG.CI {knownCallees, unknownCallees}, es) =
+                fun doIndirectCall (caller, callee, rl, es) = (root, funNode callee, ())::es
+                fun callIsInlineable (c, MCG.CI {knownCallees, unknownCallees}) =
                     let
-                      val doCall2 = 
-                          if VS.size knownCallees <> 1 orelse unknownCallees then
-                            doIndirectCall
-                          else
-                            doDirectCall
+                      val indirect = VS.size knownCallees <> 1 orelse unknownCallees 
+                      val closure = 
+                          (case MU.Transfer.Dec.tInterProc (FMil.getTransfer (getFMil env, c))
+                            of SOME {callee = M.IpCall {call = M.CClosure _, ...}, ...} => true
+                             | _ => false)
+                    in not (indirect orelse closure)
+                    end
+                fun doCall1 (c, call as MCG.CI {knownCallees, unknownCallees}, es) =
+                    let
+                      val doCall2 = if callIsInlineable (c, call) then doDirectCall else doIndirectCall 
                       val f = FMil.getLabelFun (getFMil env, c)
                       val rl = getReturnLabel (env, c)
                       val es = VS.fold (knownCallees, es, fn (g, es) => doCall2 (f, g, rl, es))
