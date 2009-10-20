@@ -151,6 +151,9 @@ struct
   val (skipSimplifyF, skipSimplify) = 
       mkFeature ("skip-simplify", "Skip simplification")
 
+  val (skipCodeSimplifyF, skipCodeSimplify) = 
+      mkFeature ("skip-code-simplify", "Skip code simplification")
+
   val (skipCfgF, skipCfg) = 
       mkFeature ("skip-cfg-simplify", "Skip cfg simplification")
 
@@ -160,7 +163,8 @@ struct
   val (skipRecursiveF, skipRecursive) = 
       mkFeature ("skip-recursive", "Skip recursive analysis")
 
-  val features = [statPhasesF, noIterateF, skipUnreachableF, skipSimplifyF, skipCfgF, skipEscapeF, skipRecursiveF]
+  val features = [statPhasesF, noIterateF, 
+                  skipCodeSimplifyF, skipUnreachableF, skipSimplifyF, skipCfgF, skipEscapeF, skipRecursiveF]
 
   structure Click = 
   struct
@@ -168,7 +172,7 @@ struct
         [
          ("BetaSwitch",       "Cases beta reduced"             ),
          ("BlockKill",        "Blocks killed"                  ),
-         ("CallInline",       "Calls inlined"                  ),
+         ("CallInline",       "Calls inlined (inline once)"    ),
          ("DCE",              "Dead instrs/globals eliminated" ),
          ("EtaSwitch",        "Cases eta reduced"              ),
          ("Globalized",       "Objects globalized"             ),
@@ -2369,41 +2373,51 @@ struct
                                                structure Chat = Chat
                                                val simplify = simplify
                                              end)
+                           
+  val analyzeRecursive = 
+   fn (d, imil) =>
+      let
+        val MCG.Graph.G {unknown, graph} = IMil.T.callGraph imil
+        val scc = PLG.scc graph
+        val isSelfRecursive =
+         fn n => List.contains (PLG.Node.succs n, n, PLG.Node.equal)
+        val doScc =
+         fn c => 
+            (case c 
+              of [f] =>
+                 (case (PLG.Node.getLabel f, isSelfRecursive f)
+                   of (MCG.Graph.NFun var, false) =>
+                      let
+                        val iFunc = IFunc.getIFuncByName (imil, var)
+                        val () = 
+                            if IFunc.getRecursive (imil, iFunc) then
+                              let
+                                val () = IFunc.markNonRecursive (imil, iFunc)
+                                val () = Click.nonRecursive d
+                              in ()
+                              end
+                            else ()
+                      in ()
+                      end
+                    | _ => ())
+               | _ => ())
+      in
+        List.foreach (scc, doScc)
+      end
 
-   val analyzeRecursive = 
-    fn (d, imil) =>
-       let
-         val MCG.Graph.G {unknown, graph} = IMil.T.callGraph imil
-         val scc = PLG.scc graph
-         val isSelfRecursive =
-          fn n => List.contains (PLG.Node.succs n, n, PLG.Node.equal)
-         val doScc =
-          fn c => 
-             (case c 
-               of [f] =>
-                  (case (PLG.Node.getLabel f, isSelfRecursive f)
-                    of (MCG.Graph.NFun var, false) =>
-                       let
-                         val iFunc = IFunc.getIFuncByName (imil, var)
-                         val () = 
-                             if IFunc.getRecursive (imil, iFunc) then
-                               let
-                                 val () = IFunc.markNonRecursive (imil, iFunc)
-                                 val () = Click.nonRecursive d
-                               in ()
-                               end
-                             else ()
-                       in ()
-                       end
-                     | _ => ())
-                | _ => ())
-       in
-         List.foreach (scc, doScc)
-       end
-
+  val codeSimplify = 
+      fn (d, imil, ws) => 
+         let
+           val funcs = Enumerate.T.funcs imil
+           val () = List.foreach (funcs, fn f => WS.addCode (ws, f))
+           val () = simplify (d, imil, ws)
+         in ()
+         end
   val doUnreachable = doPhase (skipUnreachable, unreachableCode, "unreachable object elimination")
   val doSimplify = 
    fn ws => doPhase (skipSimplify, fn (d, imil) => simplify (d, imil, ws), "simplification")
+  val doCodeSimplify = 
+   fn ws => doPhase (skipCodeSimplify, fn (d, imil) => codeSimplify (d, imil, ws), "code simplification")
   val doCfgSimplify = 
    fn ws => doPhase (skipCfg, fn (d, imil) => trimCfgs (d, imil, ws), "cfg simplification")
   val doEscape = doPhase (skipEscape, SimpleEscape.optimize, "closure escape analysis")
@@ -2418,6 +2432,7 @@ struct
          fn () =>
             let
               val () = doSimplify ws (d, imil)
+              val () = doCodeSimplify ws (d, imil)
               val () = doCfgSimplify ws (d, imil)
             in ()
             end
