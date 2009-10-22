@@ -2325,8 +2325,10 @@ struct
         let
           val d = PD.push d
           val () = Chat.log1 (d, "Doing "^name)
+          val s = Time.now ()
           val () = f (d, imil)
-          val () = Chat.log1 (d, "Done with "^name)
+          val e = Time.toString (Time.- (Time.now (), s))
+          val () = Chat.log1 (d, "Done with "^name^" in "^e^"s")
           val () = postPhase (d, imil)
         in ()
         end
