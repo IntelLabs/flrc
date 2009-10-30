@@ -87,7 +87,7 @@ struct
                          val indent = 0)
 
   fun notCoreMil (env, f, msg) =
-      Fail.fail ("MilToPil", f, "not core Mil: " ^ msg)
+      fail (f, "not core Mil: " ^ msg)
 
   (*** Vtable Info ***)
 
@@ -909,8 +909,8 @@ struct
           case Vector.length rts
            of 0 => Pil.T.void
             | 1 => genTyp (state, env, Vector.sub (rts,0))
-            | _ => Fail.fail ("MilToPil", "genReturnType",
-                              "Single returns only")
+            | _ => fail ("genReturnType",
+                         "Single returns only")
   and genCodeType (state, env, (conv, ats, rts)) =
       let
         val rt = genReturnType (state, env, conv, rts)
@@ -988,35 +988,6 @@ struct
   and genTyps (state, env, ts) =
       Vector.toListMap(ts, fn t => genTyp (state, env, t))
 
-  (* Is t the type of pointers with a corresponding type for the things
-   * pointed to (the unboxed type).
-   *)
-  fun hasUnboxed t =
-      case t
-       of M.TAny            => false
-        | M.TAnyS _         => false
-        | M.TPtr            => false
-        | M.TRef            => true
-        | M.TBits _         => false
-        | M.TNone           => false
-        | M.TRat            => true
-        | M.TName           => true
-        | M.TInteger        => true
-        | M.TIntegral _     => false
-        | M.TFloat          => false
-        | M.TDouble         => false
-        | M.TViVector _     => false
-        | M.TViMask _       => false
-        | M.TCode _         => false
-        | M.TTuple _        => true
-        | M.TIdx            => true
-        | M.TContinuation _ => false
-        | M.TThunk _        => true
-        | M.TPAny           => true
-        | M.TPFunction _    => true
-        | M.TPSum _         => true
-        | M.TPType _        => true
-        | M.TPRef _         => true
 
   (* Return the C type for the unboxed version of a Mil type *)
 
@@ -1033,52 +1004,6 @@ struct
       in
         Pil.T.strct (NONE, fts)
       end
-
-  fun genUnboxedTyp (state, env, t) = 
-      case t
-       of M.TAny => Fail.fail ("MilToPil", "genUnboxedTyp", "TAny")
-        | M.TAnyS _ => Fail.fail ("MilToPil", "genUnboxedTyp", "TAnyS")
-        | M.TPtr => Fail.fail ("MilToPil", "genUnboxedTyp", "TPtr")
-        | M.TRef => Pil.T.named RT.T.objectU
-        | M.TBits vs => Fail.fail ("MilToPil", "genUnboxedType", "TBits")
-        | M.TNone => Fail.fail ("MilToPil", "genUnboxedType", "TNone")
-        | M.TRat => Pil.T.named RT.T.ratU
-        | M.TInteger => Pil.T.named RT.T.integerU
-        | M.TName => Pil.T.named RT.T.nameU
-        | M.TIntegral _ =>
-          Fail.fail ("MilToPil", "genUnboxedType", "TIntegral")
-        | M.TFloat => Fail.fail ("MilToPil", "genUnboxedType", "TFloat")
-        | M.TDouble => Fail.fail ("MilToPil", "genUnboxedType", "TDouble")
-        | M.TViVector _ =>
-          Fail.fail ("MilToPil", "genUnboxedType", "TViVector")
-        | M.TViMask _ => Fail.fail ("MilToPil", "genUnboxedType", "TViMask")
-        | M.TCode {cc, args, ress} =>
-          genCodeType (state, env, (cc, args, ress))
-        | M.TTuple {pok, fixed, array} =>
-          let
-            val fixed = Vector.map (fixed, #1)
-            val fs = genTyps (state, env, fixed)
-            val xt =
-                case array
-                 of (M.TNone, _) => NONE
-                  | (t, _)       => SOME (genTyp (state, env, t))
-            val t = tupleUnboxedTyp (pok, fs, xt)
-          in t
-          end
-        | M.TIdx => Pil.T.named RT.T.idxU
-        | M.TContinuation _ =>
-          Fail.fail ("MilToPil", "genUnboxedType", "TContinuation")
-        | M.TThunk t =>
-          let
-            val fk = typToFieldKind (env, t)
-            val t = Pil.T.named (RT.Thunk.unboxedTyp fk)
-          in t
-          end
-        | M.TPAny => Pil.T.named RT.T.objectU
-        | M.TPFunction _ => notCoreMil (env, "genUnboxedTyp", "TPFunction")
-        | M.TPSum _ => notCoreMil (env, "genUnboxedTyp", "TPFunction")
-        | M.TPType _ => notCoreMil (env, "genUnboxedTyp", "TPFunction")
-        | M.TPRef _ => notCoreMil (env, "genUnboxedTyp", "TPFunction")
 
   (*** Variable Binders ***)
 
@@ -1146,21 +1071,6 @@ struct
         | _ => Pil.identifier (deriveInternalVar (state, env, "unboxed", v))
   fun globalTVar (state, env, v) =
       Pil.identifier (deriveInternalVar (state, env, "T", v))
-  fun genGVar (state, env, v) =
-      let
-        val t = genTyp (state, env, getVarTyp (state, v))
-        val res = 
-            Pil.E.cast (t,
-                        Pil.E.addrOf (Pil.E.variable (unboxedVar 
-                                                        (state, env, v))))
-      in res
-      end
-
-  (* Generate a C expression for a global simple *)
-  fun genGSimple (state, env, s) = 
-      case s
-       of M.SVariable v => genGVar (state, env, v)
-        | M.SConstant c => genConstant (state, env, c)
 
   (* Generate a C expression for a local simple *)
   fun genSimple (state, env, s) =
@@ -1981,77 +1891,65 @@ struct
 
   (*** Generating the forward declarations ***)
 
-  (* Make the unboxed variable for vs equal to vd *)
-  fun genUnboxedAlias (state, env, vs, vd) =
-      let
-        val () = incAliases state
-      in
-        Pil.D.constantMacro (unboxedVar (state, env, vs), Pil.E.variable vd)
-      end
-
-  (* Make mil variable vs an alias for the (unboxed) pil variable vd *)
-  (* This generates the forward declarations for the alias, but does not
-   * initialise the boxed version of vs.
-   *)
-  fun genAlias (state, env, vs, vd, t) =
-      let
-        val alias = genUnboxedAlias (state, env, vs, vd)
-        val t = genTyp (state, env, t)
-        val bvs = genVar (state, env, vs)
-        val vd = Pil.varDec (t, bvs)
-        val dec = Pil.D.staticVariable vd
-      in Pil.D.sequence [alias, dec]
-      end
-
   fun genForward (state, env, v, g) =
-      case g
-       of M.GCode _ =>
-          let
-            val t = getVarTyp (state, v)
-            val ubt = genUnboxedTyp (state, env, t)
-            val x = genVar (state, env, v)
-          in
-            Pil.D.staticVariable (Pil.varDec (ubt, x))
-          end
-        | M.GTuple {vtDesc, inits} =>
-          let
-            val M.VTD {pok, ...} = vtDesc
-            val uv = unboxedVar (state, env, v)
-            val tv = globalTVar (state, env, v)
-            val x = genVar (state, env, v)
-            val ts = MTT.operands (getConfig env, getSymbolInfo state, inits)
-            val tvs = Vector.map (ts, fn t => (t, M.FvReadWrite))
-            val t = MU.Typ.fixedArray (pok, tvs)
-            val fs = genTyps (state, env, ts)
-            val utt = tupleUnboxedTyp (pok, fs, NONE)
-            val ut = Pil.D.typDef (utt, tv)
-            val dec1 = Pil.D.staticVariable (Pil.varDec (Pil.T.named tv, uv))
-            val bt = genTyp (state, env, t)
-            val dec2 = Pil.D.staticVariable (Pil.varDec (bt, x))
-          in Pil.D.sequence [ut, dec1, dec2]
-          end
-        | M.GSimple (s as (M.SVariable x)) => 
-          genAlias (state, env, v, unboxedVar (state, env, x),
-                    getVarTyp (state, v))
-        | M.GSimple (M.SConstant (M.CName n)) =>
-          genAlias (state, env, v, genNameUnboxed (state, env, n), M.TName)
-        | _ => 
-          let
-            val t = getVarTyp (state, v)
-            val x = genVar (state, env, v)
-            val dec = Pil.D.staticVariable
-                        (Pil.varDec (genTyp (state, env, t), x))
-          in
-            if hasUnboxed t then
-              let
-                val uv = unboxedVar (state, env, v)
-                val ut = Pil.D.staticVariable
-                           (Pil.varDec (genUnboxedTyp (state, env, t), uv))
-              in Pil.D.sequence [ut, dec]
-              end
-            else
-              dec
-          end
+      let
+        (* static vut vu;
+         * #define v ((vt)&vu)
+         *)
+        val declareAndDefine = 
+         fn (v, vT, vuT) =>
+            let
+              val vu = unboxedVar (state, env, v)
+              val v = genVar (state, env, v)
+              val dec1 = Pil.D.staticVariable (Pil.varDec (vuT, vu))
+              val dec2 = 
+                  Pil.D.constantMacro (v, Pil.E.cast (vT, Pil.E.addrOf (Pil.E.variable vu)))
+            in Pil.D.sequence [dec1, dec2]
+            end
+        val error =
+         fn s => fail ("genForward", s^" shouldn't be in a connect component")
+        val d = 
+            case g
+             of M.GCode (M.F {cc, args, rtyps, ...}) =>
+                let
+                  val c = getConfig env
+                  val si = getSymbolInfo state
+                  val cc = MTT.callConv (c, si, cc)
+                  val args = Vector.map (args, fn a => MTT.variable (c, si, a))
+                  val ubt = genCodeType (state, env, (cc, args, rtyps))
+                  val x = genVar (state, env, v)
+                  val d = Pil.D.staticVariable (Pil.varDec (ubt, x))
+                in d
+                end
+              | M.GErrorVal t => error "GErrorVal"
+              | M.GIdx t => error "GIdx"
+              | M.GTuple {vtDesc, inits} =>
+                let
+                  val M.VTD {pok, ...} = vtDesc
+                  val tv = globalTVar (state, env, v)
+                  val ts = MTT.operands (getConfig env, getSymbolInfo state, inits)
+                  val tvs = Vector.map (ts, fn t => (t, M.FvReadWrite))
+                  val t = MU.Typ.fixedArray (pok, tvs)
+                  val fs = genTyps (state, env, ts)
+                  val utt = tupleUnboxedTyp (pok, fs, NONE)
+                  val ut = Pil.D.typDef (utt, tv)
+                  val dec = declareAndDefine (v, genTyp (state, env, t), Pil.T.named tv)
+                in Pil.D.sequence [ut, dec]
+                end
+              | M.GRat t => error "GRat"
+              | M.GInteger t => error "GInteger"
+              | M.GThunkValue {typ, ofVal} => 
+                let
+                  val ut = Pil.T.named (RT.Thunk.unboxedTyp typ)
+                  val t  = Pil.T.named (RT.Thunk.boxedTyp typ)
+                  val dec = declareAndDefine (v, t, ut)
+                in dec
+                end
+              | M.GSimple s => 
+                Pil.D.constantMacro (genVar (state, env, v), genSimple (state, env, s))
+              | _ => fail ("genForward", "Unlowered global")
+      in d
+      end
 
   (* If a global is in a strongly connected component by itself, we
    * don't generate forwards.  This function should generate that part
@@ -2069,10 +1967,8 @@ struct
             val ut = Pil.D.typDef (t, tv)
           in [ut]
           end
-        | M.GSimple (s as (M.SVariable x)) => 
-          [genUnboxedAlias (state, env, v, unboxedVar (state, env, x))]
-        | M.GSimple (M.SConstant (M.CName n)) =>
-          [genUnboxedAlias (state, env, v, genNameUnboxed (state, env, n))]
+        | M.GSimple s => 
+          [Pil.D.constantMacro (genVar (state, env, v), genSimple (state, env, s))]
         | _ => []
 
   (*** Globals ***)       
@@ -2259,21 +2155,27 @@ struct
 
   fun genGlobal (state, env, var, global) = 
       let
-        fun staticInit (code, g) =
-            Pil.D.sequence
-              [Pil.D.sequence code,
-               Pil.D.staticVariableExpr (genVarDec (state, env, var), g)]
-        val newv  = Pil.E.variable (unboxedVar (state, env, var))
-        val t     = getVarTyp (state, var)
-        val newvr = Pil.E.cast (genTyp (state, env, t), Pil.E.addrOf newv)
+        val define = fn (v, g) => Pil.D.constantMacro (genVar (state, env, v), g)
+        val addGlobalDef = 
+         fn (v, vu) => 
+            let
+              val vr = Pil.E.addrOf vu
+              val () = addGlobal (state, vr)
+              val t = genTyp (state, env, getVarTyp (state, v))
+              val g = Pil.E.cast (t, vr)
+              val d = define (v, g)
+            in d
+            end
+
         val res = 
             case global
              of M.GCode code  => genFunction (state, env, var, code)
               | M.GErrorVal t => 
                 let
+                  val t = getVarTyp (state, var)
                   val g = Pil.E.call (Pil.E.variable RT.gErrorVal, [Pil.E.hackTyp (genTyp (state, env, t))])
-                in
-                  staticInit ([], g)
+                  val d = define (var, g)
+                in d
                 end
               | M.GIdx dict =>
                 (* Here we declare the idx global, but its entries are
@@ -2281,10 +2183,10 @@ struct
                  *)
                 let
                   val elts = ND.toList dict
+                  val newv  = Pil.E.variable (unboxedVar (state, env, var))
                   val idx = 
                       case List.length elts
-                       of 0 =>
-                          Pil.D.macroCall (RT.Idx.staticEmpty, [newv])
+                       of 0 => Pil.D.macroCall (RT.Idx.staticEmpty, [newv])
                         | n => 
                           let
                             val len = RT.Idx.chooseLen n
@@ -2296,31 +2198,28 @@ struct
                                                  newv :: len' :: inits)
                           in idx
                           end
-                  val () = addGlobal (state, Pil.E.addrOf newv)
-                in
-                  staticInit ([idx], newvr)
+                  val d = addGlobalDef (var, newv)
+                  val d = Pil.D.sequence [idx, d]
+                in d
                 end
               | M.GTuple {vtDesc, inits} =>
                 let
                   val c = getConfig env
                   val tv = Pil.T.named (globalTVar (state, env, var))
-                  val t = getVarTyp (state, var)
                   val no =
                       if instrumentAllocationSites c
                       then SOME (I.variableString' var)
                       else NONE
                   val vtable = VT.genVtable (state, env, no, vtDesc, true)
-                  fun doOne s = genGSimple (state, env, s)
+                  fun doOne s = genSimple (state, env, s)
                   val fields = Vector.toListMap (inits, doOne)
                   val elts = vtable::fields
+                  val newv  = Pil.E.variable (unboxedVar (state, env, var))
                   val args = newv::(Pil.E.hackTyp tv)::elts
                   val tuple = Pil.D.macroCall (RT.Tuple.static, args)
-                  val vd = Pil.varDec (genTyp (state, env, t),
-                                       genVar (state, env, var))
-                  val tupleptr = Pil.D.staticVariableExpr (vd, newvr)
-                  val () = addGlobal (state, Pil.E.addrOf newv)
-                in
-                  Pil.D.sequence [tuple, tupleptr]
+                  val tupleptr = addGlobalDef (var, newv)
+                  val d = Pil.D.sequence [tuple, tupleptr]
+                in d
                 end
               | M.GRat r =>
                 let
@@ -2328,41 +2227,33 @@ struct
                   val c = Pil.D.comment ("Rat: " ^ Rat.toString r)         
                   val (code_n, num) = genStaticIntInf (state, env, ~num)
                   val (code_d, den) = genStaticIntInf (state, env, den)
-                  val rDef =
-                      Pil.D.macroCall (RT.Rat.staticDef, [newv, num, den])
-                  val g = Pil.E.cast (Pil.T.named RT.T.rat, Pil.E.addrOf newv)
-                  val () = addGlobal (state, g)
-                in 
-                  staticInit (c::code_n@code_d@[rDef], g)
+                  val newv  = Pil.E.variable (unboxedVar (state, env, var))
+                  val rDef = Pil.D.macroCall (RT.Rat.staticDef, [newv, num, den])
+                  val d = addGlobalDef (var, newv)
+                  val d = Pil.D.sequence (c::code_n@code_d@[rDef, d])
+                in d
                 end
               | M.GInteger i =>
                 let
                   val c = Pil.D.comment ("Integer: " ^ IntInf.toString i)
                   val (code, i) = genStaticIntInf (state, env, i)
-                in
-                  staticInit (c::code, i)
+                  val d = define (var, i)
+                  val d = Pil.D.sequence [Pil.D.sequence (c::code), d]
+                in d
                 end
               | M.GThunkValue {typ, ofVal} =>
                  let
-                   val s = genGSimple (state, env, ofVal)
-                   val thnk =
-                       Pil.D.macroCall (RT.Thunk.staticValue typ, [newv, s])
-                   val () = addGlobal (state, Pil.E.addrOf newv)
-                 in 
-                   staticInit ([thnk], newvr)
+                   val s = genSimple (state, env, ofVal)
+                   val newv  = Pil.E.variable (unboxedVar (state, env, var))
+                   val thnk = Pil.D.macroCall (RT.Thunk.staticValue typ, [newv, s])
+                   val d = addGlobalDef (var, newv)
+                   val d = Pil.D.sequence [thnk, d]
+                 in d
                  end
-              | M.GSimple (s as (M.SVariable x)) => 
-                let
-                  val sg = genGSimple (state, env, s)
-                  val sg = Pil.E.cast (genTyp (state, env, t), sg)
-                in
-                  staticInit ([], sg)
-                end
-              | M.GSimple s => staticInit ([], genGSimple (state, env, s))
-              | M.GPFunction code =>
-                notCoreMil (env, "genGlobal", "GPFunction")
-              | M.GPSum _ => notCoreMil (env, "genGlobal", "GPSum")
-              | M.GPSet _ => notCoreMil (env, "genGlobal", "GPSet")
+              | M.GSimple s => Pil.D.sequence []
+              | M.GPFunction code => notCoreMil (env, "genGlobal", "GPFunction")
+              | M.GPSum _         => notCoreMil (env, "genGlobal", "GPSum")
+              | M.GPSet _         => notCoreMil (env, "genGlobal", "GPSet")
       in 
         res
       end

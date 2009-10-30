@@ -49,7 +49,7 @@ struct
   fun stater (p, c) =
       case p
        of Mil p => MilStats.layout (MilStats.O {id = NONE}) (p, c)
-        | IMil p => Layout.empty
+        | IMil p => MilStats.layout (MilStats.O {id = NONE}) (IMil.T.unBuild p, c)
   val irHelpers = {printer = layout, stater = stater}
   fun mkMilPass f = fn (p, pd) => Mil (f (toMil (pd, p), pd))
   fun mkIMilPass' f = fn (p, pd) => IMil (f (toIMil (pd, p), pd))

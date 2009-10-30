@@ -223,15 +223,26 @@ struct
                 val es3 = List.map (LD.toList retMap, fn (_, n) => (root, n, ()))
                 (* f -> g if f tailcalls g and f reachable *)
                 (* r -> g if f calls g with return r and f reachable *)
-                fun doCall2 (caller, callee, rl, es) =
+                fun doDirectCall (caller, callee, rl, es) =
                     if VS.member (r, caller) then
                       case rl
                        of NONE   => (funNode caller, funNode callee, ())::es
                         | SOME l => (retNode l,      funNode callee, ())::es
                     else
                       es
-                fun doCall1 (c, MCG.CI {knownCallees, ...}, es) =
+                fun doIndirectCall (caller, callee, rl, es) = (root, funNode callee, ())::es
+                fun callIsInlineable (c, MCG.CI {knownCallees, unknownCallees}) =
                     let
+                      val indirect = VS.size knownCallees <> 1 orelse unknownCallees 
+                      val closure = 
+                          (case MU.Transfer.Dec.tInterProc (FMil.getTransfer (getFMil env, c))
+                            of SOME {callee = M.IpCall {call = M.CClosure _, ...}, ...} => true
+                             | _ => false)
+                    in not (indirect orelse closure)
+                    end
+                fun doCall1 (c, call as MCG.CI {knownCallees, unknownCallees}, es) =
+                    let
+                      val doCall2 = if callIsInlineable (c, call) then doDirectCall else doIndirectCall 
                       val f = FMil.getLabelFun (getFMil env, c)
                       val rl = getReturnLabel (env, c)
                       val es = VS.fold (knownCallees, es, fn (g, es) => doCall2 (f, g, rl, es))

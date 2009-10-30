@@ -48,7 +48,7 @@ struct
   structure Chat = ChatF(type env = PD.t
                          val extract = PD.getConfig
                          val name = passname
-                         val indent = 0)
+                         val indent = 2)
 
   structure Click = 
   struct

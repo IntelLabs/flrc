@@ -47,7 +47,7 @@ struct
                             type env = PD.t
                             val extract = PD.getConfig
                             val name = passname
-                            val indent = 0
+                            val indent = 2
                           end)
 
   val <- = Try.<-
@@ -151,6 +151,9 @@ struct
   val (skipSimplifyF, skipSimplify) = 
       mkFeature ("skip-simplify", "Skip simplification")
 
+  val (skipCodeSimplifyF, skipCodeSimplify) = 
+      mkFeature ("skip-code-simplify", "Skip code simplification")
+
   val (skipCfgF, skipCfg) = 
       mkFeature ("skip-cfg-simplify", "Skip cfg simplification")
 
@@ -160,7 +163,8 @@ struct
   val (skipRecursiveF, skipRecursive) = 
       mkFeature ("skip-recursive", "Skip recursive analysis")
 
-  val features = [statPhasesF, noIterateF, skipUnreachableF, skipSimplifyF, skipCfgF, skipEscapeF, skipRecursiveF]
+  val features = [statPhasesF, noIterateF, 
+                  skipCodeSimplifyF, skipUnreachableF, skipSimplifyF, skipCfgF, skipEscapeF, skipRecursiveF]
 
   structure Click = 
   struct
@@ -168,7 +172,7 @@ struct
         [
          ("BetaSwitch",       "Cases beta reduced"             ),
          ("BlockKill",        "Blocks killed"                  ),
-         ("CallInline",       "Calls inlined"                  ),
+         ("CallInline",       "Calls inlined (inline once)"    ),
          ("DCE",              "Dead instrs/globals eliminated" ),
          ("EtaSwitch",        "Cases eta reduced"              ),
          ("Globalized",       "Objects globalized"             ),
@@ -381,14 +385,27 @@ struct
                                     let
                                       val {callee, ret, fx} = <@ MU.Transfer.Dec.tInterProc t
                                       val {typ, eval} = <@ MU.InterProc.Dec.ipEval callee
-                                      val {thunk, code} = <@ MU.Eval.Dec.eDirectThunk eval
-                                      val () = Try.require (fname = code)
-                                      val eval = 
-                                          (case action
-                                            of Globalize (gv, oper, iGlobal) => 
-                                               M.EThunk {thunk = gv, code = MU.Codes.none}
-                                             | Reduce i => 
-                                               M.EThunk {thunk = thunk, code = MU.Codes.none})
+                                      val eval =
+                                          (case eval
+                                            of M.EDirectThunk {thunk, code} => 
+                                               let
+                                                 val () = if (fname = code) then () else
+                                                          fail ("ThunkToThunkVal", "Strange code ptr use")
+                                                 val eval = 
+                                                     (case action
+                                                       of Globalize (gv, oper, iGlobal) => 
+                                                          M.EThunk {thunk = gv, code = MU.Codes.none}
+                                                        | Reduce i => 
+                                                          M.EThunk {thunk = thunk, code = MU.Codes.none})
+                                               in eval
+                                               end
+                                             | M.EThunk {thunk, code = {possible, exhaustive}} => 
+                                               let
+                                                 val possible = VS.remove (possible, fname)
+                                                 val code = {possible = possible, exhaustive = false}
+                                                 val eval = M.EThunk {thunk = thunk, code = code}
+                                               in eval
+                                               end)
                                       val callee = M.IpEval {typ = typ, eval = eval}
                                       val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
                                       val () = IInstr.replaceTransfer (imil, i, t)
@@ -780,8 +797,8 @@ struct
                 let
                   val {cls, code = {exhaustive, possible}} = <@ MU.Call.Dec.cClosure call
                   val code = 
-                      (case (exhaustive, VS.toList possible)
-                        of (true, [code]) => code
+                      (case (exhaustive, VS.size possible)
+                        of (true, 1) => valOf (VS.getAny possible)
                          | _ => 
                            let
                              val code = <@ getPFunctionInitCodeFromVariable (imil, cls)
@@ -2308,8 +2325,10 @@ struct
         let
           val d = PD.push d
           val () = Chat.log1 (d, "Doing "^name)
+          val s = Time.now ()
           val () = f (d, imil)
-          val () = Chat.log1 (d, "Done with "^name)
+          val e = Time.toString (Time.- (Time.now (), s))
+          val () = Chat.log1 (d, "Done with "^name^" in "^e^"s")
           val () = postPhase (d, imil)
         in ()
         end
@@ -2356,35 +2375,51 @@ struct
                                                structure Chat = Chat
                                                val simplify = simplify
                                              end)
+                           
+  val analyzeRecursive = 
+   fn (d, imil) =>
+      let
+        val MCG.Graph.G {unknown, graph} = IMil.T.callGraph imil
+        val scc = PLG.scc graph
+        val isSelfRecursive =
+         fn n => List.contains (PLG.Node.succs n, n, PLG.Node.equal)
+        val doScc =
+         fn c => 
+            (case c 
+              of [f] =>
+                 (case (PLG.Node.getLabel f, isSelfRecursive f)
+                   of (MCG.Graph.NFun var, false) =>
+                      let
+                        val iFunc = IFunc.getIFuncByName (imil, var)
+                        val () = 
+                            if IFunc.getRecursive (imil, iFunc) then
+                              let
+                                val () = IFunc.markNonRecursive (imil, iFunc)
+                                val () = Click.nonRecursive d
+                              in ()
+                              end
+                            else ()
+                      in ()
+                      end
+                    | _ => ())
+               | _ => ())
+      in
+        List.foreach (scc, doScc)
+      end
 
-   val analyzeRecursive = 
-    fn (d, imil) =>
-       let
-         val MCG.Graph.G {unknown, graph} = IMil.T.callGraph imil
-         val scc = PLG.scc graph
-         val isSelfRecursive =
-          fn n => List.contains (PLG.Node.succs n, n, PLG.Node.equal)
-         val doScc =
-          fn c => 
-             (case c 
-               of [f] =>
-                  (case (PLG.Node.getLabel f, isSelfRecursive f)
-                    of (MCG.Graph.NFun var, false) =>
-                       let
-                         val iFunc = IFunc.getIFuncByName (imil, var)
-                         val () = IFunc.markNonRecursive (imil, iFunc)
-                         val () = Click.nonRecursive d
-                       in ()
-                       end
-                     | _ => ())
-                | _ => ())
-       in
-         List.foreach (scc, doScc)
-       end
-
+  val codeSimplify = 
+      fn (d, imil, ws) => 
+         let
+           val funcs = Enumerate.T.funcs imil
+           val () = List.foreach (funcs, fn f => WS.addCode (ws, f))
+           val () = simplify (d, imil, ws)
+         in ()
+         end
   val doUnreachable = doPhase (skipUnreachable, unreachableCode, "unreachable object elimination")
   val doSimplify = 
    fn ws => doPhase (skipSimplify, fn (d, imil) => simplify (d, imil, ws), "simplification")
+  val doCodeSimplify = 
+   fn ws => doPhase (skipCodeSimplify, fn (d, imil) => codeSimplify (d, imil, ws), "code simplification")
   val doCfgSimplify = 
    fn ws => doPhase (skipCfg, fn (d, imil) => trimCfgs (d, imil, ws), "cfg simplification")
   val doEscape = doPhase (skipEscape, SimpleEscape.optimize, "closure escape analysis")
@@ -2399,6 +2434,7 @@ struct
          fn () =>
             let
               val () = doSimplify ws (d, imil)
+              val () = doCodeSimplify ws (d, imil)
               val () = doCfgSimplify ws (d, imil)
             in ()
             end

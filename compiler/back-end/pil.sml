@@ -526,7 +526,7 @@ struct
 
     (* NG: strictly speaking this doesn't work if e line breaks *)
     fun constantMacro (i, e) =
-        L.seq [L.str "#define ", i, L.str " ", E.layout e]
+        L.seq [L.str "#define ", i, L.str " ", L.paren (E.layout e)]
 
     fun macroCall (i, args) =
         L.mayAlign [i, LU.indent (L.seq [E.callArgs args, L.str ";"])]
