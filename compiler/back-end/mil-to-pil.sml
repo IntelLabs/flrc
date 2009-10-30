@@ -1116,14 +1116,15 @@ struct
             case array
              of SOME (i, _) =>
                 Pil.E.call (Pil.E.variable RT.Tuple.newVariable,
-                            [vtable,
+                            [dest,
+                             vtable,
                              Pil.E.int fixedSize,
                              Pil.E.int (OM.extraSize (state, env, td)),
                              genOperand (state, env, Vector.sub (inits, i))])
               | NONE =>
                 Pil.E.call (Pil.E.variable RT.Tuple.newFixed,
-                            [vtable, Pil.E.int fixedSize])
-        val newTuple = Pil.S.expr (Pil.E.assign (dest, newTuple))
+                            [dest, vtable, Pil.E.int fixedSize])
+        val newTuple = Pil.S.expr newTuple
         fun af (off, fk, t, e) =
             let
               val pt = Pil.T.ptr (genTyp (state, env, t))
@@ -2214,9 +2215,10 @@ struct
                   fun doOne s = genSimple (state, env, s)
                   val fields = Vector.toListMap (inits, doOne)
                   val elts = vtable::fields
-                  val newv  = Pil.E.variable (unboxedVar (state, env, var))
-                  val args = newv::(Pil.E.hackTyp tv)::elts
-                  val tuple = Pil.D.macroCall (RT.Tuple.static, args)
+                  val newvId = unboxedVar (state, env, var)
+                  val newv  = Pil.E.variable newvId
+                  val init = Pil.E.strctInit elts
+                  val tuple = Pil.D.staticVariableExpr (Pil.varDec (tv, newvId), init)
                   val tupleptr = addGlobalDef (var, newv)
                   val d = Pil.D.sequence [tuple, tupleptr]
                 in d
