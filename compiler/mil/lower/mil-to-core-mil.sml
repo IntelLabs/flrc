@@ -71,9 +71,12 @@ struct
       in v
       end
 
-  datatype env = E of {config : Config.t}
+  datatype env = E of {config : Config.t,
+                       returnTypes : M.typ Vector.t}
 
   fun envGetConfig (E {config, ...}) = config
+  fun envGetReturnTypes (E {returnTypes, ...}) = returnTypes
+  fun envSetReturnTypes (E {config, ...}, returnTypes) = E {config = config, returnTypes = returnTypes}
 
   val layoutOperand = 
    fn (state, env, oper)  => 
@@ -377,7 +380,7 @@ struct
       end
 
   val doCall = 
-   fn (state, env, mk, call, args) => 
+   fn (state, env, mk, call, args, rTyps) => 
       let
         val res = 
             case call
@@ -393,10 +396,7 @@ struct
                 let
                   val c = envGetConfig env
                   val si = stateGetSymbolInfo state
-                  val (aTyps, rTyps) = 
-                      case MTT.variable (c, si, cls)
-                       of M.TPFunction {args, ress} => (args, ress)
-                        | _ => (Vector.new1 M.TRef, Vector.new1 M.TPAny)
+                  val aTyps = Vector.map (args, fn oper => MTT.operand (c, si, oper))
                   val clst = doTyp (state, env,
                                     M.TPFunction {args = aTyps, ress = rTyps})
                   val aTyps = doTyps (state, env, aTyps)
@@ -428,8 +428,14 @@ struct
                                M.TInterProc {callee = c, ret = ret, fx = fx}
                          in t
                          end
+                     val c = envGetConfig env
+                     val si = stateGetSymbolInfo state
+                     val rtyps = 
+                         case ret
+                          of M.RNormal {rets, ...} => Vector.map (rets, fn v => MTT.variable (c, si, v))
+                           | M.RTail => envGetReturnTypes env
                    in
-                     doCall (state, env, mk, call, args)
+                     doCall (state, env, mk, call, args, rtyps)
                    end
                  else
                    (env, NONE)
@@ -501,6 +507,10 @@ struct
    fn (state, env, (v, g)) =>
       let
         val c = envGetConfig env
+        val env = 
+            (case g
+              of M.GCode (M.F {rtyps, ...}) => envSetReturnTypes (env, rtyps)
+               | _ => env)
         val go = 
             case g
              of M.GCode code => 
@@ -592,7 +602,7 @@ struct
         val M.P {symbolTable = st, ...} = p
         val stm = IM.fromExistingAll st
         val state = S {stm = stm}
-        val env = E {config = config}
+        val env = E {config = config, returnTypes = Vector.new0()}
         val p = MT.program (state, env, MT.OAny, p)
         (* Do this after transforming the program as parts of it use the
          * unlowered types of variables.
