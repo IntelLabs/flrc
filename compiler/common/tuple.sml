@@ -505,7 +505,7 @@ sig
 
   type ('record, 'elt) ops = (* A set/get method pair for a given record/elt type *)
                                ('record * 'elt -> 'record) * (* set *)
-                                                               ('record -> 'elt)             (* get *)
+                               ('record -> 'elt)             (* get *)
 
 
   val mk1 : ('r, 'a1) isomorphism ->
