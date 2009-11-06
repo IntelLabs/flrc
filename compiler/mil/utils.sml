@@ -2562,14 +2562,43 @@ struct
       val T = Total
       val A = PAny
       val R = ReadOnly
-      val writes = fromList [HeapWrite, InitWrite]
+      val writeS = fromList [HeapWrite, InitWrite]
+      val readS  = fromList [HeapRead, InitRead]
+      val genS   = fromList [HeapGen, InitGen]
       fun tuple {vtDesc, inits} =
-          if VTableDescriptor.hasArray vtDesc orelse
-             VTableDescriptor.numFixed vtDesc <> Vector.length inits
-          then InitGenS
-          else T
+          let
+            val fx = T
+            val fx = 
+                if VTableDescriptor.hasArray vtDesc orelse
+                   VTableDescriptor.numFixed vtDesc <> Vector.length inits then
+                  union (fx, InitGenS)
+                else 
+                  fx
+            val fx = 
+                if VTableDescriptor.immutable vtDesc then
+                  fx
+                else 
+                  union (fx, HeapGenS)
+          in fx
+          end
+
+      fun tupleSub tf =
+          if FieldDescriptor.immutable (TupleField.fieldDescriptor tf) then
+            InitReadS 
+          else 
+            readS
+
+      fun tupleSet {tupField, ofVal} =
+          if FieldDescriptor.immutable (TupleField.fieldDescriptor tupField) then
+            InitWriteS
+          else 
+            writeS
+
+      (* Note that evals cannot be re-ordered with getVals, and hence
+       * they need to be assigned effects that prevent re-ordering 
+       *)
       fun thunkInit {thunk, ...} =
-          if Option.isSome thunk then InitWriteS else T
+          if Option.isSome thunk then InitWriteS else InitGenS
       fun thunkValue {thunk, ...} =
           if Option.isSome thunk then InitWriteS else T
       fun pFunctionInit {cls, ...} =
@@ -2580,13 +2609,13 @@ struct
          of M.RhsSimple _             => T
           | M.RhsPrim {prim, ...}     => Prims.effects (config, prim)
           | M.RhsTuple x              => tuple x
-          | M.RhsTupleSub _           => InitReadS
-          | M.RhsTupleSet _           => InitWriteS
-          | M.RhsTupleInited _        => writes
+          | M.RhsTupleSub x           => tupleSub x
+          | M.RhsTupleSet x           => tupleSet x
+          | M.RhsTupleInited _        => InitWriteS
           | M.RhsIdxGet _             => InitReadS
           | M.RhsCont _               => T
           | M.RhsObjectGetKind _      => T
-          | M.RhsThunkMk _            => InitGenS
+          | M.RhsThunkMk _            => genS
           | M.RhsThunkInit x          => thunkInit x
           | M.RhsThunkGetFv _         => InitReadS
           | M.RhsThunkValue x         => thunkValue x
@@ -3221,18 +3250,24 @@ struct
             | M.TPSumCase r  => doCase r
         end
 
+    (* Note that evals cannot be re-ordered with getVals, and hence
+     * these two need to be assigned effects that prevent re-ordering 
+     *)
     val fx  = 
      fn (c, t) => 
         let
           val T = Effect.Total
           val fx = 
               case t
-               of M.TGoto _                => T
-                | M.TReturn _              => T
-                | M.TInterProc {fx, ...}   => fx
-                | M.TCase _                => T
-                | M.TPSumCase  _           => T
-                | M.TCut _                 => Effect.FailsS
+               of M.TGoto _                      => T
+                | M.TReturn _                    => T
+                | M.TInterProc {callee, fx, ...} => 
+                  (case callee
+                    of M.IpEval _ => Effect.union (fx, Effect.fromList [Effect.InitRead, Effect.InitWrite])
+                     | M.IpCall _ => fx)
+                | M.TCase _                      => T
+                | M.TPSumCase  _                 => T
+                | M.TCut _                       => Effect.FailsS
         in fx
         end
 

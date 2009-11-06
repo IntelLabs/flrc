@@ -11,7 +11,10 @@ struct
 
   val passname = "MilCse"
 
-  val stats = [("GlobalCse", "Redundant globals eliminated")]
+  val stats = [("EvalCse", "Redundant evals eliminated"),
+               ("GlobalCse", "Redundant globals eliminated"),
+               ("InstrCse", "Redundant instructions eliminated")
+               ]
 
   structure G = ImpPolyLabeledGraph
   structure I = Identifier
@@ -25,11 +28,16 @@ struct
   structure MU = MilUtils
   structure GD = MU.Global.Dict
   structure RD = MU.Rhs.Dict
-  structure ED = MU.Eval.Dict
   structure FV = MilFreeVars
   structure RN = MilRename
   structure RNV = RN.Var
   structure Cfg = MilCfg
+
+  structure ED = DictF(struct
+                         type t = M.eval
+                         val compare = 
+                          fn (e1, e2) => I.variableCompare (MU.Eval.thunk e1, MU.Eval.thunk e2)
+                       end)
 
   datatype env = E of {
     rename  : Rename.t,
@@ -168,6 +176,7 @@ struct
                      of (1, SOME v') => 
                         let
                           val vv = Vector.sub (dests, 0)
+                          val () = PD.click (envGetData env, "InstrCse")
                         in deleteWith (addToRename (env, vv, v'))
                         end
                       | (0, SOME v') => deleteWith env
@@ -209,13 +218,18 @@ struct
                    of M.RNormal {rets, block, ...} => (transfer, env, SOME (eval, rets, block))
                     | M.RTail => keep ())
                | SOME vs =>
-                 (case ret
-                   of M.RNormal {rets, block, ...} =>
-                      (M.TGoto (M.T {block = block, arguments = Vector.new0 ()}),
-                       addAllToRename (env, rets, vs),
-                       NONE)
-                    | M.RTail =>
-                      (M.TReturn (Vector.map (vs, M.SVariable)), env, NONE)))
+                 let
+                   val () = PD.click (envGetData env, "EvalCse")
+                   val r = 
+                       (case ret
+                         of M.RNormal {rets, block, ...} =>
+                            (M.TGoto (M.T {block = block, arguments = Vector.new0 ()}),
+                             addAllToRename (env, rets, vs),
+                             NONE)
+                          | M.RTail =>
+                            (M.TReturn (Vector.map (vs, M.SVariable)), env, NONE))
+                 in r
+                 end)
           | _ => keep ()
       end
 
