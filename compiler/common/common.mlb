@@ -92,6 +92,7 @@ in
         structure IntSet
         structure LayoutUtils
         structure Lub
+        structure StringParser
         structure Pass
         structure PassData
         structure PolyLabeledGraph

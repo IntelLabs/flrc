@@ -13,6 +13,7 @@ struct
 
   structure L = Layout
   structure LU = LayoutUtils
+  structure Parse = StringParser 
 
   val passes =
       [
@@ -40,20 +41,99 @@ struct
 
   fun parseControl s =
       let
-        fun matchPass c (c', p) = if c = c' then SOME (CiPass p) else NONE
-        fun doOne c =
-            case c
-             of #"+" => SOME CiPrint
-              | #"x" => SOME CiCheck
-              | _ => List.peekMap (passes, matchPass c)
-        fun loop (cs, cis) =
-            case cs
-             of [] => SOME (List.rev cis)
-              | c::cs =>
-                case doOne c
-                 of NONE => NONE
-                  | SOME ci => loop (cs, ci::cis)
-        val cis = loop (String.explode s, [])
+        val || = Parse.||
+        val && = Parse.&&
+        infixr && ||
+        val $ = Parse.$
+
+        val simple : controlItem Parse.t = 
+            let
+              fun matchPass c (c', p) = if c = c' then SOME (CiPass p) else NONE
+              fun doOne c =
+                  case c
+                   of #"+" => SOME CiPrint
+                    | #"x" => SOME CiCheck
+                    | _ => List.peekMap (passes, matchPass c)
+            in Parse.satisfyMap doOne
+            end
+
+        val consume = fn c => Parse.ignore (Parse.satisfy (fn c' => c = c'))
+
+        val lparen = consume #"("
+        val rparen = consume #")"
+        val lbracket = consume #"["
+        val rbracket = consume #"]"
+        val lbrace = consume #"{"
+        val rbrace = consume #"}"
+
+        val delimited : unit Parse.t * 'a Parse.t * unit Parse.t -> 'a Parse.t =
+         fn (left, item, right) => 
+            let
+              val p = left && item && right
+              val f = fn ((), (i, ())) => i
+            in Parse.map (p, f)
+            end
+        val nat : int Parse.t = 
+            let
+              val p = Parse.many (Parse.satisfy (Char.isDigit))
+              val f = Int.fromString o String.implode
+              val p = Parse.map (p, f)
+              val p = Parse.required p
+            in p
+            end
+        val exponentiated : 'a Parse.t -> 'a list Parse.t = 
+         fn p => 
+            let
+              val suffix = (consume #"^") && nat
+              val p = p && (Parse.optional suffix)
+              val f = fn (p, opt) => 
+                         (case opt
+                           of SOME ((), n) => List.duplicate (n, fn () => p)
+                            | NONE => [p])
+              val p = Parse.map (p, f)
+            in p
+            end
+        val rec pass' : unit -> controlItem list Parse.t = 
+         fn () => Parse.map ($passSeq', List.concat)
+        and rec passSeq' : unit -> controlItem list list Parse.t = 
+         fn () => Parse.many ($passHead')
+        and rec passHead' : unit -> controlItem list Parse.t =
+         fn () => Parse.many simple || $iterated'  || $constructed' 
+        and rec iterated' : unit -> controlItem list Parse.t = 
+         fn () => Parse.map(exponentiated ($parenthesized'), List.concat)
+        and rec parenthesized' : unit -> controlItem list Parse.t = 
+         fn () => delimited (lparen, $pass', rparen)
+        and rec constructed' : unit -> controlItem list Parse.t =
+         fn () => 
+            let
+              val p = $interleave' && $pass' && $interleave'
+              val p = delimited (lbracket, p, rbracket)
+              val f = fn (pre, (pass, post)) => List.concatMap (pass, fn e => pre @ [e] @ post)
+            in Parse.map (p, f)
+            end
+        and rec interleave' : unit -> controlItem list Parse.t =
+         fn () => Parse.map ($interleave0', fn opt => Utils.Option.get (opt, []))
+        and rec interleave0' : unit -> controlItem list option Parse.t =
+         fn () => Parse.optional ($interleave1')
+        and rec interleave1' : unit -> controlItem list Parse.t =
+         fn () => delimited (lbrace, $pass', rbrace)
+
+        val pass = $pass'
+
+        val cis = 
+            let
+              val stream = (s, 0)
+              val cis = 
+                  (case Parse.parse pass stream
+                    of Parse.Success ((s, i), cis) => 
+                       if i = String.length s then
+                         SOME cis
+                       else 
+                         NONE
+                     | Parse.Failure => NONE)
+            in cis
+            end
+
         fun check cis =
             let
               fun doOne ci = case ci of CiPass p => SOME p | _ => NONE
@@ -76,8 +156,8 @@ struct
   val filter = fn s => String.keepAll (s, enabled)
   val o0String = filter "fst"
   val o1String = filter "Sfst"
-  val o2String = filter "SVSISVSISBSfst"
-  val o3String = filter "RVSCSVSIRDSCSVLSRSIJKSBSfst"
+  val o2String = filter "[{S}VIVIB]Sfst"
+  val o3String = filter "[{S}RVCVIRDCVLRSIJKB]Sfst"
 
   val o0Control = Option.valOf (parseControl o0String)
   val o1Control = Option.valOf (parseControl o1String)
@@ -95,7 +175,17 @@ struct
 
   fun describeControl () =
       L.align
-      [L.str (passname ^ " control string consists of:"),
+      [L.align [L.str (passname ^ " control string is of the form:"),
+                LU.indent (L.str "Desc ::= Pass* | [{Desc}Desc{Desc}] | ( Desc )^n")],
+       L.str " ",
+       L.align [L.str "A descriptor of the form [{Desc0}Desc{Desc1}] consists of the passes",
+                LU.indent (L.str "described by Desc with Desc0 prepended to each pass, and Desc1 appended"),
+                LU.indent (L.str "to each pass.  The {Desc} fields are optional. ")],
+       L.str " ",
+       L.align [L.str "A descriptor of the form (Desc)^n consists of n successive copies of Desc.",
+                LU.indent (L.str "The ^n is optional, and is assumed to be 1 if elided.")],
+       L.str " ",
+       L.str "A pass consists of any of the following characters:",
        LU.indent
          (L.align (List.map (passes, describePass) @
                    [L.str "+ => Print",

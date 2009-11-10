@@ -170,6 +170,13 @@ structure Utils = struct
             of 0 => SOME NONE
              | 1 => SOME (SOME (MltonVector.sub (v, 0)))
              | _ => NONE)
+
+      val toList : 'a option -> 'a list = 
+       fn opt => 
+          (case opt
+            of SOME a => [a]
+             | NONE => [])
+
     end (* structure Option *)
 
     structure Ref = 
@@ -1920,3 +1927,128 @@ struct
    fn f => fn a => get f a
 
 end
+
+
+signature PARSER = 
+sig
+  type elt
+  type stream
+  type 'a t
+  datatype 'a result = Success of stream * 'a | Failure 
+  val return : 'a -> 'a t
+  val bind : 'a t -> ('a -> ('b t)) -> 'b t
+  val succeed : 'a -> 'a t
+  val fail : unit -> 'a t
+  val map : 'a t * ('a -> 'b) -> 'b t 
+  val parse : 'a t -> stream -> 'a result
+  val || : 'a t * 'a t -> 'a t
+  val && : 'a t * 'b t -> ('a * 'b) t
+  val any : 'a t list -> 'a t
+  val all : 'a t list -> 'a list t
+  val get : elt t
+  val satisfy : (elt -> bool) -> elt t 
+  val satisfyMap : (elt -> 'a option) -> 'a t 
+  val many : 'a t -> 'a list t
+  val optional : 'a t -> 'a option t
+  val required : 'a option t -> 'a t
+  val ignore : 'a t -> unit t
+  val $ : (unit -> 'a t) -> 'a t 
+end (* signature PARSER *)
+
+(* Simple infinite lookahead parser combinators 
+ *)
+functor ParserF(type stream
+                type elt
+                val next : stream -> (stream * elt) option
+               ) :> PARSER where type stream = stream
+                             and type elt = elt = 
+struct
+  type stream = stream
+  type elt = elt
+  datatype 'a result = Success of stream * 'a | Failure 
+
+  type 'a t = stream -> 'a result
+
+  val return : 'a -> 'a t = fn x => fn cs => Success (cs, x)
+
+  val bind : 'a t -> ('a -> ('b t)) -> 'b t = 
+   fn p => 
+   fn f => 
+   fn cs => 
+      (case p cs
+        of Success (cs, a) => f a cs
+         | Failure => Failure)
+
+  val succeed : 'a -> 'a t = return
+
+  val fail : unit -> 'a t = fn () => fn cs => Failure
+
+  val map : 'a t * ('a -> 'b) -> 'b t = 
+   fn (p, f) => 
+   fn cs => 
+      (case p cs
+        of Success (cs, r) => Success (cs, f r)
+         | Failure => Failure)
+
+  val parse : 'a t -> stream -> 'a result = fn p => p
+
+  val get : elt t = 
+   fn cs => (case next cs 
+              of NONE => Failure
+               | SOME arg => Success arg)
+
+  val satisfy : (elt -> bool) -> elt t = 
+   fn p => bind get (fn c => if p c then return c else fail ())
+
+  val satisfyMap : (elt -> 'a option) -> 'a t  = 
+   fn f => bind get (fn c => case f c of SOME a => return a | NONE => fail ())
+
+  val ignore : 'a t -> unit t = fn p => map (p, ignore)
+
+  val || : 'a t * 'a t -> 'a t = 
+   fn (p1, p2) => fn cs => case p1 cs 
+                            of Failure => p2 cs
+                             | result => result
+                                         
+  val && : 'a t * 'b t -> ('a * 'b) t = 
+   fn (p1, p2) => bind p1 (fn a => bind p2 (fn b => return (a, b)))
+
+  infix || &&
+
+  val rec any : 'a t list -> 'a t = 
+   fn l => 
+      (case l
+        of [] => fail ()
+         | p::ps => p || (any ps))
+
+  val rec all : 'a t list -> 'a list t = 
+   fn l => 
+      (case l
+        of [] => return []
+         | p::ps => map (p && (all ps), List.cons))
+
+  val rec many : 'a t -> 'a list t = 
+   fn p => bind p 
+                (fn r1 => bind ((many p) || (return []))
+                               (fn rest => return (r1 :: rest)))
+ 
+  val optional : 'a t -> 'a option t = 
+   fn p => (bind p (fn a => return (SOME a))) || (return NONE)
+
+  val required : 'a option t -> 'a t = 
+   fn p => (bind p (fn opt => case opt of SOME a => return a | NONE => fail ()))
+          
+  val $ : (unit -> 'a t) -> 'a t = 
+   fn f => fn cs => f () cs
+
+end (* functor ParserF *)
+
+structure StringParser = 
+  ParserF(struct 
+            type elt = char
+            type stream = string * int
+            val next = fn (s, i) => if i < String.length s then 
+                                      SOME ((s, i+1), String.sub (s, i)) 
+                                    else 
+                                      NONE
+          end)
