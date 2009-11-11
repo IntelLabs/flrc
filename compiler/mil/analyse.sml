@@ -5,7 +5,10 @@ signature MilAnalyse =
 sig
   type state
   type env
+  val analyseRhs : state * env * Mil.rhs -> unit
   val analyseInstruction : state * env * Mil.instruction -> env
+  val analyseCall : state * env * Mil.call ->  unit
+  val analyseEval : state * env * Mil.eval ->  unit
   val analyseTransfer : state * env * Mil.transfer -> unit
   val analyseBlock : state * env * Mil.label * Mil.block -> unit
   val analyseGlobal : state * env * Mil.variable * Mil.global -> unit

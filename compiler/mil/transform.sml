@@ -5,6 +5,7 @@ signature MIL_TRANSFORM = sig
   type state
   type env
   datatype order = ODfS | ODom | OAny
+  val globals : state * env * order * Mil.globals -> Mil.globals
   val program : state * env * order * Mil.t -> Mil.t
 end;
 
@@ -265,6 +266,7 @@ functor MilTransformF (
       in p
       end
 
+  val globals = doGlobals
   val program = doProgram
 
 end; (* Functor MilTransformF*)

@@ -4,7 +4,10 @@
 signature MIL_FREE_VARS =
 sig
   type t
+  val rhs : t * Mil.rhs -> Identifier.VariableSet.t
   val instruction : t * Mil.instruction -> Identifier.VariableSet.t
+  val call : t * Mil.call -> Identifier.VariableSet.t
+  val eval : t * Mil.eval -> Identifier.VariableSet.t
   val transfer : t * Mil.transfer -> Identifier.VariableSet.t
   val block : t * Mil.label * Mil.block -> Identifier.VariableSet.t
   val global : t * Mil.variable * Mil.global -> Identifier.VariableSet.t
@@ -68,7 +71,10 @@ struct
          in finish state
          end
 
+  val rhs = mk1 MA.analyseRhs
   val instruction = mk1 MA.analyseInstruction
+  val call = mk1 MA.analyseCall
+  val eval = mk1 MA.analyseEval
   val transfer = mk1 MA.analyseTransfer
   val block = mk2 MA.analyseBlock
   val global = mk2 MA.analyseGlobal

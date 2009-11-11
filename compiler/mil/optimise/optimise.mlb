@@ -32,12 +32,14 @@ local
         rep-flowgraph.sml
         rep-optimize.sml
         rep.sml
+        flatten.sml
         vectorize.sml
         branch-remove.sml
 in
         structure MilContify
         structure MilCse
         structure MilDblDiamond
+        structure MilFlatten
         structure MilInlineLeaves
         structure MilLicm
         structure MilRemoveBranch

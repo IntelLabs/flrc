@@ -1221,13 +1221,7 @@ struct
                in
                  M.TPFunction {args = args, ress = ress}
                end
-             | _ =>
-               let
-                 val () =
-                     reportError (s, msg () ^ ": closure not P function type")
-               in
-                 M.TPFunction {args = args, ress = ress}
-               end)
+             | _ => M.TPFunction {args = args, ress = ress})
         | _ =>
           let
             val () = reportError (s, msg () ^ ": not code type")
