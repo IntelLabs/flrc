@@ -35,6 +35,7 @@ local
         flatten.sml
         vectorize.sml
         branch-remove.sml
+        loop-invert.sml
 in
         structure MilContify
         structure MilCse
@@ -48,4 +49,5 @@ in
         structure MilVectorize
         structure MilInlineAggressive   
         structure MilInlineProfile   
+        structure MilLoopInvert
 end
