@@ -173,7 +173,11 @@ struct
                | Config.ViSSE => ["P_USE_VI_SSE"]
                | Config.ViLRB => ["P_USE_VI_LRB"]
 
-         val taggedIntDefines =
+         val numericDefines =
+             (if PObjectModelLow.Rat.useUnsafeIntegers config then 
+                ["P_PRAT_IS_SINTP"]
+              else 
+                []) @
              (if Globals.disableOptimizedRationals config then
                 []
               else  
@@ -197,7 +201,7 @@ struct
                           instr, 
                           vtbChg,
                           va,
-                          taggedIntDefines]
+                          numericDefines]
          val flags = 
              List.map (ds, fn s => "-D" ^ s)
        in flags

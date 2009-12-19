@@ -442,10 +442,10 @@ struct
           val setSize = mk (RT.Object.setSize, fixedSize (state, env, setTD))
           val typeSize =
               mk (RT.Object.typeSize, fixedSize (state, env, POM.Type.td))
-          val ratTD = POM.Rat.td
+          val ratTD = POM.Rat.td c
           val ratOffset =
               mk (RT.Object.ratOffset,
-                  fieldOffset (state, env, ratTD, POM.Rat.ofValIndex))
+                  fieldOffset (state, env, ratTD, POM.Rat.ofValIndex c))
           val ratSize = mk (RT.Object.ratSize, fixedSize (state, env, ratTD))
           val floatOffset =
               fieldOffset (state, env, POM.Float.td, POM.Float.ofValIndex)

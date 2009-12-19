@@ -282,7 +282,7 @@ struct
 
   val associates = {controls  = [control],
                     debugs    = [printAllD],
-                    features  = [],
+                    features  = PObjectModelCommon.features @ PObjectModelLow.features @ PObjectModelHigh.features,
                     subPasses = subPasses}
 
   val pass = Pass.mkOptFullPass (description, associates, program) 

@@ -297,6 +297,7 @@ struct
           | RtStringToNat        => "pLsrPString2Nat"
           | RtStringToFloat      => "pLsrPString2Float"
           | RtFloatToString      => "pLsrPFloat2String" ^ thnk t
+          | RtFloatToStringI     => "pLsrPFloat2StringI" ^ thnk t
           | RtRatToString        => "pLsrPRat2String" ^ thnk t
           | RtStringToRat        => "pLsrPString2Rat"
           | RtResetTimer         => "pLsrPResetTimer"

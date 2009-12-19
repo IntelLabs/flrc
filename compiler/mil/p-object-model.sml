@@ -90,14 +90,17 @@ sig
   end
 
   structure Rat : sig
-    val td : Mil.tupleDescriptor
-    val typ : Mil.typ
+    val useUnsafeIntegers : Config.t -> bool
+    val td : Config.t -> Mil.tupleDescriptor
+    val typ : Config.t -> Mil.typ
+    val unboxTyp : Config.t -> Mil.typ
     val mk : Config.t * Mil.operand -> Mil.rhs
     val mkGlobal : Config.t * Mil.simple -> Mil.global
-    val ofValIndex : int
+    val ofValIndex : Config.t -> int
     val extract : Config.t * Mil.variable -> Mil.rhs
   end
 
+  val features : Config.Feature.feature list
 end
 
 (*************** High level object model assumptions **************************)
@@ -313,20 +316,34 @@ struct
   structure Rat =
   struct
 
-    val td = B.td M.FkRef
+    val (useUnsafeIntegersF, useUnsafeIntegers) =
+       Config.Feature.mk ("PObjectModel:prats-use-ints", "p rats implemented with machine ints (unsafe)")
 
-    val typ = B.t (M.PokRat, M.TRat)
+    val fk = fn c => if useUnsafeIntegers c then 
+                       MU.Sintp.fieldKind c
+                     else
+                       M.FkRef
 
-    fun mk (c, opnd) = B.box (c, M.PokRat, M.FkRef, opnd)
+    val td = fn c => B.td (fk c)
 
-    fun mkGlobal (c, s) = B.boxGlobal (c, M.PokRat, M.FkRef, s)
+    val unboxTyp = fn c => if useUnsafeIntegers c then
+                             MU.Sintp.t c
+                           else 
+                             M.TRat
 
-    val ofValIndex = B.ofValIndex
+    val typ = fn c => B.t (M.PokRat, unboxTyp c)
 
-    fun extract (c, v) = B.unbox (c, M.FkRef, v)
+    val mk = fn (c, opnd) => B.box (c, M.PokRat, fk c, opnd)
+
+    val mkGlobal = fn (c, s) => B.boxGlobal (c, M.PokRat, fk c, s)
+
+    val ofValIndex = fn c => B.ofValIndex
+
+    val extract = fn (c, v) => B.unbox (c, fk c, v)
 
   end
 
+  val features = [Rat.useUnsafeIntegersF]
 end (* structure PObjectModelCommon *)
 
 structure PObjectModelHigh :> P_OBJECT_MODEL_HIGH = 
@@ -407,6 +424,7 @@ struct
 
   end (* structure Type *)
 
+  val features = []
 end (* structure PObjectModelHigh *)
 
 structure PObjectModelLow :> P_OBJECT_MODEL_LOW = 
@@ -686,5 +704,6 @@ struct
                     
   end
 
+  val features = []
 end (* structure PObjectModelLow *)
 
