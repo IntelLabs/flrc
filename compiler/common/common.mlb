@@ -42,6 +42,7 @@ local
         config.sml
         globals.sml
         chat.sml
+        locus.sml
         identifier.sml
         pass.sml
         rename.sml
@@ -91,6 +92,7 @@ in
         structure Intr
         structure IntSet
         structure LayoutUtils
+        structure Locus
         structure Lub
         structure StringParser
         structure Pass

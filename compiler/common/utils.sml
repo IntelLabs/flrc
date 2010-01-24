@@ -3,7 +3,6 @@
 
 (* Utility stuff not in the MLton library *)
 
-
 structure Utils = struct
 
     (* General utilities *)
