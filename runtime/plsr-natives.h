@@ -556,6 +556,23 @@ static PlsrPAny pLsrPFloat2StringD(float f, PlsrRational p)
     return pLsrCStringToPStringD(str);
 }
 
+/* These are for the rats as unsafe integers hack */
+static PlsrPAny pLsrPFloat2StringIT(float f, sintp p)
+{
+    uintp pi = (uintp) p;
+    char str[100];
+    sprintf(str, "%.*f", pi, f);
+    return pLsrCStringToPStringT(str);
+}                
+
+static PlsrPAny pLsrPFloat2StringID(float f, sintp p)
+{
+    uintp pi = (uintp) p;
+    char str[100];
+    sprintf(str, "%.*f", pi, f);
+    return pLsrCStringToPStringD(str);
+}
+
 /**********************************************************************
  * Domains
  */

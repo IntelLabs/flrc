@@ -9,8 +9,10 @@ sig
   val t : Config.t -> Mil.typ
   val fieldKind : Config.t -> Mil.fieldKind
   val int : Config.t * int -> Mil.constant
+  val intInf : Config.t * IntInf.t -> Mil.constant
   val zero : Config.t -> Mil.constant
   val one : Config.t -> Mil.constant
+  val maxValue : Config.t -> Mil.constant
   val add : Config.t * Mil.operand * Mil.operand -> Mil.rhs
   val lt : Config.t * Mil.operand * Mil.operand -> Mil.rhs
 end;
@@ -982,11 +984,31 @@ struct
 
   fun fieldKind config = M.FkBits (ptrSize config)
 
-  fun int (config, i) = M.CIntegral (IA.fromInt (intArbTyp config, i))
+  fun int (config, i) = 
+      let
+        val iat = intArbTyp config
+      in
+        if IA.fits (iat, IntInf.fromInt i) then 
+          M.CIntegral (IA.fromInt (iat, i))
+        else
+          Fail.fail ("MilUtils.Intp", "int", "Doesn't fit")
+      end
+
+  fun intInf (config, i) = 
+      let
+        val iat = intArbTyp config
+      in
+        if IA.fits (iat, i) then 
+          M.CIntegral (IA.fromIntInf (iat, i))
+        else
+          Fail.fail ("MilUtils.Intp", "intInf", "Doesn't fit")
+      end
 
   fun zero config = int (config, 0)
 
   fun one config = int (config, 1)
+
+  fun maxValue config = intInf (config, IA.maxValue (intArbTyp config))
 
   fun binArith (config, a, o1, o2) =
       M.RhsPrim {prim = P.Prim (P.PNumArith (primNumTyp config, a)),

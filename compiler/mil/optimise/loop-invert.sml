@@ -24,17 +24,19 @@ struct
   structure PD   = PassData
   structure L    = Layout
   structure LU   = LayoutUtils
-  structure ID   = Identifier
-  structure LD   = ID.LabelDict
-  structure VD   = ID.VariableDict
-  structure LS   = ID.LabelSet
-  structure VS   = ID.VariableSet
+  structure I    = Identifier
+  structure LD   = I.LabelDict
+  structure VD   = I.VariableDict
+  structure LS   = I.LabelSet
+  structure VS   = I.VariableSet
   structure LDOM = MilCfg.LabelDominance
   structure MU   = MilUtils
   structure ML   = MilLayout
-  structure I    = Identifier
   structure TextIO = Pervasive.TextIO
   structure PD    = PassData
+
+  fun getLabel (p, b) = #1 (IMil.IBlock.getLabel' (p, b))
+  fun labelString (p, b) = I.labelString(getLabel(p, b))
 
   structure Debug =
   struct
@@ -45,34 +47,32 @@ struct
     fun printLayout (config, l) = if Config.debug andalso debugPass (config) then LU.printLayout l
                                   else ()
 
-    fun layoutLoop (config, si, miloop, loop as MilLoop.L {header, blocks, ...}) =
+    fun layoutLoop (miloop, loop as MilLoop.L {header, blocks, ...}) =
         let
-          fun layoutBlocks blks = L.sequence ("{", "}", ",") (List.map (LD.toList blks, fn (l, _) => ID.layoutLabel l))
+          fun layoutBlocks blks = L.sequence ("{", "}", ",") (List.map (LD.toList blks, fn (l, _) => I.layoutLabel l))
         in
           L.seq [L.str "Header: ", 
-                 ID.layoutLabel header,
+                 I.layoutLabel header,
                  L.str " Blocks: ",
                  layoutBlocks blocks,
                  L.str " Exits: ", 
-                 LS.layout(MilLoop.getExits(miloop, header), fn x => ID.layoutLabel x)]
+                 LS.layout(MilLoop.getExits(miloop, header), fn x => I.layoutLabel x)]
         end
 
-    fun layoutWhileLoop (config, si, miloop, loop, r1, blocksNotInR1, isWhileLoop) =
+    fun layoutWhileLoop (miloop, loop, r1, blocksNotInR1, isWhileLoop) =
         L.seq [L.str "isWhileLoop: ", 
-               layoutLoop (config, si, miloop, loop),
+               layoutLoop ( miloop, loop),
                L.str " R1:",
-               LS.layout (r1, fn x => ML.layoutLabel (config, si, x)),
+               LS.layout (r1, fn x => I.layoutLabel x),
                L.str " blocksNotInR1:",
-               LS.layout (blocksNotInR1, fn x => ML.layoutLabel (config, si, x)),
+               LS.layout (blocksNotInR1, fn x => I.layoutLabel x),
                (if isWhileLoop then L.str " is while loop" else L.str " is not while loop")]
 
-    fun layoutMap (config, si, map) =
-        LD.layout (map, fn (ol, nl) => Layout.seq [ ML.layoutLabel (config, si, ol),
+    fun layoutMap map =
+        LD.layout (map, fn (ol, nl) => Layout.seq [ I.layoutLabel ol,
                                                     Layout.str " -> ",
-                                                    ML.layoutLabel (config, si, nl)])
+                                                    I.layoutLabel nl])
   end
-
-  fun getLabel (p, b) = #1 (IMil.IBlock.getLabel' (p, b))
 
   fun getMappedVar (vvMap, var) =
       (case VD.lookup (!vvMap, var) 
@@ -93,16 +93,13 @@ struct
       end
 
   (* get out edges' target blocks' label *)
-  fun getOutBlocksLabel (p, ifunc, blockLabel) =
+  fun getOutLabels(p, ifunc, l) =
       let
-        val b = IMil.IFunc.getBlockByLabel (p, ifunc, blockLabel)
-        val outEdges = IMil.IBlock.outEdges (p, b)
-        val outBlocks = List.map (outEdges, fn (_, l) => l)
-        val outLabel = List.map (outBlocks, fn x => getLabel (p, x))
-      in outLabel
+        val b = IMil.IFunc.getBlockByLabel (p, ifunc, l)
+      in List.map (IMil.IBlock.outEdges (p, b), fn (srcb, tgtb) => getLabel (p, tgtb))
       end
 
-  fun appendOpndVector (vec, v) =
+  fun appendArgs (vec, v) =
       Vector.fromList (List.append(Vector.toList(vec), [Mil.SVariable v]))
 
   fun isInRegion (l, r) = LS.exists (r, fn x => MU.Compare.label (x, l) = EQUAL)
@@ -124,7 +121,7 @@ struct
                             of SOME y => y
                              | _ => x)
 
-  fun toNewBlock (config, si, p, ifunc, bl, ol, nl) =
+  fun toNewBlock (p, ifunc, bl, ol, nl) =
       let
         fun getNew block =
             if (MU.Compare.label (block, ol) = EQUAL) 
@@ -176,14 +173,14 @@ struct
   (*
    * redirect the block's transfer taget to new loop header
    *)
-  fun toNewLoopHeader (config, si, p, ifunc, miloop, loop as MilLoop.L {header, blocks, ...}, r1Map, bl) =
-      toNewBlock (config, si, p, ifunc, bl, header, getR1' (header, r1Map))
+  fun toNewLoopHeader (p, ifunc, miloop, loop as MilLoop.L {header, blocks, ...}, r1Map, bl) =
+      toNewBlock (p, ifunc, bl, header, getR1' (header, r1Map))
 
   (*
    * Have all the edges into the loop (that is edges to H that are not from loop blocks) 
    *       goto the duplicated H instead of the original.
    *)
-  fun linkToNewLoopHeader (config, si, p, ifunc, miloop, loop as MilLoop.L {header, blocks, ...}, r1Map) =
+  fun linkToNewLoopHeader (p, ifunc, miloop, loop as MilLoop.L {header, blocks, ...}, r1Map) =
       let
         val preds = IMil.IBlock.preds (p, IMil.IFunc.getBlockByLabel(p, ifunc, header))
         val predsLabel = List.map (preds, fn x => getLabel(p, x))
@@ -196,42 +193,30 @@ struct
         fun isDuplicatedBlock x = List.exists (duplicatedBlocks, fn y => (MU.Compare.label(x, y) = EQUAL))
         val nonDuplicatedBlock = List.removeAll (nonLoopBlocks, isDuplicatedBlock)
 
-        val () = List.foreach (nonDuplicatedBlock, fn l => toNewLoopHeader (config, si, p, ifunc, miloop, loop, r1Map, l))
+        val () = List.foreach (nonDuplicatedBlock, fn l => toNewLoopHeader (p, ifunc, miloop, loop, r1Map, l))
       in ()
       end
 
   (* 
    * duplicate all the blocks in R1 
    *)
-  fun dupR1 (config, si, p, ifunc, r1Map, r1, header, exit) =
+  fun dupR1 (p, ifunc, r1Map, r1, header, exit) =
       let
         fun mapBlks (b, nb) = r1Map := LD.insert (!r1Map, getLabel (p, b), getLabel (p, nb))
         val blks = List.map (LS.toList r1, fn l => (l, IMil.IFunc.getBlockByLabel (p, ifunc, l)))
         val newBlks = IMil.IFunc.duplicateBlocks (p, ifunc, blks, SOME mapBlks)
         val header' = getR1' (header, r1Map)
         val exit' = getR1' (exit, r1Map)
-        val () = toNewBlock (config, si, p, ifunc, exit', header', header)
+        val () = toNewBlock (p, ifunc, exit', header', header)
       in ()
       end
 
-  fun replaceVarsInRegion (config, si, p, ifunc, vars, region, vvMap) =
-      let
-        fun replaceVar (config, si, p, ifunc, v, newv, l) =
-            IMil.IFunc.renameBlock (p, ifunc, IMil.IFunc.getBlockByLabel (p, ifunc, l), v, newv)
-
-        fun replaceVarInRegion (config, si, p, ifunc, v, newv, region) =
-            LS.foreach (region, fn l => replaceVar (config, si, p, ifunc, v, newv, l))
-
-      in VS.foreach (vars, fn v => replaceVarInRegion (config, si, p, ifunc, v, newVar (p, vvMap, v), region))
-      end
-
   (* find those edges out r1 region *)
-  fun findR1OutEdges (config, si, p, ifunc, r1, exit) =
+  fun findR1OutEdges (p, ifunc, r1, exit) =
       let
-        val fname = "findR1OutEdges"
         val b = IMil.IFunc.getBlockByLabel (p, ifunc, exit)
-        val outEdges = List.map (IMil.IBlock.outEdges (p, b), fn (bx, by) => (getLabel(p, bx), getLabel(p, by)))
-      in List.keepAll (outEdges, fn (x, y) => notR1(y, r1))
+        val outEdges = List.map (IMil.IBlock.outEdges (p, b), fn (bx, by) => ((getLabel(p, bx), bx), (getLabel(p, by), by)))
+      in List.keepAll (outEdges, fn ((lx, bx), (ly, by)) => notR1(ly, r1))
       end
 
   (*
@@ -243,9 +228,10 @@ struct
    *    (must clone all the binders and rename the uses of those, but those uses are all in that region).
    * 4. Other optimisations will clean this up.
    *)
-  fun findLiveOutVar (config, si, p, ifunc, r1) =
+  fun findLiveOutVar (p, ifunc, r1) =
       let
-        fun findDefinedVar (config, si, p, ifunc, r1) =
+        val config = IMil.T.getConfig p
+        fun findDefinedVar (p, ifunc, r1) =
             let
               (* itereate all instrs to get the dest variables *)
               fun findDefVarInstrs (io, vars) =
@@ -276,7 +262,7 @@ struct
         (*
          * get rest blocks, which doesn't belong to r1
          *)
-        fun getR1Rest (config, si, p, ifunc, r1) =
+        fun getR1Rest (p, ifunc, r1) =
             let
               val blocks = IMil.IFunc.getBlocks (p, ifunc)
               val r1Blocks = List.map (LS.toList(r1), fn x => IMil.IFunc.getBlockByLabel (p, ifunc, x))
@@ -291,19 +277,21 @@ struct
         fun getUsedVar (p, ifunc, l) =
             IMil.IBlock.freeVars (p, IMil.IFunc.getBlockByLabel (p, ifunc, l))
 
-        val rest = getR1Rest (config, si, p, ifunc, r1)
-        val r1Def = findDefinedVar (config, si, p, ifunc, r1)         (* defined variables in r1 blocks*)
+        val rest = getR1Rest (p, ifunc, r1)
+        val r1Def = findDefinedVar (p, ifunc, r1)         (* defined variables in r1 blocks *)
         val restUse = List.fold (rest, VS.empty, fn (l, vs) => VS.union (getUsedVar(p, ifunc, l), vs))
-        val vars = VS.intersection (r1Def, restUse)                   (* defined in r1 and used in rest *)
+        val vars = VS.intersection (r1Def, restUse)       (* defined in r1 and used in rest *)
         val () = Debug.printLayout (config, L.seq [L.str "vars to be parameterized: ", 
-                                                   VS.layout (vars, fn x => ML.layoutVariable (config, si, x))])
+                                                   VS.layout (vars, fn x => I.layoutVariable' x)])
       in vars
       end
 
   (* REMOVE THIS FUNCTION, DEBUG ONLY *)
-  fun debugLoops (config, si, header) =
+  fun debugLoops (p, header) =
       let
-(*
+(*      
+        val config = IMil.T.getConfig p
+        val si = IMil.T.getSi p
         val ins = TextIO.openIn "c:\\p\\ppiler-test\\debug.loop.txt"
         fun readLoopList (loopList) =
             (case TextIO.inputLine ins
@@ -314,13 +302,13 @@ struct
                  end
                | _ => loopList)
 
-        fun sameLabel x = (L.toString(ML.layoutLabel (config, si, header)) ^ "\n") = x
+        fun sameLabel x = (L.toString(I.layoutLabel (header)) ^ "\n") = x
             
         val loopList = readLoopList ([])
         val () = TextIO.closeIn ins
         val dbg = List.exists (loopList, sameLabel)
 *)
-      in true
+      in (* dbg *) true
       end
 
   (*
@@ -336,18 +324,15 @@ struct
   (*
    * add a new variable to transfer instruction's parameter
    *)
-  fun paramOutEdgeTrans (config, si, p, ifunc, predl, bl, v) =
+  fun paramEdgeTrans (p, ifunc, (srcl, srcb), (tgtl, tgtb), v) =
       let
-        val fname = "paramOutEdgeTrans"
-        val b = IMil.IFunc.getBlockByLabel (p, ifunc, bl)
-        val pred = IMil.IFunc.getBlockByLabel (p, ifunc, predl)
-        val predt = IMil.IBlock.getTransfer' (p, pred)
+        val fname = "paramEdgeTrans"
                     
         fun newCase (on, cases, default, tCase) =
             let
               fun newTarget (Mil.T {block, arguments}) =
-                  if (MU.Compare.label (block, bl) = EQUAL) 
-                  then Mil.T {block = block, arguments = appendOpndVector (arguments, v)}
+                  if (MU.Compare.label (block, tgtl) = EQUAL) 
+                  then Mil.T {block = block, arguments = appendArgs (arguments, v)}
                   else Mil.T {block = block, arguments = arguments}
                        
               val newbranches = Vector.map(cases, fn (c, tgt) => (c, newTarget tgt))
@@ -359,26 +344,46 @@ struct
               tCase {on = on, cases = newbranches, default = newdefault}
             end
             
-        val nt = case predt
+        val nt = case IMil.IBlock.getTransfer' (p, srcb)
                   of Mil.TGoto (Mil.T {block, arguments}) =>
-                     Mil.TGoto (Mil.T {block = block, arguments = appendOpndVector (arguments, v)})
+                     Mil.TGoto (Mil.T {block = block, arguments = appendArgs (arguments, v)})
                    | Mil.TCase {on, cases, default} => newCase (on, cases, default, Mil.TCase)
                    | Mil.TInterProc {callee, ret, fx} => 
                      let
                        val newCallee = 
                            (case callee 
-                             of Mil.IpCall {call, args} => Mil.IpCall {call = call, args = appendOpndVector (args, v)}
+                             of Mil.IpCall {call, args} => Mil.IpCall {call = call, args = appendArgs (args, v)}
                               | Mil.IpEval {typ, eval} => Mil.IpEval {typ = typ, eval = eval})
                      in Mil.TInterProc {callee = newCallee, ret = ret, fx = fx}
                      end
                    | Mil.TReturn opnd => fail (fname, "TReturn")
                    | Mil.TCut {cont, args, cuts} => fail (fname, "TCut") 
                    | Mil.TPSumCase {on, cases, default} => newCase (on, cases, default, Mil.TPSumCase)
-      in IMil.IBlock.replaceTransfer (p, pred, nt)
+      in IMil.IBlock.replaceTransfer (p, srcb, nt)
       end
 
   (*
-   * a function parameterizeRegion which given a region R, an edge E into that region, and a list of variables V:
+   * look up sub dom tree 
+   *)
+  fun lookupSubTree (p, dom, b) =
+      let
+        val subo = ref NONE
+        val fname = "lookupSubTree"
+
+        fun find (tree as Tree.T (parent, children), b) =
+            if MU.Compare.label (getLabel (p, b), getLabel (p, parent)) = EQUAL 
+            then subo := SOME tree
+            else Vector.foreach (children, fn x => find (x, b))
+
+        val () = find (dom, b)
+      in case !subo 
+          of SOME sub => sub
+           | _ => fail (fname, "cannot find sub tree!")
+      end
+
+  (*
+   * 
+   * a function paramEdge, defines region dominated by the edge, and a list of variables V:
    * 1)	splits the edge if needed (possibly twice)
    *    a.  If the source of E is a call, then we need to add a landing pad block to pass the parameters out.  
    *        This block is outside of R.
@@ -389,29 +394,30 @@ struct
    * 3)	passes V as additional parameters from the source of E (or the landing pad block)
    * 4)	modifies the target of E (or the entry block) to bind V’
    *)
-  fun paramRegion (config, si, p, ifunc, region, srcl, tgtl, vars) =
+  fun paramEdge (p, ifunc, (srcl, srcb), (tgtl, tgtb), vars) =
       let
-        val fname = "paramRegion"
-        (*
-         * vvMap is used to record cloned variable
-         * the cloned variable will be used to replace the orignal variable in r2 and non loop blocks
-         *)
+        val fname = "paramRegionDom"
         val vvMap = ref VD.empty
-        val srcb = IMil.IFunc.getBlockByLabel (p, ifunc, srcl)
-        val tgtb = IMil.IFunc.getBlockByLabel (p, ifunc, tgtl)
+
+        fun replaceVarInTree (p, ifunc, v, newv, tree as Tree.T (parent, children)) =
+            let
+              val () = IMil.IFunc.renameBlock (p, ifunc, parent, v, newv)
+              val () = Vector.foreach (children, fn x => replaceVarInTree (p, ifunc, v, newv, x))
+            in ()
+            end
+
         (* step 1*)
-        val nbo = IMil.IBlock.splitEdge (p, (srcb, tgtb)) (* always split edge to simplify *)
-        val () = if isCut(p, ifunc, srcl) 
-                 then fail (fname, "cannot be cut transfer here!")
-                 else ()
-        (* step 2 *)
-        val () = replaceVarsInRegion (config, si, p, ifunc, vars, region, vvMap)
+        val nbo = IMil.IBlock.splitEdge (p, (srcb, tgtb))
+        val dom = IMil.IFunc.getDomTree (p, ifunc)
         val () = case nbo
                   of SOME nb => 
                      let
                        val nbl = getLabel (p, nb)
+                       (* step 2 *)
+                       val sub = lookupSubTree (p, dom, nb)
+                       val () = VS.foreach (vars, fn v => replaceVarInTree (p, ifunc, v, newVar(p, vvMap, v), sub))
                        (* step 3 *)
-                       val () = VS.foreach (vars, fn v => paramOutEdgeTrans (config, si, p, ifunc, srcl, nbl, v))
+                       val () = VS.foreach (vars, fn v => paramEdgeTrans (p, ifunc, (srcl, srcb), (nbl, nb), v))
                        (* step 4 *)
                        val nbParam = IMil.IBlock.getParameters (p, nb)
                        val newVars = List.map (VS.toList vars, fn x => getMappedVar(vvMap, x))
@@ -423,33 +429,25 @@ struct
       in ()
       end
 
-  fun paramOutEdges (config, si, p, ifunc, outEdges, vars, r1, r2, loop as MilLoop.L {header, blocks, ...}) =
-      let
-        val r0 = getR0 (config, si, p, ifunc, loop)
-        fun paramOneEdge (srcl, tgtl) =
-            if (isInRegion (tgtl, r2)) 
-            then paramRegion (config, si, p, ifunc, r2, srcl, tgtl, vars)
-            else paramRegion (config, si, p, ifunc, r0, srcl, tgtl, vars)
-      in List.foreach (outEdges, fn (sl, el) => paramOneEdge (sl, el))
-      end
   (*
    * convert simple while loop (contains only one exit block)
    *)
-  fun convertSimpleWhileLoop (d, config, si, p, ifunc, miloop, loop as MilLoop.L {header, blocks, ...}, r1, r2, exit) =
-      if debugLoops (config, si, header) then 
+  fun convertSimpleWhileLoop (d, p, ifunc, miloop, loop as MilLoop.L {header, blocks, ...}, r1, exit) =
+      if debugLoops (p, header) then 
         let
           (* 
            * r1Map is used to recored block duplication in r1 
            * (original block, duplicated block)
            *)
           val r1Map = ref LD.empty
-          val vars = findLiveOutVar (config, si, p, ifunc, r1)
-          val outEdges = findR1OutEdges (config, si, p, ifunc, r1, exit)
-          val () = paramOutEdges (config, si, p, ifunc, outEdges, vars,  r1, r2, loop)
-          val () = dupR1 (config, si, p, ifunc, r1Map, r1, header, exit)
-          val () = linkToNewLoopHeader (config, si, p, ifunc, miloop, loop, r1Map)
+          val config = IMil.T.getConfig p
+          val vars = findLiveOutVar (p, ifunc, r1)
+          val () = List.foreach (findR1OutEdges (p, ifunc, r1, exit), 
+                              fn (sl, el) => paramEdge (p, ifunc, sl, el, vars))
+          val () = dupR1 (p, ifunc, r1Map, r1, header, exit)
+          val () = linkToNewLoopHeader (p, ifunc, miloop, loop, r1Map)
           val () = PD.click (d, passname)
-          val () = Debug.printLayout (config, Debug.layoutMap (config, si, !r1Map))
+          val () = Debug.printLayout (config, Debug.layoutMap (!r1Map))
         in ()
         end
       else ()
@@ -457,7 +455,7 @@ struct
   (*
    * convert while loop to do while 
    *)           
-  fun convertWhileLoop (d, config, si, p, ifunc, miloop, loop as MilLoop.L {header, blocks, ...}, children, r1, r2) =
+  fun convertWhileLoop (d, p, ifunc, miloop, loop as MilLoop.L {header, blocks, ...}, children, r1) =
       let
         (*
          * only convert while loop with one exit block, and dont have children loop!
@@ -466,7 +464,7 @@ struct
       in
         if (LS.size exits = 1 
             andalso  Vector.length (children) = 0)
-        then convertSimpleWhileLoop (d, config, si, p, ifunc, miloop, loop, r1, r2, List.first (LS.toList (exits)))
+        then convertSimpleWhileLoop (d, p, ifunc, miloop, loop, r1, List.first (LS.toList (exits)))
         else ()
       end
 
@@ -477,21 +475,16 @@ struct
    * Blocks in R1 other than E only go to blocks in R1.
    * edges in R1 not to H
    *)
-  fun getR1 (config, si, p, ifunc, loop as MilLoop.L {header, blocks, ...}, loopExits) =
+  fun getR1 (p, ifunc, loop as MilLoop.L {header, blocks, ...}, loopExits) =
       let
         fun notToH (H, l) =
             let
-              val outLabel = getOutBlocksLabel (p, ifunc, l)
-              val ret = List.exists (outLabel, fn x => (MU.Compare.label (x, H) = EQUAL))
+              val ret = List.exists (getOutLabels (p, ifunc, l), fn x => (MU.Compare.label (x, H) = EQUAL))
             in not ret
             end
 
         fun isToR1Only (r1, l) =
-            let
-              val outLabel = getOutBlocksLabel (p, ifunc, l)
-              val ret = List.fold(outLabel, true, fn (x, r) => LS.exists (r1, fn y => (MU.Compare.label (x, y) = EQUAL)))
-            in ret
-            end
+            List.fold(getOutLabels (p, ifunc, l), true, fn (x, r) => LS.exists (r1, fn y => (MU.Compare.label (x, y) = EQUAL)))
 
         fun mergeR1 (bls, header, r1) =
             let
@@ -527,60 +520,59 @@ struct
    * whether all of them meet the requirement of r2
    * if yes, then it forms a while loop
    *)
-  fun isR2Region (config, si, p, ifunc, loop, R1, blocksNotInR1) =
+  fun isR2Region (p, ifunc, loop, R1, blocksNotInR1) =
       let
         (*
          * Blocks in R2 go only to other blocks in R2 or to H.
          *)
-        fun isBlockInR2 (config, si, p, ifunc, blockLabel, loop as MilLoop.L {header, ...}, R2) =
+        fun isBlockInR2 (p, ifunc, l, loop as MilLoop.L {header, ...}, R2) =
             let 
               val R2H = LS.insert (R2, header) (* R2 and H *)
-              val outBlocksLabel = getOutBlocksLabel (p, ifunc, blockLabel)
-            in List.fold (outBlocksLabel, true, fn (x, r) => LS.exists (R2H, fn y => (MU.Compare.label (x, y) = EQUAL)))
+              val outLabels = getOutLabels (p, ifunc, l)
+            in List.fold (outLabels, true, fn (x, r) => LS.exists (R2H, fn y => (MU.Compare.label (x, y) = EQUAL)))
             end
 
-      in LS.fold (blocksNotInR1, true, fn (x, y) => (isBlockInR2 (config, si, p, ifunc, x, loop, blocksNotInR1) andalso y))
+      in LS.fold (blocksNotInR1, true, fn (x, y) => (isBlockInR2 (p, ifunc, x, loop, blocksNotInR1) andalso y))
       end
 
   (*
    * find the while loop, and then conert it
    *)
-  fun tryConvertWhileLoop (d, config, si, m, p, ifunc, miloop, loop as MilLoop.L {header, blocks, ...}, children) =
+  fun tryConvertWhileLoop (d, config, si, p, ifunc, miloop, loop as MilLoop.L {header, blocks, ...}, children) =
       let
-        fun hasCutTransfer (config, si, p, func, r (*region*)) =
-            let
-            in LS.fold (r, false, fn (l, ret) => (ret orelse (isCut (p, func, l))))
-            end
+        fun hasCutTransfer (p, ifunc, region) =
+            LS.fold (region, false, fn (l, ret) => (ret orelse (isCut (p, ifunc, l))))
 
-        val r1 = getR1 (config, si, p, ifunc, loop, MilLoop.getExits (miloop, header))
+        val r1 = getR1 (p, ifunc, loop, MilLoop.getExits (miloop, header))
         val blocksNotInR1 = getBlocksNotInR1 (loop, r1) 
-        val isWhileLoop = isR2Region (config, si, p, ifunc, loop, r1, blocksNotInR1)
-        val isWhileLoop = (not (hasCutTransfer (config, si, p, ifunc, r1))) andalso isWhileLoop
-        val () = Debug.printLayout (config, Debug.layoutWhileLoop (config, si, miloop, loop, r1, blocksNotInR1, isWhileLoop))
+        val isWhileLoop = isR2Region (p, ifunc, loop, r1, blocksNotInR1)
+        val isWhileLoop = (not (hasCutTransfer (p, ifunc, r1))) andalso isWhileLoop
+        val () = Debug.printLayout (config, Debug.layoutWhileLoop (miloop, loop, r1, blocksNotInR1, isWhileLoop))
       in
         if isWhileLoop 
-        then convertWhileLoop (d, config, si, p, ifunc, miloop, loop, children, r1, blocksNotInR1) 
+        then convertWhileLoop (d, p, ifunc, miloop, loop, children, r1) 
         else ()
       end
 
   (*
    * traverse the loop tree to find while loop
    *)
-  fun tryConvertWhileLoops (d, config, si, m, p, ifunc, miloop, loops) =
+  fun tryConvertWhileLoops (d, config, si, p, ifunc, miloop, loops) =
       let
         val Tree.T (parent as MilLoop.L {header, blocks, ...}, children) = loops
-        val () = tryConvertWhileLoop (d, config, si, m, p, ifunc, miloop, parent, children)
-        val () = Vector.foreach (children, fn x => tryConvertWhileLoops (d, config, si, m, p, ifunc, miloop, x))
+        val () = tryConvertWhileLoop (d, config, si, p, ifunc, miloop, parent, children)
+        val () = Vector.foreach (children, fn x => tryConvertWhileLoops (d, config, si, p, ifunc, miloop, x))
       in ()
       end
 
   (*
    * transfrom every loop in the function
    *)
-  fun loopInvert (d, config, m as Mil.P {globals, symbolTable, ...}, imil, ifunc) =
+  fun loopInvert (d, p, ifunc) =
       let
         val (gv, global) = IMil.IFunc.unBuild ifunc
-        val si = ID.SymbolInfo.SiTable symbolTable
+        val config = IMil.T.getConfig p
+        val si = IMil.T.getSi p
       in (case global
            of Mil.GCode (c as Mil.F {body, ...}) =>
               let
@@ -591,17 +583,15 @@ struct
                 val linfo = MilLoop.genExits linfo
                 val loops = MilLoop.getLoops linfo
                 val () = Debug.printLayout (config, L.seq [L.str "MilLoop: ", MilLoop.layout linfo])
-                val () = Vector.foreach(loops, fn x => tryConvertWhileLoops (d, config, si, m, imil, ifunc, linfo, x))
+                val () = Vector.foreach(loops, fn x => tryConvertWhileLoops (d, config, si, p, ifunc, linfo, x))
               in ()
               end
             | _ => ())
       end
 
-  fun program (imil, d) = 
+  fun program (p, d) = 
       let
-        val config = PD.getConfig d
-        val m as Mil.P {globals, symbolTable, ...} = IMil.T.unBuild imil
-        val () = List.foreach (IMil.Enumerate.T.funcs imil, fn ifunc => loopInvert (d, config, m, imil, ifunc))
+        val () = List.foreach (IMil.Enumerate.T.funcs p, fn ifunc => loopInvert (d, p, ifunc))
         val () = PD.report (d, passname)
       in ()
       end
