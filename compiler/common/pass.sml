@@ -108,6 +108,7 @@ sig
   exception Done
   val stopAt : Config.stopPoint -> ('a, 'a) processor
   val >> : ('a, 'b) processor * ('b, 'c) processor -> ('a, 'c) processor
+  val ifC : (Config.t -> bool) * ('a, 'b) processor * ('a, 'b) processor -> ('a, 'b) processor
   val apply : ('a, 'b) processor -> PassData.t * string * 'a -> 'b
   val startFile : Config.t * string -> unit
   val endFile : Config.t * string -> unit
@@ -328,6 +329,12 @@ struct
   fun >> (T f1, T f2) =
       let
         fun f (pd, base, arg) = f2 (pd, base, f1 (pd, base, arg))
+      in T f
+      end
+
+  fun ifC (f, T f1, T f2) =
+      let
+        val f = fn (pd, base, arg) => if f (PassData.getConfig pd) then f1 (pd, base, arg) else f2 (pd, base, arg)
       in T f
       end
 
