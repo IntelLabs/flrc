@@ -32,6 +32,7 @@ local
         in
           utils.sml
         end
+        path.sml
         graph.sml
         dominance.sml
         rat.sml
@@ -97,6 +98,7 @@ in
         structure StringParser
         structure Pass
         structure PassData
+        structure Path
         structure PolyLabeledGraph
         structure Prims
         structure Rat

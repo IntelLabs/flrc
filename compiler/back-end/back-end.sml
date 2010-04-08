@@ -239,11 +239,12 @@ struct
    fun exeFile (config, compiler, fname) = fname^".exe"
 
    fun compiler (config, compiler) = 
-       (case compiler 
-         of CcGCC  => "gcc"
-          | CcICC  => "icl"
-          | CcPillar => plibexe(config, "pilicl"))
-
+       Path.fromString 
+         (case compiler 
+           of CcGCC  => "gcc"
+            | CcICC  => "icl"
+            | CcPillar => plibexe(config, "pilicl"))
+       
    fun includes (config, compiler) = 
        let
          val mcrt = 
@@ -412,10 +413,11 @@ struct
        end
 
    fun linker (config, ld) = 
-       (case ld
-         of LdGCC  => "gcc"
-          | LdICC  => "icl"
-          | LdPillar => plibexe(config, "pilink"))
+       Path.fromString
+         (case ld
+           of LdGCC  => "gcc"
+            | LdICC  => "icl"
+            | LdPillar => plibexe(config, "pilink"))
 
    structure LdOptions =
    struct

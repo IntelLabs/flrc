@@ -114,7 +114,7 @@ sig
   val endFile : Config.t * string -> unit
   val doPassPart : Config.t * string * (unit -> 'a) -> 'a
   val run :
-      Config.t * (Config.t * string -> unit) * string * string list -> unit
+      Config.t * (Config.t * string -> unit) * Path.t * string list -> unit
 end;
 
 structure Pass :> PASS =
@@ -342,6 +342,7 @@ struct
 
   fun run (config, logger, cmd, args) = 
       let
+        val cmd = Path.toCygwinString cmd
         val () = logger (config, String.concatWith (cmd::args, " "))
         val doit = fn () => Process.exec(cmd, args)
         fun silently doit = 
