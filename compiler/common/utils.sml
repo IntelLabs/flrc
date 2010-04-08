@@ -482,6 +482,7 @@ signature DICT = sig
     val domain : 'a t -> key list
     val range  : 'a t -> 'a list
     val fromVector : (key * 'a) vector -> 'a t
+    val toVector : 'a t -> (key * 'a) vector
     val isEmpty : 'a t -> bool
     val size : 'a t -> int
     val lookup   : 'a t * key -> 'a option
@@ -531,6 +532,7 @@ struct
     val range = RBT.listItems
     fun fromVector v =
         Vector.fold (v, empty, fn ((k, v), d) => RBT.insert (d, k, v))
+    fun toVector d = Vector.fromList (toList d)
     val isEmpty = RBT.isEmpty
     val size = RBT.numItems
     val lookup = RBT.find
