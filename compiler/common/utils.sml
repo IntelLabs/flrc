@@ -8,6 +8,11 @@ structure Utils = struct
     (* General utilities *)
     fun flip2 (a,b) = (b,a) 
 
+    structure Imperative = 
+    struct
+      val block : unit list -> unit = fn l => ()
+    end
+
     structure Function = 
     struct
       val id : 'a -> 'a = fn x => x
@@ -127,6 +132,18 @@ structure Utils = struct
           (case opt
             of NONE => NONE
              | SOME v => f v)
+
+      val dispatch : 'a option * ('a -> 'b) * (unit -> 'b) -> 'b = 
+       fn (opt, f1, f2) => 
+          (case opt
+            of SOME a => f1 a
+             | NONE => f2 ())
+
+      val dispatchMap : 'a option * ('a -> 'b) * (unit -> unit) -> 'b option = 
+       fn (opt, f1, f2) => 
+          (case opt
+            of SOME a => SOME (f1 a)
+             | NONE => (f2 (); NONE))
 
       val compose : ('b -> 'c option) * ('a -> 'b option) -> ('a -> 'c option) =
        fn (f, g) =>
