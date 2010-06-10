@@ -503,6 +503,7 @@ signature DICT = sig
     val union : 'a t * 'a t * (key * 'a * 'a -> 'a) -> 'a t
     val intersect : 'a t * 'b t * (key * 'a * 'b -> 'c) -> 'c t
     val forall : 'a t * (key * 'a -> bool) -> bool
+    val exists : 'a t * (key * 'a -> bool) -> bool
    (* false if domains are different *)
     val forall2 : 'a t * 'b t * (key * 'a * 'b -> bool) -> bool
     val map2    : 'a t * 'b t * (key * 'a option * 'b option -> 'c option) -> 'c t
@@ -542,6 +543,7 @@ struct
     fun remove (d, k) = #1 (RBT.remove (d, k)) handle NotFound => d
     fun fold (d, i, f) = RBT.foldli f i d
     fun forall (d, f) = fold (d, true, fn (k, d, b) => b andalso f (k, d))
+    fun exists (d, f) = fold (d, false, fn (k, d, b) => b orelse f (k, d))
     fun foreach (d, f) = RBT.appi f d
     fun map (d, f) = RBT.mapi f d
     fun keepAllMap (d, f) = RBT.mapPartiali f d
