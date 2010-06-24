@@ -6,6 +6,7 @@ sig
 
   val cspAltSem                    : Config.t -> bool
   val cspDirect                    : Config.t -> bool
+  val cspGeneral                   : Config.t -> bool
   val disableOptimizedRationals    : Config.t -> bool
   val disableOptimizedIntegers     : Config.t -> bool
 
@@ -20,6 +21,8 @@ struct
 
   val (cspAltSemF, cspAltSem) = Config.Feature.mk ("PPiler:csp-alt-sem", "use alternate semantics for Core SP")
   val (cspDirectF, cspDirect) = Config.Feature.mk ("PPiler:csp-direct", "use direct scheme for Core SP compilation")
+  val (cspGeneralF, cspGeneral) =
+      Config.Feature.mk ("PPiler:csp-general", "use general scheme for Core SP compilation")
 
   val (disableOptimizedRationalsF, disableOptimizedRationals) =
       Config.Feature.mk ("PPiler:disable-optimized-rationals",
