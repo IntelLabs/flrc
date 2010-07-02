@@ -34,7 +34,7 @@ struct
       Config.Feature.mk ("PPiler:disable-optimized-integers",
                          "disable optimized integer rep")
 
-  val features = [cspAltSemF, cspDirectF, disableOptimizedRationalsF, disableOptimizedIntegersF]
+  val features = [cspAltSemF, cspDirectF, cspHybridF, disableOptimizedRationalsF, disableOptimizedIntegersF]
   val debugs = []
   val controls = []
 
