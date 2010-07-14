@@ -3,6 +3,11 @@
 
 (* Utility stuff not in the MLton library *)
 
+(* This allows us to use the MLton extended Int type, while
+ * checking that we are using 32 bit ints.  If 32 bit ints are
+ * not required, just use Int.  We should revisit this.  *)
+structure Int32 :> INTEGER where type t = Int32.int = Int
+structure Word32 = Word32
 structure Utils = struct
 
     (* General utilities *)
@@ -1349,35 +1354,35 @@ end
 (* Fixed size imperative bit sets *)
 signature IMP_BIT_SET = sig
     type t
-    val new : Int32.t -> t
+    val new : Int.t -> t
     val copy : t -> t
-    val fromList   : Int32.t * Int32.t list -> t
-    val fromVector : Int32.t * Int32.t vector -> t
-    val insertList   : t * Int32.t list -> unit
-    val insertVector : t * Int32.t vector -> unit
+    val fromList   : Int.t * Int.t list -> t
+    val fromVector : Int.t * Int.t vector -> t
+    val insertList   : t * Int.t list -> unit
+    val insertVector : t * Int.t vector -> unit
    (* Return elements in increasing order *)
-    val toList   : t -> Int32.t list
-    val toVector : t -> Int32.t vector
+    val toList   : t -> Int.t list
+    val toVector : t -> Int.t vector
     val isEmpty : t -> bool
     val count   : t -> int
     val equal : t * t -> bool
     val isSubset : t * t -> bool
-    val insert   : t * Int32.t -> unit
-    val remove   : t * Int32.t -> unit
+    val insert   : t * Int.t -> unit
+    val remove   : t * Int.t -> unit
     (* binary operators modify first set *)
     val union        : t * t -> unit
     val intersection : t * t -> unit
     val difference   : t * t -> unit
     val complement   : t -> unit
-    val member       : t * Int32.t -> bool
-    val forall       : t * (Int32.t -> bool) -> bool
-    val exists       : t * (Int32.t -> bool) -> bool
-    val partition    : t * (Int32.t -> bool) -> {no: t, yes: t}
-    val foreach : t * (Int32.t -> unit) -> unit
-    val keepAll : t * (Int32.t -> bool) -> unit
-    val fold : t * 'b * (Int32.t * 'b -> 'b) -> 'b
-    val getAny : t -> Int32.t option
-    val layout : t * (Int32.t -> Layout.t) -> Layout.t
+    val member       : t * Int.t -> bool
+    val forall       : t * (Int.t -> bool) -> bool
+    val exists       : t * (Int.t -> bool) -> bool
+    val partition    : t * (Int.t -> bool) -> {no: t, yes: t}
+    val foreach : t * (Int.t -> unit) -> unit
+    val keepAll : t * (Int.t -> bool) -> unit
+    val fold : t * 'b * (Int.t * 'b -> 'b) -> 'b
+    val getAny : t -> Int.t option
+    val layout : t * (Int.t -> Layout.t) -> Layout.t
 end;
 
 
@@ -1387,27 +1392,27 @@ struct
   structure BA = BitArray
   type t = BA.array
 
-  val new : Int32.t -> t =
+  val new : Int.t -> t =
     fn i => BA.array (i, false)
 
   val copy : t -> t = 
     fn s => BA.extend0 (s, BA.length s)
 
-  val insert   : t * Int32.t -> unit = BA.setBit
+  val insert   : t * Int.t -> unit = BA.setBit
 
-  val member       : t * Int32.t -> bool = BA.sub
+  val member       : t * Int.t -> bool = BA.sub
 
-  val fromList   : Int32.t * Int32.t list -> t = BA.bits
+  val fromList   : Int.t * Int.t list -> t = BA.bits
 
-  val insertList   : t * Int32.t list -> unit = 
+  val insertList   : t * Int.t list -> unit = 
    fn (s, l) =>
       List.foreach (l, fn i => insert (s, i))
 
-  val insertVector : t * Int32.t vector -> unit = 
+  val insertVector : t * Int.t vector -> unit = 
    fn (s, l) =>
       Vector.foreach (l, fn i => insert (s, i))
 
-  val fromVector : Int32.t * Int32.t vector -> t = 
+  val fromVector : Int.t * Int.t vector -> t = 
    fn (i, elts) =>
       let
         val s = new i
@@ -1415,13 +1420,13 @@ struct
       in s
       end
 
-  val toList   : t -> Int32.t list = BA.getBits
+  val toList   : t -> Int.t list = BA.getBits
 
-  val toVector : t -> Int32.t vector = Vector.fromList o toList
+  val toVector : t -> Int.t vector = Vector.fromList o toList
 
   val isEmpty : t -> bool = BA.isZero
 
-  val fold : t * 'b * (Int32.t * 'b -> 'b) -> 'b = 
+  val fold : t * 'b * (Int.t * 'b -> 'b) -> 'b = 
    fn (s, a, f) => 
       BA.foldli (fn (i, b, a) => if b then f (i, a) else a) a s
 
@@ -1430,13 +1435,13 @@ struct
       
   val equal : t * t -> bool = BA.equal
 
-  val remove   : t * Int32.t -> unit = BA.clrBit
+  val remove   : t * Int.t -> unit = BA.clrBit
 
-  val foreach : t * (Int32.t -> unit) -> unit = 
+  val foreach : t * (Int.t -> unit) -> unit = 
    fn (s, f) => 
       BA.appi (fn (i, b) => if b then f i else ()) s
 
-  val forall       : t * (Int32.t -> bool) -> bool = 
+  val forall       : t * (Int.t -> bool) -> bool = 
    fn (s, f) => 
       let
         val length = BA.length s
@@ -1462,7 +1467,7 @@ struct
 
   val complement   : t -> unit = BA.complement
       
-  val exists       : t * (Int32.t -> bool) -> bool = 
+  val exists       : t * (Int.t -> bool) -> bool = 
    fn (s, f) => 
       let
         val length = BA.length s
@@ -1473,7 +1478,7 @@ struct
       in loop 0
       end
 
-  val partition    : t * (Int32.t -> bool) -> {no: t, yes: t} = 
+  val partition    : t * (Int.t -> bool) -> {no: t, yes: t} = 
    fn (s, p) => 
       let
         val l = BA.length s
@@ -1491,11 +1496,11 @@ struct
           no  = no}
       end
 
-  val keepAll : t * (Int32.t -> bool) -> unit = 
+  val keepAll : t * (Int.t -> bool) -> unit = 
       fn (s, p) => 
          BA.modifyi (fn (i, b) => b andalso (p i)) s
 
-  val getAny : t -> Int32.t option = 
+  val getAny : t -> Int.t option = 
    fn s => 
       let
         val length = BA.length s
@@ -1510,7 +1515,7 @@ struct
       in loop 0
       end
 
-  val layout : t * (Int32.t -> Layout.t) -> Layout.t = 
+  val layout : t * (Int.t -> Layout.t) -> Layout.t = 
    fn (s, lf) =>
       let
         val elts = toList s

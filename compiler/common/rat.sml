@@ -75,8 +75,14 @@ structure Rat :> RAT = struct
     fun isInt (c0 : IntInf.t, c1 : IntInf.t) : bool =
         let
           val c = IntInf.~ c0
-          val bigEnough = IntInf.<= (IntInf.fromInt Int.minInt, c)
-          val smallEnough = IntInf.<= (c, IntInf.fromInt Int.maxInt)
+          val bigEnough = 
+              (case Int.minInt
+                of SOME min => IntInf.<= (IntInf.fromInt min, c)
+                 | NONE => true)
+          val smallEnough = 
+              (case Int.maxInt
+                of SOME max => IntInf.<= (c, IntInf.fromInt max)
+                 | NONE => true)
         in 
           bigEnough andalso
           smallEnough andalso

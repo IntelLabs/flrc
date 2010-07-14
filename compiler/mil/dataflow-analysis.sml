@@ -270,6 +270,7 @@ functor MilDataFlowAnalysisF (
       in yes
       end
 
+  (* XXX - why is this safe to do in a single pass?  Why no iterate around cycles?  -leaf *)
   (*
    * collect information for global values
    *)

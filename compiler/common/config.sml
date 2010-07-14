@@ -31,7 +31,7 @@ signature CONFIG = sig
   datatype vectorArch = ViREF | ViSSE | ViLRB
   datatype t = C of {agc: agcProg,
 		     control_: string StringDict.t,
-		     core: string,
+		     core: Path.t,
 		     debugLev: verbosity,
 		     debug_: StringSet.t,
 		     feature_: StringSet.t,
@@ -41,7 +41,7 @@ signature CONFIG = sig
 			  rootsInGlobals: bool,
 			  style: gcStyle,
 			  tagOnly: bool},
-		     home: string,
+		     home: Path.t,
 		     keep: {cp: bool, obj: bool, pil: bool},
 		     linkStr: string list,
 		     logLev: verbosity,
@@ -69,7 +69,7 @@ signature CONFIG = sig
                      va: vectorArch,
 		     warnLev: verbosity}
   val agc: t -> agcProg
-  val core: t -> string
+  val core: t -> Path.t
   val debug: bool
   val debugLevel: t * 'a -> int
   val gc: t
@@ -79,7 +79,7 @@ signature CONFIG = sig
 	      rootsInGlobals: bool,
 	      style: gcStyle,
 	      tagOnly: bool}
-  val home: t -> string
+  val home: t -> Path.t
   val keep: t * ({cp: bool, obj: bool, pil: bool} -> 'a) -> 'a
   val keepCp: t -> bool
   val keepObj: t -> bool
@@ -238,13 +238,13 @@ structure Config :> CONFIG = struct
 
     datatype t = C of {
          agc              : agcProg,
-         core             : string,
+         core             : Path.t,
          control_         : string StringDict.t,
          debug_           : StringSet.t,
          debugLev         : verbosity,
          feature_         : StringSet.t,
          gc               : gcConfig,
-         home             : Dir.t,
+         home             : Path.t,
          keep             : {cp : bool, pil : bool, obj : bool},
          linkStr          : string list,
          logLev           : verbosity,

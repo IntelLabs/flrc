@@ -28,6 +28,9 @@ local
             structure PackWord32Little
             structure PackReal32Little
             structure PackReal64Little
+            structure Int32
+            structure Word32
+            structure Word8Array
           end
         in
           utils.sml
@@ -87,6 +90,7 @@ in
         structure ImpIntDict
         structure ImpPolyLabeledGraph
         structure ImpQueue
+        structure Int32
         structure IntArb
         structure IntDict
         structure IntIntDict
@@ -109,5 +113,5 @@ in
         structure Try
         structure Utils
         structure VectorInstructions
-
+        structure Word32
 end

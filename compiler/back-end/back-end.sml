@@ -30,7 +30,7 @@ struct
    local open OS.Path
    in
 
-   fun rundir config = concat (Config.home config, fromUnixPath "runtime/")
+   fun rundir config = concat (Path.toUnixString (Config.home config), fromUnixPath "runtime/")
    fun addPath (path, file) = 
        mkCanonical (joinDirFile{dir = path,
                                 file = file})
@@ -38,7 +38,7 @@ struct
        mkCanonical(concat(path1, fromUnixPath path2))
 
    fun psh (config : Config.t) =
-       addPath (concat (Config.home config, fromUnixPath "bin/"), "pillar.sh")
+       addPath (concat (Path.toUnixString (Config.home config), fromUnixPath "bin/"), "pillar.sh")
 
    fun plibdir (config : Config.t) = 
        let
@@ -619,9 +619,9 @@ struct
              case Config.output config
               of Config.OkC => 
                  (case Config.toolset config
-                   of Config.Intel => icc (config, fname)
-                    | Config.Gnu   => gcc (config, fname))
-               | Config.OkPillar   => picc(config, fname)
+                   of Config.Intel => icc (config, Path.toWindowsString fname)
+                    | Config.Gnu   => gcc (config, Path.toCygwinString fname))
+               | Config.OkPillar   => picc(config, Path.toWindowsString fname)
          val () = 
              Exn.finally (fn () => Pass.run (config, Chat.log0, c, args),
                           cleanup)
@@ -634,9 +634,9 @@ struct
              case Config.output config 
               of Config.OkC => 
                  (case Config.toolset config
-                   of Config.Intel => ilink (config, fname)
-                    | Config.Gnu   => ld    (config, fname))
-               | Config.OkPillar   => plink (config, fname)
+                   of Config.Intel => ilink (config, Path.toWindowsString fname)
+                    | Config.Gnu   => ld    (config, Path.toCygwinString fname))
+               | Config.OkPillar   => plink (config, Path.toWindowsString fname)
          val () = 
              Exn.finally (fn () => Pass.run (config, Chat.log0, c, args),
                           cleanup)

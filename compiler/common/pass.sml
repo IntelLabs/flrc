@@ -82,11 +82,11 @@ sig
                   -> ('a, 'a) t
   val mkOptFullPass : ('a, 'a) description
                       * ('a, 'a) associates
-                      * ('a * PassData.t * string -> 'a)
+                      * ('a * PassData.t * Path.t -> 'a)
                       -> ('a, 'a) t
   val mkFilePass : ('a, 'b) description
                    * ('a, 'b) associates
-                   * ('a * PassData.t * string -> 'b) 
+                   * ('a * PassData.t * Path.t -> 'b) 
                    -> ('a, 'b) t
   val getDescription : ('a, 'b) t -> ('a, 'b) description
   val getName : ('a, 'b) t -> string
@@ -109,7 +109,7 @@ sig
   val stopAt : Config.stopPoint -> ('a, 'a) processor
   val >> : ('a, 'b) processor * ('b, 'c) processor -> ('a, 'c) processor
   val ifC : (Config.t -> bool) * ('a, 'b) processor * ('a, 'b) processor -> ('a, 'b) processor
-  val apply : ('a, 'b) processor -> PassData.t * string * 'a -> 'b
+  val apply : ('a, 'b) processor -> PassData.t * Path.t * 'a -> 'b
   val startFile : Config.t * string -> unit
   val endFile : Config.t * string -> unit
   val doPassPart : Config.t * string * (unit -> 'a) -> 'a
@@ -129,7 +129,7 @@ struct
            description : ('a, 'b) description,
            associates  : ('a, 'b) associates,
            optional    : bool,
-           f           : PassData.t * string * 'a -> 'b
+           f           : PassData.t * Path.t * 'a -> 'b
   }
   withtype ('a, 'b) associates = {
        controls  : Config.Control.control list,
@@ -146,7 +146,7 @@ struct
       stats       : (string * string) list
   }
 
-  datatype ('a, 'b) processor = T of PassData.t * string * 'a -> 'b
+  datatype ('a, 'b) processor = T of PassData.t * Path.t * 'a -> 'b
 
   val unitHelpers = {
       printer = fn _ => Layout.str "Success!",

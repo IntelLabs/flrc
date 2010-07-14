@@ -187,11 +187,15 @@ struct
    fn t => 
       let
         val ti = toIntInf t
-        val max = IntInf.fromInt Int.maxInt
-      in if IntInf.<= (ti, max) then
-           SOME (IntInf.toInt ti)
-         else
-           NONE
+        val r = 
+            (case Int.maxInt
+              of SOME max => 
+                 if IntInf.<= (ti, IntInf.fromInt max) then
+                   SOME (IntInf.toInt ti)
+                 else
+                   NONE
+               | NONE => SOME (IntInf.toInt ti))
+      in r
       end
 
   fun convert (X (_, i), t) = truncResult (t, i)

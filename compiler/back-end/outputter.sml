@@ -12,8 +12,9 @@ structure Outputter :> OUTPUTTER = struct
 
    val passname = "Outputter"
 
-  fun writeToFile (pd, fname, mil) =
+  fun writeToFile (pd, path, mil) =
       let 
+        val fname = Path.toCygwinString path
         val l = MilToPil.program (pd, fname, mil)
         val suffix = ".c"
         val file = fname ^ suffix

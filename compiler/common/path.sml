@@ -146,8 +146,8 @@ struct
   val append : t * t -> t = 
    fn (path1, path2) => 
       (case (path1, path2)
-        of (PRel arcs1, PRel arcs2) => PRel (arcs1 @ arcs2)
-         | (PAbs (vol, arcs1), PRel arcs2) => PAbs (vol, arcs1 @ arcs2)
+        of (PRel arcs1, PRel arcs2) => PRel (arcs2 @ arcs1)
+         | (PAbs (vol, arcs1), PRel arcs2) => PAbs (vol, arcs2 @ arcs1)
          | _ => raise (Path ("Can't append absolute path")))
 
   val setVolume : t * volume -> t = 
