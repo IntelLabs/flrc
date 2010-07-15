@@ -817,7 +817,7 @@ struct
             val frefs = Array.toVector frefs
             val n =
                 case no
-                 of NONE => vtiToName (state, env, M.PokThunk, fs, frefs, NONE)
+                 of NONE => vtiToName (state, env, M.PokCell, fs, frefs, NONE)
                   | SOME n => n
             val mut = 
                 if value then
@@ -827,7 +827,7 @@ struct
                     VtmAlwaysImmutable
                 else
                   VtmAlwaysMutable
-            val vti = Vti {name = n, tag = M.PokThunk, fixedSize = fs,
+            val vti = Vti {name = n, tag = M.PokCell, fixedSize = fs,
                            fixedRefs = frefs, array = NONE,
                            mut = mut}
             val vt = vTableFromInfo (state, env, vti)

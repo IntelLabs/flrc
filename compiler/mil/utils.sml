@@ -1086,13 +1086,13 @@ struct
                 | M.PokDouble    => 3
                 | M.PokName      => 4
                 | M.PokFunction  => 5
-                | M.PokOArray    => 6
-                | M.PokIArray    => 7
-                | M.PokSum       => 8
+                | M.PokArray     => 6
+                | M.PokDict      => 7
+                | M.PokTagged    => 8
                 | M.PokOptionSet => 9
                 | M.PokType      => 10
-                | M.PokThunk     => 11
-                | M.PokRef       => 12
+                | M.PokCell      => 11
+                | M.PokPtr       => 12
         in C.fromOrd ord (pok1, pok2)
         end
 
@@ -1700,13 +1700,13 @@ struct
           | M.PokDouble    => #"D"
           | M.PokName      => #"N"
           | M.PokFunction  => #"L"
-          | M.PokOArray    => #"A"
-          | M.PokIArray    => #"B"
-          | M.PokSum       => #"S"
+          | M.PokArray     => #"A"
+          | M.PokDict      => #"B"
+          | M.PokTagged    => #"S"
           | M.PokOptionSet => #"O"
-          | M.PokRef       => #"r"
+          | M.PokPtr       => #"r"
           | M.PokType      => #"T"
-          | M.PokThunk     => #"t"
+          | M.PokCell      => #"t"
 
     fun toString pok =
         case pok
@@ -1716,13 +1716,13 @@ struct
           | M.PokDouble    => "double"
           | M.PokName      => "name"
           | M.PokFunction  => "fun"
-          | M.PokOArray    => "oarray"
-          | M.PokIArray    => "iarray"
-          | M.PokSum       => "sum"
+          | M.PokArray     => "oarray"
+          | M.PokDict      => "iarray"
+          | M.PokTagged    => "sum"
           | M.PokOptionSet => "set"
-          | M.PokRef       => "ref"
+          | M.PokPtr       => "ref"
           | M.PokType      => "type"
-          | M.PokThunk     => "thunk"
+          | M.PokCell      => "thunk"
 
     val compare = Compare.pObjKind
     val eq = Compare.C.equal compare
@@ -1748,12 +1748,12 @@ struct
            | M.TTuple {pok, fixed, array} => SOME pok
            | M.TIdx                       => NONE
            | M.TContinuation ts           => NONE
-           | M.TThunk t                   => SOME M.PokThunk
+           | M.TThunk t                   => SOME M.PokCell 
            | M.TPAny                      => NONE
            | M.TPFunction {args, ress}    => SOME M.PokFunction
-           | M.TPSum nts                  => SOME M.PokSum
+           | M.TPSum nts                  => SOME M.PokTagged
            | M.TPType {kind, over}        => SOME M.PokType
-           | M.TPRef t                    => SOME M.PokRef)
+           | M.TPRef t                    => SOME M.PokPtr)
   end
 
   structure ValueSize =
@@ -2683,10 +2683,10 @@ struct
            | M.RhsIdxGet _             => NONE
            | M.RhsCont _               => NONE
            | M.RhsObjectGetKind _      => NONE
-           | M.RhsThunkMk _            => SOME M.PokThunk
-           | M.RhsThunkInit _          => SOME M.PokThunk
+           | M.RhsThunkMk _            => SOME M.PokCell 
+           | M.RhsThunkInit _          => SOME M.PokCell 
            | M.RhsThunkGetFv _         => NONE
-           | M.RhsThunkValue _         => SOME M.PokThunk
+           | M.RhsThunkValue _         => SOME M.PokCell 
            | M.RhsThunkGetValue _      => NONE
            | M.RhsThunkSpawn _         => NONE
            | M.RhsPFunctionMk _        => SOME M.PokFunction
@@ -2696,7 +2696,7 @@ struct
            | M.RhsPSetGet _            => NONE
            | M.RhsPSetCond _           => SOME M.PokOptionSet
            | M.RhsPSetQuery _          => NONE
-           | M.RhsPSum _               => SOME M.PokSum
+           | M.RhsPSum _               => SOME M.PokTagged
            | M.RhsPSumProj _           => NONE)
 
     fun arity (config, rhs) =
@@ -3538,10 +3538,10 @@ struct
            | M.GTuple {vtDesc, ...} => SOME (VTableDescriptor.pok vtDesc)
            | M.GRat _               => NONE
            | M.GInteger _           => NONE
-           | M.GThunkValue _        => SOME M.PokThunk
+           | M.GThunkValue _        => SOME M.PokCell 
            | M.GSimple s            => Simple.pObjKind s
            | M.GPFunction _         => SOME M.PokFunction
-           | M.GPSum _              => SOME M.PokSum
+           | M.GPSum _              => SOME M.PokTagged
            | M.GPSet _              => SOME M.PokOptionSet)
 
 

@@ -32,13 +32,13 @@ struct
     | PokDouble
     | PokName
     | PokFunction
-    | PokOArray
-    | PokIArray
-    | PokSum
+    | PokArray
+    | PokDict
+    | PokTagged
     | PokOptionSet
-    | PokRef
+    | PokPtr
     | PokType
-    | PokThunk
+    | PokCell
 
   datatype valueSize = Vs8 | Vs16 | Vs32 | Vs64 | Vs128 | Vs256 | Vs512 
 

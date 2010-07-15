@@ -42,13 +42,13 @@ struct
              | M.PokDouble    => "VDoubleTag"
              | M.PokName      => "VNameTag"
              | M.PokFunction  => "VFunctionTag"
-             | M.PokOArray    => "VArrayTag"
-             | M.PokIArray    => "VArrayIdxTag"
-             | M.PokSum       => "VSumTag"
+             | M.PokArray     => "VArrayTag"
+             | M.PokDict      => "VArrayIdxTag"
+             | M.PokTagged    => "VSumTag"
              | M.PokOptionSet => "VSetTag"
              | M.PokType      => "VTypeTag"
-             | M.PokThunk     => "VThunkTag"
-             | M.PokRef       => "VRefTag")
+             | M.PokPtr       => "VRefTag"
+             | M.PokCell      => "VThunkTag")
         
     fun pObjKindVTable pok =
         Pil.identifier
@@ -59,13 +59,13 @@ struct
              | M.PokDouble    => "pLsrPDoubleVTable"
              | M.PokName      => "pLsrPNameVTable"
              | M.PokFunction  => "pLsrClosureVTable"
-             | M.PokOArray    => "pLsrPArrayOVTable"
-             | M.PokIArray    => "pLsrPArrayIVTable"
-             | M.PokSum       => "pLsrPSumVTable"
+             | M.PokArray     => "pLsrPArrayOVTable"
+             | M.PokDict      => "pLsrPArrayIVTable"
+             | M.PokTagged    => "pLsrPSumVTable"
              | M.PokOptionSet => "pLsrPSetVTable"
              | M.PokType      => "pLsrPTypeVTable"
-             | M.PokThunk     => Fail.fail ("Runtime", "pObjKindVtable", "Must use Thunk.vTable")
-             | M.PokRef       => "pLsrPRefVTable")
+             | M.PokPtr       => "pLsrPRefVTable"
+             | M.PokCell      => Fail.fail ("Runtime", "pObjKindVtable", "Must use Thunk.vTable"))
 
     val alwaysMutable   = Pil.identifier "PGC_ALWAYS_MUTABLE"
     val createdMutable  = Pil.identifier "PGC_CREATED_MUTABLE"

@@ -95,13 +95,13 @@ struct
            | M.PokDouble    => true
            | M.PokName      => true
            | M.PokFunction  => true
-           | M.PokOArray    => true
-           | M.PokIArray    => true
-           | M.PokSum       => true
+           | M.PokArray     => true
+           | M.PokDict      => true
+           | M.PokTagged    => true
            | M.PokOptionSet => true
            | M.PokType      => true
-           | M.PokThunk     => false
-           | M.PokRef       => true
+           | M.PokPtr       => true
+           | M.PokCell      => false
 
      fun isPType (c, t) =
          case t
@@ -683,7 +683,7 @@ struct
               let
                 val char = MU.Boxed.t (M.PokRat, M.TRat)
                 val sum = M.TPSum (ND.singleton (ord, char))
-                val str = OA.varTyp (c, M.PokOArray, char)
+                val str = OA.varTyp (c, M.PokArray, char)
               in str
               end
             | P.TBool => MU.Uintp.t c
@@ -691,11 +691,11 @@ struct
               let
                 fun doOne t =  typToMilTyp (c, ord, t)
                 val ts = Vector.fromListMap (ts, doOne)
-                val t = OA.fixedTyp (c, M.PokOArray, ts)
+                val t = OA.fixedTyp (c, M.PokArray, ts)
               in t
               end
             | P.TArrayV t =>
-              OA.varTyp (c, M.PokOArray, typToMilTyp (c, ord, t))
+              OA.varTyp (c, M.PokArray, typToMilTyp (c, ord, t))
             | P.TRef t => M.TPRef (typToMilTyp (c, ord, t))
             | P.TSet t =>
               M.TPType {kind = M.TkE, over = typToMilTyp (c, ord, t)}

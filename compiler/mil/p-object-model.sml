@@ -274,15 +274,15 @@ struct
 
     fun tdVar (c, fk) = IA.tdVar (c, fk)
 
-    fun fixedTyp (c, d, ts) = IA.fixedTyp (c, M.PokIArray, d, ts)
+    fun fixedTyp (c, d, ts) = IA.fixedTyp (c, M.PokDict, d, ts)
 
-    fun varTyp (c, t) = IA.varTyp (c, M.PokIArray, t)
+    fun varTyp (c, t) = IA.varTyp (c, M.PokDict, t)
 
     val lenIndex = IA.lenIndex
     val idxIndex = IA.idxIndex
 
     fun newFixed (c, d, fks, v, os) =
-        IA.newFixed (c, M.PokIArray, d, fks, v, os)
+        IA.newFixed (c, M.PokDict, d, fks, v, os)
 
     fun idxSub (c, fk, v, opnd) = IA.idxSub (c, fk, v, opnd)
 
@@ -293,15 +293,15 @@ struct
 
     fun tdVar (c, fk) = OA.tdVar (c, fk)
 
-    fun fixedTyp (c, ts) = OA.fixedTyp (c, M.PokOArray, ts)
+    fun fixedTyp (c, ts) = OA.fixedTyp (c, M.PokArray, ts)
 
-    fun varTyp (c, t) = OA.varTyp (c, M.PokOArray, t)
+    fun varTyp (c, t) = OA.varTyp (c, M.PokArray, t)
 
     val lenIndex = OA.lenIndex
 
-    fun newFixed (c, fks, os) = OA.newFixed (c, M.PokOArray, fks, os)
+    fun newFixed (c, fks, os) = OA.newFixed (c, M.PokArray, fks, os)
 
-    fun newVar (c, fk, opnd) = OA.newVar (c, M.PokOArray, fk, opnd)
+    fun newVar (c, fk, opnd) = OA.newVar (c, M.PokArray, fk, opnd)
 
     fun length (c, v) = OA.length (c, v)
 
@@ -309,7 +309,7 @@ struct
 
     fun update (c, fk, v, o1, o2) = OA.update (c, fk, v, o1, o2)
 
-    fun inited (c, fk, v) = OA.inited (c, M.PokOArray, fk, v)
+    fun inited (c, fk, v) = OA.inited (c, M.PokArray, fk, v)
 
   end
 
@@ -634,7 +634,7 @@ struct
   structure Sum = 
   struct
 
-    fun typ nts = MU.Typ.fixedArray (M.PokSum, Vector.new1 (M.TName, M.FvReadOnly))
+    fun typ nts = MU.Typ.fixedArray (M.PokTagged, Vector.new1 (M.TName, M.FvReadOnly))
 
     fun td (c, fk) =
         let
@@ -648,7 +648,7 @@ struct
         let
           val fds = Vector.new2 (M.FD {kind = M.FkRef, var = M.FvReadOnly},
                                  M.FD {kind = fk,      var = M.FvReadOnly})
-          val vtd = M.VTD {pok = M.PokSum, fixed = fds, array = NONE}
+          val vtd = M.VTD {pok = M.PokTagged, fixed = fds, array = NONE}
         in vtd
         end
 
