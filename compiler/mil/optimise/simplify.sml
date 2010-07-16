@@ -784,7 +784,7 @@ struct
                                            arguments = Vector.new0 ()}
                            in M.TGoto tg
                            end
-                         | M.RTail => M.TReturn (Vector.new1 s))
+                         | M.RTail _ => M.TReturn (Vector.new1 s))
                   val () = IInstr.replaceTransfer (imil, i, t)
                 in [I.ItemInstr i]
                 end

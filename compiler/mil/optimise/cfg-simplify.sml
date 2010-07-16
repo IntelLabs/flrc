@@ -331,7 +331,7 @@ struct
                                     val () = Try.require (Vector.length p = Vector.length rets)
                                     val () = Try.require (Vector.forall2 (p, rets, argIsVar))
                                     val () = Try.require (LS.isEmpty (MU.Cuts.targets cuts))
-                                    val ret = M.RTail
+                                    val ret = M.RTail {exits = MU.Cuts.exits cuts}
                                     val () = Click.tailCall d
                                   in ret
                                   end)

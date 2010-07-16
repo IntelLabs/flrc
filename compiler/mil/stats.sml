@@ -52,7 +52,7 @@ struct
   fun analyseInterProc (s, e, ip, r) =
       case (ip, r)
        of (M.IpCall _, M.RNormal _) => let val () = incCalls s in e end
-        | (M.IpCall _, M.RTail    ) => let val () = incTailcalls s in e end
+        | (M.IpCall _, M.RTail   _) => let val () = incTailcalls s in e end
         | _                         => e
 
   fun analyseTransfer (s, e, t) =

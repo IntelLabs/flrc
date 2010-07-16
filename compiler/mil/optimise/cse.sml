@@ -216,7 +216,7 @@ struct
               of NONE =>
                  (case ret
                    of M.RNormal {rets, block, ...} => (transfer, env, SOME (eval, rets, block))
-                    | M.RTail => keep ())
+                    | M.RTail _ => keep ())
                | SOME vs =>
                  let
                    val () = PD.click (envGetData env, "EvalCse")
@@ -226,7 +226,7 @@ struct
                             (M.TGoto (M.T {block = block, arguments = Vector.new0 ()}),
                              addAllToRename (env, rets, vs),
                              NONE)
-                          | M.RTail =>
+                          | M.RTail _ =>
                             (M.TReturn (Vector.map (vs, M.SVariable)), env, NONE))
                  in r
                  end)

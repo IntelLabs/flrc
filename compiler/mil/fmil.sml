@@ -108,7 +108,7 @@ struct
             val () = Vector.foreachi (rets, doRetVar)
           in ()
           end
-        | M.RTail => ()
+        | M.RTail {exits} => ()
 
   fun analyseTransfer (s, e, f, l, t) =
       case t

@@ -1705,7 +1705,7 @@ struct
                   val s = Pil.S.sequence [c, Pil.S.goto block]
                 in s
                 end
-              | M.RTail =>
+              | M.RTail {exits} =>
                 (case rewriteThunks (env, cc)
                   of SOME t =>
                      let
@@ -1747,9 +1747,9 @@ struct
                      in (cuts, rt, cont, g)
                      end
                    | _ => Fail.fail ("MilToPil", "genEval", "rets must be 1"))
-              | M.RTail =>
+              | M.RTail {exits} =>
                 let
-                  val cuts = MU.Cuts.justExits
+                  val cuts = M.C {exits = exits, targets = LS.empty}
                   val rtyp = MU.Code.thunkTyp (getFunc env)
                   val cont = 
                       (case rewriteThunks (env, cc)
@@ -1766,7 +1766,7 @@ struct
                                                  [genVarE (state, env, t), vret])
                                in Pil.S.sequence [evals, rets]
                                end)
-                         | NONE   => fn e => Pil.S.returnExpr e)
+                         | NONE => fn e => Pil.S.returnExpr e)
                   val g = Pil.S.empty
                 in (cuts, rtyp, cont, g)
                 end

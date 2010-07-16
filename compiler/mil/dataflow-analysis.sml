@@ -399,8 +399,8 @@ functor MilDataFlowAnalysisF (
                   of M.RNormal {rets, block, cuts} =>
                      let
                        val M.B {parameters, ...} = envGetBlock (E env, block)
-                       val a = deriveFunction (#env env, stateDict (#env env, st),
-                                               args, Vector.length (rets), cuts, fx)
+                       val a =
+                           deriveFunction (#env env, stateDict (#env env, st), args, Vector.length (rets), cuts, fx)
                        val () = if envValidTarget (E env, block) then
                                   projectArgs (E env, st, block, a, m)
                                 else
@@ -408,7 +408,7 @@ functor MilDataFlowAnalysisF (
                      in 
                        goLabel (E env, st, block, m)
                      end
-                   | M.RTail => ())
+                   | M.RTail {exits} => ())
                | M.IpEval _ => ())
           | _ => () (* all others terminate the function *)
       end

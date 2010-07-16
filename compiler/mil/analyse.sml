@@ -298,7 +298,7 @@ functor MilAnalyseF (
             val () = analyseCuts (s, e, cuts)
           in ()
           end
-        | M.RTail => ()
+        | M.RTail {exits} => ()
 
   fun analyseTransfer (s, e, t) =
       let

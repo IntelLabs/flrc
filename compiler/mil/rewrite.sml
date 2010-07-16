@@ -287,7 +287,7 @@ struct
             val r = M.RNormal {rets = rets, block = block, cuts = cs}
           in r
           end
-        | M.RTail => r
+        | M.RTail {exits} => r
                                        
   fun transfer (state, env, transfer) = 
       let

@@ -1042,7 +1042,7 @@ struct
             val () = cuts (s, e, msg', cs)
           in ()
           end
-        | M.RTail =>
+        | M.RTail {exits} =>
           let
             fun msg' () = msg () ^ ": returns"
             val rts = getRTyps e
@@ -1134,7 +1134,7 @@ struct
               | M.TInterProc {ret, ...} =>
                 (case ret
                   of M.RNormal {rets, ...} => bindVars (s, e, rets, false)
-                   | M.RTail => e)
+                   | M.RTail _ => e)
               | M.TReturn _ => e
               | M.TCut _ => e
               | M.TPSumCase _ => e

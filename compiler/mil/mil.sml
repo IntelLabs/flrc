@@ -231,7 +231,7 @@ struct
 
   datatype return =
       RNormal of {rets : variable Vector.t, block : label, cuts : cuts}
-    | RTail
+    | RTail of {exits : bool}
 
   datatype transfer =
     (* Core *)

@@ -434,7 +434,7 @@ struct
                      val rtyps = 
                          case ret
                           of M.RNormal {rets, ...} => Vector.map (rets, fn v => MTT.variable (c, si, v))
-                           | M.RTail => envGetReturnTypes env
+                           | M.RTail _ => envGetReturnTypes env
                    in
                      doCall (state, env, mk, call, args, rtyps)
                    end

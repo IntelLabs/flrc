@@ -145,7 +145,7 @@ struct
     fun getReturnLabel (env, c) =
         case getReturn (env, c)
          of M.RNormal {block, ...} => SOME block
-          | M.RTail                => NONE
+          | M.RTail _              => NONE
 
     (* Compute the return vars and cuts for each return label *)
     fun computeRetVarsCuts (env, MCG.CG {calls, ...}) =
@@ -161,7 +161,7 @@ struct
                     val map = LD.insert (map, block, (rvso, cuts))
                   in map
                   end
-                | M.RTail => map
+                | M.RTail _ => map
           val map = LD.fold (calls, LD.empty, doOne)
         in map
         end
@@ -549,7 +549,7 @@ struct
               of NONE => NONE
                | x as SOME _ =>
                  let
-                   val () = click (state, case ret of M.RNormal _ => "callJump" | M.RTail => "tailJump")
+                   val () = click (state, case ret of M.RNormal _ => "callJump" | M.RTail _ => "tailJump")
                  in x
                  end)
           | M.IpEval _ => NONE
@@ -571,7 +571,7 @@ struct
                       in t
                       end
                       (* Tail inter proc, check if this CB is inlined and if it is a self tail inter proc *)
-                    | M.RTail =>
+                    | M.RTail {exits} =>
                       case getReturn env
                        of NONE =>
                           (* This CB does not return to a label in the final CB, check for self tail inter proc *)
@@ -596,7 +596,7 @@ struct
                             val blk = M.B {parameters = Vector.new0 (), instructions = Vector.new0 (), transfer = t}
                             val () = addBlock (state, l, blk)
                             (* Rewrite cuts and make normal inter proc *)
-                            val cuts = rewriteCuts (state, env, MU.Cuts.justExits)
+                            val cuts = rewriteCuts (state, env, M.C {exits = exits, targets = LS.empty})
                             val ret = M.RNormal {rets = rvs, block = l, cuts = cuts}
                             val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
                           in t

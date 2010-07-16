@@ -801,7 +801,7 @@ struct
                                  ::cuts)
            in l
            end
-         | M.RTail => L.str "-|"
+         | M.RTail {exits} => L.str ("-| /->/ " ^ (if exits then "EXIT" else "NONE"))
 
    fun layoutTransfer (env, t) = 
        case t

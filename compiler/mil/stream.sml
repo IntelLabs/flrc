@@ -247,6 +247,7 @@ sig
                    * env
                    * Mil.call
                    * Mil.operand Vector.t
+                   * bool (* exits *)
                    * Mil.effects
                    -> Stream.t
 
@@ -773,10 +774,10 @@ struct
          in code
          end
 
-     fun tailcall (state, env, c, args, fx) =
+     fun tailcall (state, env, c, args, exits, fx) =
          let
            val c = M.IpCall {call = c, args = args}
-           val r = M.RTail
+           val r = M.RTail {exits = exits}
            val t = M.TInterProc {callee = c, ret = r, fx = fx}
          in
            terminate (state, env, new (state, env), t)

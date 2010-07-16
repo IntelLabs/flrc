@@ -561,7 +561,7 @@ sig
     structure Dec : 
     sig
       val rNormal : t -> {rets : Mil.variable Vector.t, block : Mil.label, cuts : Mil.cuts} option
-      val rTail : t -> unit option
+      val rTail : t -> {exits : bool} option
     end (* structure Dec *)
   end
 
@@ -1498,7 +1498,7 @@ struct
          of (M.RNormal x1, M.RNormal x2) => n (x1, x2)
           | (M.RNormal _ , _           ) => LESS
           | (_           , M.RNormal _ ) => GREATER
-          | (M.RTail     , M.RTail     ) => EQUAL
+          | (M.RTail   x1, M.RTail   x2) => C.rec1 (#exits, Bool.compare) (x1, x2)
     end
 
     local
@@ -3037,14 +3037,14 @@ struct
     fun cuts r =
         case r
          of M.RNormal {cuts, ...} => cuts
-          | M.RTail               => Cuts.justExits
+          | M.RTail {exits, ...}  => M.C {exits = exits, targets = LS.empty}
 
     structure Dec =
     struct
       val rNormal =
        fn r => (case r of M.RNormal r => SOME r | _ => NONE)
       val rTail =
-       fn r => (case r of M.RTail => SOME () | _ => NONE)
+       fn r => (case r of M.RTail r => SOME r | _ => NONE)
     end (* structure Dec *)
 
   end
@@ -3167,10 +3167,8 @@ struct
                    val es = Utils.Vector.cons (e1, es)
                  in es
                  end
-               | M.RTail =>
-                 Vector.new1 (OE {kind = OekInterProcTail {callee = callee,
-                                                           fx = fx},
-                                  dest = OedExit}))
+               | M.RTail {exits} =>
+                 Vector.new1 (OE {kind = OekInterProcTail {callee = callee, fx = fx}, dest = OedExit}))
           | M.TReturn os =>
             Vector.new1 (OE {kind = OekReturn os, dest = OedExit})
           | M.TCut {cuts, ...} => genCutsEdges cuts

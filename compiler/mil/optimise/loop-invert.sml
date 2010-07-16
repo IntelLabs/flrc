@@ -151,7 +151,7 @@ struct
                                                                               fn x => getNew x ))}
                              in Mil.RNormal {rets = rets, block = nblock, cuts = ncuts}
                              end
-                           | Mil.RTail => ret
+                           | Mil.RTail _ => ret
             in Mil.TInterProc {callee = callee, ret = nret, fx = fx}
             end
 
