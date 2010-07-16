@@ -240,6 +240,7 @@ struct
     | TInterProc of {callee : interProc, ret : return, fx : effects}
     | TReturn    of operand Vector.t
     | TCut       of {cont : variable, args : operand Vector.t, cuts : cuts}
+    | THalt      of operand
     (* HL *)
     | TPSumCase  of name switch
 

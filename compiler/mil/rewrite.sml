@@ -304,8 +304,8 @@ struct
                 M.TCut {cont = variable (state, env, cont),
                         args = operands (state, env, args),
                         cuts = cuts (state, env, cs)}
-              | M.TPSumCase s =>
-                M.TPSumCase (switch (state, env, s))
+              | M.THalt opnd => M.THalt (operand (state, env, opnd))
+              | M.TPSumCase s => M.TPSumCase (switch (state, env, s))
       in
         callClientCode (clientTransfer, doTransfer, state, env, transfer)
       end

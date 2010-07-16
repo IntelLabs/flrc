@@ -239,6 +239,7 @@ struct
                        in sc
                        end 
                      | M.TCut _ => Try.fail ()
+                     | M.THalt _ => Try.fail ()
                      | M.TPSumCase _ => Try.fail ())
             in res
             end)
@@ -342,6 +343,7 @@ struct
                        end
                      | M.TReturn args => Try.fail ()
                      | M.TCut _ => Try.fail ()
+                     | M.THalt _ => Try.fail ()
                      | M.TPSumCase sw => doSwitch (M.TPSumCase, sw))
             in ()
             end)

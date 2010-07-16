@@ -165,6 +165,7 @@ struct
               | Mil.TReturn ret => Mil.TReturn (ret)
               | Mil.TInterProc {callee, ret, fx} => newTInterProc (callee, ret, fx)
               | Mil.TCut _ => fail ("toNewLoopHeader", "TCut")
+              | Mil.THalt _ => fail ("toNewLoopHeader", "THalt")
               | Mil.TPSumCase {on, cases, default} => newCase (on, cases, default, Mil.TPSumCase)
         val () = IMil.IBlock.replaceTransfer (p, b, nt)
       in ()
@@ -358,6 +359,7 @@ struct
                      end
                    | Mil.TReturn opnd => fail (fname, "TReturn")
                    | Mil.TCut {cont, args, cuts} => fail (fname, "TCut") 
+                   | Mil.THalt _ => fail (fname, "THalt")
                    | Mil.TPSumCase {on, cases, default} => newCase (on, cases, default, Mil.TPSumCase)
       in IMil.IBlock.replaceTransfer (p, srcb, nt)
       end

@@ -575,6 +575,7 @@ sig
       | OekInterProcTail of {callee : InterProc.t, fx : Mil.effects}
       | OekReturn of Operand.t Vector.t
       | OekCut
+      | OekHalt of Operand.t
       | OekPSumCase of {on : Operand.t, eq : Mil.name, args : Operand.t Vector.t}
       | OekPSumCaseDefault of {on : Operand.t, cases : Mil.name Vector.t, args : Operand.t Vector.t}
     datatype dest = OedBlock of Mil.label | OedExit
@@ -604,6 +605,7 @@ sig
       val tInterProc : t -> {callee : Mil.interProc, ret : Mil.return, fx : Mil.effects} option
       val tReturn : t -> Mil.operand Vector.t option
       val tCut : t -> {cont : Mil.variable, args : Mil.operand Vector.t, cuts : Mil.cuts} option
+      val tHalt : t -> Mil.operand option
       val tPSumCase : t -> Mil.name Mil.switch option
     end (* structure Dec *)
   end
@@ -1522,6 +1524,9 @@ struct
           | (M.TCut       x1, M.TCut       x2) => cut (x1, x2)
           | (M.TCut       _ , _              ) => LESS
           | (_              , M.TCut       _ ) => GREATER
+          | (M.THalt      x1, M.THalt      x2) => operand (x1, x2)
+          | (M.THalt      _ , _              ) => LESS
+          | (_              , M.THalt      _ ) => GREATER
           | (M.TPSumCase  x1, M.TPSumCase  x2) => switch name (x1, x2)
     end
 
@@ -3065,6 +3070,7 @@ struct
       | OekInterProcTail of {callee : InterProc.t, fx : Mil.effects}
       | OekReturn of Operand.t Vector.t
       | OekCut
+      | OekHalt of Operand.t
       | OekPSumCase of
         {on : Operand.t, eq : Mil.name, args : Operand.t Vector.t}
       | OekPSumCaseDefault of
@@ -3095,6 +3101,7 @@ struct
           | M.TInterProc {callee, ret, fx} =>
           | M.TReturn os                   =>
           | M.TCut {cont, args, cuts}      =>
+          | M.THalt opnd                   =>
           | M.TPSumCase s                  =>
 *)
 
@@ -3105,6 +3112,7 @@ struct
           | M.TInterProc {callee, ret, fx} => true
           | M.TReturn os                   => true
           | M.TCut {cont, args, cuts}      => true
+          | M.THalt _                      => true
           | M.TPSumCase s                  => false
 
     val compare = Compare.transfer
@@ -3169,9 +3177,9 @@ struct
                  end
                | M.RTail {exits} =>
                  Vector.new1 (OE {kind = OekInterProcTail {callee = callee, fx = fx}, dest = OedExit}))
-          | M.TReturn os =>
-            Vector.new1 (OE {kind = OekReturn os, dest = OedExit})
+          | M.TReturn os => Vector.new1 (OE {kind = OekReturn os, dest = OedExit})
           | M.TCut {cuts, ...} => genCutsEdges cuts
+          | M.THalt opnd => Vector.new1 (OE {kind = OekHalt opnd, dest = OedExit})
           | M.TPSumCase s => doSwitch (OekPSumCase, OekPSumCaseDefault, s)
 
     fun targets t =
@@ -3198,6 +3206,7 @@ struct
           | M.TInterProc {ret, ...} => Return.cuts ret
           | M.TReturn _             => Cuts.none
           | M.TCut {cuts, ...}      => cuts
+          | M.THalt _               => Cuts.none
           | M.TPSumCase _           => Cuts.none
 
     fun isBoolIf t =
@@ -3245,6 +3254,7 @@ struct
             | M.TInterProc _ => t
             | M.TReturn _    => t
             | M.TCut _       => t
+            | M.THalt _      => t
             | M.TPSumCase r  => M.TPSumCase (doCase r)
         end
 
@@ -3267,6 +3277,7 @@ struct
             | M.TInterProc _ => NONE
             | M.TReturn _    => NONE
             | M.TCut _       => NONE
+            | M.THalt _      => NONE
             | M.TPSumCase r  => doCase r
         end
 
@@ -3286,8 +3297,9 @@ struct
                     of M.IpEval _ => Effect.union (fx, Effect.fromList [Effect.InitRead, Effect.InitWrite])
                      | M.IpCall _ => fx)
                 | M.TCase _                      => T
-                | M.TPSumCase  _                 => T
                 | M.TCut _                       => Effect.FailsS
+                | M.THalt _                      => T
+                | M.TPSumCase  _                 => T
         in fx
         end
 
@@ -3303,6 +3315,8 @@ struct
        fn t => (case t of M.TReturn r => SOME r | _ => NONE)
       val tCut =
        fn t => (case t of M.TCut r => SOME r | _ => NONE)
+      val tHalt =
+       fn t => (case t of M.THalt r => SOME r | _ => NONE)
       val tPSumCase =
        fn t => (case t of M.TPSumCase r => SOME r | _ => NONE)
     end (* structure Dec *)

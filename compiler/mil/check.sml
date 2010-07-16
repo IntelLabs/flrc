@@ -1102,6 +1102,17 @@ struct
             val () = cuts (s, e, msg', cs)
           in ()
           end
+        | M.THalt opnd =>
+          let
+            fun msg' () = msg () ^ ": exit code"
+            val t = operand (s, e, msg', opnd)
+            fun badTyp () = reportError (s, msg () ^ ": exit code not SIntp")
+            val () =
+                case t
+                 of M.TIntegral t => if IntArb.equalTyps(t, MU.Sintp.intArbTyp (getConfig e)) then () else badTyp ()
+                  | _ => badTyp ()
+          in ()
+          end
         | M.TPSumCase sw =>
           let
             fun name' (s, e, msg, n) =
@@ -1137,6 +1148,7 @@ struct
                    | M.RTail _ => e)
               | M.TReturn _ => e
               | M.TCut _ => e
+              | M.THalt _ => e
               | M.TPSumCase _ => e
       in e
       end

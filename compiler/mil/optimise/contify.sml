@@ -616,6 +616,7 @@ struct
                    M.TGoto (M.T {block = r, arguments = os})
                  end)
           | M.TCut {cont, args, cuts} => M.TCut {cont = cont, args = args, cuts = rewriteCuts (state, env, cuts)}
+          | M.THalt _ => t
           | M.TPSumCase _ => t
 
     fun doInstr (state, env, i as M.I {dests, n, rhs}) =

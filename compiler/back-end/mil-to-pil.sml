@@ -1830,7 +1830,8 @@ struct
               val cuts = genCutsTo (state, env, cuts)
               val cut = Pil.S.contCutTo (genVarE (state, env, cont), cuts)
             in cut
-            end                     
+            end
+          | M.THalt opnd => Pil.S.call (Pil.E.namedConstant RT.exit, [genOperand (state, env, opnd)])
           | M.TPSumCase _ => notCoreMil (env, "genTransfer", "TPSumCase")
        end
 

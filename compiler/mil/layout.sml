@@ -815,6 +815,7 @@ struct
            L.mayAlign [L.seq [L.str "Cut ", layoutVariable (env, cont)],
                        LU.indent (LU.parenSeq (layoutOperands (env, args))),
                        LU.indent (layoutCuts (env, cuts))]
+         | M.THalt opnd => L.seq [L.str "Halt", L.paren (layoutOperand (env, opnd))]
          | M.TPSumCase s => layoutSwitch ("PSumCase", layoutName) (env, s)
 
    fun layoutBlock (env, (l, M.B {parameters, instructions, transfer})) =

@@ -324,6 +324,7 @@ functor MilAnalyseF (
               val () = analyseCuts (s, e, cuts)
             in ()
             end
+          | M.THalt opnd => analyseOperand (s, e, opnd)
           | M.TPSumCase ns => analyseSwitch (s, e, fn _ => (), ns)
       end
 

@@ -484,6 +484,7 @@ struct
     fun vTable      fk = Pil.identifier ("pLsrThunkValVTable"   ^ typ fk)
   end
 
+  val exit = Pil.identifier "pLsrExit"
   val pmain = Pil.identifier "__pmain"
   val gErrorVal = Pil.identifier "pLsrErrorVal"
 

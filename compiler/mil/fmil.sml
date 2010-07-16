@@ -117,6 +117,7 @@ struct
         | M.TInterProc {callee, ret, fx} => analyseReturn (s, e, f, l, ret)
         | M.TReturn os                   => ()
         | M.TCut {cont, args, cuts}      => ()
+        | M.THalt _                      => ()
         | M.TPSumCase s                  => ()
 
   fun analyseBlock (s, e, f, l, b) =

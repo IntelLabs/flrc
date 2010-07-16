@@ -532,6 +532,7 @@ struct
                 | M.TInterProc t => ()
                 | M.TReturn t => ()
                 | M.TCut t => ()
+                | M.THalt _ => ()
                 | M.TPSumCase t => replaceCase (a, b, c, instr, M.TPSumCase, t)
             end 
 
@@ -557,6 +558,7 @@ struct
                                   | Mil.TInterProc _ => false
                                   | Mil.TReturn _ => false
                                   | Mil.TCut _ => false
+                                  | Mil.THalt _ => false
                                   | Mil.TPSumCase _ => true))
                    then replaceTarget (a, b, c)
                    else ()

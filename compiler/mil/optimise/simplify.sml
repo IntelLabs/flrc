@@ -931,6 +931,8 @@ struct
         in try (Click.tCut, f)
         end
 
+    fun tHalt (state, (i, opnd)) = NONE
+
     val tPSumCase = 
         let
           val get = 
@@ -958,6 +960,7 @@ struct
                  | M.TInterProc ip => tInterProc (state, (i, ip))
                  | M.TReturn rts => tReturn (state, (i, rts))
                  | M.TCut ct => tCut (state, (i, ct))
+                 | M.THalt opnd => tHalt (state, (i, opnd))
                  | M.TPSumCase sw => tPSumCase (state, (i, sw)))
        in r
        end
