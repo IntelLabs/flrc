@@ -21,7 +21,7 @@ struct
        (#"C", MilContify.pass         ),
        (#"D", MilDblDiamond.pass      ),
        (#"F", MilFlatten.pass         ),
-       (#"f", MilLowerPFunctions.pass ),
+       (#"f", MilLowerClosures.pass ),
        (#"I", MilInlineLeaves.pass    ),  
        (#"J", MilInlineAggressive.pass),
        (#"K", MilInlineProfile.pass   ),

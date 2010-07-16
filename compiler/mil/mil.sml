@@ -71,7 +71,7 @@ struct
     | TThunk of typ
     (* HL *)
     | TPAny
-    | TPFunction of {args : typ Vector.t, ress : typ Vector.t}
+    | TClosure of {args : typ Vector.t, ress : typ Vector.t}
     | TPSum of typ ND.t
     | TPType of {kind : typKind, over : typ}
     | TPRef of typ
@@ -179,17 +179,17 @@ struct
                           (* thunk must be evaled *)
     | RhsThunkSpawn of {typ : fieldKind, thunk : variable, fx : effects}
     (* HL *)
-    | RhsPFunctionMk of {fvs : fieldKind Vector.t}
-    | RhsPFunctionInit of {
+    | RhsClosureMk of {fvs : fieldKind Vector.t}
+    | RhsClosureInit of {
         cls  : variable option, (* if absent, create;
-                                 * if present, must be from PFunctionMk
+                                 * if present, must be from ClosureMk
                                  *)
         code : variable option,
         (* Must be function name. If absent then this is an environment, 
          * which can only be projected from but not called.  *)
         fvs  : (fieldKind * operand) Vector.t
       }
-    | RhsPFunctionGetFv of
+    | RhsClosureGetFv of
         {fvs : fieldKind Vector.t, cls : variable, idx : int}
     | RhsPSetNew of operand
     | RhsPSetGet of variable
@@ -287,7 +287,7 @@ struct
     | GThunkValue of {typ : fieldKind, ofVal : simple}
     (* HL *)
     | GSimple     of simple
-    | GPFunction  of {code : variable option, fvs : (fieldKind * simple) Vector.t}
+    | GClosure    of {code : variable option, fvs : (fieldKind * simple) Vector.t}
     | GPSum       of {tag : name, typ : fieldKind, ofVal : simple}
     | GPSet       of simple
 

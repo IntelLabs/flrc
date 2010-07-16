@@ -362,19 +362,18 @@ struct
 
   structure Function  =
   struct
-    fun closureTyp (args, ress) = M.TPFunction {args = args, ress = ress}
 
-    fun mkUninit (c, fks) = M.RhsPFunctionMk {fvs = fks}
+    fun closureTyp (args, ress) = M.TClosure {args = args, ress = ress}
 
-    fun mkInit (c, code, fkos) = M.RhsPFunctionInit {cls = NONE, code = code, fvs = fkos}
+    fun mkUninit (c, fks) = M.RhsClosureMk {fvs = fks}
 
-    fun mkGlobal (c, code, fvs) = M.GPFunction {code = code, fvs = fvs}
+    fun mkInit (c, code, fkos) = M.RhsClosureInit {cls = NONE, code = code, fvs = fkos}
 
-    fun init (c, cls, code, fkos) = [M.RhsPFunctionInit {cls = SOME cls, 
-                                                         code = code, 
-                                                         fvs = fkos}]
+    fun mkGlobal (c, code, fvs) = M.GClosure {code = code, fvs = fvs}
 
-    fun getFv (c, fks, cls, idx) = M.RhsPFunctionGetFv {fvs = fks, cls = cls, idx = idx}
+    fun init (c, cls, code, fkos) = [M.RhsClosureInit {cls = SOME cls, code = code, fvs = fkos}]
+
+    fun getFv (c, fks, cls, idx) = M.RhsClosureGetFv {fvs = fks, cls = cls, idx = idx}
 
   end (* structure Function *)
 

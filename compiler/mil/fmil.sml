@@ -173,7 +173,7 @@ struct
           | M.GInteger i               => ()
           | M.GThunkValue {typ, ofVal} => ()
           | M.GSimple s                => ()
-          | M.GPFunction vo            => ()
+          | M.GClosure vo              => ()
           | M.GPSum {tag, typ, ofVal}  => ()
           | M.GPSet s                  => ()
       end

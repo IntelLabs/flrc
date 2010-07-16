@@ -108,7 +108,7 @@ struct
           of M.TName             => true
            | M.TTuple {pok, ...} => isPPObjKind (c, pok)
            | M.TPAny             => true
-           | M.TPFunction _      => true
+           | M.TClosure _        => true
            | M.TPSum _           => true
            | M.TPType _          => true
            | M.TPRef _           => true
@@ -201,7 +201,7 @@ struct
            | (M.TContinuation ts1, M.TContinuation ts2) => subtypes (c, ts2, ts1)
            | (M.TThunk t1, M.TThunk t2) => subtype (c, t1, t2)
            | (_, M.TPAny) => isPType (c, t1)
-           | (M.TPFunction {args = args1, ress = ress1}, M.TPFunction {args = args2, ress = ress2}) =>
+           | (M.TClosure {args = args1, ress = ress1}, M.TClosure {args = args2, ress = ress2}) =>
              subtypes (c, args2, args1) andalso subtypes (c, ress1, ress2)
            | (M.TPSum nts1, M.TPSum nts2) =>
              let
@@ -321,11 +321,11 @@ struct
                        end
                       | (M.TThunk t1, M.TThunk t2) => M.TThunk (up (t2, t2))
                       | (M.TPAny, M.TPAny) => M.TPAny
-                      | (M.TPFunction {args = args1, ress = ress1}, M.TPFunction {args = args2, ress = ress2}) => 
+                      | (M.TClosure {args = args1, ress = ress1}, M.TClosure {args = args2, ress = ress2}) => 
                         let
                           val args = <@ vector (args1, args2, down)
                           val ress = <@ vector (ress1, ress2, up)
-                        in M.TPFunction {args = args, ress = ress}
+                        in M.TClosure {args = args, ress = ress}
                         end
                       | (M.TPSum ts1, M.TPSum ts2) => Try.fail () (* handled elsewhere *)
                       | (M.TPType {kind = kind1, over = over1}, M.TPType {kind = kind2, over = over2}) => 
@@ -345,7 +345,7 @@ struct
                       | (M.TCode _, _) => Try.fail ()        | (M.TTuple _, _) => Try.fail ()
                       | (M.TIdx, _) => Try.fail ()           | (M.TContinuation _, _) => Try.fail ()
                       | (M.TThunk _, _) => Try.fail ()       | (M.TPAny, _) => Try.fail ()
-                      | (M.TPFunction _, _) => Try.fail ()   | (M.TPSum _, _) => Try.fail ()
+                      | (M.TClosure _, _) => Try.fail ()     | (M.TPSum _, _) => Try.fail ()
                       | (M.TPType _, _) => Try.fail ()       | (M.TPRef _, _) => Try.fail ()
                    )
                )
@@ -358,7 +358,7 @@ struct
       * The TRef, TPtr, TPAny, and TBits types each define a partition which includes
       * themselves and their exact immediate sub-types.  So for example, the SRef
       * class contains TRef, as well as TRat, TInteger, etc; but not TPAny nor any of
-      * its immediate sub-types (e.g. TPFunction, etc).  The boolean argument to these
+      * its immediate sub-types (e.g. TClosure, etc).  The boolean argument to these
       * classes indicate whether or not the summarized type is exact.  So for example,
       * TRef is classified by SRef false, whereas TRat is classified by SRef true.
       *)      
@@ -400,7 +400,7 @@ struct
             | M.TContinuation ts           => SPtr true
             | M.TThunk t                   => SRef true
             | M.TPAny                      => SPAny false
-            | M.TPFunction {args, ress}    => SPAny true
+            | M.TClosure {args, ress}      => SPAny true
             | M.TPSum nts                  => SPAny true
             | M.TPType {kind, over}        => SPAny true
             | M.TPRef t                    => SPAny true)
@@ -821,11 +821,11 @@ struct
            | M.GThunkValue {typ, ofVal} =>
              M.TThunk (simple (config, si, ofVal))
            | M.GSimple s => simple (config, si, s)
-           | M.GPFunction {code = NONE, ...} => M.TPAny
-           | M.GPFunction {code = SOME f, ...} => 
+           | M.GClosure {code = NONE, ...} => M.TPAny
+           | M.GClosure {code = SOME f, ...} => 
              (case variable (config, si, f)
                of M.TCode {args, ress, ...} =>
-                  M.TPFunction {args = args, ress = ress}
+                  M.TClosure {args = args, ress = ress}
                 | _ => M.TPAny)
            | M.GPSum {tag, typ, ofVal} =>
              M.TPSum (ND.singleton (tag, simple (config, si, ofVal)))
@@ -972,8 +972,8 @@ struct
                                              operands (state, opers),
                                              NONE)
          | M.GThunkValue s => M.TThunk (operand (state, s))
-         | M.GPFunction NONE => M.TPAny
-         | M.GPFunction (SOME f) => 
+         | M.GClosure NONE => M.TPAny
+         | M.GClosure (SOME f) => 
            (case variable (state, f)
              of M.TCode (_, args, rtyps) => MD.T.ptFunction (args, rtyps)
               | _ => M.TPAny)

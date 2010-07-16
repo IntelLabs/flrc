@@ -181,7 +181,7 @@ sig
       val tContinuation : t -> t Vector.t option
       val tThunk : t -> t option
       val tPAny : t -> unit option
-      val tPFunction : t -> {args : t Vector.t, ress : t Vector.t} option
+      val tClosure : t -> {args : t Vector.t, ress : t Vector.t} option
       val tPSum : t -> t Mil.ND.t option
       val tPType : t -> {kind : Mil.typKind, over : t} option
       val tPRef : t -> t option
@@ -409,13 +409,13 @@ sig
       } option
       val rhsThunkGetValue : t -> {typ : Mil.fieldKind, thunk : Mil.variable} option
       val rhsThunkSpawn : t -> {typ : Mil.fieldKind, thunk : Mil.variable, fx : Mil.effects} option
-      val rhsPFunctionMk : t -> {fvs : Mil.fieldKind Vector.t} option
-      val rhsPFunctionInit : t -> {
+      val rhsClosureMk : t -> {fvs : Mil.fieldKind Vector.t} option
+      val rhsClosureInit : t -> {
         cls  : Mil.variable option, 
         code : Mil.variable option, 
         fvs  : (Mil.fieldKind * Mil.operand) Vector.t
       } option
-      val rhsPFunctionGetFv : t -> {fvs : Mil.fieldKind Vector.t, cls : Mil.variable, idx : int} option
+      val rhsClosureGetFv : t -> {fvs : Mil.fieldKind Vector.t, cls : Mil.variable, idx : int} option
       val rhsPSetNew : t -> Mil.operand option
       val rhsPSetGet : t -> Mil.variable option
       val rhsPSetCond : t -> {bool : Mil.operand, ofVal: Mil.operand} option
@@ -697,8 +697,7 @@ sig
       val gInteger : t -> IntInf.t option
       val gThunkValue : t -> {typ : Mil.fieldKind, ofVal : Mil.simple} option
       val gSimple : t -> Mil.simple option
-      val gPFunction : t -> {code : Mil.variable option,         
-                             fvs  : (Mil.fieldKind * Mil.operand) Vector.t} option
+      val gClosure : t -> {code : Mil.variable option, fvs  : (Mil.fieldKind * Mil.operand) Vector.t} option
       val gPSum : t -> {tag : Mil.name, typ : Mil.fieldKind, ofVal : Mil.simple} option
       val gPSet : t -> Mil.simple option
     end (* structure Dec *)
@@ -1193,9 +1192,9 @@ struct
             | (M.TPAny,            M.TPAny           ) => EQUAL
             | (M.TPAny,            _                 ) => LESS
             | (_,                  M.TPAny           ) => GREATER
-            | (M.TPFunction x1,    M.TPFunction x2   ) => pclosure (x1, x2)
-            | (M.TPFunction _,     _                 ) => LESS
-            | (_,                  M.TPFunction _    ) => GREATER
+            | (M.TClosure x1,      M.TClosure x2     ) => pclosure (x1, x2)
+            | (M.TClosure _,       _                 ) => LESS
+            | (_,                  M.TClosure _      ) => GREATER
             | (M.TPSum x1,         M.TPSum x2        ) => psum (x1, x2)
             | (M.TPSum _,          _                 ) => LESS
             | (_,                  M.TPSum _         ) => GREATER
@@ -1407,15 +1406,15 @@ struct
             | (M.RhsThunkSpawn     x1, M.RhsThunkSpawn     x2) => thks (x1, x2)
             | (M.RhsThunkSpawn     _ , _                     ) => LESS
             | (_                     , M.RhsThunkSpawn     _ ) => GREATER
-            | (M.RhsPFunctionMk    x1, M.RhsPFunctionMk    x2) => pfmk (x1, x2)
-            | (M.RhsPFunctionMk    _ , _                     ) => LESS
-            | (_                     , M.RhsPFunctionMk    _ ) => GREATER
-            | (M.RhsPFunctionInit  x1, M.RhsPFunctionInit  x2) => pfi (x1, x2)
-            | (M.RhsPFunctionInit  _ , _                     ) => LESS
-            | (_                     , M.RhsPFunctionInit  _ ) => GREATER
-            | (M.RhsPFunctionGetFv x1, M.RhsPFunctionGetFv x2) => pffv (x1, x2)
-            | (M.RhsPFunctionGetFv _ , _                     ) => LESS
-            | (_                     , M.RhsPFunctionGetFv _ ) => GREATER
+            | (M.RhsClosureMk      x1, M.RhsClosureMk    x2  ) => pfmk (x1, x2)
+            | (M.RhsClosureMk      _ , _                     ) => LESS
+            | (_                     , M.RhsClosureMk    _   ) => GREATER
+            | (M.RhsClosureInit    x1, M.RhsClosureInit  x2  ) => pfi (x1, x2)
+            | (M.RhsClosureInit    _ , _                     ) => LESS
+            | (_                     , M.RhsClosureInit  _   ) => GREATER
+            | (M.RhsClosureGetFv   x1, M.RhsClosureGetFv x2  ) => pffv (x1, x2)
+            | (M.RhsClosureGetFv   _ , _                     ) => LESS
+            | (_                     , M.RhsClosureGetFv _   ) => GREATER
             | (M.RhsPSetNew        x1, M.RhsPSetNew        x2) => opnd (x1, x2)
             | (M.RhsPSetNew        _ , _                     ) => LESS
             | (_                     , M.RhsPSetNew        _ ) => GREATER
@@ -1583,9 +1582,9 @@ struct
           | (M.GSimple     x1, M.GSimple     x2) => simple (x1, x2)
           | (M.GSimple     _ , _               ) => LESS
           | (_               , M.GSimple     _ ) => GREATER
-          | (M.GPFunction  x1, M.GPFunction  x2) => pfunction (x1, x2)
-          | (M.GPFunction  _ , _               ) => LESS
-          | (_               , M.GPFunction  _ ) => GREATER
+          | (M.GClosure    x1, M.GClosure    x2) => pfunction (x1, x2)
+          | (M.GClosure    _ , _               ) => LESS
+          | (_               , M.GClosure    _ ) => GREATER
           | (M.GPSum       x1, M.GPSum       x2) => psum (x1, x2)
           | (M.GPSum       _ , _               ) => LESS
           | (_               , M.GPSum       _ ) => GREATER
@@ -1750,7 +1749,7 @@ struct
            | M.TContinuation ts           => NONE
            | M.TThunk t                   => SOME M.PokCell 
            | M.TPAny                      => NONE
-           | M.TPFunction {args, ress}    => SOME M.PokFunction
+           | M.TClosure {args, ress}      => SOME M.PokFunction
            | M.TPSum nts                  => SOME M.PokTagged
            | M.TPType {kind, over}        => SOME M.PokType
            | M.TPRef t                    => SOME M.PokPtr)
@@ -1949,7 +1948,7 @@ struct
           | M.TContinuation ts           => 
           | M.TThunk t                   => 
           | M.TPAny                      => 
-          | M.TPFunction {args, ress}    => 
+          | M.TClosure {args, ress}      => 
           | M.TPSum nts                  => 
           | M.TPType {kind, over}        => 
           | M.TPRef t                    => 
@@ -1979,7 +1978,7 @@ struct
           | M.TContinuation ts           => TS.TsNonRefPtr
           | M.TThunk t                   => TS.TsRef
           | M.TPAny                      => TS.TsRef
-          | M.TPFunction {args, ress}    => TS.TsRef
+          | M.TClosure {args, ress}      => TS.TsRef
           | M.TPSum nts                  => TS.TsRef
           | M.TPType {kind, over}        => TS.TsRef
           | M.TPRef t                    => TS.TsRef
@@ -2027,7 +2026,7 @@ struct
           | M.TContinuation ts           => true
           | M.TThunk t                   => true
           | M.TPAny                      => false
-          | M.TPFunction {args, ress}    => false
+          | M.TClosure {args, ress}      => false
           | M.TPSum nts                  => false
           | M.TPType {kind, over}        => false
           | M.TPRef t                    => false
@@ -2079,8 +2078,8 @@ struct
        fn t => (case t of M.TThunk r => SOME r | _ => NONE)
       val tPAny = 
        fn t => (case t of M.TPAny => SOME () | _ => NONE)
-      val tPFunction = 
-       fn t => (case t of M.TPFunction r => SOME r | _ => NONE)
+      val tClosure = 
+       fn t => (case t of M.TClosure r => SOME r | _ => NONE)
       val tPSum = 
        fn t => (case t of M.TPSum r => SOME r | _ => NONE)
       val tPType = 
@@ -2229,7 +2228,7 @@ struct
            | M.TContinuation ts           => SOME (M.FkBits (FieldSize.ptrSize c))
            | M.TThunk t                   => SOME M.FkRef
            | M.TPAny                      => SOME M.FkRef
-           | M.TPFunction {args, ress}    => SOME M.FkRef
+           | M.TClosure {args, ress}      => SOME M.FkRef
            | M.TPSum nts                  => SOME M.FkRef
            | M.TPType {kind, over}        => SOME M.FkRef
            | M.TPRef t                    => SOME M.FkRef)
@@ -2563,9 +2562,9 @@ struct
           | M.RhsThunkValue _     => true
           | M.RhsThunkGetValue _  => true
           | M.RhsThunkSpawn _     => true
-          | M.RhsPFunctionMk _    => false
-          | M.RhsPFunctionInit _  => false
-          | M.RhsPFunctionGetFv _ => false
+          | M.RhsClosureMk _      => false
+          | M.RhsClosureInit _    => false
+          | M.RhsClosureGetFv _   => false
           | M.RhsPSetNew _        => false
           | M.RhsPSetGet _        => false
           | M.RhsPSetCond _       => false
@@ -2643,9 +2642,9 @@ struct
           | M.RhsThunkValue x         => thunkValue x
           | M.RhsThunkGetValue _      => InitReadS
           | M.RhsThunkSpawn {fx, ...} => fx
-          | M.RhsPFunctionMk _        => InitGenS
-          | M.RhsPFunctionInit x      => pFunctionInit x
-          | M.RhsPFunctionGetFv _     => InitReadS
+          | M.RhsClosureMk _          => InitGenS
+          | M.RhsClosureInit x        => pFunctionInit x
+          | M.RhsClosureGetFv _       => InitReadS
           | M.RhsPSetNew _            => T
           | M.RhsPSetGet _            => T
           | M.RhsPSetCond _           => T
@@ -2661,7 +2660,7 @@ struct
            | M.RhsTupleInited {tup, ...} => SOME tup
            | M.RhsThunkInit {thunk, ...} => thunk
            | M.RhsThunkValue {thunk, ...} => thunk
-           | M.RhsPFunctionInit {cls, ...} => cls
+           | M.RhsClosureInit {cls, ...} => cls
            | _ => NONE)
 
     val isInit = isSome o getInit
@@ -2689,9 +2688,9 @@ struct
            | M.RhsThunkValue _         => SOME M.PokCell 
            | M.RhsThunkGetValue _      => NONE
            | M.RhsThunkSpawn _         => NONE
-           | M.RhsPFunctionMk _        => SOME M.PokFunction
-           | M.RhsPFunctionInit x      => SOME M.PokFunction
-           | M.RhsPFunctionGetFv _     => NONE
+           | M.RhsClosureMk _          => SOME M.PokFunction
+           | M.RhsClosureInit x        => SOME M.PokFunction
+           | M.RhsClosureGetFv _       => NONE
            | M.RhsPSetNew _            => SOME M.PokOptionSet
            | M.RhsPSetGet _            => NONE
            | M.RhsPSetCond _           => SOME M.PokOptionSet
@@ -2718,10 +2717,10 @@ struct
           | M.RhsThunkValue {thunk = SOME _, ...}  => 0
           | M.RhsThunkGetValue _                   => 1
           | M.RhsThunkSpawn _                      => 0
-          | M.RhsPFunctionMk _                     => 1
-          | M.RhsPFunctionInit {cls = NONE, ...}   => 1
-          | M.RhsPFunctionInit {cls = SOME _, ...} => 0
-          | M.RhsPFunctionGetFv _                  => 1
+          | M.RhsClosureMk _                       => 1
+          | M.RhsClosureInit {cls = NONE, ...}     => 1
+          | M.RhsClosureInit {cls = SOME _, ...}   => 0
+          | M.RhsClosureGetFv _                    => 1
           | M.RhsPSetNew _                         => 1
           | M.RhsPSetGet _                         => 1
           | M.RhsPSetCond _                        => 1
@@ -2761,12 +2760,12 @@ struct
        fn rhs => (case rhs of M.RhsThunkGetValue r => SOME r | _ => NONE)
       val rhsThunkSpawn = 
        fn rhs => (case rhs of M.RhsThunkSpawn r => SOME r | _ => NONE)
-      val rhsPFunctionMk = 
-       fn rhs => (case rhs of M.RhsPFunctionMk r => SOME r | _ => NONE)
-      val rhsPFunctionInit = 
-       fn rhs => (case rhs of M.RhsPFunctionInit r => SOME r | _ => NONE)
-      val rhsPFunctionGetFv = 
-       fn rhs => (case rhs of M.RhsPFunctionGetFv r => SOME r | _ => NONE)
+      val rhsClosureMk = 
+       fn rhs => (case rhs of M.RhsClosureMk r => SOME r | _ => NONE)
+      val rhsClosureInit = 
+       fn rhs => (case rhs of M.RhsClosureInit r => SOME r | _ => NONE)
+      val rhsClosureGetFv = 
+       fn rhs => (case rhs of M.RhsClosureGetFv r => SOME r | _ => NONE)
       val rhsPSetNew = 
        fn rhs => (case rhs of M.RhsPSetNew r => SOME r | _ => NONE)
       val rhsPSetGet = 
@@ -3521,7 +3520,7 @@ struct
           | M.GInteger _    => true
           | M.GThunkValue _ => true
           | M.GSimple _     => false
-          | M.GPFunction _  => false
+          | M.GClosure _    => false
           | M.GPSum _       => false
           | M.GPSet _       => false
 
@@ -3540,7 +3539,7 @@ struct
            | M.GInteger _           => NONE
            | M.GThunkValue _        => SOME M.PokCell 
            | M.GSimple s            => Simple.pObjKind s
-           | M.GPFunction _         => SOME M.PokFunction
+           | M.GClosure _           => SOME M.PokFunction
            | M.GPSum _              => SOME M.PokTagged
            | M.GPSet _              => SOME M.PokOptionSet)
 
@@ -3566,8 +3565,8 @@ struct
        fn g => (case g of M.GThunkValue r => SOME r | _ => NONE)
       val gSimple =
        fn g => (case g of M.GSimple r => SOME r | _ => NONE)
-      val gPFunction =
-       fn g => (case g of M.GPFunction r => SOME r | _ => NONE)
+      val gClosure =
+       fn g => (case g of M.GClosure r => SOME r | _ => NONE)
       val gPSum =
        fn g => (case g of M.GPSum r => SOME r | _ => NONE)
       val gPSet =
@@ -4093,8 +4092,8 @@ struct
       val pFunction =
        fn d =>
           (case d
-            of DefGlobal (M.GPFunction r) => SOME r
-             | DefRhs (M.RhsPFunctionInit {cls, code, fvs}) => SOME {code = code, fvs = fvs}
+            of DefGlobal (M.GClosure r) => SOME r
+             | DefRhs (M.RhsClosureInit {cls, code, fvs}) => SOME {code = code, fvs = fvs}
              | _ => NONE)
       val pSum =
        fn d =>
@@ -4282,7 +4281,7 @@ struct
            | M.TContinuation ts           => M.TPtr
            | M.TThunk t                   => M.TRef
            | M.TPAny                      => M.TPAny
-           | M.TPFunction {args, ress}    => M.TPAny
+           | M.TClosure {args, ress}      => M.TPAny
            | M.TPSum nts                  => M.TPAny
            | M.TPType {kind, over}        => M.TPAny
            | M.TPRef t                    => M.TPAny)

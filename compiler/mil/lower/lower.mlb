@@ -7,7 +7,7 @@ local
         ../mil.mlb
         mil-to-core-mil.sml
 in
-        structure MilLowerPFunctions
+        structure MilLowerClosures
         structure MilLowerPSums
         structure MilLowerPTypes
 end

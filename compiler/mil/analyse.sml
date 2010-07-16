@@ -176,8 +176,8 @@ functor MilAnalyseF (
           end
         | M.RhsThunkGetValue {typ, thunk} => analyseVariable (s, e, thunk)
         | M.RhsThunkSpawn {typ, thunk, fx} => analyseVariable (s, e, thunk)
-        | M.RhsPFunctionMk {fvs} => ()
-        | M.RhsPFunctionInit {cls, code, fvs} =>
+        | M.RhsClosureMk {fvs} => ()
+        | M.RhsClosureInit {cls, code, fvs} =>
           let
             val () = analyseVariableO (s, e, cls)
             val () = analyseVariableO (s, e, code)
@@ -185,7 +185,7 @@ functor MilAnalyseF (
             val () = Vector.foreach (fvs, doOne)
           in ()
           end
-        | M.RhsPFunctionGetFv {fvs, cls, idx} => analyseVariable (s, e, cls)
+        | M.RhsClosureGetFv {fvs, cls, idx} => analyseVariable (s, e, cls)
         | M.RhsPSetNew opnd => analyseOperand (s, e, opnd)
         | M.RhsPSetGet v => analyseVariable (s, e, v)
         | M.RhsPSetCond {bool, ofVal} =>
@@ -383,7 +383,7 @@ functor MilAnalyseF (
           | M.GInteger _               => ()
           | M.GThunkValue {typ, ofVal} => analyseSimple (s, e, ofVal)
           | M.GSimple simp             => analyseSimple (s, e, simp)
-          | M.GPFunction {code, fvs}   => 
+          | M.GClosure {code, fvs}   => 
             let
               val () = analyseVariableO (s, e, code)
               fun doOne (fk, opnd) = analyseOperand (s, e, opnd)

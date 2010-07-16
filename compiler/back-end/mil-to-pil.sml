@@ -981,7 +981,7 @@ struct
           in t
           end
         | M.TPAny => Pil.T.named RT.T.pAny
-        | M.TPFunction _ => notCoreMil (env, "genTyp", "TPFunction")
+        | M.TClosure _ => notCoreMil (env, "genTyp", "TClosure")
         | M.TPSum _ => notCoreMil (env, "genTyp", "TPSum")
         | M.TPType _ => notCoreMil (env, "genTyp", "TPType")
         | M.TPRef _ => notCoreMil (env, "genTyp", "TPRef")
@@ -1511,10 +1511,10 @@ struct
             in
               assign (Pil.E.call (Pil.E.variable (RT.Thunk.spawn typ), [v]))
             end
-          | M.RhsPFunctionMk _ => notCoreMil (env, "genRhs", "PFunctionMk")
-          | M.RhsPFunctionInit _ => notCoreMil (env, "genRhs", "PFunctionInit")
-          | M.RhsPFunctionGetFv _ =>
-            notCoreMil (env, "genRhs", "PFunctionGetGv")
+          | M.RhsClosureMk _ => notCoreMil (env, "genRhs", "ClosureMk")
+          | M.RhsClosureInit _ => notCoreMil (env, "genRhs", "ClosureInit")
+          | M.RhsClosureGetFv _ =>
+            notCoreMil (env, "genRhs", "ClosureGetGv")
           | M.RhsPSetNew _ => notCoreMil (env, "genRhs", "PSetNew")
           | M.RhsPSetGet _ => notCoreMil (env, "genRhs", "PSetGEt")
           | M.RhsPSetCond _ => notCoreMil (env, "genRhs", "PSetCond")
@@ -2253,9 +2253,9 @@ struct
                  in d
                  end
               | M.GSimple s => Pil.D.sequence []
-              | M.GPFunction code => notCoreMil (env, "genGlobal", "GPFunction")
-              | M.GPSum _         => notCoreMil (env, "genGlobal", "GPSum")
-              | M.GPSet _         => notCoreMil (env, "genGlobal", "GPSet")
+              | M.GClosure code => notCoreMil (env, "genGlobal", "GClosure")
+              | M.GPSum _ => notCoreMil (env, "genGlobal", "GPSum")
+              | M.GPSet _ => notCoreMil (env, "genGlobal", "GPSet")
       in 
         res
       end

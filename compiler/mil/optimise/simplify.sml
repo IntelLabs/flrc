@@ -186,8 +186,8 @@ struct
          ("ObjectGetKind",    "ObjectGetKinds reduced"         ),
          ("OptInteger",       "Integers represented as ints"   ),
          ("OptRational",      "Rationals represented as ints"  ),
-         ("PFunctionGetFv",   "Closure fv projections reduced" ),
-         ("PFunctionInitCode","Closure code ptrs killed"       ),
+         ("ClosureGetFv",     "Closure fv projections reduced" ),
+         ("ClosureInitCode",  "Closure code ptrs killed"       ),
          ("PSetCond",         "SetCond ops reduced"            ),
          ("PSetGet",          "SetGet ops reduced"             ),
          ("PSetNewEta",       "SetNew ops eta reduced"         ),
@@ -266,8 +266,8 @@ struct
     val objectGetKind = clicker "ObjectGetKind"
     val optInteger = clicker "OptInteger"
     val optRational = clicker "OptRational"
-    val pFunctionGetFv = clicker "PFunctionGetFv"
-    val pFunctionInitCode = clicker "PFunctionInitCode"
+    val pFunctionGetFv = clicker "ClosureGetFv"
+    val pFunctionInitCode = clicker "ClosureInitCode"
     val pSetCond = clicker  "PSetCond"
     val pSetGet = clicker  "PSetGet"
     val pSetNewEta = clicker "PSetNewEta"
@@ -322,13 +322,13 @@ struct
        (#ofVal <! MU.Def.Out.thunkValue <! Def.toMilDef o Def.get) 
          || (#ofVal <! MU.Rhs.Dec.rhsThunkValue o MU.Instruction.rhs <! getUniqueInit)
 
-   val getPFunctionInitCodeFromVariable = 
+   val getClosureInitCodeFromVariable = 
        (<@ #code <! MU.Def.Out.pFunction <! Def.toMilDef o Def.get)
-         || (<@ #code <! MU.Rhs.Dec.rhsPFunctionInit o MU.Instruction.rhs <! getUniqueInit)
+         || (<@ #code <! MU.Rhs.Dec.rhsClosureInit o MU.Instruction.rhs <! getUniqueInit)
 
-   val getPFunctionInitFvsFromVariable = 
+   val getClosureInitFvsFromVariable = 
        (#fvs <! MU.Def.Out.pFunction <! Def.toMilDef o Def.get)
-         || (#fvs <! MU.Rhs.Dec.rhsPFunctionInit o MU.Instruction.rhs <! getUniqueInit)
+         || (#fvs <! MU.Rhs.Dec.rhsClosureInit o MU.Instruction.rhs <! getUniqueInit)
 
    val getThunkInitFromVariable = 
        (<@ MU.Rhs.Dec.rhsThunkInit <! Def.toRhs o Def.get)
@@ -700,8 +700,8 @@ struct
                 (* Ensure that this code pointer only escapes
                  * into this closure.  *)
                 val uses = Use.getUses (imil, code)
-                val getCode = (<@ #code <! MU.Rhs.Dec.rhsPFunctionInit <! Use.toRhs)
-                           || (<@ #code <! MU.Global.Dec.gPFunction o #2 <! Use.toGlobal)
+                val getCode = (<@ #code <! MU.Rhs.Dec.rhsClosureInit <! Use.toRhs)
+                           || (<@ #code <! MU.Global.Dec.gClosure o #2 <! Use.toGlobal)
                 val isInit = 
                  fn u => 
                     (case getCode u
@@ -719,8 +719,8 @@ struct
                             of I.UseGlobal g => 
                                let
                                  val (v, mg) = <@ IGlobal.toGlobal g
-                                 val {code, fvs} = <@ MU.Global.Dec.gPFunction mg
-                                 val mg = M.GPFunction {code = NONE, fvs = fvs}
+                                 val {code, fvs} = <@ MU.Global.Dec.gClosure mg
+                                 val mg = M.GClosure {code = NONE, fvs = fvs}
                                  val () = IGlobal.replaceMil (imil, g, I.GGlobal (v, mg))
                                in ()
                                end
@@ -728,8 +728,8 @@ struct
                                let
                                  val mi = <@ IInstr.toInstruction i
                                  val M.I {dests, n, rhs} = mi
-                                 val {cls, code, fvs} = <@ MU.Rhs.Dec.rhsPFunctionInit rhs
-                                 val rhs = M.RhsPFunctionInit {cls = cls, code = NONE, fvs = fvs}
+                                 val {cls, code, fvs} = <@ MU.Rhs.Dec.rhsClosureInit rhs
+                                 val rhs = M.RhsClosureInit {cls = cls, code = NONE, fvs = fvs}
                                  val mi = M.I {dests = dests, n = n, rhs = rhs}
                                  val () = IInstr.replaceInstruction (imil, i, mi)
                                in ()
@@ -801,7 +801,7 @@ struct
                         of (true, 1) => valOf (VS.getAny possible)
                          | _ => 
                            let
-                             val code = <@ getPFunctionInitCodeFromVariable (imil, cls)
+                             val code = <@ getClosureInitCodeFromVariable (imil, cls)
                            in code
                            end)
                   val call = M.CDirectClosure {cls = cls, code = code}
@@ -1521,13 +1521,13 @@ struct
                            val l = add (dest, M.GThunkValue {typ = typ, ofVal = ofVal})
                          in l
                          end
-                       | M.RhsPFunctionInit {cls, code, fvs} =>
+                       | M.RhsClosureInit {cls, code, fvs} =>
                          let
                            val vOpt = <@ Utils.Option.fromVector dests
                            val dest = <@ Utils.Option.atMostOneOf (cls, vOpt)
                            val () = Try.require (Option.forall (code, fn v => Var.isGlobal (imil, v)))
                            val () = Try.require (Vector.forall (fvs, fn (fk, oper) => const oper))
-                           val l = add (dest, M.GPFunction {code = code, fvs = fvs})
+                           val l = add (dest, M.GClosure {code = code, fvs = fvs})
                          in l
                          end
                        | M.RhsPSetNew op1 => 
@@ -1907,7 +1907,7 @@ struct
                  val () = Try.require (not (IFunc.getEscapes (imil, iFunc)))
                  val uses = IMil.Use.getUses (imil, fcode)
                  val () = Try.V.lenEq (uses, 1)
-                 val rhs = M.RhsPFunctionInit {cls = cls, code = NONE, fvs = fvs}
+                 val rhs = M.RhsClosureInit {cls = cls, code = NONE, fvs = fvs}
                  val mi = MU.Instruction.new' (dests, rhs)
                  val () = IInstr.replaceInstruction (imil, i, mi)
               in [I.ItemInstr i]
@@ -1922,7 +1922,7 @@ struct
               let
                 val v = Try.V.singleton dests
                 val fv =
-                    case getPFunctionInitFvsFromVariable (imil, cls)
+                    case getClosureInitFvsFromVariable (imil, cls)
                      of SOME fvs => #2 o Try.V.sub @@ (fvs, idx)
                       | NONE => 
                         let
@@ -2055,9 +2055,9 @@ struct
                 | M.RhsThunkValue r     => thunkValue (state, (i, dests, r))
                 | M.RhsThunkGetValue r  => thunkGetValue (state, (i, dests, r))
                 | M.RhsThunkSpawn r     => thunkSpawn (state, (i, dests, r))
-                | M.RhsPFunctionMk r    => pFunctionMk (state, (i, dests, r))
-                | M.RhsPFunctionInit r  => pFunctionInit (state, (i, dests, r))
-                | M.RhsPFunctionGetFv r => pFunctionGetFv (state, (i, dests, r))
+                | M.RhsClosureMk r      => pFunctionMk (state, (i, dests, r))
+                | M.RhsClosureInit r    => pFunctionInit (state, (i, dests, r))
+                | M.RhsClosureGetFv r   => pFunctionGetFv (state, (i, dests, r))
                 | M.RhsPSetNew r        => pSetNew (state, (i, dests, r))
                 | M.RhsPSetGet r        => pSetGet (state, (i, dests, r))
                 | M.RhsPSetCond r       => pSetCond (state, (i, dests, r))

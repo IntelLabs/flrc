@@ -355,7 +355,7 @@ struct
      *    Fourth, for each call to an inlined cb, change it to a jump to the
      *    cb's entry label, which must be transformed for closures and thunks
      *    to include the implicit argument and to load the free variables.
-     *   For each GPFunction and RhsPFunctionInit, if the code is not unknown
+     *   For each GClosure and RhsClosureInit, if the code is not unknown
      *   then replace it with a dummy code pointer.
      *)
 
@@ -620,13 +620,13 @@ struct
 
     fun doInstr (state, env, i as M.I {dests, n, rhs}) =
         case rhs
-         of M.RhsPFunctionInit {cls, code = SOME codeVar, fvs} =>
+         of M.RhsClosureInit {cls, code = SOME codeVar, fvs} =>
             if keep (env, codeVar) then 
               i
             else
               let
                 val () = click (state, "dummyCode")
-                val rhs = M.RhsPFunctionInit {cls = cls, code = NONE, fvs = fvs}
+                val rhs = M.RhsClosureInit {cls = cls, code = NONE, fvs = fvs}
                 val i = M.I {dests = dests, n = n, rhs = rhs}
               in i
               end
@@ -664,7 +664,7 @@ struct
                     val fvts = Vector.map (fvs, fn v => MU.SymbolTableManager.variableTyp (getStm state, v))
                     val fvfks = Vector.map (fvts, fn t => MU.FieldKind.fromTyp (getConfig env, t))
                     fun doOne (i, fv) =
-                        M.I {dests = Vector.new1 fv, n = 0, rhs = M.RhsPFunctionGetFv {fvs = fvfks, cls = cls, idx = i}}
+                        M.I {dests = Vector.new1 fv, n = 0, rhs = M.RhsClosureGetFv {fvs = fvfks, cls = cls, idx = i}}
                     val is = Vector.mapi (fvs, doOne)
                   in (args, is)
                   end
@@ -834,11 +834,11 @@ struct
               VD.insert (globals, x, M.GCode (transformCode (state, env, x, f)))
             else
               globals
-          | M.GPFunction {code = SOME c, fvs} =>
+          | M.GClosure {code = SOME c, fvs} =>
             let
               val c = if keep (env, c) then SOME c else NONE
             in
-              VD.insert (globals, x, M.GPFunction {code = c, fvs = fvs})
+              VD.insert (globals, x, M.GClosure {code = c, fvs = fvs})
             end
           | _ => VD.insert (globals, x, g)
 

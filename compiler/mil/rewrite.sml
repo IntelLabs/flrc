@@ -149,8 +149,7 @@ struct
         case rhs 
          of M.RhsSimple s => M.RhsSimple (simple (state, env, s))
           | M.RhsPrim {prim, createThunks, args} =>
-            M.RhsPrim {prim = prim, createThunks = createThunks,
-                       args = doOps args}
+            M.RhsPrim {prim = prim, createThunks = createThunks, args = doOps args}
           | M.RhsTuple {vtDesc, inits} =>
             M.RhsTuple {vtDesc = vtDesc, inits = doOps inits}
           | M.RhsTupleSub tf => M.RhsTupleSub (doTf tf)
@@ -164,28 +163,20 @@ struct
           | M.RhsObjectGetKind v => M.RhsObjectGetKind (doVar v)
           | M.RhsThunkMk {typ, fvs} => rhs
           | M.RhsThunkInit {typ, thunk, fx, code, fvs} =>
-            M.RhsThunkInit {typ   = typ,
-                            thunk = doVarO thunk,
-                            fx    = fx,
-                            code  = doVarO code,
-                            fvs   = doFkOps fvs}
+            M.RhsThunkInit {typ   = typ, thunk = doVarO thunk, fx    = fx, code  = doVarO code, fvs   = doFkOps fvs}
           | M.RhsThunkGetFv {typ, fvs, thunk, idx} =>
-            M.RhsThunkGetFv {typ = typ, fvs = fvs, thunk = doVar thunk,
-                             idx = idx}
+            M.RhsThunkGetFv {typ = typ, fvs = fvs, thunk = doVar thunk, idx = idx}
           | M.RhsThunkValue {typ, thunk, ofVal} =>
-            M.RhsThunkValue {typ = typ, thunk = doVarO thunk,
-                             ofVal = doOp ofVal}
+            M.RhsThunkValue {typ = typ, thunk = doVarO thunk, ofVal = doOp ofVal}
           | M.RhsThunkGetValue {typ, thunk} =>
             M.RhsThunkGetValue {typ = typ, thunk = doVar thunk}
           | M.RhsThunkSpawn {typ, thunk, fx} =>
             M.RhsThunkSpawn {typ = typ, thunk = doVar thunk, fx = fx}
-          | M.RhsPFunctionMk {fvs} => rhs
-          | M.RhsPFunctionInit {cls, code, fvs} =>
-            M.RhsPFunctionInit {cls  = doVarO cls,
-                                code = doVarO code,
-                                fvs  = doFkOps fvs}
-          | M.RhsPFunctionGetFv {fvs, cls, idx} =>
-            M.RhsPFunctionGetFv {fvs = fvs, cls = doVar cls, idx = idx}
+          | M.RhsClosureMk {fvs} => rhs
+          | M.RhsClosureInit {cls, code, fvs} =>
+            M.RhsClosureInit {cls  = doVarO cls, code = doVarO code, fvs  = doFkOps fvs}
+          | M.RhsClosureGetFv {fvs, cls, idx} =>
+            M.RhsClosureGetFv {fvs = fvs, cls = doVar cls, idx = idx}
           | M.RhsPSetNew opnd => M.RhsPSetNew (doOp opnd)
           | M.RhsPSetGet v => M.RhsPSetGet (doVar v)
           | M.RhsPSetCond {bool, ofVal} =>
@@ -411,19 +402,15 @@ struct
                     | M.GErrorVal _ => global
                     | M.GIdx _ => global
                     | M.GTuple {vtDesc, inits} =>
-                      M.GTuple {vtDesc = vtDesc,
-                                inits = operands (state, env, inits)}
+                      M.GTuple {vtDesc = vtDesc, inits = operands (state, env, inits)}
                     | M.GRat _ => global
                     | M.GInteger _ => global
                     | M.GThunkValue {typ, ofVal} =>
-                      M.GThunkValue {typ = typ,
-                                     ofVal = simple (state, env, ofVal)}
+                      M.GThunkValue {typ = typ, ofVal = simple (state, env, ofVal)}
                     | M.GSimple s => M.GSimple (simple (state, env, s))
-                    | M.GPFunction {code, fvs} => M.GPFunction {code = doVarO code,
-                                                                fvs  = doFkOps fvs}
+                    | M.GClosure {code, fvs} => M.GClosure {code = doVarO code, fvs  = doFkOps fvs}
                     | M.GPSum {tag, typ, ofVal} =>
-                      M.GPSum {tag = tag, typ = typ,
-                               ofVal = simple (state, env, ofVal)}
+                      M.GPSum {tag = tag, typ = typ, ofVal = simple (state, env, ofVal)}
                     | M.GPSet s => M.GPSet (simple (state, env, s))
             in (x, global)
             end

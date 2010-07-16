@@ -176,7 +176,7 @@ struct
    fun showTupDesc      e = #tupDesc    (getOptions e)
    fun showThunkTyp     e = #thunkTyp   (getOptions e)
    fun showThunkFvs     e = #thunkFvs   (getOptions e)
-   fun showPFunctionFvs e = #pFunFvs    (getOptions e)
+   fun showClosureFvs e = #pFunFvs    (getOptions e)
    fun showPSumTyp      e = #pSumTyp    (getOptions e)
    fun showCodes        e = #codes      (getOptions e)
    fun showNumbers      e = #numbers    (getOptions e)
@@ -276,7 +276,7 @@ struct
            L.seq [L.str "Cont", LU.parenSeq (layoutTyps (env, ts))]
          | M.TThunk t => L.seq [L.str "Thunk", LU.paren (layoutTyp (env, t))]
          | M.TPAny => L.str "PAny"
-         | M.TPFunction {args, ress} =>
+         | M.TClosure {args, ress} =>
            let
              val a = L.seq [LU.parenSeq (layoutTyps (env, args)), L.str " =>"]
              val r = LU.parenSeq (layoutTyps (env, ress))
@@ -532,8 +532,8 @@ struct
        else
          [Int.layout (Vector.size fvs)]
 
-   fun layoutPFunctionFvs (env, fvs) =
-       if showPFunctionFvs env then
+   fun layoutClosureFvs (env, fvs) =
+       if showClosureFvs env then
          LU.parenSeq (layoutVector (env, layoutFieldKindShort, fvs))
        else
          LU.paren (Int.layout (Vector.size fvs))
@@ -635,24 +635,24 @@ struct
            L.seq [L.str "Spawn",
                   LU.paren (layoutThunkVar (env, thunk, typ, false)),
                   layoutEffects (env, fx)]
-         | M.RhsPFunctionMk {fvs} =>
-           L.seq [L.str "PFunctionMk", layoutPFunctionFvs (env, fvs)]
-         | M.RhsPFunctionInit {cls, code, fvs} =>
+         | M.RhsClosureMk {fvs} =>
+           L.seq [L.str "ClosureMk", layoutClosureFvs (env, fvs)]
+         | M.RhsClosureInit {cls, code, fvs} =>
            let
              val code = L.seq [layoutCodeOption (env, code), L.str ";"]
-             val fvs = layoutFvsInits (env, fvs, showPFunctionFvs env)
+             val fvs = layoutFvsInits (env, fvs, showClosureFvs env)
              val l = code::fvs
-             val l = L.seq [L.str "PFunctionInit", LU.paren (L.mayAlign l)]
+             val l = L.seq [L.str "ClosureInit", LU.paren (L.mayAlign l)]
              val l = addInit (env, l, cls)
            in l
            end
-         | M.RhsPFunctionGetFv {fvs, cls, idx} =>
+         | M.RhsClosureGetFv {fvs, cls, idx} =>
            let
              val cls = layoutVariable (env, cls)
              val cls =
-                 if showPFunctionFvs env then
+                 if showClosureFvs env then
                    LU.paren (L.mayAlign [L.seq [cls, L.str ":"],
-                                         layoutPFunctionFvs (env, fvs)])
+                                         layoutClosureFvs (env, fvs)])
                  else
                    cls
              val l = L.seq [cls, L.str (".pffv" ^ Int.toString idx)]
@@ -916,12 +916,12 @@ struct
            in l
            end
          | M.GSimple simple => layoutSimple (env, simple)
-         | M.GPFunction {code, fvs} => 
+         | M.GClosure {code, fvs} => 
            let
              val code = L.seq [layoutCodeOption (env, code), L.str ";"]
-             val fvs = layoutFvsInits (env, fvs, showPFunctionFvs env)
+             val fvs = layoutFvsInits (env, fvs, showClosureFvs env)
              val l = code::fvs
-             val l = L.seq [L.str "PFunction", LU.paren (L.mayAlign l)]
+             val l = L.seq [L.str "Closure", LU.paren (L.mayAlign l)]
            in l
            end
          | M.GPSum {tag, typ, ofVal} =>

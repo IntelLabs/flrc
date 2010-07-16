@@ -68,15 +68,15 @@ struct
         val doRhs = 
          fn rhs =>
             (case rhs
-              of M.RhsPFunctionInit {fvs, ...} => closureNotIn2nd fvs
-               | M.RhsPFunctionGetFv _ => true
+              of M.RhsClosureInit {fvs, ...} => closureNotIn2nd fvs
+               | M.RhsClosureGetFv _ => true
                | M.RhsThunkInit {fvs, ...} => closureNotIn2nd fvs
                | M.RhsThunkGetFv _ => true
                | M.RhsObjectGetKind _ => true
                | _ => false)
 
         val doIGlobal =
-            isSome o (MU.Global.Dec.gPFunction oo (#2 om IGlobal.toGlobal))
+            isSome o (MU.Global.Dec.gClosure oo (#2 om IGlobal.toGlobal))
 
         val doIInstr =
             fn i =>
@@ -128,8 +128,8 @@ struct
                 (case IInstr.getMil (imil, i)
                   of IMil.MInstr (M.I {rhs, ...}) => 
                      (case rhs
-                       of M.RhsPFunctionInit {cls = SOME cls, ...} => closureIsNonEscaping (d, imil, cls)
-                        | M.RhsPFunctionInit {cls = NONE, ...}     => false
+                       of M.RhsClosureInit {cls = SOME cls, ...} => closureIsNonEscaping (d, imil, cls)
+                        | M.RhsClosureInit {cls = NONE, ...}     => false
                         | M.RhsThunkInit {thunk = SOME thunk, ...} => closureIsNonEscaping (d, imil, thunk)
                         | M.RhsThunkInit {thunk = NONE, ...}       => false
                         | _ => warn ())
@@ -143,7 +143,7 @@ struct
                    | IMil.MDead => warn ())
               | IMil.UseGlobal g =>
                 (case IGlobal.toGlobal g
-                  of SOME (clos, M.GPFunction _) => 
+                  of SOME (clos, M.GClosure _) => 
                      closureIsNonEscaping (d, imil, clos)
                    | _ => warn())
               | IMil.Used => false

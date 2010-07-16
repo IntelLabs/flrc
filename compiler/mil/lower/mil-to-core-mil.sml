@@ -10,7 +10,7 @@ functor MilToCoreMilF(val passname : string
                       val desc : string
                       val lowerPTypes : bool
                       val lowerPSums : bool
-                      val lowerPFunctions : bool
+                      val lowerClosures : bool
                       val lowerPRefs : bool) :> MIL_TO_CORE_MIL = 
 struct
   val passname = passname
@@ -150,7 +150,7 @@ struct
                   val t =
                       case cc
                        of M.CcClosure {cls, ...} =>
-                          if lowerPFunctions then
+                          if lowerClosures then
                             POM.Function.codeTyp (cls, aTyps, rTyps)
                           else
                             M.TCode {cc = cc, args = aTyps, ress = rTyps}
@@ -169,15 +169,15 @@ struct
               | M.TContinuation ts => M.TContinuation (typs ts)
               | M.TThunk t => M.TThunk (typ t)
               | M.TPAny => t
-              | M.TPFunction {args, ress} =>
+              | M.TClosure {args, ress} =>
                 let
                   val args = typs args
                   val ress = typs ress
                   val t =
-                      if lowerPFunctions then
+                      if lowerClosures then
                         POM.Function.closureTyp (args, ress)
                       else
-                        M.TPFunction {args = args, ress = ress}
+                        M.TClosure {args = args, ress = ress}
                 in t
                 end
               | M.TPSum nts =>
@@ -324,15 +324,15 @@ struct
                 lowerToRhs (state, env, lowerPTypes, doPSetEmpty, dests, ())
               | M.RhsSimple (M.SConstant M.CTypePH) =>
                 lowerToRhs (state, env, lowerPTypes, doPTypePH, dests, ())
-              | M.RhsPFunctionMk {fvs} =>
-                lowerToRhs (state, env, lowerPFunctions, doPFunMk, dests, fvs)
-              | M.RhsPFunctionInit {cls, code, fvs} => 
-                if lowerPFunctions then
+              | M.RhsClosureMk {fvs} =>
+                lowerToRhs (state, env, lowerClosures, doPFunMk, dests, fvs)
+              | M.RhsClosureInit {cls, code, fvs} => 
+                if lowerClosures then
                   SOME (doPFunInit (state, env, dests, cls, code, fvs))
                 else
                   NONE
-              | M.RhsPFunctionGetFv {fvs, cls, idx} => 
-                lowerToRhs (state, env, lowerPFunctions, doPFunGetFv, dests,
+              | M.RhsClosureGetFv {fvs, cls, idx} => 
+                lowerToRhs (state, env, lowerClosures, doPFunGetFv, dests,
                             (fvs, cls, idx))
               | M.RhsPSetNew oper => 
                 lowerToRhs (state, env, lowerPTypes, doPSetNew, dests, oper)
@@ -398,7 +398,7 @@ struct
                   val si = stateGetSymbolInfo state
                   val aTyps = Vector.map (args, fn oper => MTT.operand (c, si, oper))
                   val clst = doTyp (state, env,
-                                    M.TPFunction {args = aTyps, ress = rTyps})
+                                    M.TClosure {args = aTyps, ress = rTyps})
                   val aTyps = doTyps (state, env, aTyps)
                   val rTyps = doTyps (state, env, rTyps)
                   val t = POM.Function.codeTyp (clst, aTyps, rTyps)
@@ -419,7 +419,7 @@ struct
         val res = 
             (case t
               of M.TInterProc {callee = M.IpCall {call, args}, ret, fx} =>
-                 if lowerPFunctions then
+                 if lowerClosures then
                    let
                      fun mk (call, args) =
                          let
@@ -479,7 +479,7 @@ struct
             case conv 
              of M.CcCode => (conv, args, body)
               | M.CcClosure {cls, fvs} => 
-                if lowerPFunctions then 
+                if lowerClosures then 
                   doClosureConv (state, env, cls, fvs, args, body)
                 else
                   (conv, args, body)
@@ -529,8 +529,8 @@ struct
                 else
                   NONE
               | M.GSimple _ => NONE
-              | M.GPFunction {code, fvs} => 
-                if lowerPFunctions then
+              | M.GClosure {code, fvs} => 
+                if lowerClosures then
                   let
                     val g = POM.Function.mkGlobal (c, code, fvs)
                   in SOME (v, g)
@@ -629,13 +629,13 @@ struct
 
 end
 
-structure MilLowerPFunctions =
+structure MilLowerClosures =
 MilToCoreMilF(
-val passname = "MilLowerPFunctions"
+val passname = "MilLowerClosures"
 val desc = "P functions"
 val lowerPTypes = false
 val lowerPSums = false
-val lowerPFunctions = true
+val lowerClosures = true
 val lowerPRefs = false)
 
 structure MilLowerPSums = 
@@ -644,7 +644,7 @@ val passname = "MilLowerPSums"
 val desc = "P sums"
 val lowerPTypes = false
 val lowerPSums = true
-val lowerPFunctions = false
+val lowerClosures = false
 val lowerPRefs = false)
 
 structure MilLowerPTypes = 
@@ -653,5 +653,5 @@ val passname = "MilLowerPTypes"
 val desc = "P option sets & intensional types"
 val lowerPTypes = true
 val lowerPSums = false
-val lowerPFunctions = false
+val lowerClosures = false
 val lowerPRefs = false)

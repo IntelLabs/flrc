@@ -197,7 +197,7 @@ struct
         | M.TContinuation ts           => typs (s, e, m, ts)
         | M.TThunk t                   => typ (s, e, m, t)
         | M.TPAny                      => ()
-        | M.TPFunction {args, ress}    => let
+        | M.TClosure {args, ress}      => let
                                             val () = typs (s, e, m, args)
                                             val () = typs (s, e, m, ress)
                                           in ()
@@ -750,11 +750,11 @@ struct
                    val _ = variableUse (s, e, msg', thunk)
                  in none
                  end
-               | M.RhsPFunctionMk {fvs} =>
+               | M.RhsClosureMk {fvs} =>
                  let
                  in some M.TNone
                  end
-               | M.RhsPFunctionInit {cls, code, fvs} =>
+               | M.RhsClosureInit {cls, code, fvs} =>
                  let
                    fun msg1 () = msg () ^ ": closure"
                    val () =
@@ -779,7 +779,7 @@ struct
                          | NONE => some M.TNone
                  in ts
                  end
-               | M.RhsPFunctionGetFv {fvs, cls, idx} =>
+               | M.RhsClosureGetFv {fvs, cls, idx} =>
                  let
                    fun msg' () = msg () ^ ": closure"
                    val _ = variableUse (s, e, msg', cls)
@@ -913,7 +913,7 @@ struct
           | M.TRef => (NONE, NONE)
           | M.TPAny => (NONE, NONE)
           | M.TNone => (NONE, NONE)
-          | M.TPFunction {args, ress, ...} => (SOME args, SOME ress)
+          | M.TClosure {args, ress, ...} => (SOME args, SOME ress)
           | _ =>
             let
               val () = err ()
@@ -1192,11 +1192,11 @@ struct
       in M.TIdx
       end
 
-  fun codeTypToPFunctionTyp (s, e, msg, x, t) =
+  fun codeTypToClosureTyp (s, e, msg, x, t) =
       case t
        of M.TCode {cc = M.CcClosure {cls, fvs}, args, ress} =>
           (case cls
-            of M.TPFunction {args = ats2, ress = rts2} =>
+            of M.TClosure {args = ats2, ress = rts2} =>
                let
                  val () =
                      assert (s, Vector.length args = Vector.length ats2,
@@ -1219,9 +1219,9 @@ struct
                                        ": type mismatch")
                  val () = Vector.foreachi2 (ress, rts2, checkOne)
                in
-                 M.TPFunction {args = args, ress = ress}
+                 M.TClosure {args = args, ress = ress}
                end
-             | _ => M.TPFunction {args = args, ress = ress})
+             | _ => M.TClosure {args = args, ress = ress})
         | _ =>
           let
             val () = reportError (s, msg () ^ ": not code type")
@@ -1272,7 +1272,7 @@ struct
                 in t
                 end
               | M.GSimple simp => simple (s, e, msg, simp)
-              | M.GPFunction {code, fvs} =>
+              | M.GClosure {code, fvs} =>
                 let
                   fun doOne (i, (fk, opnd)) =
                       let
@@ -1289,7 +1289,7 @@ struct
                            let
                              fun msg' () = msg () ^ ": code"
                              val ct = variableUse (s, e, msg', v)
-                             val t = codeTypToPFunctionTyp (s, e, msg', x, ct)
+                             val t = codeTypToClosureTyp (s, e, msg', x, ct)
                            in t
                            end)
                 in t
