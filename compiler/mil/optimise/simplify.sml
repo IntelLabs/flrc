@@ -747,7 +747,7 @@ struct
                   val {call, args} = <@ MU.InterProc.Dec.ipCall callee
                   val is = 
                       (case call
-                        of M.CCode fname => <@ callInlineCode (s, (i, fname))
+                        of M.CCode {ptr, ...} => <@ callInlineCode (s, (i, ptr))
                          | M.CDirectClosure r => <@ callInlineClosure (s, (i, r))
                          | _ => Try.fail ())
                   val is = List.map (is, I.ItemInstr)

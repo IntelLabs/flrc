@@ -294,7 +294,7 @@ struct
 
   fun analyseCall (s, e, cl, call) = 
       (case call
-        of M.CCode cv => analyseCodeCall (s, e, cl, cv)
+        of M.CCode {ptr, ...} => analyseCodeCall (s, e, cl, ptr)
          | M.CClosure {code, ...} => addCodes (s, cl, code)
          | M.CDirectClosure {code, ...} => addKnownCall (s, cl, code))
 

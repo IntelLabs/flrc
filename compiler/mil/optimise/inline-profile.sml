@@ -317,11 +317,11 @@ struct
         let
           fun callConv conv = 
               case conv
-               of M.CCode f               => 
-                  (case IMil.IFunc.getIFuncByName' (imil, f)
-                    of SOME _ => SOME f
+               of M.CCode {ptr, ...} => 
+                  (case IMil.IFunc.getIFuncByName' (imil, ptr)
+                    of SOME _ => SOME ptr
                      | NONE => NONE)
-                | M.CClosure {cls, code}  => NONE
+                | M.CClosure {cls, code} => NONE
                 | M.CDirectClosure {cls, code} => SOME code
         in
           case IMil.IInstr.toTransfer i
@@ -586,7 +586,7 @@ struct
           (* Check call convention. *)
           fun chkCallConv conv = 
               case conv
-               of M.CCode f                    => isSome (IMil.IFunc.getIFuncByName' (imil, f))
+               of M.CCode {ptr, ...}           => isSome (IMil.IFunc.getIFuncByName' (imil, ptr))
                 | M.CDirectClosure {cls, code} => true
                 | _ => false
         in

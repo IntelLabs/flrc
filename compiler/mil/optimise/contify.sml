@@ -507,8 +507,8 @@ struct
      *)
     fun getCallEntryAndArgs (state, env, c, args) =
         case c
-         of M.CCode f =>
-            (case getFunEntry (env, f)
+         of M.CCode {ptr, ...} =>
+            (case getFunEntry (env, ptr)
               of NONE => NONE
                | SOME l => SOME (l, args))
           | M.CClosure {cls, ...} => NONE
@@ -523,7 +523,7 @@ struct
      *)
     fun isSelfTailcall (state, c) =
         case c
-         of M.CCode f                    => isSelf (state, f)
+         of M.CCode {ptr, ...}           => isSelf (state, ptr)
           | M.CClosure _                 => NONE
           | M.CDirectClosure {code, ...} => isSelf (state, code)
 

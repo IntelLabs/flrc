@@ -934,10 +934,11 @@ struct
 
   fun call (s, e, msg, c) =
       case c
-       of M.CCode v => 
+       of M.CCode {ptr, code} => 
           let
-            val ct = variableUse (s, e, msg, v)
+            val ct = variableUse (s, e, msg, ptr)
             val (ats, rts) = getCodeType (s, e, msg, ct)
+            val () = codes (s, e, msg, code, ats, rts)
           in (ats, rts)
           end
         | M.CClosure {cls, code} =>

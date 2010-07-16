@@ -19,8 +19,9 @@ struct
 
   structure I = Identifier
   structure IM = I.Manager
-  structure ND = Identifier.NameDict
-  structure LD = Identifier.LabelDict
+  structure VS = I.VariableSet
+  structure ND = I.NameDict
+  structure LD = I.LabelDict
   structure M = Mil
   structure MU = MilUtils
   structure MSTM = MU.SymbolTableManager
@@ -384,11 +385,12 @@ struct
       let
         val res = 
             case call
-             of M.CCode f => NONE
+             of M.CCode _ => NONE
               | M.CDirectClosure {cls, code} =>
                 let
                   val c = envGetConfig env
-                  val t = mk (POM.Function.doCall (c, code, cls, args))
+                  val codes = {possible = VS.singleton code, exhaustive = true}
+                  val t = mk (POM.Function.doCall (c, code, codes, cls, args))
                   val s = MS.transfer (state, env, t)
                 in SOME s
                 end
@@ -397,15 +399,14 @@ struct
                   val c = envGetConfig env
                   val si = stateGetSymbolInfo state
                   val aTyps = Vector.map (args, fn oper => MTT.operand (c, si, oper))
-                  val clst = doTyp (state, env,
-                                    M.TClosure {args = aTyps, ress = rTyps})
+                  val clst = doTyp (state, env, M.TClosure {args = aTyps, ress = rTyps})
                   val aTyps = doTyps (state, env, aTyps)
                   val rTyps = doTyps (state, env, rTyps)
                   val t = POM.Function.codeTyp (clst, aTyps, rTyps)
                   val f = relatedVar (state, cls, "_code", t, false)
                   val r = POM.Function.getCode (c, cls)
                   val s1 = MS.bindRhs (state, env, f, r)
-                  val tfer = mk (POM.Function.doCall (c, f, cls, args))
+                  val tfer = mk (POM.Function.doCall (c, f, code, cls, args))
                   val s2 = MS.transfer (state, env, tfer)
                   val s = MS.seq (state, env, s1, s2)
                 in SOME s

@@ -1676,7 +1676,7 @@ struct
         val args = genOperands (state, env, args)
         val (f, args) =
             case c
-             of M.CCode v          => (genVarE (state, env, v), args)
+             of M.CCode {ptr, ...} => (genVarE (state, env, ptr), args)
               | M.CClosure _       => notCoreMil (env, "genCall", "CClosure")
               | M.CDirectClosure _ => notCoreMil (env, "genCall",
                                                   "CDirectClosure")

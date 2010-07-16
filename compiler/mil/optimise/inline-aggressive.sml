@@ -146,7 +146,7 @@ struct
                     (* XXX EB: What does doConv mean? *)
                     fun doConv conv = 
                         (case conv
-                          of M.CCode f => warn f
+                          of M.CCode {ptr, ...} => warn ptr
                            | M.CDirectClosure {cls, code} => warn cls
                            | _ => Try.fail ())
                     (* Check transfer. Only TCall and TTailCall are valid. *)

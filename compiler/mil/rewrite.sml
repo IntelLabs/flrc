@@ -247,13 +247,10 @@ struct
 
   fun call (state, env, call) = 
       case call 
-       of M.CCode v => M.CCode (variable (state, env, v))
-        | M.CClosure {cls, code} =>
-          M.CClosure {cls = variable (state, env, cls),
-                      code = codes (state, env, code)}
+       of M.CCode {ptr, code} => M.CCode {ptr = variable (state, env, ptr), code = codes (state, env, code)}
+        | M.CClosure {cls, code} => M.CClosure {cls = variable (state, env, cls), code = codes (state, env, code)}
         | M.CDirectClosure {cls, code} =>
-          M.CDirectClosure {cls = variable (state, env, cls),
-                            code = variable (state, env, code)}
+          M.CDirectClosure {cls = variable (state, env, cls), code = variable (state, env, code)}
 
   fun eval (state, env, eval) = 
       case eval

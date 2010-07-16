@@ -207,7 +207,7 @@ struct
                     val {call, ...} = Try.<- (MU.InterProc.Dec.ipCall callee)
                     val () =                     
                         case call
-                         of M.CCode f => warn f
+                         of M.CCode {ptr, ...} => warn ptr
                           | M.CDirectClosure {code, ...} => warn code
                           | _ => Try.fail ()
 

@@ -119,7 +119,7 @@ struct
                         | _ => fail ("inlineCallSite", 
                                      "Invalid IMil call instruction.")
         val fname = case milCall
-                     of M.CCode v => v
+                     of M.CCode {ptr, ...} => ptr
                       | M.CDirectClosure {code, ...} => code
                       | M.CClosure _ => 
                         fail ("inlineCallSite", 

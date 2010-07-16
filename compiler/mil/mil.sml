@@ -215,7 +215,7 @@ struct
    * The code variable in CDirectThunk and in EDirectThunk must be
    * a function name. *) 
   datatype call =
-      CCode          of variable  (* XXX Add codes -leaf *)
+      CCode          of {ptr : variable, code : codes}
     | CClosure       of {cls : variable, code : codes}
     | CDirectClosure of {cls : variable, code : variable}
 

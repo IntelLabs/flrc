@@ -238,7 +238,12 @@ functor MilAnalyseF (
 
   fun analyseCall (s, e, c) =
       case c
-       of M.CCode v => analyseVariable (s, e, v)
+       of M.CCode {ptr, code} =>
+          let
+            val () = analyseVariable (s, e, ptr)
+            val () = analyseCodes (s, e, code)
+          in ()
+          end
         | M.CClosure {cls, code} => 
           let
             val () = analyseVariable (s, e, cls)

@@ -38,6 +38,7 @@
 
 signature P_OBJECT_MODEL_COMMON = 
 sig
+
   structure Double : sig
     val td : Mil.tupleDescriptor
     val typ : Mil.typ
@@ -101,6 +102,7 @@ sig
   end
 
   val features : Config.Feature.feature list
+
 end
 
 (*************** High level object model assumptions **************************)
@@ -176,7 +178,8 @@ end
      val fvIndex : int -> int
      val getCode : Config.t * Mil.variable -> Mil.rhs
      val doCall : Config.t
-                  * Mil.variable         (* code *)
+                  * Mil.variable         (* code pointer *)
+                  * Mil.codes            (* possible codes *)
                   * Mil.variable         (* closure *)
                   * Mil.operand Vector.t (* args *)
                   -> Mil.call * Mil.operand Vector.t
@@ -399,8 +402,7 @@ struct
   structure Ref =
   struct
 
-    fun typ t =
-        Fail.unimplemented ("PObjectModelHigh.Ref", "typ", "*")
+    fun typ t = Fail.unimplemented ("PObjectModelHigh.Ref", "typ", "*")
 
   end (* structure Ref *)
 
@@ -424,6 +426,7 @@ struct
   end (* structure Type *)
 
   val features = []
+
 end (* structure PObjectModelHigh *)
 
 structure PObjectModelLow :> P_OBJECT_MODEL_LOW = 
@@ -540,8 +543,8 @@ struct
         in rhs
         end
 
-    fun doCall (c, codev, clsv, args) =
-        (M.CCode codev, Utils.Vector.cons (M.SVariable clsv, args))
+    fun doCall (c, codev, code, clsv, args) =
+        (M.CCode {ptr = codev, code = code}, Utils.Vector.cons (M.SVariable clsv, args))
 
   end
 

@@ -497,7 +497,7 @@ sig
     val codes : t -> Mil.codes
     structure Dec : 
     sig
-      val cCode : t -> Mil.variable option
+      val cCode : t -> {ptr : Mil.variable, code : Mil.codes} option
       val cClosure : t -> {cls : Mil.variable, code : Mil.codes} option
       val cDirectClosure : t -> {cls : Mil.variable, code : Mil.variable} option
     end (* structure Dec *)
@@ -1448,12 +1448,13 @@ struct
         C.rec2 (#possible, VS.compare, #exhaustive, Bool.compare) (x1, x2)
 
     local
+      val code = C.rec2 (#ptr, variable, #code, codes)
       val closure = C.rec2 (#cls, variable, #code, codes)
       val dclosure = C.rec2 (#cls, variable, #code, variable)
     in
     fun call (arg1, arg2) = 
         case (arg1, arg2)
-         of (M.CCode          x1, M.CCode          x2) => variable (x1, x2) 
+         of (M.CCode          x1, M.CCode          x2) => code (x1, x2) 
           | (M.CCode          _ , _                  ) => LESS
           | (_                  , M.CCode          _ ) => GREATER
           | (M.CClosure       x1, M.CClosure       x2) => closure (x1, x2)
@@ -2916,15 +2917,15 @@ struct
     val code =
      fn call => 
         (case call
-          of M.CCode code => SOME code
+          of M.CCode {ptr, ...} => SOME ptr
            | M.CClosure _ => NONE
            | M.CDirectClosure {code, ...} => SOME code)
 
     val codes = 
      fn call => 
         (case call
-          of M.CCode v => {possible = VS.singleton v, exhaustive = true}
-           | M.CClosure {cls, code} => code
+          of M.CCode {code, ...} => code
+           | M.CClosure {code, ...} => code
            | M.CDirectClosure {cls, code} => {possible = VS.singleton code, exhaustive = true})
 
     structure Dec = 

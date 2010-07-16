@@ -743,16 +743,11 @@ struct
 
    fun layoutCall (env, c) = 
        case c
-        of M.CCode v =>
-           L.seq [L.str "Call", LU.paren (layoutVariable (env, v))]
+        of M.CCode {ptr, code} => addCodes (env, L.seq [L.str "Call", LU.paren (layoutVariable (env, ptr))], code)
          | M.CClosure {cls, code} =>
-           addCodes (env,
-                     L.seq [L.str "CallClos",
-                            LU.paren (layoutVariable (env, cls))],
-                     code)
+           addCodes (env, L.seq [L.str "CallClos", LU.paren (layoutVariable (env, cls))], code)
          | M.CDirectClosure {cls, code} =>
-           L.seq [L.str "CallDir", LU.parenSeq [layoutVariable (env, cls),
-                                                layoutVariable (env, code)]]
+           L.seq [L.str "CallDir", LU.parenSeq [layoutVariable (env, cls), layoutVariable (env, code)]]
 
    fun layoutEval (env, e) = 
        case e
