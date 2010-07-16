@@ -168,7 +168,7 @@ struct
          of M.GCode f                  => analyseCode (s, e, (v, f))
           | M.GErrorVal t              => ()
           | M.GIdx nis                 => ()
-          | M.GTuple {vtDesc, inits}   => ()
+          | M.GTuple {mdDesc, inits}   => ()
           | M.GRat r                   => ()
           | M.GInteger i               => ()
           | M.GThunkValue {typ, ofVal} => ()

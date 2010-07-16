@@ -136,7 +136,7 @@ functor MilAnalyseF (
       case rhs
        of M.RhsSimple simple => analyseSimple (s, e, simple)
         | M.RhsPrim {prim, createThunks, args} => analyseOperands (s, e, args)
-        | M.RhsTuple {vtDesc, inits} => analyseOperands (s, e, inits)
+        | M.RhsTuple {mdDesc, inits} => analyseOperands (s, e, inits)
         | M.RhsTupleSub tf => analyseTupleField (s, e, tf)
         | M.RhsTupleSet {tupField, ofVal} =>
           let
@@ -144,7 +144,7 @@ functor MilAnalyseF (
             val () = analyseOperand (s, e, ofVal)
           in ()
           end
-        | M.RhsTupleInited {vtDesc, tup} =>
+        | M.RhsTupleInited {mdDesc, tup} =>
           let
             val () = analyseVariable (s, e, tup)
           in ()
@@ -378,7 +378,7 @@ functor MilAnalyseF (
          of M.GCode f                  => analyseCode (s, e, v, f)
           | M.GErrorVal _              => ()
           | M.GIdx _                   => ()
-          | M.GTuple {vtDesc, inits}   => analyseSimples (s, e, inits)
+          | M.GTuple {mdDesc, inits}   => analyseSimples (s, e, inits)
           | M.GRat _                   => ()
           | M.GInteger _               => ()
           | M.GThunkValue {typ, ofVal} => analyseSimple (s, e, ofVal)

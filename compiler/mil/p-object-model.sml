@@ -470,18 +470,18 @@ struct
       in td
       end
 
-    fun vtd (c, fks) =
+    fun mdd (c, fks) =
       let
         val pok = M.PokFunction
         val fks = Utils.Vector.cons (MU.FieldKind.nonRefPtr c, fks)
         fun doOne fk = M.FD {kind = fk, var = M.FvReadOnly}
         val fds = Vector.map (fks, doOne)
-        val vtd = M.VTD {pok = pok, fixed = fds, array = NONE}
-      in vtd
+        val mdd = M.MDD {pok = pok, fixed = fds, array = NONE}
+      in mdd
       end
 
     fun mkUninit (c, fks) =
-        M.RhsTuple {vtDesc = vtd (c, fks), inits = Vector.new0 ()}
+        M.RhsTuple {mdDesc = mdd (c, fks), inits = Vector.new0 ()}
 
     fun codeOptToCodePtr (c, vo) = 
         case vo
@@ -493,7 +493,7 @@ struct
           val code = codeOptToCodePtr (c, vo)
           val (fks, os) = Vector.unzip fkos
         in
-          M.RhsTuple {vtDesc = vtd (c, fks), inits = Utils.Vector.cons (code, os)}
+          M.RhsTuple {mdDesc = mdd (c, fks), inits = Utils.Vector.cons (code, os)}
         end
 
     fun mkGlobal (c, vo, fvs) =
@@ -502,7 +502,7 @@ struct
           val (fks, inits) = Vector.unzip fvs
           val inits = Utils.Vector.cons (code, inits)
         in
-          M.GTuple {vtDesc = vtd (c, fks), inits = inits}
+          M.GTuple {mdDesc = mdd (c, fks), inits = inits}
         end
 
     fun init (c, cls, vo, fkos) =
@@ -562,18 +562,18 @@ struct
         let
           val pok = M.PokOptionSet
           val fd = M.FD {kind = M.FkRef, var = M.FvReadOnly}
-          val vtd = M.VTD {pok = pok, fixed = Vector.new1 fd, array = NONE}
+          val mdd = M.MDD {pok = pok, fixed = Vector.new1 fd, array = NONE}
           val zero = M.SConstant (nulConst c)
-        in M.RhsTuple {vtDesc = vtd, inits = Vector.new1 zero}
+        in M.RhsTuple {mdDesc = mdd, inits = Vector.new1 zero}
         end
 
     fun emptyGlobal c =
         let
           val pok = M.PokOptionSet
           val fd = M.FD {kind = M.FkRef, var = M.FvReadOnly}
-          val vtd = M.VTD {pok = pok, fixed = Vector.new1 fd, array = NONE}
+          val mdd = M.MDD {pok = pok, fixed = Vector.new1 fd, array = NONE}
           val zero = M.SConstant (nulConst c)
-        in M.GTuple {vtDesc = vtd, inits = Vector.new1 zero}
+        in M.GTuple {mdDesc = mdd, inits = Vector.new1 zero}
         end
 
     fun td c =
@@ -583,25 +583,25 @@ struct
         in td
         end
 
-    fun vtd c =
+    fun mdd c =
         let
           val pok = M.PokOptionSet
           val fixed = Vector.new1 (M.FD {kind = M.FkRef, var = M.FvReadOnly})
-          val vtd = M.VTD {pok = pok, fixed = fixed, array = NONE}
-        in vtd
+          val mdd = M.MDD {pok = pok, fixed = fixed, array = NONE}
+        in mdd
         end
 
     fun mk (c, opnd) =
         let
-          val vtd = vtd c
-          val rhs = M.RhsTuple {vtDesc = vtd, inits = Vector.new1 opnd}
+          val mdd = mdd c
+          val rhs = M.RhsTuple {mdDesc = mdd, inits = Vector.new1 opnd}
         in rhs
         end
 
     fun mkGlobal (c, s) =
         let
-          val vtd = vtd c
-          val g = M.GTuple {vtDesc = vtd, inits = Vector.new1 s}
+          val mdd = mdd c
+          val g = M.GTuple {mdDesc = mdd, inits = Vector.new1 s}
         in g
         end
 
@@ -643,27 +643,27 @@ struct
         in td
         end
 
-    fun vtd (c, fk) =
+    fun mdd (c, fk) =
         let
           val fds = Vector.new2 (M.FD {kind = M.FkRef, var = M.FvReadOnly},
                                  M.FD {kind = fk,      var = M.FvReadOnly})
-          val vtd = M.VTD {pok = M.PokTagged, fixed = fds, array = NONE}
-        in vtd
+          val mdd = M.MDD {pok = M.PokTagged, fixed = fds, array = NONE}
+        in mdd
         end
 
     fun mk (c, tag, fk, ofVal) =
         let
-          val vtd = vtd (c, fk)
+          val mdd = mdd (c, fk)
           val inits = Vector.new2 (M.SConstant (M.CName tag), ofVal)
-          val rhs = M.RhsTuple {vtDesc = vtd, inits = inits}
+          val rhs = M.RhsTuple {mdDesc = mdd, inits = inits}
         in rhs
         end
 
     fun mkGlobal (c, tag, fk, ofVal) =
         let
-          val vtd = vtd (c, fk)
+          val mdd = mdd (c, fk)
           val inits = Vector.new2 (M.SConstant (M.CName tag), ofVal)
-          val g = M.GTuple {vtDesc = vtd, inits = inits}
+          val g = M.GTuple {mdDesc = mdd, inits = inits}
         in g
         end
 
@@ -695,11 +695,11 @@ struct
 
     val td = M.TD {fixed = Vector.new0 (), array = NONE}
 
-    val vtd = M.VTD {pok = M.PokType, fixed = Vector.new0 (), array = NONE}
+    val mdd = M.MDD {pok = M.PokType, fixed = Vector.new0 (), array = NONE}
 
-    fun mk () = M.RhsTuple {vtDesc = vtd, inits = Vector.new0 ()}
+    fun mk () = M.RhsTuple {mdDesc = mdd, inits = Vector.new0 ()}
                     
-    fun mkGlobal () = M.GTuple {vtDesc = vtd, inits = Vector.new0 ()}
+    fun mkGlobal () = M.GTuple {mdDesc = mdd, inits = Vector.new0 ()}
                     
   end
 

@@ -87,7 +87,7 @@ struct
     array : fieldDescriptor option
   }
 
-  datatype vTableDescriptor = VTD of {
+  datatype metaDataDescriptor = MDD of {
     pok   : pObjKind,
     fixed : fieldDescriptor Vector.t,
     array : (int * fieldDescriptor) option
@@ -142,15 +142,15 @@ struct
       RhsSimple of simple
     | RhsPrim of {prim : Prims.t, createThunks : bool, args : operand Vector.t}
     | RhsTuple of {
-        vtDesc : vTableDescriptor,  (* Length field must be initialised *)
-        inits  : operand Vector.t   (* Initialises a prefix of the fields;
-                                     * can be less than all fixed fields;
-                                     * can include some/all array elements
-                                     *)
+        mdDesc : metaDataDescriptor,  (* Length field must be initialised *)
+        inits  : operand Vector.t     (* Initialises a prefix of the fields;
+                                       * can be less than all fixed fields;
+                                       * can include some/all array elements
+                                       *)
       }
     | RhsTupleSub of tupleField
     | RhsTupleSet of {tupField : tupleField, ofVal : operand}
-    | RhsTupleInited of {vtDesc : vTableDescriptor, tup : variable}
+    | RhsTupleInited of {mdDesc : metaDataDescriptor, tup : variable}
     | RhsIdxGet of {idx : variable, ofVal : operand}
     | RhsCont of label
     | RhsObjectGetKind of variable
@@ -175,8 +175,7 @@ struct
         thunk  : variable option, (* if absent then create *)
         ofVal : operand
       }
-    | RhsThunkGetValue of {typ : fieldKind, thunk : variable}
-                          (* thunk must be evaled *)
+    | RhsThunkGetValue of {typ : fieldKind, thunk : variable} (* thunk must be evaled *)
     | RhsThunkSpawn of {typ : fieldKind, thunk : variable, fx : effects}
     (* HL *)
     | RhsClosureMk of {fvs : fieldKind Vector.t}
@@ -184,17 +183,14 @@ struct
         cls  : variable option, (* if absent, create;
                                  * if present, must be from ClosureMk
                                  *)
-        code : variable option,
-        (* Must be function name. If absent then this is an environment, 
-         * which can only be projected from but not called.  *)
+        code : variable option, (* Must be function name. If absent then this is an environment, 
+                                 * which can only be projected from but not called.  *)
         fvs  : (fieldKind * operand) Vector.t
       }
-    | RhsClosureGetFv of
-        {fvs : fieldKind Vector.t, cls : variable, idx : int}
+    | RhsClosureGetFv of {fvs : fieldKind Vector.t, cls : variable, idx : int}
     | RhsPSetNew of operand
     | RhsPSetGet of variable
-    | RhsPSetCond of {bool : operand, ofVal : operand}
-                     (* if bool then {ofVal} else {} *)
+    | RhsPSetCond of {bool : operand, ofVal : operand} (* if bool then {ofVal} else {} *)
     | RhsPSetQuery of operand (* {} => false | _ => true *)
     | RhsPSum of {tag : name, typ : fieldKind, ofVal : operand}
     | RhsPSumProj of {typ : fieldKind, sum : variable, tag : name}
@@ -279,7 +275,7 @@ struct
     | GErrorVal   of typ
     | GIdx        of int ND.t
     | GTuple      of {
-        vtDesc : vTableDescriptor,
+        mdDesc : metaDataDescriptor,
         inits  : simple Vector.t   (* must be all fields *)
       }
     | GRat        of Rat.t

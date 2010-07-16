@@ -813,8 +813,8 @@ struct
                       ress = MU.Code.rtyps f}
            | M.GErrorVal t => t
            | M.GIdx _ => M.TIdx
-           | M.GTuple {vtDesc, inits} => 
-             MU.Typ.fixedArray (MU.VTableDescriptor.pok vtDesc,
+           | M.GTuple {mdDesc, inits} => 
+             MU.Typ.fixedArray (MU.MetaDataDescriptor.pok mdDesc,
                                 Vector.map (simples (config, si, inits), fn t => (t, M.FvReadWrite)))
            | M.GRat _ => M.TRat
            | M.GInteger _ => M.TInteger

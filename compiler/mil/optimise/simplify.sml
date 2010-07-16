@@ -1160,10 +1160,10 @@ struct
                     (case <@ Def.toMilDef o Def.get @@ (imil, v)
                       of MU.Def.DefGlobal (M.GTuple {inits, ...})      => OTuple inits
                        | MU.Def.DefGlobal (M.GThunkValue {ofVal, ...}) => OThunk ofVal
-                       | MU.Def.DefRhs (M.RhsTuple {inits, vtDesc})    => 
+                       | MU.Def.DefRhs (M.RhsTuple {inits, mdDesc})    => 
                          let
-                           val () = Try.require (MU.VTableDescriptor.immutable vtDesc andalso 
-                                                 not (MU.VTableDescriptor.hasArray vtDesc))
+                           val () = Try.require (MU.MetaDataDescriptor.immutable mdDesc andalso 
+                                                 not (MU.MetaDataDescriptor.hasArray mdDesc))
                          in OTuple inits
                          end
                        | MU.Def.DefRhs (M.RhsThunkValue {typ, thunk = NONE, ofVal}) => OThunk ofVal
@@ -1310,7 +1310,7 @@ struct
                        val mkvar = fn (i, t) => Var.related (imil, v, Int.toString i, t, false)
                        val vs = Vector.mapi (ts, mkvar)
                        val aa = Vector.map (vs, M.SVariable)
-                       val vtd = MU.Tuple.vtdImmutableTyps (config, ts)
+                       val vtd = MU.Tuple.mddImmutableTyps (config, ts)
                        val rhs = MU.Tuple.new (vtd, aa)
                        val mi = MU.Instruction.new (vnew, rhs)
                        val () = Use.replaceUses (imil, v, M.SVariable vnew)
@@ -1502,14 +1502,14 @@ struct
                            
                 val l = 
                     (case rhs
-                      of M.RhsTuple {vtDesc, inits} =>
+                      of M.RhsTuple {mdDesc, inits} =>
                          let
-                           val () = Try.require (MU.VTableDescriptor.immutable vtDesc)
-                           val () = Try.not (MU.VTableDescriptor.hasArray vtDesc)
-                           val () = Try.require (Vector.length inits = MU.VTableDescriptor.numFixed vtDesc)
+                           val () = Try.require (MU.MetaDataDescriptor.immutable mdDesc)
+                           val () = Try.not (MU.MetaDataDescriptor.hasArray mdDesc)
+                           val () = Try.require (Vector.length inits = MU.MetaDataDescriptor.numFixed mdDesc)
                            val () = Try.require (Vector.forall (inits, const))
                            val v = Try.V.singleton dests
-                           val l = add (v, M.GTuple {vtDesc = vtDesc, inits = inits})
+                           val l = add (v, M.GTuple {mdDesc = mdDesc, inits = inits})
                            (* can ignore l *)
                          in []
                          end

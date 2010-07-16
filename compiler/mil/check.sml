@@ -522,9 +522,9 @@ struct
    * than the actual fields of the tuple, checking that the ts have
    * as many fields as the tuple descriptor is done elsewhere.
    *)
-  fun consistentVtDesc (s, e, msg, vtd, ts, ns) =
+  fun consistentMdDesc (s, e, msg, vtd, ts, ns) =
       let
-        val M.VTD {pok, fixed, array} = vtd
+        val M.MDD {pok, fixed, array} = vtd
         fun tooManyFields () =
            reportError (s, msg () ^ ": not enough fields in vtable descriptor")
         fun msgi i () = msg () ^ ": " ^ Int.toString i
@@ -557,7 +557,7 @@ struct
       end
   end
 
-  fun tupleMake (s, e, msg, vtd, inits) =
+  fun tupleMake (s, e, msg, mdd, inits) =
       let
         fun msg' () = msg () ^ ": init"
         val ts = operands (s, e, msg', inits)
@@ -568,8 +568,8 @@ struct
                 IntArb.isTyp (i, MU.Uintp.intArbTyp (getConfig e))
               | _ => false
         val ns = Vector.map (inits, checkOne)
-        val () = consistentVtDesc (s, e, msg, vtd, ts, ns)
-        val M.VTD {array, ...} = vtd
+        val () = consistentMdDesc (s, e, msg, mdd, ts, ns)
+        val M.MDD {array, ...} = mdd
         val () =
             case array
              of NONE => ()
@@ -649,9 +649,9 @@ struct
             (case r
               of M.RhsSimple simp => some (simple (s, e, msg, simp))
                | M.RhsPrim {prim = p, createThunks, args} => prim (s, e, msg, p, args)
-               | M.RhsTuple {vtDesc, inits} =>
+               | M.RhsTuple {mdDesc, inits} =>
                  let
-                   val ts = tupleMake (s, e, msg, vtDesc, inits)
+                   val ts = tupleMake (s, e, msg, mdDesc, inits)
                  in some M.TNone
                  end
                | M.RhsTupleSub tf => some (tupleField (s, e, msg, tf))
@@ -663,7 +663,7 @@ struct
                    val () = checkConsistentTyp (s, e, msg', ft, nvt)
                  in none
                  end
-               | M.RhsTupleInited {vtDesc, tup} =>
+               | M.RhsTupleInited {mdDesc, tup} =>
                  let
                    fun msg' () = msg () ^ ": tuple"
                    val _ = variableUse (s, e, msg', tup)
@@ -1241,10 +1241,10 @@ struct
                 in t
                 end
               | M.GIdx nis => index (s, e, msg, nis)
-              | M.GTuple {vtDesc, inits} =>
+              | M.GTuple {mdDesc, inits} =>
                 let
-                  val M.VTD {pok, fixed, array, ...} = vtDesc
-                  val ts = tupleMake (s, e, msg, vtDesc, inits)
+                  val M.MDD {pok, fixed, array, ...} = mdDesc
+                  val ts = tupleMake (s, e, msg, mdDesc, inits)
                   val fixedLen = Vector.length fixed
                   fun badLen () = reportError (s, msg () ^ ": bad length init")
                   val varLen =

@@ -27,7 +27,7 @@ sig
     val layoutFieldDescriptor      : Mil.fieldDescriptor layout
     val layoutFieldDescriptorShort : Mil.fieldDescriptor layout
     val layoutTupleDescriptor      : Mil.tupleDescriptor layout
-    val layoutVTableDescriptor     : Mil.vTableDescriptor layout
+    val layoutMetaDataDescriptor   : Mil.metaDataDescriptor layout
     val layoutConstant             : Mil.constant layout
     val layoutSimple               : Mil.simple layout
     val layoutOperand              : Mil.operand layout
@@ -361,7 +361,7 @@ struct
        in l
        end
 
-   fun layoutVTableDescriptor (env, M.VTD {pok, fixed, array}) =
+   fun layoutMetaDataDescriptor (env, M.MDD {pok, fixed, array}) =
        let
          val pok = layoutPObjKind (env, pok)
          val fixed = layoutVector (env, layoutFieldDescriptorShort, fixed)
@@ -466,9 +466,9 @@ struct
        in l
        end
 
-   fun layoutTuple (env, vtDesc, inits) =
+   fun layoutTuple (env, mdDesc, inits) =
        let
-         val vtd = layoutVTableDescriptor (env, vtDesc)
+         val vtd = layoutMetaDataDescriptor (env, mdDesc)
          val inits = layoutOperands (env, inits)
          val l = LU.brace (L.mayAlign (semiCommaL (vtd, inits)))
        in l
@@ -551,16 +551,16 @@ struct
            L.seq [L.seq [Prims.layout prim,
                          L.str (if createThunks then "T" else "D")],
                   LU.parenSeq (layoutOperands (env, args))]
-         | M.RhsTuple {vtDesc, inits} => layoutTuple (env, vtDesc, inits)
+         | M.RhsTuple {mdDesc, inits} => layoutTuple (env, mdDesc, inits)
          | M.RhsTupleSub tf => layoutTupleField (env, tf)
          | M.RhsTupleSet {tupField, ofVal} =>
            L.mayAlign [L.seq [layoutTupleField (env, tupField), L.str " <-"],
                        LU.indent (layoutOperand (env, ofVal))]
-         | M.RhsTupleInited {vtDesc, tup} =>
+         | M.RhsTupleInited {mdDesc, tup} =>
            let
-             val vtDesc = layoutVTableDescriptor (env, vtDesc)
+             val mdDesc = layoutMetaDataDescriptor (env, mdDesc)
              val tup = layoutVariable (env, tup)
-             val l = L.seq [L.str "Inited", L.tuple [vtDesc, tup]]
+             val l = L.seq [L.str "Inited", L.tuple [mdDesc, tup]]
            in l
            end
          | M.RhsIdxGet {idx, ofVal} =>
@@ -905,7 +905,7 @@ struct
         of M.GCode code => layoutCode (env, code)
          | M.GErrorVal t => L.seq [L.str "ERRORVAL : ", layoutTyp (env, t)]
          | M.GIdx d => layoutIdx (env, d)
-         | M.GTuple {vtDesc, inits} => layoutTuple (env, vtDesc, inits)
+         | M.GTuple {mdDesc, inits} => layoutTuple (env, mdDesc, inits)
          | M.GRat r => L.seq [Rat.layout r, L.str "R"]
          | M.GInteger i => L.seq [IntInf.layout i, L.str "I"]
          | M.GThunkValue {typ, ofVal} =>
@@ -977,7 +977,7 @@ struct
                                     L.str "n => show instruction number",
                                     L.str "s => show sum types",
                                     L.str "S => show symbol table",
-                                    L.str "t => show vtable/tuple descriptors",
+                                    L.str "t => show metadata/tuple descriptors",
                                     L.str "T => show thunk types",
                                     L.str "U => show thunk free variable field kinds",
                                     L.str "v => show vector element types",
@@ -1103,7 +1103,7 @@ struct
    val layoutFieldDescriptor      = wrap layoutFieldDescriptor
    val layoutFieldDescriptorShort = wrap layoutFieldDescriptorShort
    val layoutTupleDescriptor      = wrap layoutTupleDescriptor
-   val layoutVTableDescriptor     = wrap layoutVTableDescriptor
+   val layoutMetaDataDescriptor   = wrap layoutMetaDataDescriptor
    val layoutConstant             = wrap layoutConstant
    val layoutSimple               = wrap layoutSimple
    val layoutOperand              = wrap layoutOperand

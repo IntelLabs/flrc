@@ -150,13 +150,13 @@ struct
          of M.RhsSimple s => M.RhsSimple (simple (state, env, s))
           | M.RhsPrim {prim, createThunks, args} =>
             M.RhsPrim {prim = prim, createThunks = createThunks, args = doOps args}
-          | M.RhsTuple {vtDesc, inits} =>
-            M.RhsTuple {vtDesc = vtDesc, inits = doOps inits}
+          | M.RhsTuple {mdDesc, inits} =>
+            M.RhsTuple {mdDesc = mdDesc, inits = doOps inits}
           | M.RhsTupleSub tf => M.RhsTupleSub (doTf tf)
           | M.RhsTupleSet {tupField, ofVal} =>
             M.RhsTupleSet {tupField = doTf tupField, ofVal = doOp ofVal}
-          | M.RhsTupleInited {vtDesc, tup} =>
-            M.RhsTupleInited {vtDesc = vtDesc, tup = doVar tup}
+          | M.RhsTupleInited {mdDesc, tup} =>
+            M.RhsTupleInited {mdDesc = mdDesc, tup = doVar tup}
           | M.RhsIdxGet {idx, ofVal} =>
             M.RhsIdxGet {idx = doVar idx, ofVal = doOp ofVal}
           | M.RhsCont l => M.RhsCont (label (state, env, l))
@@ -401,8 +401,8 @@ struct
                    of M.GCode f => M.GCode (code (state, env, f))
                     | M.GErrorVal _ => global
                     | M.GIdx _ => global
-                    | M.GTuple {vtDesc, inits} =>
-                      M.GTuple {vtDesc = vtDesc, inits = operands (state, env, inits)}
+                    | M.GTuple {mdDesc, inits} =>
+                      M.GTuple {mdDesc = mdDesc, inits = operands (state, env, inits)}
                     | M.GRat _ => global
                     | M.GInteger _ => global
                     | M.GThunkValue {typ, ofVal} =>

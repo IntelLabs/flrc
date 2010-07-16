@@ -26,7 +26,7 @@ struct
 
   end
 
-  structure VT =
+  structure MD =
   struct
 
     val static = Pil.identifier "pLsrVTableStatic"
@@ -50,7 +50,7 @@ struct
              | M.PokPtr       => "VRefTag"
              | M.PokCell      => "VThunkTag")
         
-    fun pObjKindVTable pok =
+    fun pObjKindMetaData pok =
         Pil.identifier
           (case pok
             of M.PokNone      => "pLsrVTableNone"
