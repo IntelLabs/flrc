@@ -61,11 +61,7 @@ struct
     | TViVector of VI.elemType
     | TViMask of VI.elemType
     | TCode of {cc : typ callConv, args : typ Vector.t, ress : typ Vector.t}
-    | TTuple of {
-        pok   : pObjKind,
-        fixed : (typ * fieldVariance) Vector.t,
-        array : (typ * fieldVariance)
-      }
+    | TTuple of {pok : pObjKind, fixed : (typ * fieldVariance) Vector.t, array : (typ * fieldVariance)}
     | TIdx
     | TContinuation of typ Vector.t
     | TThunk of typ
@@ -124,12 +120,9 @@ struct
   datatype fieldIdentifier =
       FiFixed      of int
     | FiVariable   of operand
-    | FiViFixed    of {typ : VI.elemType, idx : int}
-                      (* the fields starting at this fixed offset *)
-    | FiViVariable of {typ : VI.elemType, idx : operand}
-                      (* the array portion fields starting at this index *)
-    | FiViIndexed  of {typ : VI.elemType, idx : operand}
-                      (* the array portion fields given by this vector index *)
+    | FiViFixed    of {typ : VI.elemType, idx : int}       (* the fields starting at this fixed offset *)
+    | FiViVariable of {typ : VI.elemType, idx : operand}   (* the array portion fields starting at this index *)
+    | FiViIndexed  of {typ : VI.elemType, idx : operand}   (* the array portion fields given by this vector index *)
 
   datatype tupleField = TF of {
     tupDesc : tupleDescriptor,
@@ -157,11 +150,11 @@ struct
     | RhsThunkMk of {typ : fieldKind, fvs : fieldKind Vector.t}
     | RhsThunkInit of {
         typ   : fieldKind,
-        thunk : variable option, (* if absent then create *)
+        thunk : variable option,                   (* if absent then create *)
         fx    : effects,
-        code  : variable option, 
-        (* Must be function name. If absent then this is an environment, 
-         * which can only be projected from but not evaled.  *)
+        code  : variable option,                   (* Must be function name. If absent then this is an environment, 
+                                                    * which can only be projected from but not evaled.
+                                                    *)
         fvs   : (fieldKind * operand) Vector.t
       }
     | RhsThunkGetFv of {
@@ -180,11 +173,11 @@ struct
     (* HL *)
     | RhsClosureMk of {fvs : fieldKind Vector.t}
     | RhsClosureInit of {
-        cls  : variable option, (* if absent, create;
-                                 * if present, must be from ClosureMk
-                                 *)
-        code : variable option, (* Must be function name. If absent then this is an environment, 
-                                 * which can only be projected from but not called.  *)
+        cls  : variable option,                (* if absent, create;
+                                                * if present, must be from ClosureMk
+                                                *)
+        code : variable option,                (* Must be function name. If absent then this is an environment, 
+                                                * which can only be projected from but not called.  *)
         fvs  : (fieldKind * operand) Vector.t
       }
     | RhsClosureGetFv of {fvs : fieldKind Vector.t, cls : variable, idx : int}
@@ -195,9 +188,11 @@ struct
     | RhsPSum of {tag : name, typ : fieldKind, ofVal : operand}
     | RhsPSumProj of {typ : fieldKind, sum : variable, tag : name}
 
-  datatype instruction = I of {dests : variable vector, (* arity must match rhs *)
-                               n : int,                 (* scratch info, pass specific *)
-                               rhs : rhs}
+  datatype instruction = I of {
+    dests : variable vector,     (* arity must match rhs *)
+    n     : int,                 (* scratch info, pass specific *)
+    rhs   : rhs
+  }
 
   datatype target = T of {block : label, arguments : operand Vector.t}
 
@@ -277,7 +272,7 @@ struct
     | GIdx        of int ND.t
     | GTuple      of {
         mdDesc : metaDataDescriptor,
-        inits  : simple Vector.t   (* must be all fields *)
+        inits  : simple Vector.t      (* must be all fields *)
       }
     | GRat        of Rat.t
     | GInteger    of IntInf.t
