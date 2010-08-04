@@ -387,6 +387,7 @@ functor MilAnalyseF (
           | M.GTuple {mdDesc, inits}   => analyseSimples (s, e, inits)
           | M.GRat _                   => ()
           | M.GInteger _               => ()
+          | M.GCString _               => ()
           | M.GThunkValue {typ, ofVal} => analyseSimple (s, e, ofVal)
           | M.GSimple simp             => analyseSimple (s, e, simp)
           | M.GClosure {code, fvs}   => 
@@ -402,7 +403,9 @@ functor MilAnalyseF (
 
   fun analyseProgram (s, e, p) =
       let
-        val M.P {globals, symbolTable, entry} = p
+        val M.P {includes, externs, globals, symbolTable, entry} = p
+        fun doOne (v, e) = analyseBinder (s, e, v)
+        val e = VS.fold (MilUtils.Program.externVars p, e, doOne)
         fun doOne (v, _, e) = analyseBinder (s, e, v)
         val e = VD.fold (globals, e, doOne)
         fun doOne (v, g) = analyseGlobal (s, e, v, g)

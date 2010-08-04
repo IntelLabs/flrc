@@ -166,6 +166,7 @@ struct
                   val t = M.TTuple {pok = pok, fixed = tvs, array = tv}
                 in t
                 end
+              | M.TCString => t
               | M.TIdx => t
               | M.TContinuation ts => M.TContinuation (typs ts)
               | M.TThunk t => M.TThunk (typ t)
@@ -283,7 +284,7 @@ struct
       let 
         val c = envGetConfig env
         val (rhs, t, compConst) = POM.OptionSet.query (c, v)
-        val vc = relatedVar (state, v, "_ptr", t, false)
+        val vc = relatedVar (state, v, "_ptr", t, M.VkLocal)
         val s1 = MS.bindRhs (state, env, vc, rhs)
         val (ps, asF, asT) =
             case Utils.Vector.lookup (dests, 0)
@@ -370,7 +371,7 @@ struct
         val help = fn (nm, tg) => (M.CName nm, tg)
         val arms = Vector.map (cases, help)
         val t = M.TName
-        val tgv = relatedVar (state, v, "_tag", t, false)
+        val tgv = relatedVar (state, v, "_tag", t, M.VkLocal)
         val r = POM.Sum.getTag (envGetConfig env, v, M.FkRef)
         val s1 = MS.bindRhs (state, env, tgv, r)
         val tfer =
@@ -403,7 +404,7 @@ struct
                   val aTyps = doTyps (state, env, aTyps)
                   val rTyps = doTyps (state, env, rTyps)
                   val t = POM.Function.codeTyp (clst, aTyps, rTyps)
-                  val f = relatedVar (state, cls, "_code", t, false)
+                  val f = relatedVar (state, cls, "_code", t, M.VkLocal)
                   val r = POM.Function.getCode (c, cls)
                   val s1 = MS.bindRhs (state, env, f, r)
                   val tfer = mk (POM.Function.doCall (c, f, code, cls, args))
@@ -552,6 +553,7 @@ struct
               | M.GTuple _ => NONE
               | M.GRat _ => NONE
               | M.GInteger _ => NONE
+              | M.GCString _ => NONE
               | M.GThunkValue _ => NONE
 
         val gol = Option.map (go, fn (v, g) => [(v, g)])
@@ -586,9 +588,9 @@ struct
         val vs = IM.variablesList stm
         fun doOne v =
             let
-              val M.VI {typ, global} = MSTM.variableInfo (stm, v)
+              val M.VI {typ, kind} = MSTM.variableInfo (stm, v)
               val typ = doTyp (state, env, typ)
-              val () = MSTM.variableSetInfo (stm, v, typ, global)
+              val () = MSTM.variableSetInfo (stm, v, typ, kind)
             in ()
             end
         val () = List.foreach (vs, doOne)
@@ -609,9 +611,9 @@ struct
          * unlowered types of variables.
          *)
         val () = doSymbolTable (state, env, stm)
-        val M.P {symbolTable, globals, entry} = p
+        val M.P {includes, externs, symbolTable, globals, entry} = p
         val st = IM.finish stm
-        val p = M.P {symbolTable = st, globals = globals, entry = entry}
+        val p = M.P {includes = includes, externs = externs, symbolTable = st, globals = globals, entry = entry}
       in p
       end
 

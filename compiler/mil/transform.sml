@@ -259,10 +259,10 @@ functor MilTransformF (
 
   fun doProgram (state, env, order, p) = 
       let
-        val M.P {globals, symbolTable, entry} = p
+        val M.P {includes, externs, globals, symbolTable, entry} = p
         val globals = doGlobals (state, env, order, globals)
         val p = 
-            M.P {globals = globals, symbolTable = symbolTable, entry = entry}
+            M.P {includes = includes, externs = externs, globals = globals, symbolTable = symbolTable, entry = entry}
       in p
       end
 

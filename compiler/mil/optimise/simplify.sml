@@ -360,7 +360,7 @@ struct
                  fn () =>
                     let
                       val t = M.TThunk (MilType.Typer.operand (config, IMil.T.getSi imil, retVal))
-                      val gv = Var.related (imil, fname, "tval", t, true)
+                      val gv = Var.related (imil, fname, "tval", t, M.VkGlobal)
                       val fk = MU.FieldKind.fromTyp (config, t)
                       val g = IGlobal.build (imil, (gv, M.GThunkValue {typ = fk, ofVal = retVal}))
                     in Globalize (gv, retVal, g)
@@ -369,7 +369,7 @@ struct
                     (case retVal
                       of M.SConstant c => globalize ()
                        | M.SVariable v => 
-                         if Var.isGlobal (imil, v) then
+                         if Var.kind (imil, v) = M.VkGlobal then
                            globalize ()
                          else 
                            Reduce (<@ Vector.index (fvs, fn v' => v = v')))
@@ -650,7 +650,7 @@ struct
                   val () = <@ MU.Constant.Dec.cOptionSetEmpty <! MU.Simple.Dec.sConstant @@ arg2
                   val contents = <@ MU.Def.Out.pSet <! Def.toMilDef o Def.get @@ (imil, <@ MU.Simple.Dec.sVariable arg1)
                   val t = MilType.Typer.operand (config, IMil.T.getSi imil, contents)
-                  val v = IMil.Var.new (imil, "sset", t, false)
+                  val v = IMil.Var.new (imil, "sset", t, M.VkLocal)
                   val ni = MU.Instruction.new (v, M.RhsPSetCond {bool = on, ofVal = contents})
                   val mv = IInstr.insertBefore (imil, ni, i)
                   val tg = 
@@ -1310,7 +1310,7 @@ struct
                   of SOME (OTuple ts) => 
                      let
                        val vnew = Var.clone (imil, v)
-                       val mkvar = fn (i, t) => Var.related (imil, v, Int.toString i, t, false)
+                       val mkvar = fn (i, t) => Var.related (imil, v, Int.toString i, t, M.VkLocal)
                        val vs = Vector.mapi (ts, mkvar)
                        val aa = Vector.map (vs, M.SVariable)
                        val vtd = MU.Tuple.mddImmutableTyps (config, ts)
@@ -1326,7 +1326,7 @@ struct
                    | SOME (OThunk t) => 
                      let
                        val vnew = Var.clone (imil, v)
-                       val vval = Var.related (imil, v, "cnts", t, false)
+                       val vval = Var.related (imil, v, "cnts", t, M.VkLocal)
                        val a = M.SVariable vval
                        val fk = MU.FieldKind.fromTyp (config, t)
                        val mi = MU.Instruction.new (vnew, M.RhsThunkValue {typ = fk, thunk = NONE, ofVal = a})
@@ -1483,7 +1483,7 @@ struct
                 val add = 
                  fn (v, g) =>
                     let
-                      val gv = Var.related (imil, v, "", Var.typ (imil, v), true)
+                      val gv = Var.related (imil, v, "", Var.typ (imil, v), M.VkGlobal)
                       val () = IInstr.delete (imil, i)
                       val g = IGlobal.build (imil, (gv, g))
                       val () = WS.addGlobal (ws, g)
@@ -1498,7 +1498,7 @@ struct
                  fn c => 
                     (case c
                       of M.SConstant c => true
-                       | M.SVariable v => Var.isGlobal (imil, v))
+                       | M.SVariable v => not (Var.kind (imil, v) = M.VkLocal))
                    
                 val consts = 
                  fn ops => Vector.forall (ops, const)
@@ -1528,7 +1528,7 @@ struct
                          let
                            val vOpt = <@ Utils.Option.fromVector dests
                            val dest = <@ Utils.Option.atMostOneOf (cls, vOpt)
-                           val () = Try.require (Option.forall (code, fn v => Var.isGlobal (imil, v)))
+                           val () = Try.require (Option.forall (code, fn v => not (Var.kind (imil, v) = M.VkLocal)))
                            val () = Try.require (Vector.forall (fvs, fn (fk, oper) => const oper))
                            val l = add (dest, M.GClosure {code = code, fvs = fvs})
                          in l
@@ -1600,7 +1600,7 @@ struct
                 val () = Try.require (p = Prims.PDom)
                 val arrv = <@ MU.Simple.Dec.sVariable o Try.V.singleton @@ args
                 val config = PD.getConfig d
-                val uintv = IMil.Var.related (imil, dv, "uint", MU.Uintp.t config, false)
+                val uintv = IMil.Var.related (imil, dv, "uint", MU.Uintp.t config, M.VkLocal)
                 val ni = 
                     let
                       val rhs = POM.OrdinalArray.length (config, arrv)
@@ -1653,7 +1653,7 @@ struct
                          end
                        | P.RrConstant c =>
                          let
-                           val gv = Var.new (imil, "mrt", MU.Rational.t, true)
+                           val gv = Var.new (imil, "mrt", MU.Rational.t, M.VkGlobal)
                            val mg = MU.Prims.Constant.toMilGlobal (PD.getConfig d, c)
                            val g = IGlobal.build (imil, (gv, mg))
                            val () = Use.replaceUses (imil, dv, M.SVariable gv)

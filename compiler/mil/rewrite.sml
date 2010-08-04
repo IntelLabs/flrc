@@ -402,6 +402,7 @@ struct
                       M.GTuple {mdDesc = mdDesc, inits = operands (state, env, inits)}
                     | M.GRat _ => global
                     | M.GInteger _ => global
+                    | M.GCString _ => global
                     | M.GThunkValue {typ, ofVal} =>
                       M.GThunkValue {typ = typ, ofVal = simple (state, env, ofVal)}
                     | M.GSimple s => M.GSimple (simple (state, env, s))
@@ -434,11 +435,11 @@ struct
         (env, gs)
       end
 
-  fun program (state, env, M.P {globals = gs, symbolTable, entry})  = 
+  fun program (state, env, M.P {includes, externs, globals = gs, symbolTable, entry})  = 
       let
         val (env, gs) = globals (state, env, gs)
         val entry = variable (state, env, entry)
-        val p = M.P {globals = gs, symbolTable = symbolTable, entry = entry}
+        val p = M.P {includes = includes, externs = externs, globals = gs, symbolTable = symbolTable, entry = entry}
       in p
       end
 

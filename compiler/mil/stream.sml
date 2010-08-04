@@ -807,8 +807,8 @@ struct
      fun uintpLoopCV (state, env, start, i, limit, incr, inits, inargs, body, resv, outargs) =
        let
          val c = toConfig env
-         val ni = relatedVar (state, i, "next", MU.Uintp.t c, false)
-         val nd = namedVar (state, "mild", MU.Bool.t c, false)
+         val ni = relatedVar (state, i, "next", MU.Uintp.t c, M.VkLocal)
+         val nd = namedVar (state, "mild", MU.Bool.t c, M.VkLocal)
          val body = 
              let
                val inc = MU.Uintp.add (c, M.SVariable i, incr)
@@ -821,7 +821,7 @@ struct
          val inits' = Utils.Vector.cons (start, inits)
          val inargs = Utils.Vector.cons (i, inargs)
          val resv'  = Utils.Vector.cons (M.SVariable ni, resv)
-         val nd' = namedVar (state, "mild", MU.Bool.t c, false)
+         val nd' = namedVar (state, "mild", MU.Bool.t c, M.VkLocal)
          val preLoop = bindRhs (state, env, nd', MU.Uintp.lt (c, start, limit))
          fun enterF (state, env, entry, exit) = 
              let

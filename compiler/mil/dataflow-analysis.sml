@@ -446,17 +446,10 @@ functor MilDataFlowAnalysisF (
       in !st
       end
 
-  fun blocks' (env, 
-               m as M.P {globals, symbolTable, entry}, 
-               M.F {body, ...},
-               e,
-               initf,
-               blocks,
-               dominfo) =
+  fun blocks' (env, m as M.P {globals, ...}, M.F {body, ...}, e, initf, blocks, dominfo) =
       let
         val st = ref VD.empty
         val () = doGlobals (env, st, m)
-
         val le = mkLocalEnv' (env, body, SOME blocks, dominfo)
         val infos = initf (env, stateDict (env, st), e)
         val () = projectArgs (le, st, e, infos, m)
@@ -464,9 +457,7 @@ functor MilDataFlowAnalysisF (
       in !st
       end
 
-  fun function (env, 
-                m as M.P {globals, ...}, 
-                M.F {body, ...}) =
+  fun function (env, m as M.P {globals, ...}, M.F {body, ...}) =
       let
         val st = ref VD.empty
         val M.CB {entry, blocks} = body
@@ -476,10 +467,7 @@ functor MilDataFlowAnalysisF (
       in !st
       end
       
-  fun function' (env, 
-                m as M.P {globals, ...}, 
-                M.F {body, ...},
-                dominfo) =
+  fun function' (env, m as M.P {globals, ...}, M.F {body, ...}, dominfo) =
       let
         val st = ref VD.empty
         val M.CB {entry, blocks} = body
@@ -507,4 +495,5 @@ functor MilDataFlowAnalysisF (
         val () = VD.foreach (globals, fn (v, g) => inferFunction (env, st, v, g))
       in !st
       end
+
 end 

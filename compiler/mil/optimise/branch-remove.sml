@@ -452,7 +452,7 @@ struct
    * and b is empty block only with transfer instruction, 
    * then we can make (a->c) directly.
    *)
-  fun checkBlockPSExt (d, m as Mil.P {globals, symbolTable, entry}, imil, ifunc, psDict, a) = 
+  fun checkBlockPSExt (d, m as Mil.P {symbolTable, ...}, imil, ifunc, psDict, a) = 
       let
         val si = I.SymbolInfo.SiTable symbolTable
         val config = PD.getConfig d

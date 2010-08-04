@@ -35,7 +35,7 @@ struct
   val stateBindGlobal = 
    fn (state, t, oper) =>
       let
-        val v = MSTM.variableFresh (stateGetStm state, "mnm", t, true)
+        val v = MSTM.variableFresh (stateGetStm state, "mnm", t, M.VkGlobal)
         val g = M.GSimple oper
         val globals = stateGetGlobals state
         val () = globals := (v, g) :: !globals
@@ -91,11 +91,10 @@ struct
         val glist = ref []
         val state = S {stm = stm, globals = glist}
         val env = E {name = name, config = config}
-        val M.P {symbolTable, globals, entry} =
-            Rewrite.program (state, env, p)
+        val M.P {includes, externs, symbolTable, globals, entry} = Rewrite.program (state, env, p)
         val st = IM.finish stm
         val globals = VD.insertAll (globals, !glist)
-        val p = M.P {symbolTable = st, globals = globals, entry = entry}
+        val p = M.P {includes = includes, externs = externs, symbolTable = st, globals = globals, entry = entry}
       in p
       end
 

@@ -358,7 +358,7 @@ struct
 
   fun rewrite (d, mil) = 
       let
-        val M.P {globals = gs, symbolTable, entry} = mil
+        val M.P {includes, externs, globals = gs, symbolTable, entry} = mil
         val stM = IM.fromExistingAll symbolTable
         val env = E {rename = Rename.none,
                      gDict  = GD.empty,
@@ -368,7 +368,7 @@ struct
         val state = S {stM = stM}
         val gs = globals (state, env, gs)
         val st = IM.finish stM
-        val mil = M.P {globals = gs, symbolTable = st, entry = entry}
+        val mil = M.P {includes = includes, externs = externs, globals = gs, symbolTable = st, entry = entry}
       in mil
       end
 

@@ -24,6 +24,7 @@ signature PIL = sig
     val uint128 : t
     val sintp : t
     val uintp : t
+    val char : t
     val bool : t
     val float : t
     val double : t
@@ -106,12 +107,11 @@ signature PIL = sig
     val constantMacro : identifier * E.t -> t
     val macroCall : identifier * E.t list -> t
     val typDef : T.t * identifier -> t
+    val externVariable : varDec -> t
     val staticVariable : varDec -> t
     val staticVariableExpr : varDec * E.t -> t
-    val staticFunction :
-        T.t * identifier * varDec list * varDecInit list * S.t list -> t
-    val function :
-        T.t * identifier * varDec list * varDecInit list * S.t list -> t
+    val staticFunction : T.t * identifier * varDec list * varDecInit list * S.t list -> t
+    val function : T.t * identifier * varDec list * varDecInit list * S.t list -> t
     val managed : env * bool -> t (* Turn managed on or off *)
     val sequence : t list -> t
     val layout : t -> Layout.t
@@ -166,6 +166,7 @@ struct
     val uint128 = (L.str "uint32", sabs, sdec)
     val sintp = (L.str "sintp", sabs, sdec)
     val uintp = (L.str "uintp", sabs, sdec)
+    val char = (L.str "char", sabs, sdec)
     val bool = (L.str "bool", sabs, sdec)
     val float = (L.str "float", sabs, sdec)
     val double = (L.str "double", sabs, sdec)
@@ -533,8 +534,9 @@ struct
 
     fun typDef (t, tv) = L.seq [L.str "typedef ", T.dec (t, tv), L.str ";"]
 
-    fun staticVariable vd =
-        L.seq [L.str "static ", vd, L.str ";"]
+    fun externVariable vd = L.seq [L.str "extern ", vd, L.str ";"]
+
+    fun staticVariable vd = L.seq [L.str "static ", vd, L.str ";"]
 
     fun staticVariableExpr (vd, e) =
         L.seq [L.str "static ", vd, L.str " = ", E.inPrec (e, 2), L.str ";"]

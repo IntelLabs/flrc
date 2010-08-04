@@ -62,6 +62,7 @@ struct
     | TViMask of VI.elemType
     | TCode of {cc : typ callConv, args : typ Vector.t, ress : typ Vector.t}
     | TTuple of {pok : pObjKind, fixed : (typ * fieldVariance) Vector.t, array : (typ * fieldVariance)}
+    | TCString
     | TIdx
     | TContinuation of typ Vector.t
     | TThunk of typ
@@ -276,6 +277,7 @@ struct
       }
     | GRat        of Rat.t
     | GInteger    of IntInf.t
+    | GCString    of string
     | GThunkValue of {typ : fieldKind, ofVal : simple}
     (* HL *)
     | GSimple     of simple
@@ -285,12 +287,21 @@ struct
 
   type globals = global VD.t
 
-  datatype variableInfo = VI of {typ : typ, global : bool}
+  (* An IkTarget include file is of the same type (C/Pillar) as we are generating from P.
+   * An IkC include file is always a C file.
+   *)
+  datatype includeKind = IkC | IkTarget
+  datatype includeFile = IF of {name : string, kind : includeKind, externs : VS.t}
+
+  datatype variableKind = VkExtern | VkGlobal | VkLocal
+  datatype variableInfo = VI of {typ : typ, kind : variableKind}
   type symbolTable = variableInfo Identifier.symbolTable
   type symbolTableManager = variableInfo Identifier.Manager.t
   type symbolInfo = variableInfo Identifier.SymbolInfo.t
 
   datatype t = P of {
+    includes    : includeFile Vector.t,
+    externs     : VS.t,
     globals     : globals,
     symbolTable : symbolTable,
     entry       : variable

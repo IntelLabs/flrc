@@ -384,13 +384,13 @@ struct
 
   fun program (mil, pd) = 
       let
-        val M.P {globals, symbolTable, entry} = mil
+        val M.P {includes, externs, globals, symbolTable, entry} = mil
         val stm = IM.fromExistingAll symbolTable
         val state = stateMk (stm, pd)
         val env = envMk (PD.getConfig pd)
         val globals = doGlobals (state, env, globals)
         val st = IM.finish stm
-        val mil = M.P {globals = globals, symbolTable = st, entry = entry}
+        val mil = M.P {includes = includes, externs = externs, globals = globals, symbolTable = st, entry = entry}
         fun finalPrint () =
             let
               val () = print ">printing FINAL mil\n"

@@ -313,6 +313,7 @@ struct
                         in M.TCode {cc = cc, args = args, ress = ress}
                         end
                       | (M.TTuple _, M.TTuple _) => Try.fail () (* handled elsewhere *)
+                      | (M.TCString, M.TCString) => M.TCString
                       | (M.TIdx, M.TIdx) => M.TIdx
                       | (M.TContinuation ts1, M.TContinuation ts2) => 
                        let
@@ -343,6 +344,7 @@ struct
                       | (M.TFloat, _) => Try.fail ()         | (M.TDouble, _) => Try.fail ()
                       | (M.TViVector vit1, _) => Try.fail () | (M.TViMask vit1, _) => Try.fail ()
                       | (M.TCode _, _) => Try.fail ()        | (M.TTuple _, _) => Try.fail ()
+                      | (M.TCString, _) => Try.fail ()
                       | (M.TIdx, _) => Try.fail ()           | (M.TContinuation _, _) => Try.fail ()
                       | (M.TThunk _, _) => Try.fail ()       | (M.TPAny, _) => Try.fail ()
                       | (M.TClosure _, _) => Try.fail ()     | (M.TPSum _, _) => Try.fail ()
@@ -396,6 +398,7 @@ struct
                                                 SPAny true
                                               else
                                                 SRef true
+            | M.TCString                   => SPtr true
             | M.TIdx                       => SRef true
             | M.TContinuation ts           => SPtr true
             | M.TThunk t                   => SRef true
@@ -686,6 +689,7 @@ struct
                 val str = OA.varTyp (c, M.PokArray, char)
               in str
               end
+            | P.TCString => M.TCString
             | P.TBool => MU.Uintp.t c
             | P.TArrayF ts =>
               let
@@ -818,6 +822,7 @@ struct
                                 Vector.map (simples (config, si, inits), fn t => (t, M.FvReadWrite)))
            | M.GRat _ => M.TRat
            | M.GInteger _ => M.TInteger
+           | M.GCString _ => M.TCString
            | M.GThunkValue {typ, ofVal} =>
              M.TThunk (simple (config, si, ofVal))
            | M.GSimple s => simple (config, si, s)
@@ -833,230 +838,5 @@ struct
              M.TPType {kind = M.TkE, over = simple (config, si, s)}
 
    end
-
-(*
-   fun variable (st, v) = getTyp (st, v)
-
-   fun variables (st, vs) = 
-       Vector.map (vs,
-                  (fn v => variable (st, v)))
-
-
-   fun constant (st, c) = 
-       (case c
-         of M.CIntegral i      => M.TIntegral (IntArb.typOf i)
-          | M.CName n          => MD.T.ptName
-          | M.CFloat f         => M.TFloat
-          | M.CDouble d        => M.TDouble
-          | M.COptionSetEmpty  => M.TPObj (M.PtType (M.TkE, M.TPBottom))
-          | M.CTypePH          => M.TPObj (M.PtType (M.TkI, M.TPBottom))
-          | M.CViVector (t, _) => M.TViVector t
-          | M.CViMask (t, _)   => M.TViMask t)
-
-
-   fun simple (st, s)   = 
-       (case s
-         of M.SConstant c => constant (st, c)
-          | M.SVariable v => variable (st, v)
-          | M.SCoerce (t, _) => t)
-
-   fun operand (st, s)  = simple (st, s)
-
-   fun operands (st, ops) = 
-       Vector.map (ops,
-                  (fn oper => operand (st, oper)))
-
-
-   local
-     fun warn (state, s) = 
-         (Chat.warn1 
-            (state, "Strange elim type: " ^ s);
-          M.TPAny)
-     fun fail s = 
-         Fail.fail ("typeof.sml", "fail", "Strange elim type: " ^ s)
-   in
-
-   fun pObjElim (state, t) = 
-       (case t
-         of M.PtRat    => warn (state, "PtRat")
-          | M.PtName   => warn (state, "PtName")
-          | M.PtFloat  => warn (state, "PtFloat")
-          | M.PtDouble => warn (state, "PtDouble")
-          | M.PtFunction (_, rt) =>
-            if (Vector.length rt) = 1 then
-              Vector.sub (rt, 0)
-            else
-              warn (state, "TCode")
-          | M.PtSum _   => warn (state, "PtSum")
-          | M.PtArray t => t
-          | M.PtArrayFixed _ => warn (state, "PtFixedArray")
-          | M.PtArrayIdx t => t
-          | M.PtArrayIdxFixed _ => warn (state, "PtFixedIdxArray")
-          | M.PtType (_, t) => t)
-       
-                     
-   fun elim (state, t) = 
-       let
-         
-         val res = 
-             case t
-              of M.TPAny      => warn (state, "TPAny")
-               | M.TPBottom   => warn (state, "TPBottom")
-               | M.TPUnion vs => warn (state, "TPUnion")
-               | M.TPObj po   => pObjElim (state, po)
-               | M.TCode (_, _, ts) => 
-                 if (Vector.length ts) = 1 then
-                   Vector.sub (ts, 0)
-                 else
-                   fail "TCode"
-               | M.TThunk t   => t
-
-               (* Unboxed things have no safe fallback *)
-               | M.TIntegral _     => fail "TIntegral"
-               | M.TFloat          => fail "TFloat"
-               | M.TDouble         => fail "TDouble"
-               | M.TTuple _        => fail "TTuple"
-               | M.TSum _          => fail "TSum"
-               | M.TIdx            => fail "TIdx"
-               | M.TContinuation _ => fail "TContinuation"
-               | M.TViVector _     => fail "TViVector"
-               | M.TViMask _       => fail "TViMask"
-       in 
-           res
-       end
-
-   end
-
-   fun call (st, s)     = 
-       let
-         val t = 
-             case s
-              of M.CCode v               => elim (st, variable (st, v))
-               | M.CClosure v            => elim (st, variable (st, v))
-               | M.CExtern n             => Fail.fail ("MilTypeOf", "call",
-                                                       "extern")
-               | M.CDirectClosure (v, _) => elim (st, variable (st, v))
-
-       in t
-       end
-
-   fun callConv (state, c) = 
-       let
-         val t = 
-             case c
-              of M.CcCode => M.CcCode
-               | M.CcExtern => M.CcExtern
-               | M.CcClosure (v, vs) => M.CcClosure (variable (state, v), 
-                                                     variables (state, vs))
-               | M.CcThunk (v, vs) => M.CcThunk (variable (state, v), 
-                                                 variables (state, vs))
-               | M.CcBulkSpawn => M.CcBulkSpawn
-       in t
-       end
-
-   val global =
-    fn (state, g) => 
-       case g
-        of M.GSimple oper => operand (state, oper)
-         | M.GCode (M.F {effects, 
-                         escapes, 
-                         recursive,
-                         conv,
-                         args,
-                         rtyps,
-                         body}) => M.TCode (callConv (state, conv),
-                                            variables (state, args),
-                                            rtyps)
-         | M.GIdx _ => M.TIdx
-         | M.GTuple (po, opers) => M.TTuple (po, 
-                                             operands (state, opers),
-                                             NONE)
-         | M.GThunkValue s => M.TThunk (operand (state, s))
-         | M.GClosure NONE => M.TPAny
-         | M.GClosure (SOME f) => 
-           (case variable (state, f)
-             of M.TCode (_, args, rtyps) => MD.T.ptFunction (args, rtyps)
-              | _ => M.TPAny)
-         | M.GPRat r => MD.T.ptRat
-         | M.GPSum (nm, opers) => 
-           MD.T.pSum (ND.singleton (nm, 
-                                    operands (state, 
-                                              opers)))
-         | M.GPSet oper => MD.T.pType (M.TkE, 
-                                       operand (state, 
-                                                oper))
-
-   fun eqTK (state, tk1, tk2) = tk1 = tk2
-
-   fun eqTV (state, tv1, tv2) = 
-       Vector.equals (tv1, tv2, (fn (t1, t2) => eqT (state, t1, t2)))
-   and eqTL (state, tv1, tv2) = 
-       List.equals (tv1, tv2, (fn (t1, t2) => eqT (state, t1, t2)))
-   and eqTCC (state, tcc1, tcc2) =
-       (case (tcc1, tcc2)
-         of (M.CcCode, M.CcCode) => true
-          | (M.CcExtern, M.CcExtern) => true
-          | (M.CcClosure (t1, tv1), M.CcClosure (t2, tv2)) =>
-            eqT (state, t1, t2) andalso
-            eqTV (state, tv1, tv2)
-          | (M.CcThunk (t1, tv1), M.CcThunk (t2, tv2)) =>
-            eqT (state, t1, t2) andalso
-            eqTV (state, tv1, tv2)
-          | _ => false)
-   and eqPObj (state, po1, po2) = 
-       (case (po1, po2)
-         of (M.PtRat, M.PtRat) => true
-          | (M.PtName, M.PtName) => true
-          | (M.PtFloat, M.PtFloat) => true
-          | (M.PtDouble, M.PtDouble) => true
-          | (M.PtFunction (ts11, ts12), 
-             M.PtFunction (ts21, ts22)) => 
-            eqTV (state, ts11, ts21) andalso eqTV (state, ts12, ts22)
-          | (M.PtSum tvd1, M.PtSum tvd2) => 
-            List.equals (ND.toList tvd1, ND.toList tvd2,
-                         (fn ((v1, tv1), (v2, tv2)) => 
-                             (v1 = v2 andalso
-                              eqTV (state, tv1, tv2))))
-          | (M.PtArray t1, M.PtArray t2) => eqT (state, t1, t2)
-          | (M.PtArrayFixed tv1, M.PtArrayFixed tv2) => 
-            eqTV (state, tv1, tv2)
-          | (M.PtArrayIdx t1, M.PtArrayIdx t2) => eqT (state, t1, t2)
-          | (M.PtArrayIdxFixed (d1, tv1), M.PtArrayIdxFixed (d2, tv2)) => 
-            List.equals (ND.toList d1, ND.toList d2, op =) andalso
-            eqTV (state, tv1, tv2)
-          | (M.PtType (tk1, t1), M.PtType (tk2, t2)) => 
-            eqTK (state, tk1, tk2) andalso
-            eqT (state, t1, t2)
-          | _ => false)
-   and eqT (state, t1, t2) = 
-       (case (t1, t2) 
-         of (M.TPAny, M.TPAny) => true
-          | (M.TPBottom , M.TPBottom ) => true
-          | (M.TPUnion tv1, M.TPUnion tv2) => eqTV (state, tv1, tv2)
-          | (M.TPObj po1, M.TPObj po2) => eqPObj (state, po1, po2)
-          | (M.TIntegral t1, M.TIntegral t2) => IntArb.equalTyps (t1, t2)
-          | (M.TFloat, M.TFloat) => true
-          | (M.TDouble, M.TDouble) => true
-          | (M.TTuple (poo1, tv1, to1), 
-             M.TTuple (poo2, tv2, to2)) => 
-            Option.equals (poo1, poo2, 
-                        fn (po1, po2) => eqPObj (state, po1, po2)) andalso
-            eqTV (state, tv1, tv2) andalso
-            Option.equals (to1, to2, fn (t1, t2) => eqT (state, t1, t2))
-          | (M.TSum (s1, poo1, tvv1), M.TSum (s2, poo2, tvv2)) => 
-            List.equals (IS.toList s1, IS.toList s2, op =) andalso
-            Option.equals (poo1, poo2, 
-                        fn (po1, po2) => eqPObj (state, po1, po2)) andalso
-            Vector.equals (tvv1, tvv2, fn (tv1, tv2) => eqTV (state, tv1, tv2))
-          | (M.TCode (tcc1, tv11, tv12), M.TCode (tcc2, tv21, tv22)) => 
-            eqTCC (state, tcc1, tcc2) andalso
-            eqTV (state, tv11, tv21) andalso
-            eqTV (state, tv12, tv22)
-          | (M.TIdx , M.TIdx ) => true
-          | (M.TThunk t1, M.TThunk t2) => eqT (state, t1, t2)
-          | (M.TContinuation tv1, M.TContinuation tv2) => 
-            eqTV (state, tv1, tv2)
-          | _ => false)
-*)
 
 end

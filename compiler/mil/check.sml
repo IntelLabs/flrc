@@ -17,6 +17,7 @@ end;
 structure MilCheck :> MIL_CHECK = 
 struct
 
+  structure SS = StringSet
   structure IA = IntArb
   structure VI = VectorInstructions
   structure I = Identifier
@@ -36,20 +37,18 @@ struct
   (*** State ***)
 
   datatype state =
-      S of {failed : bool ref, varsBound : VS.t ref, labsBound : LS.t ref}
+      S of {failed : bool ref, varsBound : VS.t ref, labsBound : LS.t ref, incFiles : SS.t ref}
 
-  fun stateMk () =
-      S {failed = ref false, varsBound = ref VS.empty,
-         labsBound = ref LS.empty}
+  fun stateMk () = S {failed = ref false, varsBound = ref VS.empty, labsBound = ref LS.empty, incFiles = ref SS.empty}
 
   fun setFailed (S {failed, ...}) = failed := true
 
   fun isVarBound (S {varsBound, ...}, v) = VS.member (!varsBound, v)
-  fun addVarBound (S {varsBound, ...}, v) =
-      varsBound := VS.insert (!varsBound, v)
+  fun addVarBound (S {varsBound, ...}, v) = varsBound := VS.insert (!varsBound, v)
   fun isLabBound (S {labsBound, ...}, l) = LS.member (!labsBound, l)
-  fun addLabBound (S {labsBound, ...}, l) =
-      labsBound := LS.insert (!labsBound, l)
+  fun addLabBound (S {labsBound, ...}, l) = labsBound := LS.insert (!labsBound, l)
+  fun isIncFile (S {incFiles, ...}, f) = SS.member (!incFiles, f)
+  fun addIncFile (S {incFiles, ...}, f) = incFiles := SS.insert (!incFiles, f)
 
   fun stateFinish (S {failed, ...}) = !failed
 
@@ -74,7 +73,7 @@ struct
   fun getOrd (E {ord, ...}) = ord
 
   fun getTyp (e, v) = MU.SymbolTable.variableTyp (getSt e, v)
-  fun isGlobal (e, v) = MU.SymbolTable.variableGlobal (getSt e, v)
+  fun varKind (e, v) = MU.SymbolTable.variableKind (getSt e, v)
 
   fun isVarAvailable (E {varsAvail, ...}, v) = VS.member (varsAvail, v)
   fun addVarAvailable (E {c, st, ord, varsAvail, labsAvail, rtyps}, v) =
@@ -193,6 +192,7 @@ struct
                                             val () = typVar (s, e, m, array)
                                           in ()
                                           end
+        | M.TCString                   => ()
         | M.TIdx                       => ()
         | M.TContinuation ts           => typs (s, e, m, ts)
         | M.TThunk t                   => typ (s, e, m, t)
@@ -272,15 +272,15 @@ struct
 
   (*** Binding and Use of Variables and Labels ***)
 
-  fun bindVar (s, e, v, g) =
+  fun bindVar (s, e, v, k) =
       let
         val t = variable (s, e, v)
-        val global = isGlobal (e, v)
-        val globalCheck = (g andalso global) orelse (not g andalso not global)
-        val () = assert (s, globalCheck,
+        val k' = varKind (e, v)
+        val kindCheck = k = k'
+        val () = assert (s, kindCheck,
                          fn () =>
                             "variable " ^ I.variableString' v ^
-                            ": global property inconsistent with binder")
+                            ": kind property inconsistent with binder")
         val () = assert (s, not (isVarBound (s, v)),
                          fn () =>
                             "variable " ^ I.variableString' v ^ " bound twice")
@@ -291,11 +291,11 @@ struct
       in env
       end
 
-  fun bindVars (s, e, vs, g) =
-      Vector.fold (vs, e, fn (v, e) => bindVar (s, e, v, g))
+  fun bindVars (s, e, vs, k) =
+      Vector.fold (vs, e, fn (v, e) => bindVar (s, e, v, k))
 
-  fun bindVarsL (s, e, vs, g) =
-      List.fold (vs, e, fn (v, e) => bindVar (s, e, v, g))
+  fun bindVarsL (s, e, vs, k) =
+      List.fold (vs, e, fn (v, e) => bindVar (s, e, v, k))
 
   fun bindVarTo (s, e, v, t) =
       let
@@ -1135,8 +1135,8 @@ struct
 
   fun addVarDefs (s, e, M.B {parameters, instructions, transfer}) =
       let
-        val e = bindVars (s, e, parameters, false)
-        fun doOne (M.I {dests, ...}, e) = bindVars (s, e, dests, false)
+        val e = bindVars (s, e, parameters, M.VkLocal)
+        fun doOne (M.I {dests, ...}, e) = bindVars (s, e, dests, M.VkLocal)
         val e = Vector.fold (instructions, e, doOne)
         val e =
             case transfer
@@ -1144,7 +1144,7 @@ struct
               | M.TCase _ => e
               | M.TInterProc {ret, ...} =>
                 (case ret
-                  of M.RNormal {rets, ...} => bindVars (s, e, rets, false)
+                  of M.RNormal {rets, ...} => bindVars (s, e, rets, M.VkLocal)
                    | M.RTail _ => e)
               | M.TReturn _ => e
               | M.TCut _ => e
@@ -1172,10 +1172,10 @@ struct
   fun code (s, e, msg, f) =
       let
         val M.F {fx, escapes, recursive, cc, args, rtyps, body} = f
-        fun doOne (s, e, v) = bindVar (s, e, v, false)
+        fun doOne (s, e, v) = bindVar (s, e, v, M.VkLocal)
         val e = callConvE (s, e, doOne, cc)
         val cct = MU.CallConv.map (cc, fn v => variable (s, e, v))
-        val e = bindVars (s, e, args, false)
+        val e = bindVars (s, e, args, M.VkLocal)
         val atyps = variables (s, e, args)
         fun doOne (i, t) =
             typ (s, e, fn () => msg () ^ ": return " ^ Int.toString i, t)
@@ -1276,6 +1276,7 @@ struct
                 end
               | M.GRat r => M.TRat
               | M.GInteger i => M.TInteger
+              | M.GCString _ => M.TCString
               | M.GThunkValue {typ, ofVal} =>
                 let
                   fun msg' () = msg () ^ ": thunk value"
@@ -1328,6 +1329,16 @@ struct
       in ()
       end
 
+  fun externs (s, e, vs) = VS.fold (vs, e, fn (v, e) => bindVar (s, e, v, M.VkExtern))
+
+  fun includeFile (s, e, M.IF {name, kind, externs = evs}) =
+      let
+        val () = assert (s, not (isIncFile (s, name)), fn () => "file " ^ name ^ " include more than once")
+        val () = addIncFile (s, name)
+        val e = externs (s, e, evs)
+      in e
+      end
+
   fun consistentEntryTyp (s, e, t) =
       case t
        of M.TCode {cc = M.CcCode, args, ress} =>
@@ -1340,7 +1351,7 @@ struct
           end
         | _ => reportError (s, "program entry not of code type")
 
-  fun program' (config, M.P {symbolTable, globals, entry, ...}) =
+  fun program' (config, p as M.P {includes, externs = evs, symbolTable, globals, entry}) =
       let
         (* Build the state and environment *)
         val s = stateMk ()
@@ -1354,13 +1365,16 @@ struct
                in (ord, st)
                end)
         val e = envMk (config, st, ord)
+        (* Check includes and externs *)
+        val e = Vector.fold (includes, e, fn (i, e) => includeFile (s, e, i))
+        val e = externs (s, e, evs)
         (* Check the symbol table *)
         val vars = I.listVariables st
         fun msgVar v () = "variable " ^ I.variableString' v
         fun checkOne v = typ (s, e, msgVar v, getTyp (e, v))
         val () = List.foreach (vars, checkOne)
-        val e = bindVarsL (s, e, VD.domain globals, true)
         (* Check the globals *)
+        val e = bindVarsL (s, e, VD.domain globals, M.VkGlobal)
         val () = VD.foreach (globals, fn (x, g) => global (s, e, x, g))
         (* Check the program entry *)
         val et = variableUse (s, e, fn () => "program entry", entry)

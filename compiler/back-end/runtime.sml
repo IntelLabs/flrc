@@ -254,6 +254,11 @@ struct
           | PPtrWrite              => "pLsrPrimPPtrWrite"
           | PPtrNew                => "pLsrPrimPPtrNew"
           | PRatToUIntpChecked     => "pLsrPrimRationalToUInt32Checked"
+          | PCStringAllocate       => Fail.fail ("Runtime", "getPrimName", "PCStringAllocate")
+          | PCStringDeallocate     => Fail.fail ("Runtime", "getPrimName", "PCStringDeallocate")
+          | PCStringGetLen         => Fail.fail ("Runtime", "getPrimName", "PCStringGetLen")
+          | PCStringGetChar        => Fail.fail ("Runtime", "getPrimName", "PCStringGetChar")
+          | PCStringSetChar        => Fail.fail ("Runtime", "getPrimName", "PCStringSetChar")
 
     fun getDivKindName dk =
         (case dk

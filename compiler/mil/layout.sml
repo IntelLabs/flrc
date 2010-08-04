@@ -189,13 +189,8 @@ struct
          val si = getSI env
          val l = 
              if MU.SymbolInfo.variableExists (si, v) then
-               let
-                 val g = MU.SymbolInfo.variableGlobal (si, v)
-                 val l =
-                     L.seq [L.str (if g then "g" else ""),
-                            MU.SymbolInfo.layoutVariable (si, v)]
-               in l
-               end
+               L.seq [Char.layout (MU.VariableKind.toChar (MU.SymbolInfo.variableKind (si, v))),
+                      MU.SymbolInfo.layoutVariable (si, v)]
              else
                L.seq [L.str "BAD_VAR_", MU.SymbolInfo.layoutVariable (si, v)]
        in l
@@ -271,6 +266,7 @@ struct
              val l = LU.brace (L.mayAlign is)
            in l
            end
+         | M.TCString => L.str "CString"
          | M.TIdx => L.str "Idx"
          | M.TContinuation ts =>
            L.seq [L.str "Cont", LU.parenSeq (layoutTyps (env, ts))]
@@ -904,6 +900,7 @@ struct
          | M.GTuple {mdDesc, inits} => layoutTuple (env, mdDesc, inits)
          | M.GRat r => L.seq [Rat.layout r, L.str "R"]
          | M.GInteger i => L.seq [IntInf.layout i, L.str "I"]
+         | M.GCString s => L.seq [L.str "CString", L.paren (L.str s)]
          | M.GThunkValue {typ, ofVal} =>
            let
              val ofVal = layoutSimple (env, ofVal)
@@ -945,14 +942,21 @@ struct
        in l
        end
 
+   fun layoutIncludeFile (env, M.IF {name, kind, externs}) =
+       let
+         val k = L.seq [L.str ": ", L.str (MU.IncludeKind.toString kind)]
+         val externs = VS.layout (externs, fn v => layoutVariable (env, v))
+         val l = L.mayAlign [L.str name, LU.indent k, LU.indent externs]
+       in l
+       end
+
    fun layoutSymbolTable (env, st) = 
        let
          fun layout v =  
              let
-               val g = MU.SymbolTable.variableGlobal (st, v)
-               val prefix = L.str (if g
-                                   then "Global " 
-                                   else "Var    ")
+               val k = MU.SymbolTable.variableKind (st, v)
+               val k = MU.VariableKind.toString k
+               val prefix = L.str (k ^ String.make (7 - String.length k, #" "))
                val name   = layoutVariable (env, v)
                val typ    = MU.SymbolTable.variableTyp (st, v)
                val typ    = layoutTyp (env, typ)
@@ -1041,9 +1045,12 @@ struct
        in (env, symbols)
        end
        
-   fun layoutProgram (c, hs, M.P {globals, symbolTable, entry}) =
+   fun layoutProgram (c, hs, M.P {includes, externs, globals, symbolTable, entry}) =
        let
          val (env, symbols) = envMk (c, Identifier.SymbolInfo.SiTable symbolTable, hs)
+         val includes =
+             [L.str "INCLUDES:", LU.indent (L.align (Vector.toListMap (includes, fn i => layoutIncludeFile (env, i))))]
+         val externs = [L.str "EXTERNS:", LU.indent (VS.layout (externs, fn v => layoutVariable (env, v)))]
          val symtab =
              if symbols then
                [L.str "SYMBOLS:", LU.indent (layoutSymbolTable (env, symbolTable))]
@@ -1051,7 +1058,7 @@ struct
                []
          val globals = [L.str "GLOBALS:", LU.indent (layoutGlobals (env, globals))]
          val entry = [L.seq [L.str "ENTRY: ", layoutVariable (env, entry)]]
-         val l = L.align (symtab @ globals @ entry)
+         val l = L.align (includes @ externs @ symtab @ globals @ entry)
        in l
        end
 

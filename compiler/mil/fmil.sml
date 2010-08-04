@@ -172,6 +172,7 @@ struct
           | M.GTuple {mdDesc, inits}   => ()
           | M.GRat r                   => ()
           | M.GInteger i               => ()
+          | M.GCString _               => ()
           | M.GThunkValue {typ, ofVal} => ()
           | M.GSimple s                => ()
           | M.GClosure vo              => ()
@@ -204,7 +205,7 @@ struct
 
   fun code' (c, si, f, code) = mk (c, si, analyseCode, (f, code))
 
-  fun program' (c, M.P {symbolTable, globals, entry}) = 
+  fun program' (c, M.P {includes, externs, symbolTable, globals, entry}) = 
       mk (c, I.SymbolInfo.SiTable symbolTable, analyseGlobals, globals)
 
   fun codeBody (c, si, f, cb) =

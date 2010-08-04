@@ -308,7 +308,7 @@ struct
 
     fun analyseProgram (config, p) =
         let
-          val (M.P {entry, globals, symbolTable}, fmil) = FMil.program (config, p)
+          val (M.P {globals, symbolTable, entry, ...}, fmil) = FMil.program (config, p)
           val si = I.SymbolInfo.SiTable symbolTable
           val env = envMk (config, si, fmil)
           val cg = MCG.program (config, si, p)
@@ -766,7 +766,7 @@ struct
                             let
                               val l' = newLabel state
                               val retTyps = MU.Code.rtyps (FMil.getCode (getFMil env, f))
-                              val rvs = Vector.map (retTyps, fn t => variableFresh (state, "ret", t, false))
+                              val rvs = Vector.map (retTyps, fn t => variableFresh (state, "ret", t, M.VkLocal))
                               val retBlks = (l', rvs, l)::retBlks
                             in (SOME l', retMap, retBlks)
                             end
@@ -846,14 +846,14 @@ struct
     fun transformProgram (pd, p, a) =
         let
           val config = PassData.getConfig pd
-          val M.P {entry, globals, symbolTable} = p
+          val M.P {includes, externs, entry, globals, symbolTable} = p
           val stm = IM.fromExistingAll symbolTable
           val state = stateMk (pd, stm, entry)
           val env = envMk (config, a, globals, entry)
           fun doOne (x, g, globals) = transformGlobal (state, env, x, g, globals)
           val globals = VD.fold (globals, VD.empty, doOne)
           val st = MU.SymbolTableManager.finish stm
-          val p = M.P {entry = entry, globals = globals, symbolTable = st}
+          val p = M.P {includes = includes, externs = externs, entry = entry, globals = globals, symbolTable = st}
           val () = PassData.report (pd, passname)
         in p
         end

@@ -105,7 +105,7 @@ struct
         (* Add "vi' = RhsSeqQuery (vi)" into the block. *)
         val parameters = Block.getParameters (imil, blk)
         val vi : Mil.variable = Vector.sub (parameters, varIndex)
-        val vi' : Mil.variable = IMil.Var.new (imil, "mdd_vii", MU.Bool.t (IMil.T.getConfig imil), false)
+        val vi' : Mil.variable = IMil.Var.new (imil, "mdd_vii", MU.Bool.t (IMil.T.getConfig imil), Mil.VkLocal)
         val opand : Mil.operand = Mil.SVariable (vi)
         val newMilInstr = MU.Instruction.new (vi',Mil.RhsPSetQuery opand)
         val newInstr : IMil.iInstr = Block.append (imil, blk, newMilInstr)
@@ -160,7 +160,7 @@ struct
                        predecessors : block list) : Mil.variable =  
       let
         (* Replace v with a new variable b in the inarg list *)
-        val newVar = IMil.Var.new (imil, "mdd", MU.Bool.t (IMil.T.getConfig imil), false)
+        val newVar = IMil.Var.new (imil, "mdd", MU.Bool.t (IMil.T.getConfig imil), Mil.VkLocal)
         (* Replace the RhsSetQuery (v) instructions by RhsSimple (newVar) *)
         val uses = IMil.Use.getUses (imil, v)
 	fun doOne (use) = replacePSetQuery (imil, wl, use, newVar)

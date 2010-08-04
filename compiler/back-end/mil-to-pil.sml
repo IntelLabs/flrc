@@ -17,7 +17,8 @@ struct
 
   val passname = "Outputter"
 
-  val fail = fn (f, msg) => Fail.fail ("MilToPil", f, msg)
+  val fail = fn (f, msg) => Fail.fail (passname, f, msg)
+  fun unimplemented (f, msg) = Fail.unimplemented (passname, f, msg)
 
   structure L = Layout
   structure VI = VectorInstructions
@@ -38,8 +39,7 @@ struct
 
   (*** The pass environment ***)
 
-  datatype env =
-      E of {config: Config.t, gdefs : M.globals, func: M.code option, backEdges : LLS.t option}
+  datatype env = E of {config: Config.t, gdefs : M.globals, func: M.code option, backEdges : LLS.t option}
 
   fun newEnv (config, gdefs) = E {config = config, func = NONE, gdefs = gdefs, backEdges = NONE}
 
@@ -255,8 +255,8 @@ struct
   fun getStm (S {stm, ...}) = stm
   fun getSymbolInfo s = I.SymbolInfo.SiManager (getStm s)
 
-  fun getVarTyp (s, v) = MSTM.variableTyp    (getStm s, v)
-  fun isGlobal  (s, v) = MSTM.variableGlobal (getStm s, v)
+  fun getVarTyp  (s, v) = MSTM.variableTyp  (getStm s, v)
+  fun getVarKind (s, v) = MSTM.variableKind (getStm s, v)
 
   fun getName (S {names, ...}, n) = ND.lookup (!names, n)
   fun addName (S {names, ...}, n, v) = names := ND.insert (!names, n, v)
@@ -587,7 +587,7 @@ struct
         val hint = I.labelString l
         val t = M.TContinuation (Vector.new0 ())
       in
-        MSTM.variableFresh (getStm state, hint, t, false)
+        MSTM.variableFresh (getStm state, hint, t, M.VkLocal)
       end
 
   (* Given a variable, derive a separate internal variable in a predictable
@@ -597,7 +597,7 @@ struct
       stringOfVar (state, env, var) ^ "_" ^ str
 
   fun derivedVar' (state, env, v, hint, t) =
-      MSTM.variableRelated (getStm state, v, hint, t, false)
+      MSTM.variableRelated (getStm state, v, hint, t, M.VkLocal)
 
   fun derivedVar args = 
        let
@@ -715,7 +715,7 @@ struct
           val () = incVtables state
           val Vti {name, tag, fixedSize, fixedRefs, array, mut} = vti
           (* Generate the actual vtable *)
-          val vt = freshVariableDT (state, env, "vtable", true)
+          val vt = freshVariableDT (state, env, "vtable", M.VkGlobal)
           val vt' = genVarE (state, env, vt)
           val tag = Pil.E.namedConstant (RT.MD.pObjKindTag tag)
           val args = [vt', tag, Pil.E.string name]
@@ -724,7 +724,7 @@ struct
           (* Generate an array of the fixed reference information *)
           fun doOne b = Pil.E.int (if b then 1 else 0)
           val refs = Pil.E.strctInit (Vector.toListMap (fixedRefs, doOne))
-          val refsv = freshVariableDT (state, env, "vtrefs", true)
+          val refsv = freshVariableDT (state, env, "vtrefs", M.VkGlobal)
           val refsv = genVar (state, env, refsv)
           val isRefT = Pil.T.named RT.MD.isRefTyp
           val refsvd = Pil.varDec (Pil.T.array isRefT, refsv)
@@ -854,7 +854,7 @@ struct
                 let
                   val () = incNames state
                   val stm = getStm state
-                  val v = freshVariableDT (state, env, "name", true)
+                  val v = freshVariableDT (state, env, "name", M.VkGlobal)
                   val ev = genVarE (state, env, v)
                   val str = IM.nameString (stm, n)
                   val el = Pil.E.int (String.length str)
@@ -971,6 +971,7 @@ struct
         | M.TCode {cc, args, ress} =>
           Pil.T.ptr (genCodeType (state, env, (cc, args, ress)))
         | M.TTuple _ => Pil.T.named RT.T.pAny
+        | M.TCString => Pil.T.ptr Pil.T.char
         | M.TIdx => Pil.T.named RT.T.idx
         | M.TContinuation _ => Pil.T.continuation
         | M.TThunk t =>
@@ -1713,7 +1714,7 @@ struct
                        val rt = MU.Code.thunkTyp (getFunc env)
                        val typ = typToFieldKind (env, rt)
                        val stm = getStm state
-                       val vret = MSTM.variableFresh (stm, "ret", rt, false)
+                       val vret = MSTM.variableFresh (stm, "ret", rt, M.VkLocal)
                        val () = addLocal (state, vret)
                        val vret = genVarE (state, env, vret)
                        val calls = Pil.S.expr (Pil.E.assign (vret, call))
@@ -1757,7 +1758,7 @@ struct
                            (fn e =>
                                let
                                  val stm = getStm state
-                                 val vret = MSTM.variableFresh (stm, "ret", rtyp, false)
+                                 val vret = MSTM.variableFresh (stm, "ret", rtyp, M.VkLocal)
                                  val () = addLocal (state, vret)
                                  val vret = genVarE (state, env, vret)
                                  val evals = Pil.S.expr (Pil.E.assign (vret, e))
@@ -2114,7 +2115,7 @@ struct
         val v_dummy = 
             let
               val stm = getStm state
-              val v = MSTM.variableFresh (stm, "integer", M.TPAny, false)
+              val v = MSTM.variableFresh (stm, "integer", M.TPAny, M.VkLocal)
             in v
             end
         fun genLocal s =
@@ -2243,6 +2244,8 @@ struct
                   val d = Pil.D.sequence [Pil.D.sequence (c::code), d]
                 in d
                 end
+              | M.GCString s =>
+                Pil.D.staticVariableExpr (Pil.varDec (Pil.T.ptr Pil.T.char, genVar (state, env, var)), Pil.E.string s)
               | M.GThunkValue {typ, ofVal} =>
                  let
                    val s = genSimple (state, env, ofVal)
@@ -2392,14 +2395,35 @@ struct
   fun program (pd, filename, p) =
       let
         val config = PassData.getConfig pd
-        val M.P {globals, symbolTable, entry, ...} = p
+        val M.P {includes, externs, globals, symbolTable, entry} = p
         val state = newState symbolTable
         val env = newEnv (config, globals)
         val () = Chat.log2 (env, "Starting CodeGen")
+        fun doOne (M.IF {name, kind, externs}, m) =
+            let
+              val (s, m) =
+                  case (m, kind)
+                   of (false, M.IkC     ) => (Pil.D.sequence [],          false)
+                    | (false, M.IkTarget) => (Pil.D.managed (env, true),  true )
+                    | (true,  M.IkC     ) => (Pil.D.managed (env, false), false)
+                    | (true,  M.IkTarget) => (Pil.D.sequence [],          true )
+              val d = Pil.D.sequence [s, Pil.D.includeLocalFile name]
+            in (d, m)
+            end
+        val (incs, m) = Vector.mapAndFold (includes, true, doOne)
+        val incs = Pil.D.sequence (Vector.toList incs @ (if m then [] else [Pil.D.managed (env, true)]))
+        fun doOne extern =
+            let
+              (* NG XXX: Should we special case this on functions and generate a slightly different syntax? *)
+              val t = getVarTyp (state, extern)
+              val t = genTyp (state, env, t)
+              val d = Pil.D.externVariable (Pil.varDec (t, genVar (state, env, extern)))
+            in d
+            end
+        val externs = Pil.D.sequence (List.map (VS.toList externs, doOne))
         val omDefs = OM.genDefs (state, env)
         val globs = genGlobals (state, env, globals)
-        val () =
-            Chat.log2 (env, "Emitting global root reporting and init code")
+        val () = Chat.log2 (env, "Emitting global root reporting and init code")
         val rgr = genReportRoots (state, env)
         val init = genInit (state, env, entry, globals)
         val () = Chat.log2 (env, "Finishing extras")
@@ -2416,6 +2440,9 @@ struct
                Pil.D.includeLocalFile "pil",
                Pil.D.includeLocalFile "plsr",
                Pil.D.blank,
+               incs,
+               externs,
+               Pil.D.blank,
                Pil.D.comment "Types",
                typs,
                Pil.D.blank,
@@ -2429,11 +2456,7 @@ struct
                Pil.D.comment "Initializer",
                init
               ]
-        val () =
-            if Config.reportEnabled (config, passname) then
-              Stats.report (getStats state)
-            else
-              ()
+        val () = if Config.reportEnabled (config, passname) then Stats.report (getStats state) else ()
       in
         Pil.D.layout d
       end

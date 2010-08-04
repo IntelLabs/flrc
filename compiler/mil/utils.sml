@@ -177,6 +177,7 @@ sig
       val tCode : t -> {cc : t Mil.callConv, args : t Vector.t, ress : t Vector.t} option
       val tTuple :
           t -> {pok   : Mil.pObjKind, fixed : (t * Mil.fieldVariance) Vector.t, array : t * Mil.fieldVariance} option
+      val tCString : t -> unit option
       val tIdx : t -> unit option
       val tContinuation : t -> t Vector.t option
       val tThunk : t -> t option
@@ -697,6 +698,7 @@ sig
       val gTuple : t -> {mdDesc : Mil.metaDataDescriptor, inits  : Mil.simple Vector.t} option
       val gRat : t -> Rat.t option
       val gInteger : t -> IntInf.t option
+      val gCString : t -> string option
       val gThunkValue : t -> {typ : Mil.fieldKind, ofVal : Mil.simple} option
       val gSimple : t -> Mil.simple option
       val gClosure : t -> {code : Mil.variable option, fvs  : (Mil.fieldKind * Mil.operand) Vector.t} option
@@ -714,11 +716,32 @@ sig
     val get : t * Mil.variable -> Global.t
   end
 
+  structure VariableKind :
+  sig
+    type t = Mil.variableKind
+    val toChar : t -> char
+    val toString : t -> string
+  end
+
   structure VariableInfo :
   sig
     type t = Mil.variableInfo
     val typ : t -> Typ.t
-    val global : t -> bool
+    val kind : t -> VariableKind.t
+  end
+
+  structure IncludeKind :
+  sig
+    type t = Mil.includeKind
+    val toString : t -> string
+  end
+
+  structure IncludeFile :
+  sig
+    type t = Mil.includeFile
+    val name : t -> string
+    val kind : t -> IncludeKind.t
+    val externs : t -> Identifier.VariableSet.t
   end
 
   structure SymbolTable :
@@ -726,7 +749,7 @@ sig
     type t = Mil.symbolTable
     val variableInfo : t * Mil.variable -> VariableInfo.t
     val variableTyp : t * Mil.variable -> Typ.t
-    val variableGlobal : t * Mil.variable -> bool
+    val variableKind : t * Mil.variable -> VariableKind.t
   end
 
   structure SymbolTableManager :
@@ -734,13 +757,12 @@ sig
     type t = Mil.symbolTableManager
     val variableInfo : t * Mil.variable -> VariableInfo.t
     val variableTyp : t * Mil.variable -> Typ.t
-    val variableGlobal : t * Mil.variable -> bool
-    val variableFresh : t * string * Typ.t * bool -> Mil.variable
+    val variableKind : t * Mil.variable -> VariableKind.t
+    val variableFresh : t * string * Typ.t * VariableKind.t -> Mil.variable
     val variableClone : t * Mil.variable -> Mil.variable
-    val variableRelated : t * Mil.variable * string * Typ.t * bool
-                          -> Mil.variable
+    val variableRelated : t * Mil.variable * string * Typ.t * VariableKind.t -> Mil.variable
     val variableRelatedNoInfo : t * Mil.variable * string -> Mil.variable
-    val variableSetInfo : t * Mil.variable * Typ.t * bool -> unit
+    val variableSetInfo : t * Mil.variable * Typ.t * VariableKind.t -> unit
     val nameMake : t * string -> Mil.name
     val labelFresh : t -> Mil.label
     val finish : t -> SymbolTable.t
@@ -752,7 +774,7 @@ sig
     val variableExists : t * Mil.variable -> bool
     val variableInfo : t * Mil.variable -> VariableInfo.t
     val variableTyp : t * Mil.variable -> Typ.t
-    val variableGlobal : t * Mil.variable -> bool
+    val variableKind : t * Mil.variable -> VariableKind.t
     val variableName : t * Mil.variable -> string
     val variableString : t * Mil.variable -> string
     val nameString : t * Mil.name -> string
@@ -764,6 +786,10 @@ sig
   structure Program :
   sig
     type t = Mil.t
+    val includes : t -> IncludeFile.t Vector.t
+    val incl : t * int -> IncludeFile.t
+    val externs : t -> Identifier.VariableSet.t     (* Just the externs not in include files *)
+    val externVars : t -> Identifier.VariableSet.t  (* All external variables *)
     val globals : t -> Globals.t
     val numGlobals : t -> int
     val globalVars : t -> Mil.VS.t
@@ -1182,6 +1208,9 @@ struct
             | (M.TTuple x1,        M.TTuple x2       ) => tuple (x1, x2)
             | (M.TTuple _,         _                 ) => LESS
             | (_,                  M.TTuple _        ) => GREATER
+            | (M.TCString,         M.TCString        ) => EQUAL
+            | (M.TCString,         _                 ) => LESS
+            | (_,                  M.TCString        ) => GREATER
             | (M.TIdx,             M.TIdx            ) => EQUAL
             | (M.TIdx,             _                 ) => LESS
             | (_,                  M.TIdx            ) => GREATER
@@ -1582,6 +1611,9 @@ struct
           | (M.GInteger    x1, M.GInteger    x2) => IntInf.compare (x1, x2)
           | (M.GInteger    _ , _               ) => LESS
           | (_               , M.GInteger    _ ) => GREATER
+          | (M.GCString    x1, M.GCString    x2) => String.compare (x1, x2)
+          | (M.GCString    _ , _               ) => LESS
+          | (_               , M.GCString    _ ) => GREATER
           | (M.GThunkValue x1, M.GThunkValue x2) => thunkValue (x1, x2)
           | (M.GThunkValue _ , _               ) => LESS
           | (_               , M.GThunkValue _ ) => GREATER
@@ -1751,6 +1783,7 @@ struct
            | M.TViMask et                 => NONE
            | M.TCode {cc, args, ress}     => NONE
            | M.TTuple {pok, fixed, array} => SOME pok
+           | M.TCString                   => NONE
            | M.TIdx                       => NONE
            | M.TContinuation ts           => NONE
            | M.TThunk t                   => SOME M.PokCell 
@@ -1950,6 +1983,7 @@ struct
           | M.TViMask et                 => 
           | M.TCode {cc, args, ress}     => 
           | M.TTuple {pok, fixed, array} => 
+          | M.TCString                   =>
           | M.TIdx                       => 
           | M.TContinuation ts           => 
           | M.TThunk t                   => 
@@ -1980,6 +2014,7 @@ struct
           | M.TViMask et                 => TS.TsMask et
           | M.TCode {cc, args, ress}     => TS.TsNonRefPtr
           | M.TTuple {pok, fixed, array} => TS.TsRef
+          | M.TCString                   => TS.TsNonRefPtr
           | M.TIdx                       => TS.TsRef
           | M.TContinuation ts           => TS.TsNonRefPtr
           | M.TThunk t                   => TS.TsRef
@@ -2028,6 +2063,7 @@ struct
           | M.TViMask et                 => true
           | M.TCode {cc, args, ress}     => true
           | M.TTuple {pok, fixed, array} => true
+          | M.TCString                   => true
           | M.TIdx                       => true
           | M.TContinuation ts           => true
           | M.TThunk t                   => true
@@ -2076,6 +2112,8 @@ struct
        fn t => (case t of M.TCode r => SOME r | _ => NONE)
       val tTuple = 
        fn t => (case t of M.TTuple r => SOME r | _ => NONE)
+      val tCString =
+       fn t => (case t of M.TCString => SOME () | _ => NONE)
       val tIdx = 
        fn t => (case t of M.TIdx => SOME () | _ => NONE)
       val tContinuation = 
@@ -2230,6 +2268,7 @@ struct
            | M.TViMask et                 => NONE
            | M.TCode {cc, args, ress}     => SOME (M.FkBits (FieldSize.ptrSize c))
            | M.TTuple {pok, fixed, array} => SOME M.FkRef
+           | M.TCString                   => SOME (M.FkBits (FieldSize.ptrSize c))
            | M.TIdx                       => SOME M.FkRef
            | M.TContinuation ts           => SOME (M.FkBits (FieldSize.ptrSize c))
            | M.TThunk t                   => SOME M.FkRef
@@ -3531,6 +3570,7 @@ struct
           | M.GTuple _      => true
           | M.GRat _        => true
           | M.GInteger _    => true
+          | M.GCString _    => true
           | M.GThunkValue _ => true
           | M.GSimple _     => false
           | M.GClosure _    => false
@@ -3550,6 +3590,7 @@ struct
            | M.GTuple {mdDesc, ...} => SOME (MetaDataDescriptor.pok mdDesc)
            | M.GRat _               => NONE
            | M.GInteger _           => NONE
+           | M.GCString _           => NONE
            | M.GThunkValue _        => SOME M.PokCell 
            | M.GSimple s            => Simple.pObjKind s
            | M.GClosure _           => SOME M.PokFunction
@@ -3574,6 +3615,8 @@ struct
        fn g => (case g of M.GRat r => SOME r | _ => NONE)
       val gInteger =
        fn g => (case g of M.GInteger r => SOME r | _ => NONE)
+      val gCString =
+       fn g => (case g of M.GCString r => SOME r | _ => NONE)
       val gThunkValue =
        fn g => (case g of M.GThunkValue r => SOME r | _ => NONE)
       val gSimple =
@@ -3604,13 +3647,44 @@ struct
 
   end
 
+  structure IncludeKind =
+  struct
+
+    type t = Mil.includeKind
+
+    fun toString ik = case ik of M.IkC => "C" | M.IkTarget => "Target"
+
+  end
+
+  structure IncludeFile =
+  struct
+
+    type t = Mil.includeFile
+
+    fun name    (M.IF {name,    ...}) = name
+    fun kind    (M.IF {kind,    ...}) = kind
+    fun externs (M.IF {externs, ...}) = externs
+
+  end
+
+  structure VariableKind =
+  struct
+
+    type t = Mil.variableKind
+
+    fun toChar vk = case vk of M.VkExtern => #"e" | M.VkGlobal => #"g" | M.VkLocal => #"l"
+
+    fun toString vk = case vk of M.VkExtern => "extern" | M.VkGlobal => "global" | M.VkLocal => "local"
+
+  end
+
   structure VariableInfo =
   struct
 
     type t = Mil.variableInfo
 
-    fun typ    (M.VI {typ,    ...}) = typ
-    fun global (M.VI {global, ...}) = global
+    fun typ  (M.VI {typ,  ...}) = typ
+    fun kind (M.VI {kind, ...}) = kind
 
   end
 
@@ -3623,8 +3697,7 @@ struct
 
     fun variableTyp (symtab, v) = VariableInfo.typ (variableInfo (symtab, v))
 
-    fun variableGlobal (symtab, v) =
-        VariableInfo.global (variableInfo (symtab, v))
+    fun variableKind (symtab, v) = VariableInfo.kind (variableInfo (symtab, v))
 
   end
 
@@ -3635,22 +3708,22 @@ struct
 
     fun variableInfo (stm, v) = IM.variableInfo (stm, v)
 
-    fun variableTyp    (stm, v) = VariableInfo.typ    (variableInfo (stm, v))
-    fun variableGlobal (stm, v) = VariableInfo.global (variableInfo (stm, v))
+    fun variableTyp  (stm, v) = VariableInfo.typ  (variableInfo (stm, v))
+    fun variableKind (stm, v) = VariableInfo.kind (variableInfo (stm, v))
 
-    fun variableFresh (stm, hint, t, g) =
-        IM.variableFresh (stm, hint, M.VI {typ = t, global = g})
+    fun variableFresh (stm, hint, t, k) =
+        IM.variableFresh (stm, hint, M.VI {typ = t, kind = k})
 
     fun variableClone (stm, v) = IM.variableClone (stm, v)
 
-    fun variableRelated (stm, v, hint, t, g) =
-        IM.variableRelated (stm, v, hint, M.VI {typ = t, global = g})
+    fun variableRelated (stm, v, hint, t, k) =
+        IM.variableRelated (stm, v, hint, M.VI {typ = t, kind = k})
 
     fun variableRelatedNoInfo (stm, v, hint) =
         IM.variableRelatedNoInfo (stm, v, hint)
 
-    fun variableSetInfo (stm, v, t, g) =
-        IM.variableSetInfo (stm, v, M.VI {typ = t, global = g})
+    fun variableSetInfo (stm, v, t, k) =
+        IM.variableSetInfo (stm, v, M.VI {typ = t, kind = k})
 
     fun nameMake (stm, s) = IM.nameMake (stm, s)
 
@@ -3671,8 +3744,8 @@ struct
     fun variableName   (si, v) = SI.variableName   (si, v)
     fun variableString (si, v) = SI.variableString (si, v)
 
-    fun variableTyp    (si, v) = VariableInfo.typ    (variableInfo (si, v))
-    fun variableGlobal (si, v) = VariableInfo.global (variableInfo (si, v))
+    fun variableTyp  (si, v) = VariableInfo.typ  (variableInfo (si, v))
+    fun variableKind (si, v) = VariableInfo.kind (variableInfo (si, v))
 
     fun nameString (si, n) = SI.nameString (si, n)
 
@@ -3687,9 +3760,15 @@ struct
 
     type t = Mil.t
 
+    fun includes    (M.P {includes,    ...}) = includes
+    fun externs     (M.P {externs,     ...}) = externs
     fun globals     (M.P {globals,     ...}) = globals
     fun symbolTable (M.P {symbolTable, ...}) = symbolTable
     fun entry       (M.P {entry,       ...}) = entry
+
+    fun incl (p, i) = Vector.sub (includes p, i)
+
+    fun externVars p = Vector.fold (includes p, externs p, fn (i, evs) => VS.union (IncludeFile.externs i, evs))
 
     fun numGlobals  p     = Globals.num  (globals p   )
     fun globalVars  p     = Globals.vars (globals p   )
@@ -4290,6 +4369,7 @@ struct
            | M.TViMask et                 => t
            | M.TCode {cc, args, ress}     => M.TPtr
            | M.TTuple {pok, fixed, array} => (case pok of M.PokNone => M.TRef | _ => M.TPAny)
+           | M.TCString                   => t
            | M.TIdx                       => M.TRef
            | M.TContinuation ts           => M.TPtr
            | M.TThunk t                   => M.TRef
