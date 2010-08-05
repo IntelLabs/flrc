@@ -1,4 +1,3 @@
-
 (* The Intel P to C/Pillar Compiler *)
 (* Copyright (C) Intel Corporation, January 2009 *)
 

@@ -941,7 +941,7 @@ struct
 
   fun getInductionVariables (LS {inductionVars, ...}, h) =
       case LD.lookup (inductionVars, h)
-       of NONE     => fail ("getInductionVariables", "no induction variables for header: " ^ I.labelString h)
+       of NONE     => []
         | SOME ivs => ivs
 
   fun inductionVars (LS {inductionVars, ...})= inductionVars

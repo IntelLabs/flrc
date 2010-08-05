@@ -1,6 +1,35 @@
 (* The Intel P to C/Pillar Compiler *)
 (* Copyright (C) Intel Corporation, July 2008 *)
 
+(* Comment by Leaf, after reviewing code.
+ * 
+ * This seems to be basically a standard intra-procedural forward
+ * dataflow, with tricks to make the computation more efficient.  The
+ * functor parameters essentially specify the lattice type, with
+ * associated bottom, equality, and join operations; along with
+ * transfer functions for instructions, gotos, globals, and calls.
+ * 
+ * The globals are dealt with in a single un-ordered pass, which is
+ * probably not generally correct.  As long as nothing too interesting
+ * is being extracted from the globals though, this will be fine.
+ *
+ * My rough understanding of the algorithm being used here is as follows.
+ * For a given block (starting at the entry), compute the forward dataflow
+ * information for the block.  From the transfer, recursively analyze
+ * any successors which are dominated by the current block.  Anything 
+ * which is reachable, but not dominated, gets put on a todo list,
+ * and accumulates dataflow information.  When everything dominated
+ * by the block has been analyzed (recursively), there will be a todo 
+ * list of things leftover.  These are then analyzed (possibly producing 
+ * more things to do) until nothing is left.  If a fixed point has been 
+ * reached (that is, the initial information that we had for the block
+ * is the same as what we have just computed), then we are done.  Otherwise
+ * we iterate.
+ *
+ * Limitations:
+ *   - This doesn't provide a distinction between initial values for local variables
+ *     and initial values for inputs.
+ *)
 signature MIL_DATAFLOW_ANALYSIS =
 sig
   type info
@@ -51,7 +80,6 @@ functor MilDataFlowAnalysisF (
   val passname : string
   val indent : int
 
-  val deriveConstant : env * Mil.constant -> info
   val deriveInstr : env
                     * (Mil.variable -> info)
                     * Mil.variable vector
@@ -76,7 +104,6 @@ functor MilDataFlowAnalysisF (
 
   val emptyInfo  : env * Mil.variable -> info
   val mergeInfo  : env * info * info -> info
-  val coerceInfo : env * Mil.typ * info -> info
   val equalInfo  : env * info * info -> bool
   val layoutInfo : env * info -> Layout.t
 ) :> MIL_DATAFLOW_ANALYSIS where type env = env 

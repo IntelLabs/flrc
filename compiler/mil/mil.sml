@@ -124,6 +124,8 @@ struct
     | FiViFixed    of {typ : VI.elemType, idx : int}       (* the fields starting at this fixed offset *)
     | FiViVariable of {typ : VI.elemType, idx : operand}   (* the array portion fields starting at this index *)
     | FiViIndexed  of {typ : VI.elemType, idx : operand}   (* the array portion fields given by this vector index *)
+                                                           (* Missing vector of tuples, scalar offset into the tuples *)
+                                                           (* Missing vector of tuples, vector of offests into the tuples? *)
 
   datatype tupleField = TF of {
     tupDesc : tupleDescriptor,
