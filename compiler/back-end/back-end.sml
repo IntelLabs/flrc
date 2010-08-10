@@ -505,7 +505,9 @@ struct
                 | (Config.GcsConservative, LdICC, false, false) => ["gc-bdw.lib"]
                 | (Config.GcsConservative, LdPillar, _, _) =>
                   fail ("gcLibraries", "Conservative GC not supported on Pillar")
-                | (Config.GcsAccurate, LdPillar, _, _) => 
+                | (Config.GcsAccurate, LdPillar, _, false) => 
+                  ["pgc.lib", "imagehlp.lib", agc (config, debug)]
+                | (Config.GcsAccurate, LdPillar, _, true) => 
                   ["pgcd.lib", "imagehlp.lib", agc (config, debug)]
                 | (Config.GcsAccurate, _, _, _) => 
                   fail ("gcLibraries", "Accurate GC not supported on C"))
