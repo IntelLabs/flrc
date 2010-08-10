@@ -153,10 +153,13 @@ functor MilDataFlowAnalysisF (
    *)
   fun dbgPrint (E env, msg) = 
       if Config.debug andalso (debugPass (getConfig (#env env))) then 
-        print msg
+        print (msg ())
       else ()
 
   fun dbgLayout' (msg) = if Config.debug then LU.printLayout msg else ()
+
+  val fail = 
+   fn (f, m) => Fail.fail ("dataflow-analysis.sml", f, m)
 
   structure Debug =
   struct
@@ -183,13 +186,13 @@ functor MilDataFlowAnalysisF (
           case getStateInfo (#env env, st, v)
            of SOME old => 
               let
-                val () = dbgPrint (E env, dbgString ("PRE-UPDATE", v, old))
-                val () = dbgPrint (E env, dbgString ("NEW-INFO", v, i))
+                val () = dbgPrint (E env, fn () => dbgString ("PRE-UPDATE", v, old))
+                val () = dbgPrint (E env, fn () => dbgString ("NEW-INFO", v, i))
               in
                 mergeInfo (#env env, old, i)
               end
             | NONE => i
-        val () = dbgPrint (E env, dbgString ("UPDATE", v, new))
+        val () = dbgPrint (E env, fn () => dbgString ("UPDATE", v, new))
       in 
         setStateInfo (st, v, new)
       end
@@ -239,14 +242,51 @@ functor MilDataFlowAnalysisF (
 
   fun envGetBlock (E env, label) = Option.valOf (LD.lookup (#blocks env, label))
 
+  val layoutInfoVector = 
+   fn (E env, vect) => Vector.layout (fn info => layoutInfo (#env env, info)) vect 
+
+  fun envGetFixInfo (E env, label) = LD.lookup (!(#fixinfo env), label)
+
+  val initializeFixInfo = 
+   fn (e as E env, label, vect) =>
+      let
+        val () = dbgPrint (e, fn () => "FIX_INIT: " ^ LU.toString (I.layoutLabel (label)) ^ " : ")
+        val () = dbgPrint (e, fn () => LU.toString (layoutInfoVector (e, vect)) ^ "\n")
+        val fref = #fixinfo env
+        val fd = !fref
+        val () = fref := LD.insert (fd, label, vect)
+      in ()
+      end
+
+  val clearFixInfo = 
+   fn (e as E env, label) =>
+      let
+        val () = dbgPrint (e, fn () => "FIX_CLEAR: " ^ LU.toString (I.layoutLabel (label)) ^ " : ")
+        val () = #fixinfo env := LD.remove (!(#fixinfo env), label)
+      in ()
+      end
+
+  val mergeFixInfo = 
+   fn (e as E env, label, args) => 
+      let
+        val () = dbgPrint (e, fn () => "FIX_MERGE: " ^ LU.toString (I.layoutLabel (label)) ^ " => ")
+        val new = 
+            case envGetFixInfo (e, label) 
+             of SOME old => Vector.map2 (old, args, fn (a, b) => mergeInfo (#env env, a, b))
+              | NONE => args
+        val () = dbgPrint (e, fn () => LU.toString (layoutInfoVector (e, new)) ^ "\n")
+        val () = #fixinfo env := LD.insert (!(#fixinfo env), label, new)
+      in ()
+      end
+
   (* pre-process before getting into a block. It will process the block's 
      successors as well, so it enters an SCC. *)
   fun envEnterBlock (E env, st, label) =
       let
-        val () = dbgPrint (E env, "ENTER: " ^ LU.toString (I.layoutLabel (label)) ^ "\n")
+        val () = dbgPrint (E env, fn () => "ENTER: " ^ LU.toString (I.layoutLabel (label)) ^ "\n")
         val M.B {parameters, ...} = envGetBlock (E env, label)
         val vect = Vector.map (parameters, fn (s) => getStateInfoDef (#env env, st, s))
-        val () = #fixinfo env := LD.insert (!(#fixinfo env), label, vect)
+        val () = initializeFixInfo (E env, label, vect)
         val () = List.push (#current env, label)
       in ()
       end
@@ -254,24 +294,19 @@ functor MilDataFlowAnalysisF (
   (* post-process after leaving a block or SCC *)
   fun envExitBlock (E env, label) =
       let
-        val () = dbgPrint (E env, "EXIT: " ^ LU.toString (I.layoutLabel (label)) ^ "\n")
-        val () = #fixinfo env := LD.remove (!(#fixinfo env), label)
+        val () = dbgPrint (E env, fn () => "EXIT: " ^ LU.toString (I.layoutLabel (label)) ^ "\n")
+        val () = clearFixInfo (E env, label)
         val () = #todo env := LS.remove (!(#todo env), label)
         val _ = List.pop (#current env)
       in ()
       end
     
-  fun envGetDeferred (E env, label) = LD.lookup (!(#fixinfo env), label)
-
   (* process deferred block *)
   fun envDefer (E env, label, args) =
       let
-        val () = dbgPrint (E env, "DEFER: " ^ LU.toString (I.layoutLabel (label)) ^ "\n")
-        val new = case envGetDeferred (E env, label) 
-                   of SOME old => Vector.map2 (old, args, fn (a, b) => mergeInfo (#env env, a, b))
-                    | NONE => args
-      in
-        #fixinfo env := LD.insert (!(#fixinfo env), label, new)
+        val () = dbgPrint (E env, fn () => "DEFER: " ^ LU.toString (I.layoutLabel (label)) ^ "\n")
+        val () = mergeFixInfo (E env, label, args)
+      in ()
       end
 
   (* push a block into todo list *)
@@ -340,7 +375,7 @@ functor MilDataFlowAnalysisF (
                     fun doOne (l : I.label) = 
                         let
                           val () = 
-                              Option.app (envGetDeferred (E env, l),
+                              Option.app (envGetFixInfo (E env, l),
                                           fn x => projectArgs (E env, st, l, x, m))
                         in
                           goLabel (E env, st, l, m)
@@ -352,7 +387,7 @@ functor MilDataFlowAnalysisF (
                     else processTodos (next)
                   end
               val () = processTodos (envGetTodos (E env))
-              val nt = envGetDeferred (E env, l)
+              val nt = envGetFixInfo (E env, l)
               val () = Option.app (nt, fn (x) => projectArgs (E env, st, l, x, m))
               val p = 
                 case nt
@@ -364,12 +399,12 @@ functor MilDataFlowAnalysisF (
             in 
               if not p then 
                 let
-                  val () = dbgPrint (E env, "DFA goBlock ITERATE: " ^ (LU.toString (I.layoutLabel l)) ^ "\n")
+                  val () = dbgPrint (E env, fn () => "DFA goBlock ITERATE: " ^ (LU.toString (I.layoutLabel l)) ^ "\n")
                 in
                   fix (l, b)
                 end
               else 
-                dbgPrint (E env, "DFA goBlock FIXED: " ^ (LU.toString (I.layoutLabel l)) ^ "\n")
+                dbgPrint (E env, fn () => "DFA goBlock FIXED: " ^ (LU.toString (I.layoutLabel l)) ^ "\n")
             end
         val () = envEnterBlock (E env, st, l)
         val () = fix (l, envGetBlock (E env, l))
