@@ -58,8 +58,7 @@ struct
     (* Invariant: int inf fits in the range of the type *)
 
   fun stringOfSize sz =
-      case sz
-       of S8 => "8" | S16 => "16" | S32 => "32" | S64 => "64"
+      case sz of S8 => "8" | S16 => "16" | S32 => "32" | S64 => "64"
 
   fun stringOfSigned signed =
       case signed of Signed => "S" | Unsigned => "U"
@@ -76,8 +75,7 @@ struct
       stringOfTypShort t ^ "(" ^ IntInf.toString i ^ ")"
 
   fun layout (X (t, i)) =
-      Layout.seq [Layout.str (stringOfTypShort t),
-                  Layout.paren (IntInf.layout i)]
+      Layout.seq [Layout.str (stringOfTypShort t), Layout.paren (IntInf.layout i)]
 
   fun equalTyps (t1, t2) = t1 = t2
 

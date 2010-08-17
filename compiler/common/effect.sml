@@ -133,7 +133,7 @@ structure Effect :> EFFECT = struct
         fun doOne (f, str) =
             if contains (s, f) then str ^ (effectToString f) else str
         val str = List.fold (effects, "", doOne)
-      in Layout.str ("[" ^ str ^ "]")
+      in Layout.str ("{" ^ str ^ "}")
       end
 
   fun fromList effects = List.fold(effects, Total, add)

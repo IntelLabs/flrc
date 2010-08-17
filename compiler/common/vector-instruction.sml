@@ -86,6 +86,7 @@ sig
 
   val layoutSize : size -> Layout.t
   val layoutElemType : elemType -> Layout.t
+  val layoutElemTypeShort : elemType -> Layout.t
   val layoutPrim : prim -> Layout.t
 
   structure Compare :
@@ -268,14 +269,14 @@ struct
 
   fun stringOfElemTypeShort t =
       case t
-       of ViUInt8   => "UI8"
-        | ViUInt16  => "UI16"
-        | ViUInt32  => "UI32"
-        | ViUInt64  => "UI64"
-        | ViSInt8   => "SI8"
-        | ViSInt16  => "SI16"
-        | ViSInt32  => "SI32"
-        | ViSInt64  => "SI64"
+       of ViUInt8   => "U8"
+        | ViUInt16  => "U16"
+        | ViUInt32  => "U32"
+        | ViUInt64  => "U64"
+        | ViSInt8   => "S8"
+        | ViSInt16  => "S16"
+        | ViSInt32  => "S32"
+        | ViSInt64  => "S64"
         | ViFloat16 => "F16"
         | ViFloat32 => "F32"
         | ViFloat64 => "F64"
@@ -333,6 +334,7 @@ struct
 
   fun layoutSize vs = Layout.str (stringOfSize vs)
   fun layoutElemType vet = Layout.str (stringOfElemType vet)
+  fun layoutElemTypeShort vet = Layout.str (stringOfElemTypeShort vet)
   fun layoutPrim p = Layout.str (stringOfPrim p)
 
   structure Compare =

@@ -65,7 +65,6 @@ sig
   sig
     type 'a t = 'a Mil.callConv
     val compare : 'a Compare.t -> 'a t Compare.t
-    val layout : ('a -> Layout.t) -> ('a t -> Layout.t)
     val eq : ('a * 'a -> bool) -> ('a t * 'a t -> bool)
     val map : 'a t * ('a -> 'b) -> 'b t
     val foreach : 'a t * ('a -> unit) -> unit
@@ -1645,26 +1644,6 @@ struct
         in Compare.C.equal (compare cmpA)
         end
 
-    fun layout layout' cc = 
-        let
-         fun ct (s, v, vs) =
-             let
-               val i = layout' v
-               val l = Vector.toListMap (vs, layout')
-               val fst = Layout.seq [i, Layout.str ";"]
-               val rest = Layout.separateRight (l, ",")
-               val l = 
-                   Layout.seq [Layout.str s,
-                               LayoutUtils.paren (Layout.mayAlign (fst :: rest))]
-             in l
-             end
-        in
-          case cc
-           of M.CcCode => Layout.str "Code"
-            | M.CcClosure {cls, fvs} => ct ("Closure", cls, fvs)
-            | M.CcThunk {thunk, fvs} => ct ("Thunk", thunk, fvs)
-        end
-
     fun map (cc, f) =
         case cc
          of M.CcCode => M.CcCode
@@ -1747,19 +1726,19 @@ struct
 
     fun toString pok =
         case pok
-         of M.PokNone      => "none"
-          | M.PokRat       => "rat"
-          | M.PokFloat     => "float"
-          | M.PokDouble    => "double"
-          | M.PokName      => "name"
-          | M.PokFunction  => "fun"
-          | M.PokArray     => "oarray"
-          | M.PokDict      => "iarray"
-          | M.PokTagged    => "sum"
-          | M.PokOptionSet => "set"
-          | M.PokPtr       => "ref"
-          | M.PokType      => "type"
-          | M.PokCell      => "thunk"
+         of M.PokNone      => "None"
+          | M.PokRat       => "Rat"
+          | M.PokFloat     => "Float"
+          | M.PokDouble    => "Double"
+          | M.PokName      => "Name"
+          | M.PokFunction  => "Fun"
+          | M.PokArray     => "Array"
+          | M.PokDict      => "Dict"
+          | M.PokTagged    => "Tag"
+          | M.PokOptionSet => "Set"
+          | M.PokPtr       => "Ptr"
+          | M.PokType      => "Type"
+          | M.PokCell      => "Cell"
 
     val compare = Compare.pObjKind
     val eq = Compare.C.equal compare
@@ -1852,8 +1831,8 @@ struct
 
     fun toString fv =
         case fv
-         of M.FvReadOnly  => "readonly"
-          | M.FvReadWrite => "readwrite"
+         of M.FvReadOnly  => "ReadOnly"
+          | M.FvReadWrite => "ReadWrite"
 
     fun toChar fv =
         case fv
@@ -2214,10 +2193,10 @@ struct
 
     fun toString fk =
         case fk
-         of M.FkRef     => "ref"
-          | M.FkBits fs => "bits" ^ (Int.toString (FieldSize.numBits fs))
-          | M.FkFloat   => "float"
-          | M.FkDouble  => "double"
+         of M.FkRef     => "Ref"
+          | M.FkBits fs => "Bits" ^ (Int.toString (FieldSize.numBits fs))
+          | M.FkFloat   => "Float"
+          | M.FkDouble  => "Double"
 
     val compare = Compare.fieldKind
     val eq = Compare.C.equal compare
@@ -3674,7 +3653,7 @@ struct
 
     fun toChar vk = case vk of M.VkExtern => #"e" | M.VkGlobal => #"g" | M.VkLocal => #"l"
 
-    fun toString vk = case vk of M.VkExtern => "extern" | M.VkGlobal => "global" | M.VkLocal => "local"
+    fun toString vk = case vk of M.VkExtern => "Extern" | M.VkGlobal => "Global" | M.VkLocal => "Local"
 
   end
 

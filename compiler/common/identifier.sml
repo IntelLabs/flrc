@@ -209,6 +209,7 @@ sig
     val layoutLabel : label -> Layout.t
 
     val listVariables : 'a symbolTable -> variable list
+    val listNames : 'a symbolTable -> name list
 
     (** Symbol Table Management **)
     structure Manager :
@@ -478,6 +479,9 @@ struct
           val vs = List.map (vns, #1)
         in vs
         end
+
+    fun listNames (S {names, ...}) =
+        List.map (NameDict.toList names, #1)
 
     structure Manager =
     struct
