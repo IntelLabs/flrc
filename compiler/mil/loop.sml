@@ -5,7 +5,12 @@ signature MIL_LOOP =
 sig
 
   type blocks = Mil.block Identifier.LabelDict.t
-
+  
+  (* The blocks field contains the set of blocks in the loop which are
+   * not contained in any sub-loop of the loop.  
+   * The header field is the label of the block in blocks which is the
+   * header for this loop
+   *)
   datatype loop = L of {
     header : Mil.label,
     blocks : blocks
@@ -962,6 +967,7 @@ struct
 
   fun tcStateFinish (S {tcs, ...}) = !tcs
 
+  (* XXX I think this is missing defs in calls -leaf *)
   fun genDefs (state, env, ls) =
       let
         fun doInstruction (M.I {dests, ...}, defs) = Vector.fold (dests, defs, VS.insert o Utils.flip2)
