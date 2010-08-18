@@ -216,6 +216,20 @@ struct
   datatype compiler = CcGCC | CcICC | CcPillar
   datatype linker = LdGCC | LdICC | LdPillar
 
+  val pathToCompilerArgString = 
+   fn compiler => 
+      (case compiler
+        of CcGCC => Path.toCygwinString
+         | CcICC => Path.toWindowsString
+         | CcPillar => Path.toWindowsString)
+
+  val pathToLinkerArgString = 
+   fn linker => 
+      (case linker
+        of LdGCC => Path.toCygwinString
+         | LdICC => Path.toWindowsString
+         | LdPillar => Path.toWindowsString)
+
   fun sourceFile (config, compiler, fname) = fname^".c"
 
   fun objectFile (config, compiler, fname) = 
@@ -238,7 +252,6 @@ struct
             if useFutures config then
               [pLibInclude (config, "mcrt")]
             else []
-
         val files = 
             (case compiler
               of CcGCC => 
@@ -247,7 +260,8 @@ struct
                  [pLibInclude (config, "gc-bdw"), runtimeDirectory config, pLibInclude (config, "prt")] @ mcrt
                | CcPillar => 
                  [runtimeDirectory config, pLibInclude (config, "prt"), pLibInclude (config, "pgc")] @ mcrt)
-        val flags = List.map (files, fn s => "-I" ^ (Path.toCygwinString s))
+        val fileToString = pathToCompilerArgString compiler 
+        val flags = List.map (files, fn s => "-I" ^ (fileToString s))
       in flags
       end
 
@@ -373,6 +387,7 @@ struct
 
   fun compile (config : Config.t, ccTag, fname) = 
       let
+        val fname = pathToCompilerArgString ccTag fname
         val inFile = sourceFile (config, ccTag, fname)
         val outFile = objectFile (config, ccTag, fname)
         val cfg = (config, ccTag)
@@ -569,11 +584,13 @@ struct
 
   fun link (config, ccTag, ldTag, fname) = 
       let
+        val fileToString = pathToLinkerArgString ldTag
+        val fname = fileToString fname
         val inFile = objectFile (config, ccTag, fname)
         val outFile = exeFile (config, ldTag, fname)
         val cfg = (config, ldTag)
         val ld = linker cfg
-        val pLibLibs = List.map ([pLibLibDirectory config], Path.toCygwinString)
+        val pLibLibs = List.map ([pLibLibDirectory config], fileToString)
         val pLibOptions = List.concatMap (pLibLibs, fn lib => LdOptions.libPath (cfg, lib))
         val options = List.concat [LdOptions.link cfg,
                                    pLibOptions,
@@ -595,38 +612,45 @@ struct
       in (ld, args, cleanup)
       end
 
-  fun icc (config, fname)  = compile (config, CcICC, fname)
-  fun gcc (config, fname)  = compile (config, CcGCC, fname)
-  fun picc (config, fname) = compile (config, CcPillar, fname)
-
-  fun ilink(config : Config.t, fname) = link (config, CcICC, LdICC, fname)
-  fun ld(config : Config.t, fname)    = link (config, CcGCC, LdGCC, fname)
-  fun plink(config : Config.t, fname) = link (config, CcPillar, LdPillar, fname)
-
-  fun compile (config : Config.t, fname) =
+  val compile = 
+   fn (config : Config.t, fname) =>
       let 
-        val (c, args, cleanup) =
-            case Config.output config
-             of Config.OkC => 
-                (case Config.toolset config
-                  of Config.Intel => icc (config, Path.toWindowsString fname)
-                   | Config.Gnu   => gcc (config, Path.toCygwinString fname))
-              | Config.OkPillar   => picc(config, Path.toWindowsString fname)
+
+        val ccTag = 
+            (case Config.output config
+              of Config.OkC        => 
+                 (case Config.toolset config
+                   of Config.Intel => CcICC
+                    | Config.Gnu   => CcGCC)
+               | Config.OkPillar   => CcPillar)
+
+        val (c, args, cleanup) = compile (config, ccTag, fname)
+
         val () = 
             Exn.finally (fn () => Pass.run (config, Chat.log0, c, args),
                          cleanup)
       in ()
       end
+
+  fun ilink(config : Config.t, fname) = link (config, CcICC, LdICC, fname)
+  fun ld(config : Config.t, fname)    = link (config, CcGCC, LdGCC, fname)
+  fun plink(config : Config.t, fname) = link (config, CcPillar, LdPillar, fname)
+
       
-  fun link (config : Config.t, fname) =
+  val link = 
+   fn (config : Config.t, fname) =>
       let 
-        val (c, args, cleanup) =
-            case Config.output config 
-             of Config.OkC => 
-                (case Config.toolset config
-                  of Config.Intel => ilink (config, Path.toWindowsString fname)
-                   | Config.Gnu   => ld    (config, Path.toCygwinString fname))
-              | Config.OkPillar   => plink (config, Path.toWindowsString fname)
+
+        val (ccTag, ldTag) = 
+            (case Config.output config
+              of Config.OkC        => 
+                 (case Config.toolset config
+                   of Config.Intel => (CcICC, LdICC)
+                    | Config.Gnu   => (CcGCC, LdGCC))
+               | Config.OkPillar   => (CcPillar, LdPillar))
+
+        val (c, args, cleanup) = link (config, ccTag, ldTag, fname)
+
         val () = 
             Exn.finally (fn () => Pass.run (config, Chat.log0, c, args),
                          cleanup)

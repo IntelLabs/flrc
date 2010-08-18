@@ -176,6 +176,7 @@ struct
       L.seq [Char.layout c, L.str " => ", L.str (Pass.getName p), L.str ": ",
              L.str (Pass.getDescriptionS p)]
 
+  (* XXX this doesn't do the right thing with interpsersing print statements. -leaf *)
   fun describeControl () =
       L.align
       [L.align [L.str (passname ^ " control string is of the form:"),
