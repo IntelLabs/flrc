@@ -1,6 +1,8 @@
 (* The Intel P to C/Pillar Compiler *)
 (* Copyright (C) Intel Corporation, October 2006 *)
 
+(* XXX N.B.  This may have problems with signed integers, needs thinking about.  -leaf
+ *)
 signature MIL_LOOP =
 sig
 
@@ -41,6 +43,9 @@ sig
   val getLoops            : t -> loopForest
   val getBlocksNotInLoops : t -> blocks
 
+  (* Generate a mapping from a loop header to all of the blocks in the loop
+   * including sub-loops. 
+   *)
   val genAllNodes : t -> t
   val getAllNodes : t * Mil.label -> blocks
   val allNodes : t -> blocks Identifier.LabelDict.t
@@ -83,6 +88,7 @@ sig
    *   cmp = if flip1 then not comparison else comparison
    *   o1, o2 = if flip2 then bound, iv else iv, bound
    *   iv = step*# + m*i+c
+   *   bound is loop-invariant
    *)
   datatype tripCount = TC of {
     block      : Mil.label,
@@ -788,7 +794,7 @@ struct
    *     2) All loop edges are the same lf of the parameter with multiplier 1
    *)
 
-  (* IaUndertermined: we haven't seen an entry edge yet
+  (* IaUndetermined: we haven't seen an entry edge yet
    * IaOperand:       we've seen at least one entry edge and all of them have
    *                  the same operand passed in
    * IaUnknown:       there are at least two entry edges with different
