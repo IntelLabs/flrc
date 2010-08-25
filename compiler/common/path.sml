@@ -73,16 +73,30 @@ struct
         val {isAbs, vol, arcs} = 
             (OS.Path.fromString s) 
             handle OS.Path.Path => raise (Path ("Bad path string: "^s))
-        val arcs = List.rev arcs
         val path = 
-            (case (isAbs, vol)
-              of (true, "") => PAbs (Root, arcs)
-               | (false, "") => PRel arcs
-               | (true, _) => 
-                 (case String.sub (vol, 1)
-                   of #":" => PAbs (Drive (String.sub (vol, 0)), arcs)
-                    | _ => raise (Path ("Bad volume: "^vol)))
-               | (false, _) => raise (Path ("Relative path with volume")))
+            if isAbs then
+              let
+                val (volume, arcs) = 
+                    if vol = "" then
+                      (case arcs
+                        of ("cygdrive"::vol::restArcs) => 
+                           if String.length vol = 1 then 
+                             (Drive (String.sub (vol, 0)), restArcs)
+                           else
+                             (Root, arcs)
+                         | _ => (Root, arcs))
+                    else
+                      (case String.sub (vol, 1)
+                        of #":" => (Drive (String.sub (vol, 0)), arcs)
+                         | _ => raise (Path ("Bad volume: "^vol)))
+                val arcs = List.rev arcs
+              in PAbs (volume, arcs)
+              end
+            else
+              if vol = "" then 
+                PRel (List.rev arcs)
+              else
+                raise (Path ("Relative path with volume"))
       in path 
       end
 

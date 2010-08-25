@@ -53,9 +53,10 @@ signature CONFIG = sig
 			      showPre: bool,
 			      statPost: bool,
 			      statPre: bool} StringDict.t,
+		     pilcStr: string list,
 		     pilDebug: bool,
 		     pilOpt: int,
-		     pilcStr: string list,
+                     pLibDirectory : Path.t,
 		     printResult: bool,
 		     report: StringSet.t,
 		     sloppyFp: bool,
@@ -104,6 +105,7 @@ signature CONFIG = sig
   val pilDebug: t -> bool
   val pilOpt: t -> int
   val pilcStr: t -> string list
+  val pLibDirectory : t -> Path.t
   val printResult: t -> bool
   val reportEnabled: t * string -> bool
   val silent: t -> bool
@@ -254,6 +256,7 @@ structure Config :> CONFIG = struct
          pilcStr          : string list,
          pilDebug         : bool,
          pilOpt           : int,
+         pLibDirectory    : Path.t,
          pOpt             : int,
          printResult      : bool,
          report           : StringSet.t,
@@ -283,6 +286,7 @@ structure Config :> CONFIG = struct
     fun pilcStr c                     = get (c, #pilcStr)
     fun pilDebug c                    = get (c, #pilDebug)
     fun pilOpt c                      = get (c, #pilOpt)
+    fun pLibDirectory c               = get (c, #pLibDirectory)
     fun pOpt c                        = get (c, #pOpt)
     fun printResult c                 = get (c, #printResult)
     fun stack c                       = get (c, #stack)
