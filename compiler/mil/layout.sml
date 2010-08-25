@@ -459,9 +459,9 @@ struct
 
    fun layoutTuple (env, mdDesc, inits) =
        let
-         val vtd = layoutMetaDataDescriptor (env, mdDesc)
+         val mdd = layoutMetaDataDescriptor (env, mdDesc)
          val inits = layoutOperands (env, inits)
-         val l = LU.angleBracket (L.mayAlign (semiCommaL (vtd, inits)))
+         val l = LU.angleBracket (L.mayAlign (semiCommaL (mdd, inits)))
        in l
        end
 
@@ -592,7 +592,7 @@ struct
                    end
                  else
                    thunk
-             val l = L.seq [L.str "ThunkGetFv", L.paren (L.mayAlign [thunk, Int.layout idx])]
+             val l = L.seq [L.str "ThunkGetFv", L.tuple [thunk, Int.layout idx]]
            in l
            end
          | M.RhsThunkValue {typ, thunk, ofVal} =>
@@ -660,6 +660,7 @@ struct
                | 1 => L.mayAlign [layoutBinder (env, Vector.sub (dests, 0)), LU.indent (L.seq [L.str "= ", rhs])]
                | _ =>
                  L.mayAlign [L.tuple (layoutVector (env, layoutBinder, dests)), LU.indent (L.seq [L.str "= ", rhs])]
+         val l = L.seq [l, L.str ";"]
          val l = if showNumbers env then L.mayAlign [L.str ("i" ^ Int.toString n ^ ":"), LU.indent l] else l
        in l
        end
@@ -691,7 +692,7 @@ struct
                | SOME t =>
                  let
                    val t = layoutTarget (env, t)
-                   val l = LU.indent (L.mayAlign [L.str "DEFAULT =>", LU.indent t])
+                   val l = LU.indent (L.mayAlign [L.str "Default =>", LU.indent t])
                  in [l]
                  end
          val trailer = L.str "}"
@@ -769,7 +770,7 @@ struct
          | M.TCase s => layoutSwitch ("Case", layoutConstant) (env, s)
          | M.TInterProc {callee, ret, fx} =>
            L.mayAlign [layoutInterProc (env, callee), layoutReturn (env, ret), layoutEffects (env, fx)]
-         | M.TReturn vs => L.seq [L.str "Return", LU.parenSeq (layoutOperands (env, vs))]
+         | M.TReturn os => L.seq [L.str "Return", LU.parenSeq (layoutOperands (env, os))]
          | M.TCut {cont, args, cuts} =>
            L.mayAlign [L.seq [L.str "Cut ", layoutVariable (env, cont)],
                        LU.indent (LU.parenSeq (layoutOperands (env, args))),
@@ -816,7 +817,7 @@ struct
          val fx        = layoutEffects (env, fx)
          val escapes   = L.str (if escapes then "^" else "")
          val recursive = L.str (if recursive then "*" else "")
-         val cc        = layoutCallConv layoutVariable (env, cc)
+         val cc        = layoutCallConv layoutBinder (env, cc)
          val args      = layoutVector (env, layoutBinder, args)
          val args      = LU.paren (L.mayAlign (semiCommaL (cc, args)))
          val rtyps     = LU.parenSeq (layoutTyps (env, rtyps))
@@ -868,7 +869,7 @@ struct
              val l = L.seq [L.str "Tagged", L.tuple [tag, ofVal]]
            in l
            end
-         | M.GPSet opnd => L.seq [L.str "Set", L.paren (layoutOperand (env, opnd))]
+         | M.GPSet opnd => L.seq [L.str "Set", L.paren (layoutSimple (env, opnd))]
 
    fun layoutGlobal (env, (v, g)) =
        L.mayAlign [layoutBinder (env, v), LU.indent (L.seq [L.str "= ", layoutGlobalOnly (env, g)])]

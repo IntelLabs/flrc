@@ -79,6 +79,7 @@ sig
   structure TypKind :
   sig
     type t = Mil.typKind
+    val fromChar : char -> t option
     val toChar : t -> char
     val toString : t -> string
     val compare : t Compare.t
@@ -88,6 +89,7 @@ sig
   structure PObjKind :
   sig
     type t = Mil.pObjKind
+    val fromChar : char -> t option
     val toChar : t -> char
     val toString : t -> string
     val compare : t Compare.t
@@ -101,6 +103,7 @@ sig
     val numBits : t -> int
     val numBytes : t -> int
     val toString : t -> string
+    val fromString : string -> t option
     val intArb : IntArb.size -> t
     val wordSize : Config.t -> t
     val ptrSize : Config.t -> t
@@ -114,6 +117,7 @@ sig
     type t = Mil.fieldVariance
     val mutable : t -> bool
     val immutable : t -> bool
+    val fromChar : char -> t option
     val toString : t -> string
     val toChar : t -> char
     val compare : t Compare.t
@@ -196,6 +200,7 @@ sig
     val numBytes : t -> int
     val toValueSize : t -> ValueSize.t
     val toString : t -> string
+    val fromString : string -> t option
     val intArb : IntArb.size -> t
     val wordSize : Config.t -> t
     val ptrSize : Config.t -> t
@@ -216,6 +221,7 @@ sig
     val toString : t -> string
     val compare : t Compare.t
     val eq : t * t -> bool
+    val fromString : string -> t option
     val nonRefPtr : Config.t -> t
     val fromTraceSize : Config.t * TraceabilitySize.t -> t
     val toTraceSize : Config.t * t -> TraceabilitySize.t (* pre: result determined *)
@@ -732,6 +738,7 @@ sig
   structure IncludeKind :
   sig
     type t = Mil.includeKind
+    val fromString : string -> t option
     val toString : t -> string
   end
 
@@ -1694,6 +1701,8 @@ struct
 
     type t = Mil.typKind
 
+    fun fromChar c = case c of #"I" => SOME M.TkI | #"E" => SOME M.TkE | _ => NONE
+
     fun toChar tk = case tk of M.TkI => #"I" | M.TkE => #"E"
 
     fun toString tk = String.fromChar (toChar tk)
@@ -1707,6 +1716,23 @@ struct
   struct
 
     type t = Mil.pObjKind
+
+    fun fromChar c =
+        case c
+         of #"-" => SOME M.PokNone     
+          | #"R" => SOME M.PokRat      
+          | #"F" => SOME M.PokFloat    
+          | #"D" => SOME M.PokDouble   
+          | #"N" => SOME M.PokName     
+          | #"L" => SOME M.PokFunction 
+          | #"A" => SOME M.PokArray    
+          | #"B" => SOME M.PokDict     
+          | #"S" => SOME M.PokTagged   
+          | #"O" => SOME M.PokOptionSet
+          | #"r" => SOME M.PokPtr      
+          | #"T" => SOME M.PokType     
+          | #"t" => SOME M.PokCell     
+          | _    => NONE
 
     fun toChar pok =
         case pok
@@ -1792,6 +1818,17 @@ struct
 
     fun toString vs = "S" ^ (Int.toString (numBits vs))
 
+    fun fromString s =
+        case s
+         of "S8"   => SOME M.Vs8
+          | "S16"  => SOME M.Vs16
+          | "S32"  => SOME M.Vs32
+          | "S64"  => SOME M.Vs64
+          | "S128" => SOME M.Vs128
+          | "S256" => SOME M.Vs256
+          | "S512" => SOME M.Vs512
+          | _      => NONE
+
     fun intArb sz =
         case sz
          of IntArb.S8   => M.Vs8
@@ -1828,6 +1865,12 @@ struct
           | M.FvReadWrite => true
 
     fun immutable fv = not (mutable fv)
+
+    fun fromChar c =
+        case c
+         of #"+" => SOME M.FvReadOnly
+          | #"=" => SOME M.FvReadWrite
+          | _    => NONE
 
     fun toString fv =
         case fv
@@ -2130,6 +2173,14 @@ struct
     fun numBytes fs = ValueSize.numBytes (toValueSize fs)
     fun toString fs = ValueSize.toString (toValueSize fs)
 
+    fun fromString s =
+        case s
+         of "S8"  => SOME M.Fs8
+          | "S16" => SOME M.Fs16
+          | "S32" => SOME M.Fs32
+          | "S64" => SOME M.Fs64
+          | _     => NONE
+
     fun intArb sz =
         case sz
          of IntArb.S8   => M.Fs8
@@ -2200,6 +2251,17 @@ struct
 
     val compare = Compare.fieldKind
     val eq = Compare.C.equal compare
+
+    fun fromString s =
+        case s
+         of "Bits8"  => SOME (M.FkBits M.Fs8)
+          | "Bits16" => SOME (M.FkBits M.Fs16)
+          | "Bits32" => SOME (M.FkBits M.Fs32)
+          | "Bits64" => SOME (M.FkBits M.Fs64)
+          | "Double" => SOME M.FkDouble
+          | "Float"  => SOME M.FkFloat
+          | "Ref"    => SOME M.FkRef
+          | _        => NONE
 
     fun nonRefPtr c = M.FkBits (FieldSize.ptrSize c)
 
@@ -3630,6 +3692,8 @@ struct
   struct
 
     type t = Mil.includeKind
+
+    fun fromString s = case s of "C" => SOME M.IkC | "Target" => SOME M.IkTarget | _ => NONE
 
     fun toString ik = case ik of M.IkC => "C" | M.IkTarget => "Target"
 

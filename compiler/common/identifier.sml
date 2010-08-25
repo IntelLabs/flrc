@@ -252,6 +252,7 @@ sig
 
       (** Variables **)
       val variableFresh : 'a t * string * 'a -> variable
+      val variableFreshNoInfo : 'a t * string -> variable
       val variableClone : 'a t * variable -> variable
       val variableRelated : 'a t * variable * string * 'a -> variable
       val variableRelatedNoInfo : 'a t * variable * string -> variable
@@ -596,6 +597,16 @@ struct
                            VariableDict.insert (!variableInfo, nv, info)
             in
                 nv
+            end
+
+        fun variableFreshNoInfo (M {variable, variableNames, ...}, hint) =
+            let
+              val nv = !variable
+              val () = variable := nv + 1
+              val nm = hint ^ "_" ^ (Int.toString nv)
+              val nv = V nv
+              val () = variableNames := VariableDict.insert (!variableNames, nv, nm)
+            in nv
             end
 
         fun variableClone (stm as M {variable, variableNames, variableInfo,

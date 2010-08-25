@@ -97,6 +97,7 @@ sig
   val genTripCounts : t * FMil.t * MilCfg.t * (Mil.label * Mil.block) Tree.t -> t
   val getTripCount : t * Mil.label -> tripCount option
   val allTripCounts : t -> tripCount Identifier.LabelDict.t
+
 end;
 
 structure MilLoop :> MIL_LOOP =
@@ -817,7 +818,6 @@ struct
               val Tree.T (L {header, blocks, ...}, children) = lt
               val hb = Option.valOf (LD.lookup (blocks, header))
               val params = MU.Block.parameters hb
-              val M.B {parameters, ...} = hb
               val allNodes = getAllNodes (ls, header)
               (* Initial analysis *)
               fun doOne p = (p, IaUndetermined, LaUndetermined)

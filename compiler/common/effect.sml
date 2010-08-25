@@ -3,7 +3,9 @@
 
 (* Effects for Core P language *)
 
-signature EFFECT = sig
+signature EFFECT =
+sig
+
   eqtype set 
   eqtype effect
 
@@ -12,6 +14,7 @@ signature EFFECT = sig
   val ReadOnly  : set  (* New or Read *)
   val Heap      : set  (* Any heap ops *)
   val Control   : set  (* Any control, including Partial*) 
+  val Any       : set  (* All effects *)
 
   val Partial   : effect 
   val Io        : effect 
@@ -40,10 +43,9 @@ signature EFFECT = sig
   val InitReadS  : set
   val InitWriteS : set
                 
-                
   val effects   : effect list
 
-  val empty    : set -> bool                
+  val isEmpty  : set -> bool                
   val contains : set * effect -> bool
   val subset   : set * set -> bool
 
@@ -52,10 +54,16 @@ signature EFFECT = sig
   val remove       : set * effect -> set
   val single       : effect -> set
   val union        : set * set -> set
+  val unionL       : set list -> set
   val intersection : set * set -> set
   val difference   : set * set -> set
+
+  val effectToChar : effect -> char
+  val charToSet    : char -> set option
   val layout       : set -> Layout.t
+
   val compare      : set * set -> order
+
 end;
 
 structure Effect :> EFFECT = struct
@@ -95,57 +103,62 @@ structure Effect :> EFFECT = struct
   val InitReadS  : set = InitRead
   val InitWriteS : set = InitWrite
 
-  val effects =
-      [Partial, Io, 
-       HeapGen, HeapRead, HeapWrite,
-       Throws, Returns, Fails,
-       InitGen, InitRead, InitWrite
-      ]
+  val effects = [Partial, Io, HeapGen, HeapRead, HeapWrite, Throws, Returns, Fails, InitGen, InitRead, InitWrite]
 
-  (* Keep these one letter so that layout can be compact *)
-  fun effectToString f = 
-      if f = Partial then "P"
-      else if f = Io then "I"
-      else if f =  HeapGen then "N"
-      else if f =  HeapRead then "R"
-      else if f =  HeapWrite then "W"
-      else if f =  Throws then "T"
-      else if f =  Returns then "R"
-      else if f =  Fails then "F"
-      else if f =  InitGen then "iN"
-      else if f =  InitRead then "iR"
-      else if f =  InitWrite then "iW"
-      else raise Fail "Impossible effect"
-
-  fun empty (a : set) = (a = (WordN.fromInt 0))                 
+  fun isEmpty (a : set) = (a = (WordN.fromInt 0))                 
   fun contains (a : set, b : effect) = not (WordN.andb(a, b) = (WordN.fromInt 0))
   fun subset (a : set, b : set) = WordN.orb (a, b) = b
 
-  fun add (a : set,b : effect) = WordN.orb(a,b)
+  fun add (a : set, b : effect) = WordN.orb(a,b)
   fun remove (a : set, b : effect) = WordN.andb (a, WordN.notb b)
   fun single (a : effect) = a
   fun union (a : set, b : set) = WordN.orb (a, b)
+  fun unionL (ss : set list) : set = List.fold (ss, Total, union)
   fun intersection (a : set, b : set) = WordN.andb (a, b)
   fun difference (a : set, b : set) = WordN.andb (a, WordN.notb b)
 
-  fun layout s = 
-      let
-        fun doOne (f, str) =
-            if contains (s, f) then str ^ (effectToString f) else str
-        val str = List.fold (effects, "", doOne)
-      in Layout.str ("{" ^ str ^ "}")
-      end
+  fun fromList effects = List.fold (effects, Total, add)
 
-  fun fromList effects = List.fold(effects, Total, add)
-
-  val PAny     : set = 
-      fromList  [Partial, Io, 
-                 HeapGen, HeapRead, HeapWrite,
-                 Throws, Returns, Fails
-                ]
+  val PAny     : set = fromList  [Partial, Io, HeapGen, HeapRead, HeapWrite, Throws, Returns, Fails]
   val ReadOnly : set = fromList [HeapGen, HeapRead, InitGen, InitRead]
   val Heap     : set = fromList [HeapGen, HeapRead, HeapWrite]
   val Control  : set = fromList [Partial, Throws, Returns, Fails]
+  val Any      : set = fromList effects
+
+  fun effectToChar f =
+      if f = Partial then #"P"
+      else if f = Io then #"I"
+      else if f =  HeapGen then #"N"
+      else if f =  HeapRead then #"R"
+      else if f =  HeapWrite then #"W"
+      else if f =  Throws then #"T"
+      else if f =  Returns then #"R"
+      else if f =  Fails then #"F"
+      else if f =  InitGen then #"g"
+      else if f =  InitRead then #"r"
+      else if f =  InitWrite then #"w"
+      else Fail.fail ("Effect", "effectToChar", "Impossible effect")
+
+  structure CD = DictF(struct type t = char val compare = Char.compare end)
+
+  val charToSetMap : set CD.t =
+      CD.fromList (List.map (effects, fn e => (effectToChar e, single e)) @ [(#"A", PAny)])
+
+  fun charToSet c = CD.lookup (charToSetMap, c)
+
+  local
+    structure L = Layout
+    structure LU = LayoutUtils
+  in
+  fun layout s = 
+      let
+        val (l1, s) = if subset (PAny, s) then (L.str "A", difference (s, PAny)) else (L.empty, s)
+        fun doOne e = if contains (s, e) then LU.char (effectToChar e) else L.empty
+        val ls = List.map (effects, doOne)
+        val l = LU.brace (L.seq (l1::ls))
+      in l
+      end
+  end
 
   val compare = WordN.compare
 

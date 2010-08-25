@@ -71,7 +71,8 @@ in
         functor FlatOptionLatticeFn 
         functor LatticeFn
         functor LatticeVectorLatticeFn
-        functor OptionLatticeFn        
+        functor OptionLatticeFn
+        functor ParserF
         functor RecLatticeFn
         functor SetF
 

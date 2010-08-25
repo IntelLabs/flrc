@@ -57,10 +57,10 @@ struct
                    of #"+" => SOME CiPrint
                     | #"x" => SOME CiCheck
                     | _ => List.peekMap (passes, matchPass c)
-            in Parse.satisfyMap doOne
+            in Parse.satisfyMap (doOne, "Expected pass letter, +, or x")
             end
 
-        val consume = fn c => Parse.ignore (Parse.satisfy (fn c' => c = c'))
+        val consume = fn c => Parse.ignore (Parse.satisfy (fn c' => c = c', "Expected " ^ String.fromChar c))
 
         val lparen = consume #"("
         val rparen = consume #")"
@@ -78,10 +78,10 @@ struct
             end
         val nat : int Parse.t = 
             let
-              val p = Parse.many (Parse.satisfy (Char.isDigit))
+              val p = Parse.oneOrMore (Parse.satisfy (Char.isDigit, "Expected digit"))
               val f = Int.fromString o String.implode
               val p = Parse.map (p, f)
-              val p = Parse.required p
+              val p = Parse.required (p, "Expected natural number")
             in p
             end
         val exponentiated : 'a Parse.t -> 'a list Parse.t = 
@@ -99,9 +99,9 @@ struct
         val rec pass' : unit -> controlItem list Parse.t = 
          fn () => Parse.map ($passSeq', List.concat)
         and rec passSeq' : unit -> controlItem list list Parse.t = 
-         fn () => Parse.many ($passHead')
+         fn () => Parse.oneOrMore ($passHead')
         and rec passHead' : unit -> controlItem list Parse.t =
-         fn () => Parse.many simple || $iterated'  || $constructed' 
+         fn () => Parse.oneOrMore simple || $iterated'  || $constructed' 
         and rec iterated' : unit -> controlItem list Parse.t = 
          fn () => Parse.map(exponentiated ($parenthesized'), List.concat)
         and rec parenthesized' : unit -> controlItem list Parse.t = 
@@ -121,21 +121,12 @@ struct
         and rec interleave1' : unit -> controlItem list Parse.t =
          fn () => delimited (lbrace, $pass', rbrace)
 
-        val pass = $pass'
+        val pass = Parse.map ($pass' && Parse.atEnd "Expected end of string", #1)
 
-        val cis = 
-            let
-              val stream = (s, 0)
-              val cis = 
-                  (case Parse.parse pass stream
-                    of Parse.Success ((s, i), cis) => 
-                       if i = String.length s then
-                         SOME cis
-                       else 
-                         NONE
-                     | Parse.Failure => NONE)
-            in cis
-            end
+        val cis =
+            case Parse.parse (pass, (s, 0))
+             of Parse.Success (_, cis) => SOME cis
+              | Parse.Failure _        => NONE
 
         fun check cis =
             let
