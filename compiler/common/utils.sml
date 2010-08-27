@@ -1961,20 +1961,21 @@ sig
   type pos
   type error
   type 'a t
-  datatype 'a result = Success of stream * 'a | Failure of pos * error
+  datatype 'a result = Success of stream * 'a | Failure | Error of pos * error
   val return : 'a -> 'a t
   val bind : 'a t -> ('a -> ('b t)) -> 'b t
   val succeed : 'a -> 'a t
-  val fail : error -> 'a t
+  val fail : 'a t
+  val error : error -> 'a t
   val map : 'a t * ('a -> 'b) -> 'b t 
   val parse : 'a t * stream -> 'a result
   val || : 'a t * 'a t -> 'a t
   val && : 'a t * 'b t -> ('a * 'b) t
-  val any : 'a t list * error -> 'a t
+  val any : 'a t list -> 'a t
   val all : 'a t list -> 'a list t
   val get : elt t
-  val satisfy : (elt -> bool) * error -> elt t 
-  val satisfyMap : (elt -> 'a option) * error -> 'a t 
+  val satisfy : (elt -> bool) -> elt t 
+  val satisfyMap : (elt -> 'a option) -> 'a t 
   val atEnd : error -> unit t
   val zeroOrMore : 'a t -> 'a list t
   val oneOrMore : 'a t -> 'a list t
@@ -1982,11 +1983,16 @@ sig
   val oneOrMoreV : 'a t -> 'a Vector.t t
   val seqSep : 'a t * unit t -> 'a list t
   val seqSepV : 'a t * unit t -> 'a Vector.t t
+  (* sep & right should succeed or fail to match the separator or closer *)
+  (* error is an appropriate error to indicate expecting sep or right *)
+  val sequence : {left : unit t, sep : unit t, right : unit t, err : error, item : 'a t} -> 'a list t
+  val sequenceV : {left : unit t, sep : unit t, right : unit t, err : error, item : 'a t} -> 'a Vector.t t
   val optional : 'a t -> 'a option t
   val required : 'a option t * error -> 'a t
   val succeeds : 'a t -> bool t
   val ignore : 'a t -> unit t
   val $ : (unit -> 'a t) -> 'a t 
+  val $$ : ('a -> 'b t) -> 'a -> 'b t
 end (* signature PARSER *)
 
 (* Simple infinite lookahead parser combinators 
@@ -1997,8 +2003,7 @@ functor ParserF
    type pos
    type error
    val pos : stream -> pos
-   val next : stream -> (stream * elt) option
-   val eof : error)
+   val next : stream -> (stream * elt) option)
   :> PARSER where type elt = elt
               and type stream = stream
               and type pos = pos
@@ -2010,7 +2015,7 @@ struct
   type stream = stream
   type pos = pos
   type error = error
-  datatype 'a result = Success of stream * 'a | Failure of pos * error
+  datatype 'a result = Success of stream * 'a | Failure | Error of pos * error
 
   type 'a t = stream -> 'a result
 
@@ -2020,44 +2025,48 @@ struct
    fn p => 
    fn f => 
    fn cs => 
-      (case p cs
+       case p cs
         of Success (cs, a) => f a cs
-         | Failure pe => Failure pe)
+         | Failure => Failure
+         | Error pe => Error pe
 
   val succeed : 'a -> 'a t = return
 
-  val fail : error -> 'a t = fn e => fn cs => Failure (pos cs, e)
+  val fail : 'a t = fn _ => Failure
+
+  val error : error -> 'a t = fn e => fn cs => Error (pos cs, e)
 
   val map : 'a t * ('a -> 'b) -> 'b t = 
    fn (p, f) => 
    fn cs => 
       (case p cs
         of Success (cs, r) => Success (cs, f r)
-         | Failure pe => Failure pe)
+         | Failure => Failure
+         | Error pe => Error pe)
 
   val parse : 'a t * stream -> 'a result = fn (p, s) => p s
 
   val get : elt t = 
    fn cs => (case next cs 
-              of NONE => Failure (pos cs, eof)
+              of NONE => Failure
                | SOME arg => Success arg)
 
-  val satisfy : (elt -> bool) * error -> elt t = 
-   fn (p, e) => bind get (fn c => if p c then return c else fail e)
+  val satisfy : (elt -> bool) -> elt t = 
+   fn p => bind get (fn c => if p c then return c else fail)
 
-  val satisfyMap : (elt -> 'a option) * error -> 'a t  = 
-   fn (f, e) => bind get (fn c => case f c of SOME a => return a | NONE => fail e)
+  val satisfyMap : (elt -> 'a option) -> 'a t  = 
+   fn f => bind get (fn c => case f c of SOME a => return a | NONE => fail)
 
   fun atEnd (e : error) : unit t =
    fn cs => (case next cs
               of NONE => Success (cs, ())
-               | SOME _ => Failure (pos cs, e))
+               | SOME _ => Error (pos cs, e))
 
   val ignore : 'a t -> unit t = fn p => map (p, ignore)
 
   val || : 'a t * 'a t -> 'a t = 
    fn (p1, p2) => fn cs => case p1 cs 
-                            of Failure _ => p2 cs
+                            of Failure => p2 cs
                              | result => result
                                          
   val && : 'a t * 'b t -> ('a * 'b) t = 
@@ -2065,12 +2074,12 @@ struct
 
   infix || &&
 
-  val rec any : 'a t list * error -> 'a t = 
-   fn (l, e) => 
+  val rec any : 'a t list -> 'a t = 
+   fn l => 
       (case l
-        of [] => fail e
-         | p::ps => p || any (ps, e))
-
+        of [] => fail
+         | p::ps => p || any ps)
+      
   val rec all : 'a t list -> 'a list t = 
    fn l => 
       (case l
@@ -2094,12 +2103,26 @@ struct
    fn p => (bind p (fn a => return (SOME a))) || (return NONE)
 
   val required : 'a option t * error -> 'a t = 
-   fn (p, e) => (bind p (fn opt => case opt of SOME a => return a | NONE => fail e))
+   fn (p, e) => (bind p (fn opt => case opt of SOME a => return a | NONE => error e))
 
   fun succeeds (p : 'a t) : bool t = bind p (fn _ => return true) || return false
 
-  val $ : (unit -> 'a t) -> 'a t = 
-   fn f => fn cs => f () cs
+  fun $$ (f : 'a -> 'b t) (x : 'a) : 'b t = fn cs => f x cs
+
+  fun $ (f : unit -> 'a t) : 'a t = $$ f ()
+
+  fun sequence {left : unit t, sep : unit t, right : unit t, err : error, item : 'a t} : 'a list t =
+      let
+        fun pr () =
+            map (right, fn () => []) ||
+            map (sep && item && $ pr, fn ((_, i), is) => i::is) || 
+            error err
+        val p = map (right, fn () => []) || map (item && $ pr, fn (i, is) => i::is)
+        val p = map (left && p, #2)
+      in p
+      end
+
+  fun sequenceV x : 'a Vector.t t = map (sequence x, Vector.fromList)
 
 end (* functor ParserF *)
 
@@ -2109,5 +2132,39 @@ structure StringParser =
           type pos = int
           type error = string
           fun pos (_, i) = i
-          val next = fn (s, i) => if i < String.length s then SOME ((s, i+1), String.sub (s, i)) else NONE
-          val eof = "Unexpected end of string")
+          val next = fn (s, i) => if i < String.length s then SOME ((s, i+1), String.sub (s, i)) else NONE)
+
+structure InStreamWithPos
+  :> sig
+       type pos = {line : int, col : int}
+       type t
+       val mk : Pervasive.TextIO.StreamIO.instream -> t
+       val input1 : t -> (char * t) option
+       val pos : t -> pos
+     end =
+struct
+
+  type pos = {line : int, col : int}
+
+  type instreamBase = Pervasive.TextIO.StreamIO.instream
+
+  type t = instreamBase * int * int
+
+  fun mk (ins : instreamBase) : t = (ins, 1, 0)
+
+  fun input1 ((ins, l, c) : t) : (char * t) option =
+      case Pervasive.TextIO.StreamIO.input1 ins
+       of NONE => NONE
+        | SOME (ch, ins) => SOME (ch, if ch = Char.newline then (ins, l+1, 0) else (ins, l, c+1))
+
+  fun pos ((ins, l, c) : t) : pos = {line = l, col = c}
+
+end
+
+structure FileParser =
+  ParserF(type elt = char
+          type stream = InStreamWithPos.t
+          type pos = InStreamWithPos.pos
+          type error = string
+          val pos = InStreamWithPos.pos
+          fun next s = Option.map (InStreamWithPos.input1 s, Utils.flip2))

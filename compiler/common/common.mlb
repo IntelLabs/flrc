@@ -84,6 +84,7 @@ in
         structure Effect
         structure EquivalenceClass
         structure Fail
+        structure FileParser
         structure FunctionalUpdate
         structure Globals
         structure Identifier
@@ -91,6 +92,7 @@ in
         structure ImpIntDict
         structure ImpPolyLabeledGraph
         structure ImpQueue
+        structure InStreamWithPos
         structure Int32
         structure IntArb
         structure IntDict
