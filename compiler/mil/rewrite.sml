@@ -42,6 +42,7 @@ functor MilRewriterF (
   val global      : (state, env, Mil.variable*Mil.global) MilRewriterClient.rewriter
   val bind        : (state, env, Mil.variable   ) MilRewriterClient.binder
   val bindLabel   : (state, env, Mil.label      ) MilRewriterClient.binder
+  (* Allows the rewriter to specify an ordering on the blocks *)
   val cfgEnum     : state * env * Mil.codeBody
                     -> (Mil.label * Mil.block) Tree.t Vector.t
   val indent      : int

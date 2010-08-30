@@ -21,7 +21,7 @@ struct
        (#"C", MilContify.pass         ),
        (#"D", MilDblDiamond.pass      ),
        (#"F", MilFlatten.pass         ),
-       (#"f", MilLowerClosures.pass ),
+       (#"f", MilLowerClosures.pass   ),
        (#"I", MilInlineLeaves.pass    ),  
        (#"J", MilInlineAggressive.pass),
        (#"K", MilInlineProfile.pass   ),
@@ -30,8 +30,10 @@ struct
        (#"S", MilSimplify.pass        ),
        (#"s", MilLowerPSums.pass      ),
        (#"t", MilLowerPTypes.pass     ),
+       (#"n", MilNormalize.pass       ),
        (#"V", MilCse.pass             ),
        (#"Y", MilLoopInvert.pass      ),
+       (#"z", MilNewVectorize.pass    ),
        (#"Z", MilVectorize.pass       )
       ]
 
