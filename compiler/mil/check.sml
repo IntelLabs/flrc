@@ -304,12 +304,13 @@ struct
         checkConsistentTyp (s, e, msg, getTyp (e, v), t)
       end
 
-  fun bindVarsTo (s, e, vs, ts) =
+  fun bindVarsTo (s, e, msg, vs, ts) =
       let
-        val () = assert (s, Vector.length vs = Vector.length ts,
-                      fn () => "Arity mismatch: ")
-        val () = 
-            Vector.foreach2 (vs, ts, fn (v, t) => bindVarTo (s, e, v, t))
+        val () = assert (s, Vector.length vs = Vector.length ts, fn () => msg () ^ ": arity mismatch in binding")
+        val () =
+            if Vector.length vs = Vector.length ts
+            then Vector.foreach2 (vs, ts, fn (v, t) => bindVarTo (s, e, v, t))
+            else ()
       in ()
       end
 
@@ -832,7 +833,7 @@ struct
       let
         val ts = rhs (s, e, msg, r)
         (* XXX NG: If we used the dominator tree then we would bind dest *)
-        val () = bindVarsTo (s, e, dests, ts)
+        val () = bindVarsTo (s, e, msg, dests, ts)
       in e
       end
 
@@ -1035,7 +1036,7 @@ struct
             val () =
                 case ts
                  of NONE => ()
-                  | SOME ts =>  bindVarsTo (s, e, rets, ts)
+                  | SOME ts =>  bindVarsTo (s, e, msg, rets, ts)
             fun msg' () = msg () ^ ": ret target"
             val () = labelUse (s, e, msg', block, Vector.new0 ())
             fun msg' () = msg () ^ ": cuts"
@@ -1223,14 +1224,16 @@ struct
                      else
                        reportError (s, msg () ^ ": arg " ^ Int.toString i ^
                                        ": type mismatch")
-                 val () = Vector.foreachi2 (args, ats2, checkOne)
+                 val () =
+                     if Vector.length args = Vector.length ats2 then Vector.foreachi2 (args, ats2, checkOne) else ()
                  fun checkOne (i, t1, t2) =
                      if MT.Type.equal (t1, t2) then
                        ()
                      else
                        reportError (s, msg () ^ ": res " ^ Int.toString i ^
                                        ": type mismatch")
-                 val () = Vector.foreachi2 (ress, rts2, checkOne)
+                 val () =
+                     if Vector.length ress = Vector.length rts2 then Vector.foreachi2 (ress, rts2, checkOne) else ()
                in
                  M.TClosure {args = args, ress = ress}
                end
@@ -1295,7 +1298,6 @@ struct
                       in ()
                       end
                   val () = Vector.foreachi (fvs, doOne)
-                           
                   val t = 
                       (case code
                         of NONE => getTyp (e, x)
@@ -1356,11 +1358,11 @@ struct
         (* Build the state and environment *)
         val s = stateMk ()
         val (ord, st) =
-            ((I.nameFromString (symbolTable, "\\core\\char\\ord"), symbolTable)
+            ((I.nameFromString (symbolTable, Prims.ordString), symbolTable)
              handle _ =>
                let
                  val stm = IM.fromExistingAll symbolTable
-                 val ord = IM.nameMake (stm, "\\core\\char\\ord")
+                 val ord = IM.nameMake (stm, Prims.ordString)
                  val st = MU.SymbolTableManager.finish stm
                in (ord, st)
                end)
@@ -1385,13 +1387,7 @@ struct
       end
 
   fun program (config, p) =
-      (if program' (config, p) then ()
-       else
-         let
-           val () = MilLayout.print (config, p)
-         in
-           Fail.fail ("MilCheck", "program", "Mil code not well formed")
-         end)
+      (if program' (config, p) then () else Fail.fail ("MilCheck", "program", "Mil code not well formed"))
       handle any => 
              let
                val () = MilLayout.print (config, p)

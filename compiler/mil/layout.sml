@@ -131,6 +131,8 @@ struct
    fun semiCommaLP (i, l) = LU.paren (L.mayAlign (semiCommaL (i, l)))
    fun semiCommaVP (i, l) = LU.paren (L.mayAlign (semiCommaV (i, l)))
 
+   fun cstring s = L.str ("\"" ^ String.escapeC s ^ "\"")
+
    structure Helpers =
    struct
 
@@ -850,7 +852,7 @@ struct
          | M.GTuple {mdDesc, inits} => layoutTuple (env, mdDesc, inits)
          | M.GRat r => L.seq [L.str "R", L.paren (Rat.layout r)]
          | M.GInteger i => L.seq [L.str "I", L.paren (IntInf.layout i)]
-         | M.GCString s => L.seq [L.str "CString", L.paren (L.str s)]
+         | M.GCString s => L.seq [L.str "CString", L.paren (cstring s)]
          | M.GThunkValue {typ, ofVal} =>
            let
              val ofVal = layoutSimple (env, ofVal)
@@ -875,7 +877,7 @@ struct
              val l = L.seq [L.str "Tagged", L.tuple [tag, ofVal]]
            in l
            end
-         | M.GPSet opnd => L.seq [L.str "Set", L.paren (layoutSimple (env, opnd))]
+         | M.GPSet opnd => L.seq [L.str "PSet", L.paren (layoutSimple (env, opnd))]
 
    fun layoutGlobal (env, (v, g)) =
        L.mayAlign [layoutBinder (env, v), LU.indent (L.seq [L.str "= ", layoutGlobalOnly (env, g)])]
@@ -894,7 +896,7 @@ struct
        let
          val k = L.seq [L.str ": ", layoutIncludeKind (env, kind)]
          val externs = VS.layout (externs, fn v => layoutBinder (env, v))
-         val l = L.mayAlign [L.str name, LU.indent k, LU.indent externs]
+         val l = L.mayAlign [cstring name, LU.indent k, LU.indent externs]
        in l
        end
 

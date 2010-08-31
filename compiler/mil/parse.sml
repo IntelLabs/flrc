@@ -143,6 +143,36 @@ struct
                      fn (i, io) => Rat.rat (i, case io of NONE => IntInf.one | SOME (_, i) => i)))
       || P.error "Expected rational"
 
+  val cstringF =
+      let
+        fun s c = c <> #"\"" andalso c <> #"\\" andalso (let val ord = Char.ord c in ord >= 32 andalso ord <= 126 end)
+        val simple = P.map (P.satisfy s, fn c => [c])
+        val singleEscape =
+            P.map (keycharLF #"\\", fn () => [#"\\", #"\\"]) ||
+            P.map (keycharLF #"\"", fn () => [#"\\", #"\""]) ||
+            P.map (keycharLF #"'", fn () => [#"\\", #"'"]) ||
+            P.map (keycharLF #"?", fn () => [#"\\", #"?"]) ||
+            P.map (keycharLF #"a", fn () => [#"\\", #"a"]) ||
+            P.map (keycharLF #"b", fn () => [#"\\", #"b"]) ||
+            P.map (keycharLF #"f", fn () => [#"\\", #"f"]) ||
+            P.map (keycharLF #"n", fn () => [#"\\", #"n"]) ||
+            P.map (keycharLF #"r", fn () => [#"\\", #"r"]) ||
+            P.map (keycharLF #"t", fn () => [#"\\", #"t"]) ||
+            P.map (keycharLF #"v", fn () => [#"\\", #"v"])
+        fun d3 c = c >= #"0" andalso c <= #"3"
+        fun d7 c = c >= #"0" andalso c <= #"7"
+        val octalEscape =
+            P.map (P.satisfy d3 && P.satisfy d7 && P.satisfy d7, fn ((c1, c2), c3) => [#"\\", c1, c2, c3])
+        val escape = P.map (keycharLF #"\\" && (singleEscape || octalEscape), #2)
+        val stritem = simple || escape
+        val p = keycharLF #"\"" && (P.zeroOrMore stritem && keycharLF #"\"" || P.error "Bad string literal")
+        fun f (_, (css, _)) = Option.valOf (String.fromCString (String.implode (List.concat css)))
+        val p = syntax (P.map (p, f))
+      in p
+      end
+
+  val cstring = cstringF || P.error "Expected string"
+
   (*** State ***)
 
   datatype state = S of {stm : M.symbolTableManager, vars : M.variable SD.t ref, labels : M.label SD.t ref}
@@ -394,7 +424,7 @@ struct
         val float = P.$$ unimplemented ("constant", "float")
         val double = P.$$ unimplemented ("constant", "double")
         fun parseBool c = case c of #"0" => SOME false | #"1" => SOME true | _ => NONE
-        val bool = syntax (P.satisfyMap parseBool) || P.error "Expected boolean"
+        val bools = syntax (P.zeroOrMoreV (P.satisfyMap parseBool))
         fun doIt s =
             case s
              of "Array" => P.succeed (M.CPok M.PokArray)
@@ -408,7 +438,8 @@ struct
               | "Double" => P.succeed (M.CPok M.PokDouble)
               | "I" => P.map (paren intInf, M.CInteger)
               | "M" =>
-                P.map (parenSemiComma (vectorElemTypeShort, bool), fn (et, bs) => M.CViMask {typ = et, elts = bs})
+                P.map (angleBracket (vectorElemTypeShort && keycharS #";" && bools),
+                       fn ((et, _), bs) => M.CViMask {typ = et, elts = bs})
               | "Name" => P.succeed (M.CPok M.PokName)
               | "None" => P.succeed (M.CPok M.PokNone)
               | "Ptr" => P.succeed (M.CPok M.PokPtr)
@@ -427,7 +458,7 @@ struct
               | "U32" => intArb (IntArb.Unsigned, IntArb.S32)
               | "U64" => intArb (IntArb.Unsigned, IntArb.S64)
               | "V" =>
-                P.map (parenSemiComma (vectorElemTypeShort, constant (state, env)),
+                P.map (angleBracketSemiComma (vectorElemTypeShort, constant (state, env)),
                        fn (et, cs) => M.CViVector {typ = et, elts = cs})
               | _ => P.fail
         val p = P.map (nameF (state, env), M.CName) || P.bind identifierF doIt
@@ -735,7 +766,7 @@ struct
               | "Eval" => interProc s
               | "EvalDir" => interProc s
               | "Goto" => P.map (target (state, env), M.TGoto)
-              | "Halt" => P.map (operand (state, env), M.THalt)
+              | "Halt" => P.map (paren (operand (state, env)), M.THalt)
               | "PSumCase" => P.map (switch (state, env, nameF), M.TPSumCase)
               | "Return" => P.map (parenSeq (operand (state, env)), M.TReturn)
               | _ => P.fail
@@ -783,7 +814,7 @@ struct
         fun doIt s =
             case s
              of "Code" => P.map (codeA (state, env), M.GCode)
-              | "CString" => unimplemented ("global", "CString")
+              | "CString" => P.map (paren cstring, M.GCString)
               | "ErrorVal" => P.map (keycharS #":" && typ (state, env), fn (_, t) => M.GErrorVal t)
               | "I" => P.map (paren intInf, M.GInteger)
               | "Idx" =>
@@ -793,7 +824,7 @@ struct
               | "Closure" => P.map (keycharS #"(" && codeOption (state, env) && keycharS #";" &&
                                     fvsInits (state, env),
                                     fn (((_, co), _), fvs) => M.GClosure {code = co, fvs = fvs})
-              | "Set" => P.map (paren (simple (state, env)), M.GPSet)
+              | "PSet" => P.map (paren (simple (state, env)), M.GPSet)
               | "Tagged" =>
                 P.map (pair (name (state, env),
                              simple (state, env) && keycharS #":" && fieldKind (state, env)),
@@ -815,18 +846,19 @@ struct
   fun includeKind (state : state, env : env) : M.includeKind P.t =
       P.required (P.map (identifierF, MU.IncludeKind.fromString), "Expected include kind")
 
-  fun includeFile (state : state, env : env) : M.includeFile P.t =
-      P.map (P.fail && (*P.$$ unimplemented ("includeFile", "name") &&*)
-             keycharS #":" && includeKind (state, env) &&
-             braceSeq (binder (state, env, M.VkExtern)),
+  fun includeFileF (state : state, env : env) : M.includeFile P.t =
+      P.map (cstringF && keycharS #":" && includeKind (state, env) && braceSeq (binder (state, env, M.VkExtern)),
              fn (((n, _), k), vs) => M.IF {name = n, kind = k, externs = VS.fromVector vs})
+
+  fun includeFile (state : state, env : env) : M.includeFile P.t =
+      includeFileF (state, env) || P.error "Expected include file"
 
   fun program (config : Config.t) : M.t P.t =
       let
         val stm = IM.new Prims.ordString
         val state = stateMk stm
         val env = envMk config
-        val includes = P.map (keywordS "Includes:" && P.zeroOrMoreV (includeFile (state, env)), #2)
+        val includes = P.map (keywordS "Includes:" && P.zeroOrMoreV (includeFileF (state, env)), #2)
         val externs = P.map (keywordS "Externs:" && braceSeq (binder (state, env, M.VkExtern)), VS.fromVector o #2)
         val globals = P.map (keywordS "Globals:" && globals (state, env), #2)
         val entry = P.map (keywordS "Entry:" && variable (state, env), #2)

@@ -2103,7 +2103,8 @@ struct
    fn p => (bind p (fn a => return (SOME a))) || (return NONE)
 
   val required : 'a option t * error -> 'a t = 
-   fn (p, e) => (bind p (fn opt => case opt of SOME a => return a | NONE => error e))
+   fn (p, e) =>
+      bind p (fn opt => case opt of SOME a => return a | NONE => fail) || error e
 
   fun succeeds (p : 'a t) : bool t = bind p (fn _ => return true) || return false
 
