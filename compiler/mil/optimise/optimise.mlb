@@ -45,12 +45,12 @@ in
         structure MilFlatten
         structure MilInlineLeaves
         structure MilLicm
-        structure MilNormalize
+        (* structure MilNormalize *)
         structure MilRemoveBranch
         structure MilRep
         structure MilSimplify
         structure MilVectorize
-        structure MilNewVectorize
+        (* structure MilNewVectorize *)
         structure MilInlineAggressive   
         structure MilInlineProfile   
         structure MilLoopInvert
