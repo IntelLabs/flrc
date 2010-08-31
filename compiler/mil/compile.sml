@@ -30,10 +30,10 @@ struct
        (#"S", MilSimplify.pass        ),
        (#"s", MilLowerPSums.pass      ),
        (#"t", MilLowerPTypes.pass     ),
-       (#"n", MilNormalize.pass       ),
+       (*(#"n", MilNormalize.pass       ),*)
        (#"V", MilCse.pass             ),
        (#"Y", MilLoopInvert.pass      ),
-       (#"z", MilNewVectorize.pass    ),
+       (*(#"z", MilNewVectorize.pass    ),*)
        (#"Z", MilVectorize.pass       )
       ]
 
