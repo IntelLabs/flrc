@@ -75,6 +75,7 @@ struct
                         MRC.Stop
                   val instruction = fn _ => MRC.Continue
                   val transfer    = fn _ => MRC.Continue
+                  val block       = fn _ => MRC.Continue
                   val global      = fn _ => MRC.Continue
                   val bind        = fn (_, env, _) => (env, NONE)
                   val bindLabel   = fn (_, env, _) => (env, NONE)

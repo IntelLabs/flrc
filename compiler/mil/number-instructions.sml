@@ -38,6 +38,7 @@ struct
                   val operand     = fn _ => MRC.Stop
                   val instruction = instr
                   val transfer    = fn _ => MRC.Stop
+                  val block       = fn _ => MRC.Continue
                   val global      = fn _ => MRC.Continue
                   val bind        = fn (_, env, _) => (env, NONE)
                   val bindLabel   = fn (_, env, _) => (env, NONE)

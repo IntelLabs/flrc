@@ -165,11 +165,11 @@ struct
     entry            : M.label,
     loops            : loopForest,
     blocksNotInLoops : blocks,
-    allNodes         : blocks LD.t,
-    exits            : LS.t LD.t,
-    preheaders       : M.label LD.t,
-    inductionVars    : inductionVariable list LD.t,
-    tripCounts       : tripCount LD.t
+    allNodes         : blocks LD.t option,
+    exits            : LS.t LD.t option,
+    preheaders       : M.label LD.t option,
+    inductionVars    : inductionVariable list LD.t option,
+    tripCounts       : tripCount LD.t option
   }
 
   (* inLoops tracks which loops a block is in, nested or otherwise
@@ -315,8 +315,8 @@ struct
       end
 
   fun fromLoops (c, si, {entry, loops, blocksNotInLoops}) = 
-      LS {config = c, si = si, entry = entry, loops = loops, blocksNotInLoops = blocksNotInLoops, allNodes = LD.empty,
-          exits = LD.empty, preheaders = LD.empty, inductionVars = LD.empty, tripCounts = LD.empty}
+      LS {config = c, si = si, entry = entry, loops = loops, blocksNotInLoops = blocksNotInLoops, allNodes = NONE,
+          exits = NONE, preheaders = NONE, inductionVars = NONE, tripCounts = NONE}
 
   fun build (c, si, cfg, dt) =
       let
@@ -404,17 +404,21 @@ struct
         val () = Vector.foreach (loops, doOne)
         val r =
             LS {config = config, si = si, entry = entry, loops = loops, blocksNotInLoops = blocksNotInLoops,
-                allNodes = !allNodes, exits = exits, preheaders = preheaders, inductionVars = inductionVars,
+                allNodes = SOME (!allNodes), exits = exits, preheaders = preheaders, inductionVars = inductionVars,
                 tripCounts = tripCounts}
       in r
       end
 
-  fun getAllNodes (LS {allNodes, ...}, h) =
-      case LD.lookup (allNodes, h)
-       of NONE    => fail ("getAllNodes", "no all nodes for header: " ^ I.labelString h)
-        | SOME ns => ns
+  fun allNodes (LS {allNodes, ...}) = 
+      (case allNodes
+        of SOME an => an
+         | NONE => fail ("allNodes", "all nodes have not been generated"))
 
-  fun allNodes (LS {allNodes, ...}) = allNodes
+  fun getAllNodes (ls, h) =
+      (case LD.lookup (allNodes ls, h)
+        of NONE    => fail ("getAllNodes", "no all nodes for header: " ^ I.labelString h)
+         | SOME ns => ns)
+
 
   (*** Exits ***)
 
@@ -443,17 +447,20 @@ struct
         val () = Vector.foreach (loops, doLoop)
         val r =
             LS {config = config, si = si, entry = entry, loops = loops, blocksNotInLoops = blocksNotInLoops,
-                allNodes = allNodes, exits = !exits, preheaders = preheaders, inductionVars = inductionVars,
+                allNodes = allNodes, exits = SOME (!exits), preheaders = preheaders, inductionVars = inductionVars,
                 tripCounts = tripCounts}
       in r
       end
 
-  fun getExits (LS {exits, ...}, h) =
-      case LD.lookup (exits, h)
+  fun allExits (LS {exits, ...}) = 
+      (case exits
+        of SOME e => e
+         | NONE => fail ("allExits", "exits have not been generated"))
+
+  fun getExits (ls, h) =
+      case LD.lookup (allExits ls, h)
        of NONE    => fail ("getExits", "no exits for header: " ^ I.labelString h)
         | SOME ns => ns
-
-  fun allExits (LS {exits, ...}) = exits
 
   (*** Generate and link in preheaders for a loop structure ***)
 
@@ -558,7 +565,7 @@ struct
         val (loops, blks) = Vector.mapAndFold (loops, blks, doLoop phs)
         val r =
             LS {config = config, si = si, entry = entry, loops = loops, blocksNotInLoops = blks,
-                allNodes = LD.empty, exits = exits, preheaders = phs, inductionVars = inductionVars,
+                allNodes = NONE, exits = exits, preheaders = SOME phs, inductionVars = inductionVars,
                 tripCounts = tripCounts}
       in r
       end
@@ -572,9 +579,12 @@ struct
       in ls
       end
 
-  fun getPreheader (LS {preheaders, ...}, h) = LD.lookup (preheaders, h)
+  fun getPreheaders (LS {preheaders, ...}) = 
+      (case preheaders
+        of SOME ph => ph
+         | NONE => fail ("getPreheaders", "preheaders have not been generated"))
 
-  fun getPreheaders (LS {preheaders, ...}) = preheaders
+  fun getPreheader (ls, h) = LD.lookup (getPreheaders ls, h)
 
   (*** Induction Variables ***)
 
@@ -946,16 +956,19 @@ struct
         val r =
             LS {config = #config x, si = #si x, entry = #entry x, loops = #loops x,
                 blocksNotInLoops = #blocksNotInLoops x, allNodes = #allNodes x, exits = #exits x,
-                preheaders = #preheaders x, inductionVars = ivs, tripCounts = #tripCounts x}
+                preheaders = #preheaders x, inductionVars = SOME ivs, tripCounts = #tripCounts x}
       in r
       end
 
-  fun getInductionVariables (LS {inductionVars, ...}, h) =
-      case LD.lookup (inductionVars, h)
+  fun inductionVars (LS {inductionVars, ...})= 
+      (case inductionVars
+        of SOME ivs => ivs
+         | NONE => fail ("inductionVars", "induction variables have not been generated"))
+
+  fun getInductionVariables (ls, h) =
+      case LD.lookup (inductionVars ls, h)
        of NONE     => []
         | SOME ivs => ivs
-
-  fun inductionVars (LS {inductionVars, ...})= inductionVars
 
   (*** Compute loop trip counts ***)
 
@@ -1099,11 +1112,15 @@ struct
         val r =
             LS {config = #config x, si = #si x, entry = #entry x, loops = #loops x,
                 blocksNotInLoops = #blocksNotInLoops x, allNodes = #allNodes x, exits = #exits x,
-                preheaders = #preheaders x, inductionVars = #inductionVars x, tripCounts = tcs}
+                preheaders = #preheaders x, inductionVars = #inductionVars x, tripCounts = SOME tcs}
       in r
       end
 
-  fun getTripCount (LS {tripCounts, ...}, h) = LD.lookup (tripCounts, h)
-  fun allTripCounts (LS {tripCounts, ...}) = tripCounts
+  fun allTripCounts (LS {tripCounts, ...}) = 
+      (case tripCounts
+        of SOME tc => tc
+         | NONE => fail ("allTripCounts", "trip counts have not been generated"))
+
+  fun getTripCount (ls, h) = LD.lookup (allTripCounts ls, h)
 
 end;

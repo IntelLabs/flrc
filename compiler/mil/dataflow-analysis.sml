@@ -508,14 +508,21 @@ functor MilDataFlowAnalysisF (
       in !st
       end
 
-  fun blocks' (env, m as M.P {globals, ...}, M.F {body, ...}, e, initf, blocks, dominfo) =
+  fun const f = (fn _ => f)
+
+  fun blocks' (env, m as M.P {globals, ...}, M.F {body, ...}, entry:Identifier.label,
+               initf, blocks, dominfo) =
       let
         val st = ref VD.empty
         val () = doGlobals (env, st, m)
         val le = mkLocalEnv' (env, body, SOME blocks, dominfo)
-        val infos = initf (env, stateDict (env, st), e)
-        val () = projectArgs (le, st, e, infos, m)
-        val () = goLabel (le, st, e, m)
+        val () = dbgPrint (le, const "Made local env\n")
+        val infos = initf (env, stateDict (env, st), entry)
+        val () = dbgPrint (le, const "initf'd\n")
+        val () = projectArgs (le, st, entry, infos, m)
+        val () = dbgPrint (le, const "project args ok")
+        val () = goLabel (le, st, entry, m)
+        val () = dbgPrint (le, const "done\n")
       in !st
       end
 

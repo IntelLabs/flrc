@@ -45,6 +45,7 @@ struct
     fun rwOperand (s, e, oper) = MRC.Continue
     fun rwInst (s, e, i) = MRC.Continue
     fun rwTransfer (s, e, t) = MRC.Continue
+    fun rwBlock (s, e, b) = MRC.Continue
     fun rwGlobal (s, e, g) = MRC.Continue
                           
     fun bind (s,e as E {r, ...}, v) = (e, Rename.use' (r, v))
@@ -70,6 +71,7 @@ struct
                     val operand = rwOperand
                     val instruction = rwInst
                     val transfer = rwTransfer
+                    val block = rwBlock
                     val global = rwGlobal
                     val bind = bind
                     val bindLabel = bindLabel

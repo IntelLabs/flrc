@@ -996,7 +996,7 @@ sig
   structure FlatTyp :
   sig
     (* Flat typs are the nullary super-types of the general types *)
-    val fromTyp : Mil.typ -> Mil.typ
+    val fromTyp : Config.t * Mil.typ -> Mil.typ
   end (* structure FlatTyp *)
               
 end;
@@ -4394,7 +4394,7 @@ struct
 
     (* Flat typs are the nullary super-types of the general types *)
     val fromTyp =
-     fn t => 
+     fn (config, t) => 
         (case t
           of M.TAny                       => t
            | M.TAnyS vs                   => t
@@ -4410,11 +4410,11 @@ struct
            | M.TDouble                    => t
            | M.TViVector et               => t
            | M.TViMask et                 => t
-           | M.TCode {cc, args, ress}     => M.TPtr
+           | M.TCode {cc, args, ress}     => M.TBits (ValueSize.ptrSize config)
            | M.TTuple {pok, fixed, array} => (case pok of M.PokNone => M.TRef | _ => M.TPAny)
            | M.TCString                   => t
            | M.TIdx                       => M.TRef
-           | M.TContinuation ts           => M.TPtr
+           | M.TContinuation ts           => M.TBits (ValueSize.ptrSize config)
            | M.TThunk t                   => M.TRef
            | M.TPAny                      => M.TPAny
            | M.TClosure {args, ress}      => M.TPAny

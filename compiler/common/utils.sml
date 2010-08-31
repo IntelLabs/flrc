@@ -42,6 +42,12 @@ structure Utils = struct
       val @@ : ('a -> 'b) * 'a -> 'b = 
        fn (f, a) => f a
 
+      (*(* infix left-associative application *)
+      infix 3 $
+      val $ : 'a -> ('a -> 'b) -> 'b =
+         fn f => (fn x => f x)*)
+
+
       (* MLton sectioning and application operators *)
       (* infix 3 <\ \> *)
       val <\ = fn (x, f) => fn y => f (x, y)
