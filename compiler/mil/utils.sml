@@ -782,10 +782,15 @@ sig
     val variableTyp : t * Mil.variable -> Typ.t
     val variableKind : t * Mil.variable -> VariableKind.t
     val variableName : t * Mil.variable -> string
+    val variableNameEscaped : t * Mil.variable -> string
     val variableString : t * Mil.variable -> string
+    val variableStringEscaped : t * Mil.variable -> string
     val nameString : t * Mil.name -> string
+    val nameStringEscaped : t * Mil.name -> string
     val layoutVariable : t * Mil.variable -> Layout.t
+    val layoutVariableEscaped : t * Mil.variable -> Layout.t
     val layoutName : t * Mil.name -> Layout.t
+    val layoutNameEscaped : t * Mil.name -> Layout.t
     val layoutLabel : t * Mil.label -> Layout.t
   end
 
@@ -3783,18 +3788,23 @@ struct
 
     val variableExists = SI.variableExists
 
-    fun variableInfo   (si, v) = SI.variableInfo   (si, v)
-    fun variableName   (si, v) = SI.variableName   (si, v)
-    fun variableString (si, v) = SI.variableString (si, v)
+    fun variableInfo          (si, v) = SI.variableInfo          (si, v)
+    fun variableName          (si, v) = SI.variableName          (si, v)
+    fun variableNameEscaped   (si, v) = SI.variableNameEscaped   (si, v)
+    fun variableString        (si, v) = SI.variableString        (si, v)
+    fun variableStringEscaped (si, v) = SI.variableStringEscaped (si, v)
 
     fun variableTyp  (si, v) = VariableInfo.typ  (variableInfo (si, v))
     fun variableKind (si, v) = VariableInfo.kind (variableInfo (si, v))
 
-    fun nameString (si, n) = SI.nameString (si, n)
+    fun nameString        (si, n) = SI.nameString        (si, n)
+    fun nameStringEscaped (si, n) = SI.nameStringEscaped (si, n)
 
-    fun layoutVariable (si, v) = SI.layoutVariable (v, si)
-    fun layoutName     (si, n) = SI.layoutName     (n, si)
-    fun layoutLabel    (si, l) = SI.layoutLabel    (l, si)
+    fun layoutVariable        (si, v) = SI.layoutVariable        (v, si)
+    fun layoutVariableEscaped (si, v) = SI.layoutVariableEscaped (v, si)
+    fun layoutName            (si, n) = SI.layoutName            (n, si)
+    fun layoutNameEscaped     (si, n) = SI.layoutNameEscaped     (n, si)
+    fun layoutLabel           (si, l) = SI.layoutLabel           (l, si)
 
   end
 

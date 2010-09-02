@@ -26,6 +26,7 @@ local
             $(SML_LIB)/basis/basis.mlb
           in
             structure PackWord32Little
+            structure PackWord64Little
             structure PackReal32Little
             structure PackReal64Little
             structure Int32

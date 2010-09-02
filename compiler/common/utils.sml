@@ -220,7 +220,7 @@ structure Utils = struct
 
     fun wordToReal32 (w : LargeWord.t) : Real32.t =
         let
-          val a32 = Word8Array.tabulate(4, fn _ => 0wx0)
+          val a32 = Word8Array.tabulate (4, fn _ => 0wx0)
           val () = PackWord32Little.update (a32, 0, w)
           val r = PackReal32Little.subArr (a32, 0)
         in
@@ -228,11 +228,26 @@ structure Utils = struct
         end
     fun wordToReal64 (w : LargeWord.t) : Real64.t =
         let
-          val a64 = Word8Array.tabulate(8, fn _ => 0wx0)
-          val () = PackWord32Little.update (a64, 0, w)
+          val a64 = Word8Array.tabulate (8, fn _ => 0wx0)
+          val () = PackWord64Little.update (a64, 0, w)
           val r = PackReal64Little.subArr (a64, 0)
         in
           r
+        end
+
+    fun real32ToWord (r : Real32.t) : LargeWord.t =
+        let
+          val a32 = Word8Array.tabulate (4, fn _ => 0wx0)
+          val () = PackReal32Little.update (a32, 0, r)
+          val w = PackWord32Little.subArr (a32, 0)
+        in w
+        end
+    fun real64ToWord (r : Real64.t) : LargeWord.t =
+        let
+          val a32 = Word8Array.tabulate (8, fn _ => 0wx0)
+          val () = PackReal64Little.update (a32, 0, r)
+          val w = PackWord64Little.subArr (a32, 0)
+        in w
         end
 
     (* Return a list of 32 bit digits (msd first) corresponding

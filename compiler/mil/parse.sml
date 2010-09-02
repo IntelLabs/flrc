@@ -120,21 +120,22 @@ struct
                      fn (c, cs) => String.implode (c::cs)))
       || P.succeed ""
 
+  val digitsLF : string P.t =
+      P.map (P.oneOrMore (P.satisfy Char.isDigit), String.implode)
+
+  val optNegLF : bool P.t = P.map (P.optional (keycharLF #"~"), Option.isSome)
+
   val decimal : int P.t =
-      syntax (P.map (P.oneOrMore (P.satisfy Char.isDigit),
-                     fn cs => Option.valOf (Int.fromString (String.implode cs))))
-      || P.error "Expected nat"
+      syntax (P.map (digitsLF, fn s => Option.valOf (Int.fromString s))) || P.error "Expected nat"
 
   val int : int P.t =
-      syntax (P.map (P.optional (keycharLF #"~") && P.oneOrMore (P.satisfy Char.isDigit),
-                     fn (co, cs) =>
-                        Option.valOf (Int.fromString (String.implode (case co of NONE => cs | SOME () => #"~"::cs)))))
+      syntax (P.map (optNegLF && digitsLF,
+                     fn (neg, s) => let val n = Option.valOf (Int.fromString s) in if neg then ~n else n end))
       || P.error "Expected int"
 
   val intInfLF = 
-      P.map (P.optional (keycharLF #"~") && P.oneOrMore (P.satisfy Char.isDigit),
-             fn (n, cs) =>
-                Option.valOf (IntInf.fromString (String.implode (case n of NONE => cs | SOME () => #"~"::cs))))
+      P.map (optNegLF && digitsLF,
+             fn (neg, s) => let val n = Option.valOf (IntInf.fromString s) in if neg then IntInf.~ n else n end)
 
   val intInf = syntax intInfLF || P.error "Expected integer"
 
@@ -172,6 +173,19 @@ struct
       end
 
   val cstring = cstringF || P.error "Expected string"
+
+  val float : Real32.t P.t =
+      let
+        val hex = P.satisfy Char.isHexDigit
+        val p = hex && hex && hex && hex && hex && hex && hex && hex
+        fun f (((((((c1, c2), c3), c4), c5), c6), c7), c8) =
+            Utils.wordToReal32 (Option.valOf (LargeWord.fromString (String.implode [c1, c2, c3, c4, c5, c6, c7, c8])))
+        val p = P.map (p, f)
+        val p = syntax p || P.error "Expected float"
+      in p
+      end
+
+  val double = P.$$ unimplemented ("constant", "double")
 
   (*** State ***)
 
@@ -211,13 +225,21 @@ struct
   val vectorElemTypeShort : VI.elemType P.t =
       P.required (P.map (identifierF, VI.elemTypeOfStringShort), "Expected short vector element type")
 
+  val hintLF : string P.t =
+      let
+        fun hintChar c = Char.isAlphaNum c orelse String.contains("_\\-$#", c)
+        val hintEscape = P.map (keycharLF #"^" && P.satisfy Char.isHexDigit && P.satisfy Char.isHexDigit,
+                                fn ((_, c1), c2) => Char.chr (16 * Char.toHexDigit c1 + Char.toHexDigit c2))
+        val hintItem = P.satisfy hintChar || hintEscape
+        val p = P.map (P.zeroOrMore hintItem, String.implode)
+      in p
+      end
+
   fun variableF (state : state, env : env) : M.variable P.t =
       let
         val pre = keycharLF #"v" && P.zeroOrMore (P.satisfy Char.isDigit) && keycharLF #"_"
         val pre = P.map (pre, fn ((_, cs), _) => "v" ^ String.implode cs ^ "_")
-        fun hintChar c = Char.isAlphaNum c orelse c = #"_"
-        val hint = P.map (P.zeroOrMore (P.satisfy hintChar), String.implode)
-        val p = syntax (P.map (pre && hint, fn (p, h) => getVariable (state, p, h)))
+        val p = syntax (P.map (pre && hintLF, fn (p, h) => getVariable (state, p, h)))
       in p
       end
 
@@ -226,9 +248,7 @@ struct
   fun nameF (state : state, env : env) : M.name P.t =
       let
         val pre = keycharLF #"n" && P.zeroOrMore (P.satisfy Char.isDigit) && keycharLF #"_"
-        fun nameChar c = Char.isAlphaNum c orelse c = #"\\"
-        val str = P.oneOrMore (P.satisfy nameChar)
-        val p = P.map (pre && str, fn (_, cs) => MU.SymbolTableManager.nameMake (getStm state, String.implode cs))
+        val p = P.map (pre && hintLF, fn (_, h) => MU.SymbolTableManager.nameMake (getStm state, h))
         val p = syntax p
       in p
       end
@@ -266,7 +286,7 @@ struct
       end
 
   fun callConv (state : state, env : env, f : state * env -> 'a P.t) : 'a M.callConv P.t =
-      callConvF (state, env, f)  || P.error "Expected calling convention"
+      callConvF (state, env, f) || P.error "Expected calling convention"
 
   fun typKind (state : state, env : env) : M.typKind P.t =
       syntax (P.satisfyMap (MU.TypKind.fromChar)) || P.error "Expected type kind"
@@ -421,8 +441,6 @@ struct
       let
         fun intArb (sign, size) =
             P.map (paren intInf, fn i => M.CIntegral (IntArb.fromIntInf (IntArb.T (size, sign), i)))
-        val float = P.$$ unimplemented ("constant", "float")
-        val double = P.$$ unimplemented ("constant", "double")
         fun parseBool c = case c of #"0" => SOME false | #"1" => SOME true | _ => NONE
         val bools = syntax (P.zeroOrMoreV (P.satisfyMap parseBool))
         fun doIt s =
@@ -603,12 +621,12 @@ struct
                                    fn (i, v) => M.RhsIdxGet {idx = i, ofVal = v})
               | "Inited" => P.map (pair (metaDataDescriptor (state, env), variable (state, env)),
                                    fn (mdd, tup) => M.RhsTupleInited {mdDesc = mdd, tup = tup})
-              | "Set" => P.map (paren (operand (state, env)), M.RhsPSetNew)
-              | "SetCond" => P.map (paren (operand (state, env) && keycharSF #"?" &&
+              | "PSet" => P.map (paren (operand (state, env)), M.RhsPSetNew)
+              | "PSetCond" => P.map (paren (operand (state, env) && keycharSF #"?" &&
                                            brace (operand (state, env)) && keycharSF #":" &&
                                            brace (P.succeed ())),
                                     fn ((((o1, _), o2), _), _) => M.RhsPSetCond {bool = o1, ofVal = o2})
-              | "SetGet" => P.map (paren (variable (state, env)), M.RhsPSetGet)
+              | "PSetGet" => P.map (paren (variable (state, env)), M.RhsPSetGet)
               | "Spawn" =>
                 P.map (paren (variable (state, env) && keycharSF #":" && fieldKind (state, env)) &&
                        effects (state, env),
@@ -798,10 +816,10 @@ struct
         val binder' = fn (s, e) => binder (s, e, M.VkLocal)
         val args = parenSemiComma (callConv (state, env, binder'), binder (state, env, M.VkLocal))
         val header = P.map (optFlag #"^" && optFlag #"*" && args && effects (state, env),
-                            fn (((r, e), (cc, vs)), fx) => (r, e, cc, vs, fx))
+                            fn (((e, r), (cc, vs)), fx) => (e, r, cc, vs, fx))
         val rets = P.map (keycharS #":" && parenSeq (typ (state, env)), #2)
         val body = brace (codeBody (state, env))
-        fun mkIt (((r, e, cc, vs, fx), ts), cb) =
+        fun mkIt (((e, r, cc, vs, fx), ts), cb) =
             M.F {fx = fx, escapes = e, recursive = r, cc = cc, args = vs, rtyps = ts, body = cb}
         val p = P.map (header && rets && body, mkIt)
       in p

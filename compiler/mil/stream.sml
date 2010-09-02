@@ -357,7 +357,7 @@ struct
    fun nextBlock state = MU.SymbolTableManager.labelFresh (getStm state)
 
    fun namedVar (state, hint, t, g) =
-       MU.SymbolTableManager.variableFresh (getStm state, hint, t, g)
+       MU.SymbolTableManager.variableFresh (getStm state, hint ^ "_#", t, g)
 
    fun relatedVar (state, v, hint, t, g) =
        MU.SymbolTableManager.variableRelated (getStm state, v, hint, t, g)

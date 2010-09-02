@@ -155,6 +155,8 @@ struct
 
    type options = {
      supVarKind : bool,
+     escVarName : bool,
+     binFpConst : bool,
      binderTyps : bool,
      viElemType : bool,
      numbers    : bool,
@@ -181,6 +183,8 @@ struct
    fun getBlock   (E {block,   ...}) = block
 
    fun suppressVarKinds e = #supVarKind (getOptions e)
+   fun escapeVarNames   e = #escVarName (getOptions e)
+   fun showBinFpConsts  e = #binFpConst (getOptions e)
    fun showBinderTyps   e = #binderTyps (getOptions e)
    fun showViElemType   e = #viElemType (getOptions e)
    fun showNumbers      e = #numbers    (getOptions e)
@@ -197,19 +201,26 @@ struct
    fun layoutVariable (env, v) =
        let
          val si = getSI env
+         val l =
+             if escapeVarNames env
+             then MU.SymbolInfo.layoutVariableEscaped (si, v)
+             else MU.SymbolInfo.layoutVariable (si, v)
          val l = 
              if suppressVarKinds env then
-               MU.SymbolInfo.layoutVariable (si, v)
+               l
              else
                if MU.SymbolInfo.variableExists (si, v) then
-                 L.seq [Char.layout (MU.VariableKind.toChar (MU.SymbolInfo.variableKind (si, v))),
-                        MU.SymbolInfo.layoutVariable (si, v)]
+                 L.seq [Char.layout (MU.VariableKind.toChar (MU.SymbolInfo.variableKind (si, v))), l]
                else
-                 L.seq [L.str "BAD_VAR_", MU.SymbolInfo.layoutVariable (si, v)]
+                 L.seq [L.str "BAD_VAR_", l]
        in l
        end
 
-   fun layoutName  (env, n) = MU.SymbolInfo.layoutName  (getSI env, n)
+   fun layoutName (env, n) =
+       if escapeVarNames env
+       then MU.SymbolInfo.layoutNameEscaped (getSI env, n)
+       else MU.SymbolInfo.layoutName (getSI env, n)
+
    fun layoutLabel (env, l) = MU.SymbolInfo.layoutLabel (getSI env, l)
 
    fun layoutEffects (env, fx) = Effect.layout fx
@@ -389,8 +400,32 @@ struct
          | M.CInteger i => L.seq [L.str "I", L.paren (IntInf.layout i)]
          | M.CName n => layoutName (env, n)
          | M.CIntegral i => IntArb.layout i
-         | M.CFloat f => L.seq [L.str "F", L.paren (Real32.layout f)]
-         | M.CDouble d => L.seq [L.str "D", L.paren (Real64.layout d)]
+         | M.CFloat f =>
+           let
+             val f =
+                 if showBinFpConsts env then
+                   let
+                     val lw = Utils.real32ToWord f
+                     val s = LargeWord.toString lw
+                     val s = s ^ String.make (8 - String.length s, #"0")
+                     val l = L.str s
+                   in l
+                   end
+                 else
+                   Real32.layout f
+             val l = L.seq [L.str "F", L.paren f]
+           in l
+           end
+         | M.CDouble d =>
+           let
+             val d =
+                 if showBinFpConsts env then
+                   Fail.unimplemented (modulename, "layoutConstant", "binary double")
+                 else
+                   Real64.layout d
+             val l = L.seq [L.str "D", L.paren d]
+           in l
+           end
          | M.CViVector {typ, elts} =>
            let
              val typ = VI.layoutElemTypeShort typ
@@ -638,13 +673,13 @@ struct
              val l = L.seq [L.str "ClosureGetFv", L.tuple [cls, Int.layout idx]]
            in l
            end
-         | M.RhsPSetNew oper => L.seq [L.str "Set", L.paren (layoutOperand (env, oper))]
-         | M.RhsPSetGet v => L.seq [L.str "SetGet", L.paren (layoutVariable (env, v))]
+         | M.RhsPSetNew oper => L.seq [L.str "PSet", L.paren (layoutOperand (env, oper))]
+         | M.RhsPSetGet v => L.seq [L.str "PSetGet", L.paren (layoutVariable (env, v))]
          | M.RhsPSetCond {bool, ofVal} =>
            let
              val ts = LU.brace (layoutOperand (env, ofVal))
              val l = L.seq [layoutOperand (env, bool), L.str " ? ", ts, L.str " : {}"]
-             val l = L.seq [L.str "SetCond", L.paren l]
+             val l = L.seq [L.str "PSetCond", L.paren l]
            in l
            end
          | M.RhsPSetQuery oper => L.seq [L.str "?", layoutOperand (env, oper)]
@@ -947,7 +982,8 @@ struct
          val M.P {symbolTable, ...} = p
          val si = I.SymbolInfo.SiTable symbolTable
          val hs = Helpers.default
-         val opts = {supVarKind = true, binderTyps = true, viElemType = true, numbers = false, tupDesc = true,
+         val opts = {supVarKind = true, escVarName = true, binFpConst = true, binderTyps = true,
+                     viElemType = true, numbers = false, tupDesc = true,
                      thunkTyp = true, thunkFvs = true, pFunFvs = true, pSumTyp = true, codes = true}
          val env = E {config = c, si = si, helpers = hs, options = opts, block = NONE}
          val l = layoutProgramAux (env, false, false, p)
@@ -957,7 +993,9 @@ struct
    fun describe () =
        L.align [L.str (modulename ^ " control string consists of:"),
                 LU.indent (L.align [L.str "b => show types on variable binders",
+                                    L.str "B => binary floating-point constants",
                                     L.str "c => show codes",
+                                    L.str "e => escape variable and name strings",
                                     L.str "f => show P Function free variable field kinds",
                                     L.str "F => show full symbol table information",
                                     L.str "k => suppress kinds on variables",
@@ -968,12 +1006,15 @@ struct
                                     L.str "T => show thunk types",
                                     L.str "U => show thunk free variable field kinds",
                                     L.str "v => show vector element types",
-                                    L.str "+ => show all of the above except suppress kinds"]),
+                                    L.str "w => set options for parsing",
+                                    L.str "+ => show all of the above except suppress kinds and binary FP constants"]),
                 L.str "default is c"]
 
    fun parse str =
        let
          val supVarKind = ref false
+         val escVarName = ref false
+         val binFpConst = ref false
          val binderTyps = ref false
          val viElemType = ref false
          val tupDesc    = ref false
@@ -988,7 +1029,9 @@ struct
          fun doOne c =
              case c
               of #"b" => let val () = binderTyps := true in true end
+               | #"B" => let val () = binFpConst := true in true end
                | #"c" => let val () = codes := true in true end
+               | #"e" => let val () = escVarName := true in true end
                | #"f" => let val () = pFunFvs := true in true end
                | #"F" => let val () = fullSymTab := true val () = symbols := true in true end
                | #"k" => let val () = supVarKind := true in true end
@@ -999,6 +1042,24 @@ struct
                | #"T" => let val () = thunkTyp := true in true end
                | #"U" => let val () = thunkFvs := true in true end
                | #"v" => let val () = viElemType := true in true end
+               | #"w" =>
+                 let
+                   val () = supVarKind := true
+                   val () = escVarName := true
+                   val () = binFpConst := true
+                   val () = binderTyps := true
+                   val () = viElemType := true
+                   val () = tupDesc    := true
+                   val () = thunkTyp   := true
+                   val () = thunkFvs   := true
+                   val () = pFunFvs    := true
+                   val () = pSumTyp    := true
+                   val () = codes      := true
+                   val () = symbols    := false
+                   val () = fullSymTab := false
+                   val () = numbers    := false
+                 in true
+                 end
                | #"+" =>
                  let
                    val () = binderTyps := true
@@ -1017,7 +1078,9 @@ struct
                | _    => false
        in
          if List.forall (String.explode str, doOne) then
-           SOME ({supVarKind = !supVarKind, binderTyps = !binderTyps, viElemType = !viElemType, tupDesc = !tupDesc,
+           SOME ({supVarKind = !supVarKind, escVarName = !escVarName,
+                  binFpConst = !binFpConst, binderTyps = !binderTyps,
+                  viElemType = !viElemType, tupDesc = !tupDesc,
                   thunkTyp = !thunkTyp, thunkFvs = !thunkFvs, pFunFvs = !pFunFvs, pSumTyp = !pSumTyp, codes = !codes,
                   numbers = !numbers},
                  !symbols,
@@ -1026,7 +1089,8 @@ struct
            NONE
        end
 
-   fun dft _ = ({supVarKind = false, binderTyps = false, viElemType = false, tupDesc = false, thunkTyp = false,
+   fun dft _ = ({supVarKind = false, escVarName = false, binFpConst = false, binderTyps = false,
+                 viElemType = false, tupDesc = false, thunkTyp = false,
                  thunkFvs = false, pFunFvs = false, pSumTyp = false, codes = true, numbers = false},
                 false,
                 false)
