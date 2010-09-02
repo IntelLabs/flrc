@@ -650,7 +650,7 @@ struct
                   val () = <@ MU.Constant.Dec.cOptionSetEmpty <! MU.Simple.Dec.sConstant @@ arg2
                   val contents = <@ MU.Def.Out.pSet <! Def.toMilDef o Def.get @@ (imil, <@ MU.Simple.Dec.sVariable arg1)
                   val t = MilType.Typer.operand (config, IMil.T.getSi imil, contents)
-                  val v = IMil.Var.new (imil, "sset", t, M.VkLocal)
+                  val v = IMil.Var.new (imil, "sset_#", t, M.VkLocal)
                   val ni = MU.Instruction.new (v, M.RhsPSetCond {bool = on, ofVal = contents})
                   val mv = IInstr.insertBefore (imil, ni, i)
                   val tg = 
@@ -677,7 +677,7 @@ struct
                 let
                   val uses = Use.getUses (imil, fname)
                   val use = Try.V.singleton uses
-                  val iFunc = IFunc.getIFuncByName (imil, fname)
+                  val iFunc = Try.<- (IFunc.getIFuncByName' (imil, fname))
                   (* We allow inlining of "recursive" functions,
                    * as long as all uses are known, there is only
                    * one call, and that call is not a recursive call. *)
@@ -1653,7 +1653,7 @@ struct
                          end
                        | P.RrConstant c =>
                          let
-                           val gv = Var.new (imil, "mrt", MU.Rational.t, M.VkGlobal)
+                           val gv = Var.new (imil, "mrt_#", MU.Rational.t, M.VkGlobal)
                            val mg = MU.Prims.Constant.toMilGlobal (PD.getConfig d, c)
                            val g = IGlobal.build (imil, (gv, mg))
                            val () = Use.replaceUses (imil, dv, M.SVariable gv)
@@ -2485,7 +2485,6 @@ struct
                     subPasses = []}
 
   val pass =
-      Pass.mkOptPass (description, associates,
-                      BothMil.mkIMilPass (program o Utils.flip2))
+      Pass.mkOptPass (description, associates, BothMil.mkIMilPass (program o Utils.flip2))
 
 end

@@ -137,6 +137,7 @@
 
 signature IDENTIFIER =
 sig
+
     eqtype variable
     eqtype name
     eqtype label
@@ -164,11 +165,13 @@ sig
     (* pre: variable is in the symbol table *)
     (* Returns the hint portion only *)
     val variableName : 'a symbolTable * variable -> string
+    val variableNameEscaped : 'a symbolTable * variable -> string
     (* pre: variable is in the symbol table *)
     val variableInfo : 'a symbolTable * variable -> 'a
     val variableString' : variable -> string
     (* Returns the full unique string *)
     val variableString : 'a symbolTable * variable -> string
+    val variableStringEscaped : 'a symbolTable * variable -> string
 
     (* Topological sort of variable/data pairs based on a dependency function.
      * variableTopoSort (l, f) returns L, where L is a list of lists of elements
@@ -191,6 +194,7 @@ sig
     val nameString' : name -> string
     (* pre: name is in symbol table *)
     val nameString : 'a symbolTable * name -> string
+    val nameStringEscaped : 'a symbolTable * name -> string
     (* pre: name is in symbol table *)
     val nameFromString : 'a symbolTable * string -> name
 
@@ -204,8 +208,10 @@ sig
     (** Layout **)
     val layoutVariable' : variable -> Layout.t
     val layoutVariable : variable * 'a symbolTable -> Layout.t
+    val layoutVariableEscaped : variable * 'a symbolTable -> Layout.t
     val layoutName' : name -> Layout.t
     val layoutName : name * 'a symbolTable -> Layout.t
+    val layoutNameEscaped : name * 'a symbolTable -> Layout.t
     val layoutLabel : label -> Layout.t
 
     val listVariables : 'a symbolTable -> variable list
@@ -240,18 +246,22 @@ sig
       val variableLookup : 'a t * variable -> string * 'a
       (* pre: variable is in the symbol table *)
       val variableName : 'a t * variable -> string
+      val variableNameEscaped : 'a t * variable -> string
       (* pre: variable is in the symbol table *)
       val variableInfo : 'a t * variable -> 'a
       (* pre: variable is in the symbol table *)
       val variableString : 'a t * variable -> string
+      val variableStringEscaped : 'a t * variable -> string
       val nameExists : 'a t * name -> bool
       (* pre: name is in symbol table *)
       val nameString : 'a t * name -> string
+      val nameStringEscaped : 'a t * name -> string
       (* pre: name is in symbol table *)
       val nameFromString : 'a t * string -> name
 
       (** Variables **)
       val variableFresh : 'a t * string * 'a -> variable
+      val variableFreshNoInfo : 'a t * string -> variable
       val variableClone : 'a t * variable -> variable
       val variableRelated : 'a t * variable * string * 'a -> variable
       val variableRelatedNoInfo : 'a t * variable * string -> variable
@@ -272,7 +282,10 @@ sig
 
       (** Layout **)
       val layoutVariable : variable * 'a t -> Layout.t
+      val layoutVariableEscaped : variable * 'a t -> Layout.t
       val layoutName : name * 'a t -> Layout.t
+      val layoutNameEscaped : name * 'a t -> Layout.t
+
     end
 
     structure SymbolInfo :
@@ -282,19 +295,24 @@ sig
 
       (** Variables **)
       val variableExists : 'a t * variable -> bool
-      val variableLookup : 'a t * variable -> string * 'a  (* pre: exists *)
-      val variableName : 'a t * variable -> string         (* pre: exists *)
-      val variableInfo : 'a t * variable -> 'a             (* pre: exists *)
-      val variableString : 'a t * variable -> string       (* pre: exists *)
+      val variableLookup : 'a t * variable -> string * 'a    (* pre: exists *)
+      val variableName : 'a t * variable -> string           (* pre: exists *)
+      val variableNameEscaped : 'a t * variable -> string    (* pre: exists *)
+      val variableInfo : 'a t * variable -> 'a               (* pre: exists *)
+      val variableString : 'a t * variable -> string         (* pre: exists *)
+      val variableStringEscaped : 'a t * variable -> string  (* pre: exists *)
 
       (** Names **)
       val nameExists : 'a t * name -> bool
-      val nameString : 'a t * name -> string   (* pre: exists *)
-      val nameFromString : 'a t * string -> name (* pre: exists *)
+      val nameString : 'a t * name -> string          (* pre: exists *)
+      val nameStringEscaped : 'a t * name -> string   (* pre: exists *)
+      val nameFromString : 'a t * string -> name      (* pre: exists *)
 
       (** Layout **)
       val layoutVariable : variable * 'a t -> Layout.t
+      val layoutVariableEscaped : variable * 'a t -> Layout.t
       val layoutName : name * 'a t -> Layout.t
+      val layoutNameEscaped : name * 'a t -> Layout.t
       val layoutLabel : label * 'a t -> Layout.t
 
     end
@@ -386,29 +404,48 @@ struct
 
     fun variableName (S {variableNames, ...}, v) =
         case VariableDict.lookup (variableNames, v)
-             of NONE => Fail.fail ("Identifier", 
-                                   "variableName", 
-                                   "undefined: " ^ 
-                                   (Layout.toString (layoutVariable' v)))
-              | SOME s => s
+         of NONE => Fail.fail ("Identifier", "variableName", "undefined: " ^ (Layout.toString (layoutVariable' v)))
+          | SOME s => s
+
+    fun doEscaping s = 
+        let
+          fun doOne c =
+              if Char.isAlphaNum c orelse String.contains ("_\\-$", c) then
+                String.fromChar c
+              else
+                let
+                  val ord = Char.ord c
+                  val d1 = ord mod 16
+                  val d2 = ord div 16
+                  val s = String.implode [#"^", Char.fromHexDigit d2, Char.fromHexDigit d1]
+                in s
+                end
+          val s = String.translate (s, doOne)
+        in s
+        end
+
+    fun variableNameEscaped (st, v) = doEscaping (variableName (st, v))
 
     fun variableInfo (S {variableInfo, ...}, v) =
         case VariableDict.lookup (variableInfo, v)
-             of NONE => Fail.fail ("Identifier", 
-                                   "variableInfo", 
-                                   "undefined: "^
-                                   (Layout.toString (layoutVariable' v)))
-              | SOME i => i
+         of NONE => Fail.fail ("Identifier", "variableInfo", "undefined: "^ (Layout.toString (layoutVariable' v)))
+          | SOME i => i
 
     fun variableLookup (st, v) =
         (variableName (st, v), variableInfo (st, v))
 
-    fun variableString (S {variableNames, ...}, v as V n) =
-        let val str =
-                case VariableDict.lookup (variableNames, v)
-                 of NONE => ""
-                  | SOME s => "_" ^ s
-        in "v" ^ (Int.toString n) ^ str
+    fun variableString (st, v as V n) =
+        let
+          val str = "_" ^ variableName (st, v) handle _ => ""
+          val str = "v" ^ Int.toString n ^ str
+        in str
+        end
+
+    fun variableStringEscaped (st, v as V n) =
+        let
+          val str = "_" ^ variableNameEscaped (st, v) handle _ => ""
+          val str = "v" ^ (Int.toString n) ^ str
+        in str
         end
 
     fun variableString' v = "v" ^ (Int.toString (variableNumber v))
@@ -446,10 +483,12 @@ struct
 
     fun nameString' n = "n" ^ (Int.toString (nameNumber n))
 
-    fun nameString (S {names, ...}, v) =
-        case NameDict.lookup (names, v)
+    fun nameString (S {names, ...}, n) =
+        case NameDict.lookup (names, n)
              of NONE => Fail.fail ("Identifier", "nameString", "undefined")
               | SOME s => s
+
+    fun nameStringEscaped (st, n) = doEscaping (nameString (st, n))
 
     fun nameFromString (S {rnames, ...}, s) =
         case StringDict.lookup (rnames, s)
@@ -465,12 +504,21 @@ struct
     fun layoutVariable (v, st) =
         Layout.str (variableString (st, v))
 
-    fun layoutName (n as N m, S {names, ...}) =
-        let val str =
-                case NameDict.lookup (names, n)
-                 of NONE => ""
-                  | SOME s => "_" ^ s
-        in  Layout.str ("n" ^ (Int.toString m) ^ str)
+    fun layoutVariableEscaped (v, st) =
+        Layout.str (variableStringEscaped (st, v))
+
+    fun layoutName (n as N m, st) =
+        let
+          val str = "_" ^ nameString (st, n) handle _ => ""
+          val l = Layout.str ("n" ^ (Int.toString m) ^ str)
+        in l
+        end
+
+    fun layoutNameEscaped (n as N m, st) =
+        let
+          val str = "_" ^ nameStringEscaped (st, n) handle _ => ""
+          val l = Layout.str ("n" ^ (Int.toString m) ^ str)
+        in l
         end
 
     fun listVariables (S {variableNames, ...}) =
@@ -541,6 +589,8 @@ struct
                                    "undefined")
               | SOME s => s
 
+        fun variableNameEscaped (stm, v) = doEscaping (variableName (stm, v))
+
         fun variableInfo (M {variableInfo, variableNames, ...}, v as V n) =
             case VariableDict.lookup (!variableInfo, v)
              of NONE =>
@@ -558,12 +608,18 @@ struct
         fun variableLookup (stm, v) =
             (variableName (stm, v), variableInfo (stm, v))
 
-        fun variableString (M {variableNames, ...}, v as V n) =
-            let val str =
-                    case VariableDict.lookup (!variableNames, v)
-                     of NONE => ""
-                      | SOME s => "_" ^ s
-            in "v" ^ (Int.toString n) ^ str
+        fun variableString (stm, v as V n) =
+            let
+              val str = "_" ^ variableName (stm, v) handle _ => ""
+              val str = "v" ^ Int.toString n ^ str
+            in str
+            end
+
+        fun variableStringEscaped (stm, v as V n) =
+            let
+              val str = "_" ^ variableNameEscaped (stm, v) handle _ => ""
+              val str = "v" ^ Int.toString n ^ str
+            in str
             end
 
         fun variablesList (M {variableNames, ...}) =
@@ -572,11 +628,12 @@ struct
         fun nameExists (M {names, ...}, n) =
             NameDict.contains (!names, n)
 
-        fun nameString (M {names, ...}, v) =
-            case NameDict.lookup (!names, v)
-             of NONE => Fail.fail ("Identifier.Manager", "nameString",
-                                   "undefined")
+        fun nameString (M {names, ...}, n) =
+            case NameDict.lookup (!names, n)
+             of NONE => Fail.fail ("Identifier.Manager", "nameString", "undefined")
               | SOME s => s
+
+        fun nameStringEscaped (stm, n) = doEscaping (nameString (stm, n))
 
         fun nameFromString (M {rnames, ...}, s) =
             case StringDict.lookup (!rnames, s)
@@ -584,23 +641,30 @@ struct
               | SOME n => n
 
 
-        fun variableFresh (M {variable, variableNames, variableInfo, ...},
-                           hint, info) =
-            let val nv = !variable
-                val () = variable := nv + 1
-                val nm = hint ^ "_" ^ (Int.toString nv)
-                val nv = V nv
-                val () = variableNames :=
-                           VariableDict.insert (!variableNames, nv, nm)
-                val () = variableInfo :=
-                           VariableDict.insert (!variableInfo, nv, info)
-            in
-                nv
+        fun variableFreshNoInfo (M {variable, variableNames, ...}, hint) =
+            let
+              val nv = !variable
+              val () = variable := nv + 1
+              fun doOne c = if c = #"#" then Int.toString nv else String.fromChar c
+              val nm = String.translate (hint, doOne)
+              val nv = V nv
+              val () = variableNames := VariableDict.insert (!variableNames, nv, nm)
+            in nv
             end
 
-        fun variableClone (stm as M {variable, variableNames, variableInfo,
-                                     ...},
-                           v) =
+        fun variableSetInfo (M {variableNames, variableInfo, ...}, v, info) =
+            case VariableDict.lookup (!variableNames, v)
+             of NONE => Fail.fail ("Identifier.Manager", "variableSetInfo", "undefined")
+              | SOME _ => variableInfo := VariableDict.insert (!variableInfo, v, info)
+
+        fun variableFresh (stm, hint, info) =
+            let
+              val nv = variableFreshNoInfo (stm, hint)
+              val () = variableSetInfo (stm, nv, info)
+            in nv
+            end
+
+        fun variableClone (stm as M {variable, variableNames, variableInfo, ...}, v) =
             let 
               val nv = !variable
               val () = variable := nv + 1
@@ -614,9 +678,7 @@ struct
                 nv
             end
 
-        fun variableRelatedNoInfo (stm as M {variable, variableNames,
-                                       ...},
-                             v, suffix) =
+        fun variableRelatedNoInfo (stm as M {variable, variableNames, ...}, v, suffix) =
             let 
               val nv = !variable
               val () = variable := nv + 1
@@ -624,37 +686,21 @@ struct
                   if suffix = "" then variableName (stm, v)
                   else variableName (stm, v) ^ "_" ^ suffix
               val nv = V nv
-              val () = variableNames :=
-                         VariableDict.insert (!variableNames, nv, nm)
-            in
-              nv
+              val () = variableNames := VariableDict.insert (!variableNames, nv, nm)
+            in nv
             end
 
-        fun variableRelated (stm as M {variableInfo, ...}, v, suffix, info) =
+        fun variableRelated (stm, v, suffix, info) =
             let 
               val nv = variableRelatedNoInfo (stm, v, suffix)
-              val () = variableInfo :=
-                         VariableDict.insert (!variableInfo, nv, info)
-            in
-              nv
+              val () = variableSetInfo (stm, nv, info)
+            in nv
             end
 
-        fun variableSetInfo (M {variableNames, variableInfo, ...}, v, info) =
-            case VariableDict.lookup (!variableNames, v)
-             of NONE => Fail.fail ("Identifier.Manager", "variableSetInfo",
-                                   "undefined")
-              | SOME _ =>
-                variableInfo := VariableDict.insert (!variableInfo, v, info)
-
-        fun variableDelete 
-              (stm as M {variable, variableNames, variableInfo,
-                         ...},
-               v) =
+        fun variableDelete (stm as M {variable, variableNames, variableInfo, ...}, v) =
             let
-              val () = variableNames :=
-                                      VariableDict.remove (!variableNames, v)
-              val () = variableInfo :=
-                                     VariableDict.remove (!variableInfo, v)
+              val () = variableNames := VariableDict.remove (!variableNames, v)
+              val () = variableInfo := VariableDict.remove (!variableInfo, v)
             in ()
             end
 
@@ -667,14 +713,14 @@ struct
                   val nn = N nn
                   val () = names := NameDict.insert (!names, nn, str)
                   val () = rnames := StringDict.insert (!rnames, str, nn)
-                in
-                  nn
+                in nn
                 end
               | SOME n => n
 
         fun labelFresh (M {label, ...}) =
-            let val nl = !label
-                val () = label := nl + 1
+            let
+              val nl = !label
+              val () = label := nl + 1
             in L nl
             end
 
@@ -711,13 +757,22 @@ struct
         fun layoutVariable (v, stm) =
             Layout.str (variableString (stm, v))
 
-        fun layoutName (n as N m, M {names, ...}) =
-            let val str =
-                    case NameDict.lookup (!names, n)
-                     of NONE => ""
-                      | SOME s => "_" ^ s
-            in  Layout.str ("n" ^ (Int.toString m) ^ str)
-        end
+        fun layoutVariableEscaped (v, stm) =
+            Layout.str (variableStringEscaped (stm, v))
+
+        fun layoutName (n as N m, stm) =
+            let
+              val str = "_" ^ nameString (stm, n) handle _ => ""
+              val l = Layout.str ("n" ^ (Int.toString m) ^ str)
+            in l
+            end
+
+        fun layoutNameEscaped (n as N m, stm) =
+            let
+              val str = "_" ^ nameStringEscaped (stm, n) handle _ => ""
+              val l = Layout.str ("n" ^ (Int.toString m) ^ str)
+            in l
+            end
 
         fun new ord =
             let
@@ -732,7 +787,6 @@ struct
               val _ = nameMake (stm, ord)
             in stm
             end
-
 
     end
 
@@ -759,6 +813,12 @@ struct
               of SiTable st => variableName (st, v)
                | SiManager stm => Manager.variableName (stm, v)
 
+      val variableNameEscaped =
+          fn (si, v) =>
+             case si
+              of SiTable st => variableNameEscaped (st, v)
+               | SiManager stm => Manager.variableNameEscaped (stm, v)
+
       val variableInfo =
           fn (si, v) =>
              case si
@@ -770,6 +830,12 @@ struct
              case si
               of SiTable st => variableString (st, v)
                | SiManager stm => Manager.variableString (stm, v)
+
+      val variableStringEscaped =
+          fn (si, v) =>
+             case si
+              of SiTable st => variableStringEscaped (st, v)
+               | SiManager stm => Manager.variableStringEscaped (stm, v)
 
       val nameExists =
           fn (si, n) =>
@@ -783,6 +849,12 @@ struct
               of SiTable st => nameString (st, n)
                | SiManager stm => Manager.nameString (stm, n)
 
+      val nameStringEscaped =
+          fn (si, n) =>
+             case si
+              of SiTable st => nameStringEscaped (st, n)
+               | SiManager stm => Manager.nameStringEscaped (stm, n)
+
       val nameFromString =
           fn (si, s) =>
              case si
@@ -790,16 +862,28 @@ struct
                | SiManager stm => Manager.nameFromString (stm, s)
 
       val layoutVariable =
-          fn (n, si) =>
+          fn (v, si) =>
              case si
-              of SiTable st => layoutVariable (n, st)
-               | SiManager stm => Manager.layoutVariable (n, stm)
+              of SiTable st => layoutVariable (v, st)
+               | SiManager stm => Manager.layoutVariable (v, stm)
+
+      val layoutVariableEscaped =
+          fn (v, si) =>
+             case si
+              of SiTable st => layoutVariableEscaped (v, st)
+               | SiManager stm => Manager.layoutVariableEscaped (v, stm)
 
       val layoutName =
           fn (n, si) =>
              case si
               of SiTable st => layoutName (n, st)
                | SiManager stm => Manager.layoutName (n, stm)
+
+      val layoutNameEscaped =
+          fn (n, si) =>
+             case si
+              of SiTable st => layoutNameEscaped (n, st)
+               | SiManager stm => Manager.layoutNameEscaped (n, stm)
 
       val layoutLabel = fn (l, _) => layoutLabel l
 

@@ -52,7 +52,7 @@ struct
    fn (state, s, t, b)  => 
       let
         val stm = stateGetStm state
-        val v = MSTM.variableFresh (stm, s, t, b)
+        val v = MSTM.variableFresh (stm, s ^ "_#", t, b)
       in v
       end
 

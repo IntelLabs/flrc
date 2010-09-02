@@ -35,7 +35,7 @@ struct
   val stateBindGlobal = 
    fn (state, t, oper) =>
       let
-        val v = MSTM.variableFresh (stateGetStm state, "mnm", t, M.VkGlobal)
+        val v = MSTM.variableFresh (stateGetStm state, "mnm_#", t, M.VkGlobal)
         val g = M.GSimple oper
         val globals = stateGetGlobals state
         val () = globals := (v, g) :: !globals

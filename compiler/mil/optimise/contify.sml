@@ -384,7 +384,7 @@ struct
 
     fun newLabel s                 = MSTM.labelFresh (getStm s)
     fun cloneVar (s, x)            = MSTM.variableClone (getStm s, x)
-    fun variableFresh (s, h, t, g) = MSTM.variableFresh (getStm s, "m" ^ h, t, g)
+    fun variableFresh (s, h, t, g) = MSTM.variableFresh (getStm s, "m" ^ h ^ "_#", t, g)
 
     fun getSelfEntry (S {self, ...}) = #2 (!self)
 

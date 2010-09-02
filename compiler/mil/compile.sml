@@ -42,6 +42,7 @@ struct
   datatype controlItem =
            CiPrint
          | CiCheck
+         | CiWrite
          | CiPass of (BothMil.t, BothMil.t) Pass.t
 
   fun parseControl s =
@@ -57,6 +58,7 @@ struct
               fun doOne c =
                   case c
                    of #"+" => SOME CiPrint
+                    | #"w" => SOME CiWrite
                     | #"x" => SOME CiCheck
                     | _ => List.peekMap (passes, matchPass c)
             in Parse.satisfyMap doOne
@@ -80,10 +82,10 @@ struct
             end
         val nat : int Parse.t = 
             let
-              val p = Parse.many (Parse.satisfy (Char.isDigit))
+              val p = Parse.oneOrMore (Parse.satisfy Char.isDigit)
               val f = Int.fromString o String.implode
               val p = Parse.map (p, f)
-              val p = Parse.required p
+              val p = Parse.required (p, "Expected natural number")
             in p
             end
         val exponentiated : 'a Parse.t -> 'a list Parse.t = 
@@ -101,9 +103,9 @@ struct
         val rec pass' : unit -> controlItem list Parse.t = 
          fn () => Parse.map ($passSeq', List.concat)
         and rec passSeq' : unit -> controlItem list list Parse.t = 
-         fn () => Parse.many ($passHead')
+         fn () => Parse.oneOrMore ($passHead')
         and rec passHead' : unit -> controlItem list Parse.t =
-         fn () => Parse.many simple || $iterated'  || $constructed' 
+         fn () => Parse.oneOrMore simple || $iterated'  || $constructed' 
         and rec iterated' : unit -> controlItem list Parse.t = 
          fn () => Parse.map(exponentiated ($parenthesized'), List.concat)
         and rec parenthesized' : unit -> controlItem list Parse.t = 
@@ -123,21 +125,13 @@ struct
         and rec interleave1' : unit -> controlItem list Parse.t =
          fn () => delimited (lbrace, $pass', rbrace)
 
-        val pass = $pass'
+        val pass = Parse.map ($pass' && Parse.atEnd "Expected end of string", #1)
 
-        val cis = 
-            let
-              val stream = (s, 0)
-              val cis = 
-                  (case Parse.parse pass stream
-                    of Parse.Success ((s, i), cis) => 
-                       if i = String.length s then
-                         SOME cis
-                       else 
-                         NONE
-                     | Parse.Failure => NONE)
-            in cis
-            end
+        val cis =
+            case Parse.parse (pass, (s, 0))
+             of Parse.Success (_, cis) => SOME cis
+              | Parse.Failure          => NONE
+              | Parse.Error _          => NONE
 
         fun check cis =
             let
@@ -195,6 +189,7 @@ struct
        LU.indent
          (L.align (List.map (passes, describePass) @
                    [L.str "+ => Print",
+                    L.str "w => Write",
                     L.str "x => Check"])),
        L.str "defaults are:",
        LU.indent
@@ -223,10 +218,21 @@ struct
   fun runPass (pd, bn, pass, p) =
       Pass.apply (Pass.doSubPass pass) (pd, bn, p)
 
+  fun writeToFile (pd : PassData.t, bn : Path.t, p : BothMil.t) : unit =
+      let
+        val p = BothMil.toMil (pd, p)
+        val l = MilLayout.layoutParseable (PassData.getConfig pd, p)
+        val basename = Path.toCygwinString bn
+        val outfile = basename ^ ".mil"
+        val () = LU.writeLayout (l, outfile)
+      in ()
+      end
+
   fun runItem (pd, bn, ci, p) =
       case ci
        of CiPrint => printMil (pd, p)
         | CiCheck => let val () = check (pd, p) in p end
+        | CiWrite => let val () = writeToFile (pd, bn, p) in p end
         | CiPass pass => runPass (pd, bn, pass, p)
 
   fun run (pd, bn, cis, p) =
@@ -242,11 +248,13 @@ struct
               case cis
                of [] => [CiPrint]
                 | CiPrint::_ => cis
+                | CiWrite::_ => CiPrint::cis
                 | CiCheck::_ => CiPrint::cis
                 | (CiPass _)::_ => CiPrint::cis
           fun doOne (ci, cis) =
               case ci
                of CiPrint => ci::cis
+                | CiWrite => ci::cis
                 | CiCheck => ci::cis
                 | CiPass _ => ci::(addPrintToFront cis)
           val cis = List.foldr (cis, [], doOne)
@@ -265,17 +273,21 @@ struct
   fun addDebugControl (config, cis) =
       addPrintControl (config, addCheckControl (config, cis))
 
+  val (writeFinalF, writeFinal) =
+      Config.Feature.mk (passname ^ ":write-final", "write final Mil to file")
+
   fun program (p, pd, bn) =
       let
         val config = PassData.getConfig pd
         val cis = controlGet config
         val cis = addDebugControl (config, cis)
+        val cis = if writeFinal config then cis @ [CiWrite] else cis
         val p = run (pd, bn, cis, p)
         val () = check (pd, p)
         val () = PassData.report (pd, passname)
       in p
       end
-
+      
   val description = {name        = passname,
                      description = "Mil optimise/lower",
                      inIr        = BothMil.irHelpers,
@@ -285,7 +297,8 @@ struct
 
   val associates = {controls  = [control],
                     debugs    = [printAllD],
-                    features  = PObjectModelCommon.features @ PObjectModelLow.features @ PObjectModelHigh.features,
+                    features  = PObjectModelCommon.features @ PObjectModelLow.features @ PObjectModelHigh.features @
+                                [writeFinalF],
                     subPasses = subPasses}
 
   val pass = Pass.mkOptFullPass (description, associates, program) 

@@ -40,6 +40,7 @@ local
         imil-t.sml
         imil.sml
         utils2.sml
+        parse.sml
         profile.sml 
         dataflow-analysis.sml
         dependence-analysis.sml
@@ -61,6 +62,7 @@ in
         structure MilLoop
         structure MilNameSmallValues
         structure MilNumberInstructions
+        structure MilParse
         structure MilRename
         structure MilRewriterClient
         structure MilStats

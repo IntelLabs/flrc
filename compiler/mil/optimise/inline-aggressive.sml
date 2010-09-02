@@ -190,7 +190,7 @@ struct
         val func = ref NONE
         val size = ref 0
         fun selectCheapest (f, c, sz) = 
-            if Option.isNone (!func) orelse sz < !size then
+            if (*sz < budget andalso*) (Option.isNone (!func) orelse sz < !size) then
               (func := SOME (f, c); size := sz)
             else
               ()
@@ -231,16 +231,14 @@ struct
         val candidateFuns = List.keepAllMap (IMil.IFunc.getIFuncs (imil), doOne)
         val (func, codeSize) = selectByBudget (candidateFuns, !budgetSize)
         val calls = case func
-                     of SOME (f, cfg) => 
-                        #1 (getInlineableCalls (d, f, cfg, imil))
+                     of SOME (f, cfg) => #1 (getInlineableCalls (d, f, cfg, imil))
                       | NONE => nil
         val () = budgetSize := !budgetSize - codeSize
         val () = dbgLayout (d, L.seq [L.str "Policy selected ",
                                       Int.layout (List.length (calls)),
                                       L.str " call sites to inline."])
         (* Update statistics. *)
-        val () = PD.clickN (d, "AggressiveCallSitesInlined", 
-                            List.length (calls))
+        val () = PD.clickN (d, "AggressiveCallSitesInlined", List.length (calls))
       in
         calls
       end

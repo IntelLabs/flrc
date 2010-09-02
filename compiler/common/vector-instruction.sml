@@ -84,6 +84,9 @@ sig
   val stringOfElemTypeShort : elemType -> string
   val stringOfPrim : prim -> string
 
+  val elemTypeOfString : string -> elemType option
+  val elemTypeOfStringShort : string -> elemType option
+
   val layoutSize : size -> Layout.t
   val layoutElemType : elemType -> Layout.t
   val layoutElemTypeShort : elemType -> Layout.t
@@ -281,56 +284,92 @@ struct
         | ViFloat32 => "F32"
         | ViFloat64 => "F64"
 
+  fun elemTypeOfString (s : string) : elemType option =
+      case s
+       of "ViFloat16" => SOME ViFloat16
+        | "ViFloat32" => SOME ViFloat32
+        | "ViFloat64" => SOME ViFloat64
+        | "ViSInt8"   => SOME ViSInt8
+        | "ViSInt16"  => SOME ViSInt16
+        | "ViSInt32"  => SOME ViSInt32
+        | "ViSInt64"  => SOME ViSInt64
+        | "ViUInt8"   => SOME ViUInt8
+        | "ViUInt16"  => SOME ViUInt16
+        | "ViUInt32"  => SOME ViUInt32
+        | "ViUInt64"  => SOME ViUInt64
+        | _           => NONE
+
+  fun elemTypeOfStringShort (s : string) : elemType option =
+      case s
+       of "F16" => SOME ViFloat16
+        | "F32" => SOME ViFloat32
+        | "F64" => SOME ViFloat64
+        | "S8"  => SOME ViSInt8
+        | "S16" => SOME ViSInt16
+        | "S32" => SOME ViSInt32
+        | "S64" => SOME ViSInt64
+        | "U8"  => SOME ViUInt8
+        | "U16" => SOME ViUInt16
+        | "U32" => SOME ViUInt32
+        | "U64" => SOME ViUInt64
+        | _     => NONE
+
+  fun stringOfPermutation is =
+      case Vector.toList is
+       of [] => "[]"
+        | i::is =>
+          "[" ^ Int.toString i ^ String.concat (List.map (is, fn i => "," ^ Int.toString i)) ^ "]"
+
   fun stringOfPrim p = 
       case p
-       of ViShiftL et    => "ViShiftL" ^ stringOfElemTypeShort et
-         | ViShiftA et   => "ViShiftA" ^ stringOfElemTypeShort et
-         | ViRotateL et  => "ViRotateL" ^ stringOfElemTypeShort et
-         | ViRotateR et  => "ViRotateR" ^ stringOfElemTypeShort et
-         | ViBitNot et   => "ViBitNot" ^ stringOfElemTypeShort et
-         | ViBitAnd et   => "ViBitAnd" ^ stringOfElemTypeShort et
-         | ViBitXor et   => "ViBitXor" ^ stringOfElemTypeShort et
-         | ViBitOr et    => "ViBitOr" ^ stringOfElemTypeShort et
-         | ViNot et      => "ViNot" ^ stringOfElemTypeShort et
-         | ViAnd et      => "ViAnd" ^ stringOfElemTypeShort et
-         | ViOr et       => "ViOr" ^ stringOfElemTypeShort et
-         | ViMaskNot mt  => "ViMaskNot" ^ stringOfElemTypeShort mt
-         | ViMaskAnd mt  => "ViMaskAnd" ^ stringOfElemTypeShort mt
-         | ViMaskOr mt   => "ViMaskOr" ^ stringOfElemTypeShort mt
-         | ViAdd et      => "ViAdd" ^ stringOfElemTypeShort et
-         | ViSub et      => "ViSub" ^ stringOfElemTypeShort et
-         | ViMul et      => "ViMul" ^ stringOfElemTypeShort et
-         | ViDiv et      => "ViDiv" ^ stringOfElemTypeShort et
-         | ViMod et      => "ViMod" ^ stringOfElemTypeShort et
-         | ViFma et      => "ViFma" ^ stringOfElemTypeShort et
-         | ViFms et      => "ViFms" ^ stringOfElemTypeShort et
-         | ViMax et      => "ViMax" ^ stringOfElemTypeShort et
-         | ViMin et      => "ViMin" ^ stringOfElemTypeShort et
-         | ViNeg et      => "ViNeg" ^ stringOfElemTypeShort et
-         | ViSqrt et     => "ViSqrt" ^ stringOfElemTypeShort et
-         | ViSqrtRcp et  => "ViSqrtRcp" ^ stringOfElemTypeShort et
-         | ViRcp et      => "ViRcp" ^ stringOfElemTypeShort et
-         | ViExp2 et     => "ViExp2" ^ stringOfElemTypeShort et
-         | ViExp2m1 et   => "ViExp2m1" ^ stringOfElemTypeShort et
-         | ViLog2 et     => "ViLog2" ^ stringOfElemTypeShort et
-         | ViLog2p1 et   => "ViLog2p1" ^ stringOfElemTypeShort et
-         | ViSin et      => "ViSin" ^ stringOfElemTypeShort et
-         | ViAsin et     => "ViAsin" ^ stringOfElemTypeShort et
-         | ViCos et      => "ViCos" ^ stringOfElemTypeShort et
-         | ViAcos et     => "ViAcos" ^ stringOfElemTypeShort et
-         | ViTan et      => "ViTan" ^ stringOfElemTypeShort et
-         | ViAtan et     => "ViAtan" ^ stringOfElemTypeShort et
-         | ViSign et     => "ViSign" ^ stringOfElemTypeShort et
-         | ViAbs et      => "ViAbs" ^ stringOfElemTypeShort et
-         | ViEq et       => "ViEq" ^ stringOfElemTypeShort et
-         | ViNe et       => "ViNe" ^ stringOfElemTypeShort et
-         | ViGt et       => "ViGt" ^ stringOfElemTypeShort et
-         | ViGe et       => "ViGe" ^ stringOfElemTypeShort et
-         | ViLt et       => "ViLt" ^ stringOfElemTypeShort et
-         | ViLe et       => "ViLe" ^ stringOfElemTypeShort et
-         | ViSelect et   => "ViSelect" ^ stringOfElemTypeShort et
-         | ViPermute (et, _)  => "ViPermute" ^ stringOfElemTypeShort et
-         | ViInit et     => "ViInit" ^ stringOfElemTypeShort et
+       of ViShiftL et         => "ViShiftL" ^ stringOfElemTypeShort et
+         | ViShiftA et        => "ViShiftA" ^ stringOfElemTypeShort et
+         | ViRotateL et       => "ViRotateL" ^ stringOfElemTypeShort et
+         | ViRotateR et       => "ViRotateR" ^ stringOfElemTypeShort et
+         | ViBitNot et        => "ViBitNot" ^ stringOfElemTypeShort et
+         | ViBitAnd et        => "ViBitAnd" ^ stringOfElemTypeShort et
+         | ViBitXor et        => "ViBitXor" ^ stringOfElemTypeShort et
+         | ViBitOr et         => "ViBitOr" ^ stringOfElemTypeShort et
+         | ViNot et           => "ViNot" ^ stringOfElemTypeShort et
+         | ViAnd et           => "ViAnd" ^ stringOfElemTypeShort et
+         | ViOr et            => "ViOr" ^ stringOfElemTypeShort et
+         | ViMaskNot mt       => "ViMaskNot" ^ stringOfElemTypeShort mt
+         | ViMaskAnd mt       => "ViMaskAnd" ^ stringOfElemTypeShort mt
+         | ViMaskOr mt        => "ViMaskOr" ^ stringOfElemTypeShort mt
+         | ViAdd et           => "ViAdd" ^ stringOfElemTypeShort et
+         | ViSub et           => "ViSub" ^ stringOfElemTypeShort et
+         | ViMul et           => "ViMul" ^ stringOfElemTypeShort et
+         | ViDiv et           => "ViDiv" ^ stringOfElemTypeShort et
+         | ViMod et           => "ViMod" ^ stringOfElemTypeShort et
+         | ViFma et           => "ViFma" ^ stringOfElemTypeShort et
+         | ViFms et           => "ViFms" ^ stringOfElemTypeShort et
+         | ViMax et           => "ViMax" ^ stringOfElemTypeShort et
+         | ViMin et           => "ViMin" ^ stringOfElemTypeShort et
+         | ViNeg et           => "ViNeg" ^ stringOfElemTypeShort et
+         | ViSqrt et          => "ViSqrt" ^ stringOfElemTypeShort et
+         | ViSqrtRcp et       => "ViSqrtRcp" ^ stringOfElemTypeShort et
+         | ViRcp et           => "ViRcp" ^ stringOfElemTypeShort et
+         | ViExp2 et          => "ViExp2" ^ stringOfElemTypeShort et
+         | ViExp2m1 et        => "ViExp2m1" ^ stringOfElemTypeShort et
+         | ViLog2 et          => "ViLog2" ^ stringOfElemTypeShort et
+         | ViLog2p1 et        => "ViLog2p1" ^ stringOfElemTypeShort et
+         | ViSin et           => "ViSin" ^ stringOfElemTypeShort et
+         | ViAsin et          => "ViAsin" ^ stringOfElemTypeShort et
+         | ViCos et           => "ViCos" ^ stringOfElemTypeShort et
+         | ViAcos et          => "ViAcos" ^ stringOfElemTypeShort et
+         | ViTan et           => "ViTan" ^ stringOfElemTypeShort et
+         | ViAtan et          => "ViAtan" ^ stringOfElemTypeShort et
+         | ViSign et          => "ViSign" ^ stringOfElemTypeShort et
+         | ViAbs et           => "ViAbs" ^ stringOfElemTypeShort et
+         | ViEq et            => "ViEq" ^ stringOfElemTypeShort et
+         | ViNe et            => "ViNe" ^ stringOfElemTypeShort et
+         | ViGt et            => "ViGt" ^ stringOfElemTypeShort et
+         | ViGe et            => "ViGe" ^ stringOfElemTypeShort et
+         | ViLt et            => "ViLt" ^ stringOfElemTypeShort et
+         | ViLe et            => "ViLe" ^ stringOfElemTypeShort et
+         | ViSelect et        => "ViSelect" ^ stringOfElemTypeShort et
+         | ViPermute (et, p)  => "ViPermute" ^ stringOfElemTypeShort et ^ stringOfPermutation p
+         | ViInit et          => "ViInit" ^ stringOfElemTypeShort et
 
   fun layoutSize vs = Layout.str (stringOfSize vs)
   fun layoutElemType vet = Layout.str (stringOfElemType vet)

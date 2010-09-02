@@ -26,6 +26,7 @@ local
             $(SML_LIB)/basis/basis.mlb
           in
             structure PackWord32Little
+            structure PackWord64Little
             structure PackReal32Little
             structure PackReal64Little
             structure Int32
@@ -71,7 +72,8 @@ in
         functor FlatOptionLatticeFn 
         functor LatticeFn
         functor LatticeVectorLatticeFn
-        functor OptionLatticeFn        
+        functor OptionLatticeFn
+        functor ParserF
         functor RecLatticeFn
         functor SetF
 
@@ -83,6 +85,7 @@ in
         structure Effect
         structure EquivalenceClass
         structure Fail
+        structure FileParser
         structure FunctionalUpdate
         structure Globals
         structure Identifier
@@ -90,6 +93,7 @@ in
         structure ImpIntDict
         structure ImpPolyLabeledGraph
         structure ImpQueue
+        structure InStreamWithPos
         structure Int32
         structure IntArb
         structure IntDict
