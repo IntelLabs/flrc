@@ -37,7 +37,7 @@ sig
 
   val unbuild : t -> Mil.codeBody
 
-  val layout : t -> Layout.t
+  val layout : Config.t * Mil.symbolInfo * t -> Layout.t
 
   val getEntry            : t -> Mil.label
   val getLoops            : t -> loopForest
@@ -343,39 +343,6 @@ struct
         fun doLoopTree (lt, nblks) = Tree.foldPre (lt, nblks, doLoop)
         val allBlks = Vector.fold (getLoops ls, getBlocksNotInLoops ls, doLoopTree)
       in M.CB {entry = getEntry ls, blocks = allBlks}
-      end
-
-  (*** Layout ***)
-
-  fun layoutBlocks blks =
-      let
-        val blks = LD.toList blks
-        fun doOne (l, _) = I.layoutLabel l
-        val l = L.sequence ("{", "}", ",") (List.map (blks, doOne))
-      in l
-      end
-
-  fun layoutLoops ls =
-      let
-        val Tree.T (L {header, blocks, ...}, children) = ls
-        val l1 = L.seq [L.str "Header: ", I.layoutLabel header]
-        val l2' = layoutBlocks blocks
-        val l2 = L.mayAlign [L.str "Blocks:", LU.indent l2']
-        val l3' = Vector.toListMap (children, layoutLoops)
-        val l3 = L.align [L.str "Loops:", LU.indent (L.align l3')]
-        val l = L.align [l1, l2, l3]
-      in l
-      end
-
-  fun layout (LS {entry, loops, blocksNotInLoops, ...}) =
-      let
-        val l1 = L.seq [L.str "Entry: ", I.layoutLabel entry]
-        val l2' = layoutBlocks blocksNotInLoops
-        val l2 = L.mayAlign [L.str "Blocks:", LU.indent l2']
-        val l3' = Vector.toListMap (loops, layoutLoops)
-        val l3 = L.align [L.str "Loops:", LU.indent (L.align l3')]
-        val l = L.align [l1, l2, l3]
-      in l
       end
 
   (*** All nodes ***)
@@ -1122,5 +1089,144 @@ struct
          | NONE => fail ("allTripCounts", "trip counts have not been generated"))
 
   fun getTripCount (ls, h) = LD.lookup (allTripCounts ls, h)
+
+  (*** Layout ***)
+
+  fun layoutInductionVariable (c, si, iv) = 
+      let
+        val IV {variable, init = (r1, opnd, r2), step} = iv
+        val rhs = L.seq [Rat.layout step, L.str "*# + ",
+                         Rat.layout r1, L.str "*", MilLayout.layoutOperand (c, si, opnd), L.str " + ",
+                         Rat.layout r2
+                         ]
+        val i = L.seq [MilLayout.layoutVariable (c, si, variable), L.str " = ", rhs]
+      in i
+      end
+
+  fun layoutTripCount (cg, si, tc) = 
+      let
+        val TC {block, cond, flip1, comparison, flip2, init=(m, i, c), step, bound} = tc
+        val iv = L.seq [Rat.layout step, L.str "*# + ", 
+                        Rat.layout m, L.str "*", MilLayout.layoutOperand (cg, si, i), L.str " + ",
+                        Rat.layout c]
+        val bound = MilLayout.layoutOperand (cg, si, bound)
+        val (o1, o2) = if flip2 then (bound, iv) else (iv, bound)
+        val cmp = L.str (Prims.stringOfCompare comparison)
+        val cmp = if flip1 then L.seq [L.str "not", cmp] else cmp
+        val test = L.seq [cmp, LU.parenSeq [o1, o2]]
+        val i = L.seq [MilLayout.layoutVariable (cg, si, cond), L.str " = ", test]
+      in i
+      end
+
+  fun layoutLoopPreheader (c, si, pres, header) = 
+      let
+        val l = 
+            (case LD.lookup (pres, header)
+              of SOME blk => L.seq [L.str "Pre-header: ", I.layoutLabel blk]
+               | NONE     => L.str "Pre-header could not be generated.")
+      in l
+      end
+
+  fun layoutLoopInductionVars (c, si, ivs, header) = 
+      let
+        val ivs = 
+            (case LD.lookup (ivs, header)
+              of SOME ivs => ivs
+               | NONE     => [])
+        fun doOne iv = layoutInductionVariable (c, si, iv)
+        val l = L.align (List.map (ivs, doOne))
+        val l = L.align [L.str "Induction variables: ", 
+                         LU.indent l]
+      in l
+      end
+
+  fun layoutLoopTripCount (c, si, tcs, header) =
+      let
+        val l = 
+            (case LD.lookup (tcs, header)
+              of SOME tc => L.seq [L.str "Trip count: ", layoutTripCount (c, si, tc)]
+               | NONE    => L.str "No trip count for loop.")
+      in l
+      end
+
+  fun layoutBlocks (c, si, blks) =
+      let
+        val blks = LD.toList blks
+        fun doOne (l, _) = I.layoutLabel l
+        val l = L.sequence ("{", "}", ",") (List.map (blks, doOne))
+      in l
+      end
+
+  fun layoutLoopExits (c, si, exits, header) = 
+      let
+        val exits = 
+            (case LD.lookup (exits, header)
+              of SOME exits => exits
+               | NONE       => LS.empty)
+        val l = LS.layout (exits, I.layoutLabel)
+        val l = L.seq [L.str "Loop exits: ", l]
+      in l
+      end
+
+  fun layoutLoops (c, si, exits, preheaders, inductionVars, tripCounts, ls) =
+      let
+        val doPre = 
+            (case preheaders
+              of SOME pres => (fn header => SOME (layoutLoopPreheader (c, si, pres, header)))
+               | NONE      => (fn header => NONE))
+        val doIvs = 
+            (case inductionVars
+              of SOME ivs => (fn header => SOME (layoutLoopInductionVars (c, si, ivs, header)))
+               | NONE     => (fn header => NONE))
+        val doTcs = 
+            (case tripCounts
+              of SOME tcs => (fn header => SOME (layoutLoopTripCount (c, si, tcs, header)))
+               | NONE     => (fn header => NONE))
+        val doExits = 
+            (case exits
+              of SOME exits => (fn header => SOME (layoutLoopExits (c, si, exits, header)))
+               | NONE       => (fn header => NONE))
+
+        fun layout ls = 
+            let
+              val Tree.T (L {header, blocks, ...}, children) = ls
+              val l0 = SOME (L.seq [L.str "Header: ", I.layoutLabel header])
+              val l1 = doPre header
+              val l2 = doIvs header
+              val l3 = doTcs header
+              val l4 = 
+                  let
+                    val l4 = layoutBlocks (c, si, blocks)
+                    val l4 =L.mayAlign [L.str "Blocks:", LU.indent l4]
+                  in SOME l4
+                  end
+              val l5 = 
+                  if Vector.length children > 0 then
+                    let
+                      val l5 = Vector.toListMap (children, layout)
+                      val l5 = L.align [L.str "Loops:", LU.indent (L.align l5)]
+                    in SOME l5
+                    end
+                  else 
+                    NONE
+              val ll = Utils.List.concatOption [l0, l1, l2, l3, l4, l5]
+              val l = L.align ll
+            in l
+            end
+        val l = layout ls
+      in l
+      end
+
+  fun layout (c, si, LS {entry, loops, blocksNotInLoops, exits, preheaders, inductionVars, tripCounts, ...}) =
+      let
+        val l1 = L.seq [L.str "Entry: ", I.layoutLabel entry]
+        val l2' = layoutBlocks (c, si, blocksNotInLoops)
+        val l2 = L.mayAlign [L.str "Blocks:", LU.indent l2']
+        val l3' = Vector.toListMap (loops, fn ls => layoutLoops (c, si, exits, preheaders, inductionVars, tripCounts, ls))
+        val l3 = L.align [L.str "Loops:", LU.indent (L.align l3')]
+        val l = L.align [l1, l2, l3]
+      in l
+      end
+
 
 end;

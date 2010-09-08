@@ -124,6 +124,69 @@ structure Utils = struct
              | NONE => Vector.new0 ())
     end (* structure Vector *)
 
+    structure MltonList = List
+
+    structure List = 
+    struct
+    (* List utilities *)
+
+    fun concatOption (l : 'a option MltonList.t) : 'a MltonList.t = MltonList.keepAllMap (l, Function.id)
+
+    fun allEq eq l = 
+        (case l
+          of [] => true
+           | a::aa =>  
+             let
+               val eq1 = 
+                fn b => eq(a, b)
+               val eq = 
+                   MltonList.forall (aa, eq1)
+             in eq
+             end)
+
+    fun unzip3 l =
+        let
+          fun doOne ((a, b, c), (l1, l2, l3)) = (a::l1, b::l2, c::l3)
+          val (l1, l2, l3) = MltonList.fold (l, ([], [], []), doOne)
+          val l1 = MltonList.rev l1
+          val l2 = MltonList.rev l2
+          val l3 = MltonList.rev l3
+        in (l1, l2, l3)
+        end
+
+    fun mapFoldl (l, ix, f) =
+        let fun aux (item, (cx, a)) =
+                let val (nitem, nx) = f (item, cx) in (nx, nitem::a) end
+          val (fx, l) = MltonList.fold (l, (ix, []), aux)
+        in
+          (MltonList.rev l, fx)
+        end
+
+    fun mapFoldli (l, ix, f) =
+        let fun aux (item, (cx, i, a)) =
+                let val (nitem, nx) = f (i, item, cx)
+                in
+                  (nx, i+1, nitem::a)
+                end
+          val (fx, _, l) = MltonList.fold (l, (ix, 0, []), aux)
+        in
+          (MltonList.rev l, fx)
+        end
+
+    fun consIf (b, a, l) = if a then a::l else l
+
+    fun uniqueList ([], equal) = []
+      | uniqueList ([x], equal) = [x]
+      | uniqueList (x::xs, equal) = 
+        if MltonList.exists (xs, fn n => equal (x, n)) then
+          uniqueList (xs, equal)
+        else
+          x::(uniqueList (xs, equal))
+
+    fun fromTree t = Tree.foldPost (t, [], fn (x, l) => x::l)
+
+    end (* structure List *)
+
     structure Option = 
     struct
       val out : 'a option * (unit -> 'a) -> 'a = 
@@ -253,7 +316,7 @@ structure Utils = struct
     (* Return a list of 32 bit digits (msd first) corresponding
      * to the base 2^32 representation of the absolute value of the 
      * number.  Returns [] on zero *)
-    fun intInfAbsDigits32 (i : IntInf.t) : Word32.word List.t = 
+    fun intInfAbsDigits32 (i : IntInf.t) : Word32.word MltonList.t = 
         let
           val i = IntInf.abs i
           val base = IntInf.pow (2, 32)
@@ -266,60 +329,6 @@ structure Utils = struct
         in loop (i, [])
         end
 
-    (* List utilities *)
-
-    fun allEq eq l = 
-        (case l
-          of [] => true
-           | a::aa =>  
-             let
-               val eq1 = 
-                fn b => eq(a, b)
-               val eq = 
-                   List.forall (aa, eq1)
-             in eq
-             end)
-
-    fun unzip3 l =
-        let
-          fun doOne ((a, b, c), (l1, l2, l3)) = (a::l1, b::l2, c::l3)
-          val (l1, l2, l3) = List.fold (l, ([], [], []), doOne)
-          val l1 = List.rev l1
-          val l2 = List.rev l2
-          val l3 = List.rev l3
-        in (l1, l2, l3)
-        end
-
-    fun mapFoldl (l, ix, f) =
-        let fun aux (item, (cx, a)) =
-                let val (nitem, nx) = f (item, cx) in (nx, nitem::a) end
-            val (fx, l) = List.fold (l, (ix, []), aux)
-        in
-            (List.rev l, fx)
-        end
-
-    fun mapFoldli (l, ix, f) =
-        let fun aux (item, (cx, i, a)) =
-                let val (nitem, nx) = f (i, item, cx)
-                in
-                    (nx, i+1, nitem::a)
-                end
-            val (fx, _, l) = List.fold (l, (ix, 0, []), aux)
-        in
-            (List.rev l, fx)
-        end
-
-    fun consIf (b, a, l) = if a then a::l else l
-
-    fun uniqueList ([], equal) = []
-      | uniqueList ([x], equal) = [x]
-      | uniqueList (x::xs, equal) = 
-        if List.exists (xs, fn n => equal (x, n)) then
-          uniqueList (xs, equal)
-        else
-          x::(uniqueList (xs, equal))
-
-    fun treeToList t = Tree.foldPost (t, [], fn (x, l) => x::l)
 
     datatype ('a, 'b) oneof = Inl of 'a | Inr of 'b
 
@@ -337,9 +346,9 @@ structure Utils = struct
           in ()
           end
 
-    fun count i = List.tabulate(i, fn i => i)
+    fun count i = MltonList.tabulate(i, fn i => i)
 
-end;
+end;  (* structure Utils *)
 
 structure LayoutUtils = struct
 
@@ -379,6 +388,8 @@ structure LayoutUtils = struct
     fun bracket      b = L.seq [L.str "[", b, L.str "]"]
     fun brace        b = L.seq [L.str "{", b, L.str "}"]
     fun angleBracket b = L.seq [L.str "<", b, L.str ">"]
+
+    fun spaceSeparated l = L.separateRight (l, " ")
 
     fun printLayoutToStream (l, s) = Layout.outputWidth (Layout.seq [l, Layout.str "\n"], 115, s)
 
