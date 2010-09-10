@@ -37,8 +37,6 @@ sig
 
   val unbuild : t -> Mil.codeBody
 
-  val layout : Config.t * Mil.symbolInfo * t -> Layout.t
-
   val getEntry            : t -> Mil.label
   val getLoops            : t -> loopForest
   val getBlocksNotInLoops : t -> blocks
@@ -64,15 +62,38 @@ sig
   val getPreheaders : t -> Mil.label Identifier.LabelDict.t
 
   (* Let # = 0 on entry to loop and incremented on each iteration.
-   * Then IV {variable, init = (r1, opnd, r2), step} means that:
-   *   variable is always r1*opnd+r2+step*# in the arithmetic of variable's type
+   * Then:
+   *   BIV {variable, init, step} means that variable is always
+   *    step*# + init
+   *   DIV {variable=vd, base = {variable=vb, init, step}, scale, offset} means that 
+   *    vd is always scale*vb + offset
+   *    vb is always step*# + init
+   *    vd is therefore always scale*step*# + scale*init + offset
    *)
-  datatype inductionVariable = IV of {
-    variable : Mil.variable,
-    init     : Rat.t * Mil.operand * Rat.t,
-    step     : Rat.t
+  datatype inductionVariable = 
+           BIV of { 
+           variable : Mil.variable,
+           init     : Mil.operand,
+           step     : Rat.t
   }
+         | DIV of {
+           variable : Mil.variable,
+           base     : {variable : Mil.variable,
+                       init     : Mil.operand,
+                       step     : Rat.t},
+           scale    : Rat.t,
+           offset   : Rat.t
+           }
 
+ (* Translate a (possibly derived) induction variable into canonical form.
+  * Let # = 0 on entry to loop and incremented on each iteration.
+  * if {variable, ini = (r1, opnd, r2), step} = canonizeInductionVariable iv, then
+  *   variable is always r1*opnd+r2+step*# in the arithmetic of variable's type
+  *)
+  val canonizeInductionVariable : inductionVariable -> {variable : Mil.variable,
+                                                        init     : Rat.t * Mil.operand * Rat.t,
+                                                        step     : Rat.t}
+                                                       
   val genInductionVariables : t * FMil.t * MilCfg.t -> t (* pre: requires all nodes *)
   val getInductionVariables : t * Mil.label -> inductionVariable list
   val inductionVars : t -> inductionVariable list Identifier.LabelDict.t
@@ -109,6 +130,9 @@ sig
   val getTripCount : t * Mil.label -> tripCount option
   val allTripCounts : t -> tripCount Identifier.LabelDict.t
 
+  val layout : Config.t * Mil.symbolInfo * t -> Layout.t
+  val layoutInductionVariable : Config.t * Mil.symbolInfo * inductionVariable -> Layout.t
+
 end;
 
 structure MilLoop :> MIL_LOOP =
@@ -142,11 +166,20 @@ struct
   type loopTree = loop Tree.t
   type loopForest = loopTree Vector.t
 
-  datatype inductionVariable = IV of {
-    variable : M.variable,
-    init     : Rat.t * M.operand * Rat.t,
-    step     : Rat.t
+  datatype inductionVariable = 
+           BIV of { 
+           variable : Mil.variable,
+           init     : Mil.operand,
+           step     : Rat.t
   }
+         | DIV of {
+           variable : Mil.variable,
+           base     : {variable : Mil.variable,
+                       init     : Mil.operand,
+                       step     : Rat.t},
+           scale    : Rat.t,
+           offset   : Rat.t
+           }
 
   datatype tripCount = TC of {
     block      : M.label,
@@ -555,6 +588,20 @@ struct
 
   (*** Induction Variables ***)
 
+  fun canonizeInductionVariable (iv : inductionVariable) : {variable : Mil.variable,
+                                                            init     : Rat.t * Mil.operand * Rat.t,
+                                                            step     : Rat.t} = 
+      (case iv
+        of BIV {variable, init, step} => {variable = variable, 
+                                          init = (Rat.one, init, Rat.zero),
+                                          step = step}
+         | DIV {variable = vd, 
+                base     = {variable = vb, init, step},
+                scale,
+                offset}               => {variable = vd,
+                                          init = (scale, init, offset),
+                                          step = Rat.* (scale, step)})
+
   (* Strategy:
    *   1. Figure out which variables are linear functions of other variables.
    *   2. If a parameter to a loop header has itself plus a constant coming
@@ -567,6 +614,8 @@ struct
    *
    * We only deal with rats and machine integers, and to keep things simple
    * represent all constants as rats.
+   * XXX Not clear this is correct.  Constant folding on signed integers
+   * as rats is certainly not correct for the C99 semantics.  -leaf
    *)
 
   (* The linear function m * var + c in the arithmetic of var's type *)
@@ -610,10 +659,10 @@ struct
 
   fun addValue (S {vals, ...}, vr, vl) = vals := VD.insert (!vals, vr, vl)
 
-  fun addInductionVariable (S {ivs, ...}, h, v, m, init, c, step) =
+  fun addInductionVariable (S {ivs, ...}, h, iv) =
       let
         val ivl = Utils.Option.get (LD.lookup (!ivs, h), [])
-        val ivl = (IV {variable = v, init = (m, init, c), step = step})::ivl
+        val ivl = iv::ivl
         val () = ivs := LD.insert (!ivs, h, ivl)
       in ()
       end
@@ -622,7 +671,8 @@ struct
 
   fun addBasicInductionVariable (s as S {bivs, ...}, h, v, init, step) =
       let
-        val () = addInductionVariable (s, h, v, Rat.one, init, Rat.zero, step)
+        val iv = BIV {variable = v, init = init, step = step}
+        val () = addInductionVariable (s, h, iv)
         val () = bivs := VD.insert (!bivs, v, {hdr = h, init = init, step = step})
       in ()
       end
@@ -655,8 +705,8 @@ struct
               getValue (state, v)
             else
               let
+                val () = addVisited v  (* NB: do this before the recursive call to avoid loops -leaf *)
                 val v' = getVarValueA v
-                val () = addVisited v
                 val () =
                     case v'
                      of NONE => ()
@@ -904,7 +954,17 @@ struct
              of VLf {var, m, c} =>
                 (case getBasicInductionVariable (state, var)
                   of NONE => ()
-                   | SOME {hdr, init, step} => addInductionVariable (state, hdr, v, m, init, c, Rat.* (m, step)))
+                   | SOME {hdr, init, step} => 
+                     let
+                       val iv = DIV {variable = v,
+                                     base = {variable = var,
+                                             init = init,
+                                             step = step},
+                                     scale = m,
+                                     offset = c}
+                       val () = addInductionVariable (state, hdr, iv)
+                     in ()
+                     end)
               | _ => ()
         val () = VD.foreach (getValues state, doOne)
       in ()
@@ -991,9 +1051,21 @@ struct
   fun analyseOperand (state, env, h, myIvs, opnd) =
       case opnd
        of M.SVariable v =>
-          (case List.peek (myIvs, fn (IV {variable, ...}) => v = variable)
-            of SOME (IV {init, step, ...}) => AInductionVariable (init, step)
-             | NONE => if isDef (state, h, v) then AUnknown else ALoopInvariant)
+          let
+            fun pred iv = 
+                (case iv
+                  of BIV {variable, ...} => v = variable
+                   | DIV {variable, ...} => v = variable)
+            val al = 
+                (case List.peek (myIvs, pred)
+                  of SOME iv => 
+                     let
+                       val {init, step, ...} = canonizeInductionVariable iv
+                     in AInductionVariable (init, step)
+                     end
+                   | NONE => if isDef (state, h, v) then AUnknown else ALoopInvariant)
+          in al
+          end
         | M.SConstant _ => ALoopInvariant
 
   (* determine loop h's trip count if there is one *)
@@ -1094,12 +1166,23 @@ struct
 
   fun layoutInductionVariable (c, si, iv) = 
       let
-        val IV {variable, init = (r1, opnd, r2), step} = iv
-        val rhs = L.seq [Rat.layout step, L.str "*# + ",
-                         Rat.layout r1, L.str "*", MilLayout.layoutOperand (c, si, opnd), L.str " + ",
-                         Rat.layout r2
-                         ]
-        val i = L.seq [MilLayout.layoutVariable (c, si, variable), L.str " = ", rhs]
+        val layoutBase = 
+         fn {variable, init, step} => 
+            L.seq [MilLayout.layoutVariable (c, si, variable), L.str " = ",
+                   Rat.layout step, L.str "*# + ", MilLayout.layoutOperand (c, si, init)]
+        val i = 
+            (case iv
+              of BIV base => layoutBase base
+               | DIV {variable, base, scale, offset} => 
+                 let
+                   val vb = MilLayout.layoutVariable (c, si, #variable base)
+                   val vd = MilLayout.layoutVariable (c, si, variable)
+                   val base = layoutBase base
+                   val dvd = 
+                       L.seq [Rat.layout scale, L.str "*", vb, L.str " + ", Rat.layout offset]
+                   val l = L.seq [vd, L.str " = ", dvd, L.str " where ", base]
+                 in l
+                 end)
       in i
       end
 
