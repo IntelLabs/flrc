@@ -42,6 +42,7 @@ struct
   structure PD = PassData
   structure SS = StringSet
   structure VS = M.VS
+  structure LU = LayoutUtils
 
   structure Chat = ChatF (struct 
                             type env = PD.t
@@ -112,7 +113,10 @@ struct
   val (showIrD, showIr) =
       mkDebug ("show-ir", "Show IR after each successful reduction", 2)
 
-  val debugs = [debugPassD, showEachD, showReductionsD, showIrD, checkIrD, showPhasesD, checkPhasesD]
+  val (showIMilD, showIMil) =
+      mkDebug ("show-imil", "Show IMil after each successful reduction", 2)
+
+  val debugs = [debugPassD, showEachD, showReductionsD, showIrD, showIMilD, checkIrD, showPhasesD, checkPhasesD]
 
   val mkLogFeature : string * string * int -> (Config.Feature.feature * (PassData.t -> bool)) = 
    fn (tag, description, level) =>
@@ -2167,6 +2171,7 @@ struct
       let
         val () = if checkIr d then IMil.T.check imil else ()
         val () = if showIr d then MilLayout.printGlobalsOnly (PD.getConfig d, IMil.T.unBuild imil) else ()
+        val () = if showIMil d then LU.printLayout (IMil.Layout.t imil) else ()
       in ()
       end
 
