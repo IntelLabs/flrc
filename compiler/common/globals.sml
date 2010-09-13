@@ -7,6 +7,7 @@ sig
   val cspAltSem                    : Config.t -> bool
   val cspDirect                    : Config.t -> bool
   val cspHybrid                    : Config.t -> bool
+  val cspToMil                     : Config.t -> bool
   val disableOptimizedRationals    : Config.t -> bool
   val disableOptimizedIntegers     : Config.t -> bool
 
@@ -25,6 +26,8 @@ struct
       Config.Feature.mk ("PPiler:csp-general", "use general scheme for Core SP compilation")
   val (cspHybridF, cspHybrid) =
       Config.Feature.mk ("PPiler:csp-hybrid", "use hybrid scheme for Core SP compilation")
+  val (cspToMilF, cspToMil) =
+      Config.Feature.mk ("PPiler:csp-to-mil", "use Mil path for Core SP compilation")
 
   val (disableOptimizedRationalsF, disableOptimizedRationals) =
       Config.Feature.mk ("PPiler:disable-optimized-rationals",
@@ -34,7 +37,7 @@ struct
       Config.Feature.mk ("PPiler:disable-optimized-integers",
                          "disable optimized integer rep")
 
-  val features = [cspAltSemF, cspDirectF, cspHybridF, disableOptimizedRationalsF, disableOptimizedIntegersF]
+  val features = [cspAltSemF, cspDirectF, cspHybridF, cspToMilF, disableOptimizedRationalsF, disableOptimizedIntegersF]
   val debugs = []
   val controls = []
 
