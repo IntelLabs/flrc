@@ -2146,7 +2146,7 @@ struct
                   end
             end
         val empty = Pil.E.variable (RT.Integer.staticEmpty)
-        val (code, digits) = Utils.mapFoldli (digits, empty, folder)
+        val (code, digits) = Utils.List.mapFoldli (digits, empty, folder)
         val vi = genLocal ("integer_ubx")
         val iDef = Pil.D.macroCall (RT.Integer.staticDef, [vi, sign, digits])
         val code = code@[iDef]

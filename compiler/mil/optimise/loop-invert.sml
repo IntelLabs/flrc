@@ -583,7 +583,7 @@ struct
                 val linfo = MilLoop.genAllNodes linfo
                 val linfo = MilLoop.genExits linfo
                 val loops = MilLoop.getLoops linfo
-                val () = Debug.printLayout (config, L.seq [L.str "MilLoop: ", MilLoop.layout linfo])
+                val () = Debug.printLayout (config, L.seq [L.str "MilLoop: ", MilLoop.layout (config, si, linfo)])
                 val () = Vector.foreach(loops, fn x => tryConvertWhileLoops (d, config, si, p, ifunc, linfo, x))
               in ()
               end
