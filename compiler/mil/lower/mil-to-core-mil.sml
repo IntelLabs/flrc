@@ -13,7 +13,6 @@ functor MilToCoreMilF(val passname : string
                       val lowerClosures : bool
                       val lowerPRefs : bool) :> MIL_TO_CORE_MIL = 
 struct
-  val passname = passname
 
   val fail = fn (fname, msg) => Fail.fail (passname, fname, msg)
 
@@ -26,6 +25,7 @@ struct
   structure MU = MilUtils
   structure MSTM = MU.SymbolTableManager
   structure MTT = MilType.Typer
+  structure MS = MilStream
   structure POM = PObjectModelLow
 
   datatype state = S of {stm : M.symbolTableManager}
@@ -72,12 +72,18 @@ struct
       in v
       end
 
-  datatype env = E of {config : Config.t,
-                       returnTypes : M.typ Vector.t}
+  datatype env = E of {config : Config.t, returnTypes : M.typ Vector.t}
 
   fun envGetConfig (E {config, ...}) = config
   fun envGetReturnTypes (E {returnTypes, ...}) = returnTypes
   fun envSetReturnTypes (E {config, ...}, returnTypes) = E {config = config, returnTypes = returnTypes}
+
+  structure MSU = MilStreamUtilsF(struct
+                                    type state = state
+                                    type env = env
+                                    val getStm = stateGetStm
+                                    val getConfig = envGetConfig
+                                  end)
 
   val layoutOperand = 
    fn (state, env, oper)  => 
@@ -88,14 +94,6 @@ struct
         val l = MilLayout.layoutOperand (config, si, oper)
       in l
       end
-
-  structure MSS = MilStreamF(type state = state
-                             type env = env
-                             val toConfig = envGetConfig
-                             val getStm = stateGetStm
-                             val indent = 2)
-  structure MS = MSS.Stream
-  structure MSU = MSS.Utils
 
   structure Chat = ChatF(struct type env = env
                                 val extract = envGetConfig
@@ -118,7 +116,7 @@ struct
   val wordSize = fn env => Config.targetWordSize' (envGetConfig env)
 
   val label = 
-   fn (state, env, (l, vs)) => (env, NONE)
+   fn (state, env, l, vs) => (env, NONE)
 
   val rec doTyps =
    fn (state, env, ts) => Vector.map (ts, fn t => doTyp (state, env, t))
@@ -217,14 +215,6 @@ struct
       in t
       end
 
-  val tupleProjectF = 
-   fn (state, env, dest, v, j, td) =>
-      let
-        val tf = M.TF {tupDesc = td, tup = v, field = M.FiFixed j}
-        val s = MS.instrMk (state, env, dest, M.RhsTupleSub tf)
-      in s
-      end
-      
   val doPSetEmpty =  
    fn (state, env, ()) => POM.OptionSet.empty (envGetConfig env)
 
@@ -240,13 +230,12 @@ struct
         case cls
          of NONE =>
           (* Create the closure *)
-            MS.instrMk (state, env, dests, POM.Function.mkInit (c, code, fvs))
+            MS.bindsRhs (dests, POM.Function.mkInit (c, code, fvs))
           (* Closure already exists, initialise it *)
           | SOME cls =>
             let
               val rhss = POM.Function.init (c, cls, code, fvs)
-              fun doOne rhs = MS.doRhs (state, env, rhs)
-              val s = MS.seqn (state, env, List.map (rhss, doOne))
+              val s = MS.seqn (List.map (rhss, MS.doRhs))
             in s
             end
       end
@@ -274,9 +263,9 @@ struct
                   (Vector.new1 v, Vector.new1 vF, Vector.new1 (M.SVariable vF),
                    Vector.new1 vT, Vector.new1 (M.SVariable vT))
                 end
-        val sFalse = MS.instrMk (state, env, vF, POM.OptionSet.empty c)
-        val sTrue = MS.instrMk (state, env, vT, POM.OptionSet.mk (c, ofVal))
-        val s = MSU.ifTrue (state, env, ps, bool, (sTrue, asT), (sFalse, asF))
+        val sFalse = MS.bindsRhs (vF, POM.OptionSet.empty c)
+        val sTrue = MS.bindsRhs (vT, POM.OptionSet.mk (c, ofVal))
+        val s = MSU.ifBool (state, env, bool, (sTrue, asT), (sFalse, asF), ps)
       in s
       end
 
@@ -285,17 +274,14 @@ struct
         val c = envGetConfig env
         val (rhs, t, compConst) = POM.OptionSet.query (c, v)
         val vc = relatedVar (state, v, "_ptr", t, M.VkLocal)
-        val s1 = MS.bindRhs (state, env, vc, rhs)
+        val s1 = MS.bindRhs (vc, rhs)
         val (ps, asF, asT) =
             case Utils.Vector.lookup (dests, 0)
              of NONE => (Vector.new0 (), Vector.new0 (), Vector.new0 ())
-              | SOME v => (Vector.new1 v,
-                           Vector.new1 (M.SConstant (MU.Bool.F c)),
-                           Vector.new1 (M.SConstant (MU.Bool.T c)))
-        val s2 = MSU.ifConst (state, env, ps, M.SVariable vc, compConst,
-                              (MS.new (state, env), asF),
-                              (MS.new (state, env), asT))
-        val s = MS.seq (state, env, s1, s2)
+              | SOME v =>
+                (Vector.new1 v, Vector.new1 (M.SConstant (MU.Bool.F c)), Vector.new1 (M.SConstant (MU.Bool.T c)))
+        val s2 = MSU.ifConst (state, env, M.SVariable vc, compConst, (MS.empty, asF), (MS.empty, asT), ps)
+        val s = MS.seq (s1, s2)
       in s
       end
 
@@ -310,7 +296,7 @@ struct
       if lower then
         let
           val rhs = doIt (state, env, args)
-          val s = MS.instrMk (state, env, dests, rhs)
+          val s = MS.bindsRhs (dests, rhs)
         in SOME s
         end
       else
@@ -334,8 +320,7 @@ struct
                 else
                   NONE
               | M.RhsClosureGetFv {fvs, cls, idx} => 
-                lowerToRhs (state, env, lowerClosures, doPFunGetFv, dests,
-                            (fvs, cls, idx))
+                lowerToRhs (state, env, lowerClosures, doPFunGetFv, dests, (fvs, cls, idx))
               | M.RhsPSetNew oper => 
                 lowerToRhs (state, env, lowerPTypes, doPSetNew, dests, oper)
               | M.RhsPSetGet v =>
@@ -352,11 +337,9 @@ struct
                 else
                   NONE
               | M.RhsPSum {tag, typ, ofVal} => 
-                lowerToRhs (state, env, lowerPTypes, doPSum, dests,
-                            (tag, typ, ofVal))
+                lowerToRhs (state, env, lowerPTypes, doPSum, dests, (tag, typ, ofVal))
               | M.RhsPSumProj {typ, sum, tag} =>
-                lowerToRhs (state, env, lowerPTypes, doPSumProj, dests,
-                            (typ, sum, tag))
+                lowerToRhs (state, env, lowerPTypes, doPSumProj, dests, (typ, sum, tag))
               | _ => NONE
       in (env, res)
       end
@@ -373,12 +356,9 @@ struct
         val t = M.TName
         val tgv = relatedVar (state, v, "_tag", t, M.VkLocal)
         val r = POM.Sum.getTag (envGetConfig env, v, M.FkRef)
-        val s1 = MS.bindRhs (state, env, tgv, r)
-        val tfer =
-            M.TCase {on = M.SVariable tgv, cases = arms, default = default}
-        val s2 = MS.transfer (state, env, tfer)
-        val s = MS.seq (state, env, s1, s2)
-      in (env, SOME s)
+        val s = MS.bindRhs (tgv, r)
+        val t = M.TCase {on = M.SVariable tgv, cases = arms, default = default}
+      in (env, SOME (s, t))
       end
 
   val doCall = 
@@ -392,8 +372,7 @@ struct
                   val c = envGetConfig env
                   val codes = {possible = VS.singleton code, exhaustive = true}
                   val t = mk (POM.Function.doCall (c, code, codes, cls, args))
-                  val s = MS.transfer (state, env, t)
-                in SOME s
+                in SOME (MS.empty, t)
                 end
               | M.CClosure {cls, code} => 
                 let
@@ -406,11 +385,9 @@ struct
                   val t = POM.Function.codeTyp (clst, aTyps, rTyps)
                   val f = relatedVar (state, cls, "_code", t, M.VkLocal)
                   val r = POM.Function.getCode (c, cls)
-                  val s1 = MS.bindRhs (state, env, f, r)
-                  val tfer = mk (POM.Function.doCall (c, f, code, cls, args))
-                  val s2 = MS.transfer (state, env, tfer)
-                  val s = MS.seq (state, env, s1, s2)
-                in SOME s
+                  val s = MS.bindRhs (f, r)
+                  val t = mk (POM.Function.doCall (c, f, code, cls, args))
+                in SOME (s, t)
                 end
       in (env, res)
       end
@@ -426,8 +403,7 @@ struct
                      fun mk (call, args) =
                          let
                            val c = M.IpCall {call = call, args = args}
-                           val t =
-                               M.TInterProc {callee = c, ret = ret, fx = fx}
+                           val t = M.TInterProc {callee = c, ret = ret, fx = fx}
                          in t
                          end
                      val c = envGetConfig env
@@ -506,7 +482,7 @@ struct
       end
 
   val global = 
-   fn (state, env, (v, g)) =>
+   fn (state, env, v, g) =>
       let
         val c = envGetConfig env
         val env = 
@@ -562,13 +538,12 @@ struct
 
   structure MT = MilTransformF(type state = state
                                type env = env
-                               structure MSS = MSS
                                val config = envGetConfig
+                               val indent = 2
                                val label = label
                                val instr = instr
                                val transfer = transfer
-                               val global = global
-                               val indent = 2)
+                               val global = global)
 
   val nameSmall = 
    fn (config, p) => 

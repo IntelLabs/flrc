@@ -4,7 +4,7 @@
 signature MIL_TRANSFORM = sig
   type state
   type env
-  datatype order = ODfS | ODom | OAny
+  datatype order = ODfs | ODom | OAny
   val globals : state * env * order * Mil.globals -> Mil.globals
   val program : state * env * order * Mil.t -> Mil.t
 end;
@@ -12,16 +12,16 @@ end;
 functor MilTransformF (
   type state
   type env
-  structure MSS : MIL_STREAM where type state = state and type env = env
   val config : env -> Config.t
+  val indent   : int
 
  (* For every block B such that B = 
   * 
-  * l (vs):
+  * l(vs):
   *   is
-  * t
+  *   t
   *
-  * the transformer will apply label to l (vs), then instr to each of the is in
+  * the transformer will apply label to l(vs), then instr to each of the is in
   * turn, and finally transfer to t.  Block B will be replaced by the fragment
   * that results from sequencing the individual streams, and closing the 
   * result.
@@ -29,32 +29,12 @@ functor MilTransformF (
   * For each of these functions, a return value of NONE indicates that no
   * change to the original object is desired.  A return value of SOME S
   * indicates that the object in question should be replaced with the stream
-  * S.  
-  * 
-  * If label (l, vs) => S_l and
-  *    instr (is_i)  => S_i and
-  *    transfer t    => S_t
-  * 
-  * Then seqn [S_l, S_i,..., S_t] should be a valid closed stream.  That is,
-  * it should be labeled and terminated.  The most likely way to achieve this
-  * is by ensuring the following:
-  *   The stream returned by rewriting the label should be closed on its entry
-  *   and open on its exit.
-  *   The stream returned by rewriting each instruction should open on its
-  *   entry and open on its exit.
-  *   The stream returned by rewriting the transfer should be open on its 
-  *   entry and closed on its exit.
-  * However, other valid combinations are possible.
+  * S.
   *)
-  val label     : state * env * (Mil.label * (Mil.variable Vector.t))
-                  -> env * (MSS.Stream.t option)
-  val instr     : state * env * Mil.instruction 
-                  -> env * (MSS.Stream.t option)
-  val transfer  : state * env * Mil.transfer
-                  -> env * (MSS.Stream.t option)
-  val global    : state * env * (Mil.variable * Mil.global)
-                  -> env * ((Mil.variable * Mil.global) list option)
-  val indent    : int
+  val label    : state * env * Mil.label * Mil.variable Vector.t -> env * MilStream.source option
+  val instr    : state * env * Mil.instruction -> env * MilStream.t option
+  val transfer : state * env * Mil.transfer -> env * MilStream.sink option
+  val global   : state * env * Mil.variable * Mil.global -> env * (Mil.variable * Mil.global) list option
 ) :> MIL_TRANSFORM where type state = state
                      and type env = env 
 = struct
@@ -62,31 +42,20 @@ functor MilTransformF (
   structure VD = Identifier.VariableDict 
   structure LD = Identifier.LabelDict 
   structure M = Mil
-  structure MSF = MSS.Fragment
-  structure MS = MSS.Stream
+  structure MF = MilFragment
+  structure MS = MilStream
 
   val getConfig      = config
-  val clientLabel    = label
+  val clientLabel    = fn (s, e, (l, vs)) => label (s, e, l, vs)
   val clientTransfer = transfer
   val clientInstr    = instr
-  val clientGlobal   = global
-
-(*
-  structure CFG = MilCfgF (
-                  struct 
-                    type env = env
-                    val getConfig = getConfig
-                    val passname = "MilTransform"
-                    val indent = indent + 2
-                  end
-                  )
-*)
+  val clientGlobal   = fn (s, e, (v, g)) => global (s, e, v, g)
 
   fun fail (loc, msg) = Fail.fail ("MilTransform", loc, msg)
   
   type state = state
   type env = env
-  datatype order = ODfS | ODom | OAny
+  datatype order = ODfs | ODom | OAny
                   
   fun rewrite (state, env, changed, try, ow, item) = 
       (case try (state, env, item)
@@ -95,18 +64,14 @@ functor MilTransformF (
 
   fun doLabel (state, env, changed, (bid, vs)) = 
       let
-        fun ow (bid, vs) =
-            MS.labelWith (state, env, bid, vs, MS.new (state, env))
-        val (env, l) =
-            rewrite (state, env, changed, clientLabel, ow, (bid, vs))
+        fun ow (bid, vs) = (bid, vs, MS.empty)
+        val (env, l) = rewrite (state, env, changed, clientLabel, ow, (bid, vs))
       in (env, l)
       end
 
   fun doInstrs (state, env, changed, is) = 
       let
-        fun ow i = MS.instr (state, env, i)
-        fun folder (item, env) = 
-            Utils.flip2 (rewrite (state, env, changed, clientInstr, ow, item))
+        fun folder (item, env) = Utils.flip2 (rewrite (state, env, changed, clientInstr, MS.instruction, item))
         val (items, env) = Vector.mapAndFold (is, env, folder)
         val items = Vector.toList items
       in (env, items)
@@ -114,30 +79,28 @@ functor MilTransformF (
 
   fun doTransfer (state, env, changed, t) = 
       let
-        fun ow t = MS.transfer (state, env, t)
+        fun ow t = (MS.empty, t)
         val (env, t) = rewrite (state, env, changed, clientTransfer, ow, t)
       in (env, t)
       end
-
 
   fun doBlock (state, env, changed, bid, b) = 
       let
         val M.B {parameters, instructions, transfer} = b
         val lchanged = ref false
-        val (env, l) = doLabel (state, env, lchanged, (bid, parameters))
+        val (env, (l, vs, sl)) = doLabel (state, env, lchanged, (bid, parameters))
         val (env, iss) = doInstrs (state, env, lchanged, instructions)
-        val (env, t) = doTransfer (state, env, lchanged, transfer)
-        val frag = 
+        val (env, (st, t)) = doTransfer (state, env, lchanged, transfer)
+        val frag =
             if !lchanged then 
               let
                 val () = changed := true
-                val s = MS.seqn (state, env, [l, MS.seqn (state, env, iss), t])
-                val (l, frag) = 
-                    MS.close (state, env, s, Vector.new0 ())
+                val s = MS.seqn [sl, MS.seqn iss, st]
+                val frag = MS.finish (l, vs, s, t)
               in frag
               end
             else
-              MSF.block (state, env, bid, b)
+              MF.fromBlock (bid, b)
       in (env, frag)
       end
       
@@ -148,23 +111,10 @@ functor MilTransformF (
               val (env, frag) = f (state, env, l, b)
             in (env, frag::frags)
             end
-
         val frags = 
             (case order 
-              of ODfS => fail ("visitOrdered", "DFS needs CFG!")
-(*                 let
-                   val ts = CFG.Util.dfSTrees (env, cfg)
-                   fun doTree (t, frags) = 
-                       let
-                         val (env, frags) = 
-                             Tree.foldPre (t, (env, frags), folder)
-                       in frags
-                       end
-                   val frags = List.fold (ts, [], doTree)
-                 in frags
-                 end*)
-               | ODom => fail ("visitOrdered", 
-                               "Dominator order not implemented")
+              of ODfs => fail ("visitOrdered", "DFS needs CFG!")
+               | ODom => fail ("visitOrdered", "Dominator order not implemented")
                | OAny => 
                  let
                    val M.CB {blocks, ...} = cb
@@ -172,7 +122,6 @@ functor MilTransformF (
                    val (env, frags) = List.fold (blocks, (env, []), folder)
                  in frags
                  end)
-
       in frags
       end
 
@@ -184,9 +133,8 @@ functor MilTransformF (
         val cb = 
             if !changed then
               let
-                val frag   = MSF.mergen (state, env, frags)
-                val blocks = MSF.blocks (state, env, frag)
-                val blocks = LD.fromList blocks
+                val frag   = MF.mergen frags
+                val blocks = MF.toBlocksD frag
                 val cb     = M.CB {entry = entry, blocks = blocks}
               in cb
               end
@@ -211,19 +159,18 @@ functor MilTransformF (
                          args      = args,
                          rtyps     = rtyps,
                          body      = body}
-              in f 
+              in f
               end
             else 
               f
       in f
       end
-        
+
   fun doCode (state, env, order, changed, (x, g)) = 
       let
         val g = 
             case g
-             of M.GCode f => 
-                M.GCode (doFunction (state, env, order, changed, f))
+             of M.GCode f => M.GCode (doFunction (state, env, order, changed, f))
               | _ => g
       in (x, g)
       end
@@ -236,12 +183,10 @@ functor MilTransformF (
         val (env, xgs) = 
             case clientGlobal (state, env, (x, g))
              of (env, NONE) => (env, [(x, g)])
-              | (env, SOME res) => (changed := true; 
-                                    (env, res))
+              | (env, SOME res) => let val () = changed := true in (env, res) end
         val xgs = doCodes (state, env, order, changed, xgs)
       in (env, xgs)
       end
-
 
   fun doGlobals (state, env, order, gs) = 
       let
