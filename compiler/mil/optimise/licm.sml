@@ -310,7 +310,7 @@ struct
                          L.str "Code is:", 
                          LU.indent (MilLayout.layoutCode (config, sti, code))]
         val () = LU.printLayout l
-        val () = LU.printLayout (Loop.layout ls)
+        val () = LU.printLayout (Loop.layout (config, sti, ls))
         fun doOne (l, ls) =
             L.mayAlign [L.seq [I.layoutLabel l, L.str ":"],
                         L.sequence ("{", "}", ",") (List.map (LS.toList ls, I.layoutLabel))]
