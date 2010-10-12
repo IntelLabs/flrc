@@ -37,7 +37,7 @@ structure Utils = struct
 
       val apply2 : ('a -> 'b) -> ('a * 'a) -> ('b * 'b) = 
        fn f => fn (a, b) => (f a, f b)
-                   
+                 
       (* infix 3 @@ *)
       val @@ : ('a -> 'b) * 'a -> 'b = 
        fn (f, a) => f a
@@ -2201,3 +2201,135 @@ structure FileParser =
           type error = string
           val pos = InStreamWithPos.pos
           fun next s = Option.map (InStreamWithPos.input1 s, Utils.flip2))
+
+
+signature BIJECTION = 
+sig
+  type ('a, 'b) t = {inject : 'a -> 'b,
+                     project : 'b -> 'a}
+  val compose : ('a, 'b) t * ('b, 'c) t -> ('a, 'c) t
+  val pair : ('a, 'b) t * ('c, 'd) t -> ('a * 'c, 'b * 'd) t 
+end (* signature BIJECTION *)
+
+structure Bijection :> BIJECTION = 
+struct
+
+  type ('a, 'b) t = {inject : 'a -> 'b,
+                     project : 'b -> 'a}
+
+  val compose : ('a, 'b) t * ('b, 'c) t -> ('a, 'c) t =
+   fn ({inject = inj1, project = proj1},
+       {inject = inj2, project = proj2}) => 
+      {inject = inj2 o inj1,
+       project = proj1 o proj2}
+
+  val pair : ('a, 'b) t * ('c, 'd) t -> ('a * 'c, 'b * 'd) t = 
+   fn ({inject = inj1, project = proj1},
+       {inject = inj2, project = proj2}) => 
+      {inject = fn (a, c) => (inj1 a, inj2 c),
+       project = fn (b, d) => (proj1 b, proj2 d)}
+
+end (* structure Bijection *)
+
+signature FINITE_ORDINAL = 
+sig
+  structure Base : 
+  sig 
+    type t
+    val compare : t Compare.t
+    val eq      : t * t -> bool
+    val hash    : t -> Word32.word
+  end
+  type 'a t
+  val base : Base.t -> 'a t
+  val unBase : 'a t -> Base.t 
+  val basePair : Base.t * Base.t -> 'a t
+  val baseVector : Base.t Vector.t -> 'a t
+  val pair : 'a t * 'b t -> 'c t 
+  val shift : Base.t * 'a t -> 'b t
+  val cast : 'a t -> 'b t
+  val compare : ('a t) Compare.t
+  val eq : 'a t * 'a t -> bool
+  val hash : 'a t -> Word32.word 
+end (* signature FINITE_ORDINAL *)
+
+functor FiniteOrdinalF(structure Base : 
+                       sig 
+                         type t
+                         val zero    : t
+                         val compare : t Compare.t
+                         val eq      : t * t -> bool
+                         val hash    : t -> Word32.word
+                       end) :> FINITE_ORDINAL where type Base.t = Base.t = 
+struct
+
+  structure Base = Base
+
+  datatype rep = FoBase of Base.t | FoPair of (rep * rep)
+
+  datatype 'a t = FOrd of {hash : Word32.word, rep : rep}
+
+  val base : Base.t -> 'a t = 
+      fn bs => FOrd {hash = Base.hash bs, rep = FoBase bs}
+
+  val pair : 'a t * 'b t -> 'c t = 
+      fn (FOrd {hash = h1, rep = r1},
+          FOrd {hash = h2, rep = r2}) => FOrd {hash = h1 + Word32.<< (h2, 0w5) + h2 + 0w720,
+                                               rep = FoPair (r1, r2)}
+
+  val shift : Base.t * 'a t -> 'b t =  fn (b, f) => pair (base b, f)
+
+  val basePair : Base.t * Base.t -> 'a t = fn (a, b) => pair (base a, base b)
+
+  val baseVector : Base.t Vector.t -> 'a t = 
+   fn v => Vector.fold (v, base Base.zero, shift)
+
+  val unBase : 'a t -> Base.t = 
+   fn FOrd fo => (case #rep fo
+                   of FoBase base => base
+                    | FoPair _    => Fail.fail ("utils.sml", 
+                                                "FiniteOrdinalF.unBase", 
+                                                "Not a base ordinal"))
+
+  val cast : 'a t -> 'b t = fn FOrd {hash, rep} => FOrd {hash = hash, rep = rep}
+
+  val rec compareRep : rep Compare.t = 
+   fn p => 
+      (case p
+        of (FoBase b1, FoBase b2) => Base.compare (b1, b2)
+         | (_, FoBase _)          => GREATER
+         | (FoBase _, _)          => LESS
+         | (FoPair p1, FoPair p2) => Compare.pair (compareRep, compareRep) (p1, p2))
+
+  val compare : ('a t) Compare.t = 
+   fn (FOrd {hash=h1, rep=r1}, FOrd {hash = h2, rep = r2}) => 
+      (case Word32.compare (h1, h2) 
+        of EQUAL => compareRep (r1, r2)
+         | other => other)
+      
+  val rec eqRep : rep * rep -> bool = 
+   fn p => 
+      (case p
+        of (FoBase b1, FoBase b2) => Base.eq (b1, b2)
+         | (FoPair (r11, r12), 
+            FoPair (r21, r22))    => eqRep (r11, r21) andalso eqRep (r21, r22)
+         | (_, FoBase _)          => false
+         | (FoBase _, _)          => false)
+
+  val eq : 'a t * 'a t -> bool = 
+   fn (FOrd {hash=h1, rep=r1}, FOrd {hash = h2, rep = r2}) => 
+      (h1 = h2) andalso eqRep (r1, r2)
+
+  val hash : 'a t -> Word32.word = 
+   fn FOrd {hash, rep} => hash
+
+end (* functor FiniteOrdinalF *)
+
+structure IntFiniteOrdinal = FiniteOrdinalF(structure Base = 
+                                            struct 
+                                              type t = Int32.t
+                                              val zero    : t = 0
+                                              val compare : t Compare.t = Int32.compare
+                                              val eq      : t * t -> bool = Int32.equals
+                                              val hash    : t -> Word32.word = Word32.fromInt
+                                            end)

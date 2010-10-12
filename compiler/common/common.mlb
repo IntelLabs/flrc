@@ -78,6 +78,7 @@ in
         functor SetF
 
         structure BackPatch
+        structure Bijection
         structure CharDict
         structure Compare
         structure Config
@@ -95,11 +96,13 @@ in
         structure ImpQueue
         structure InStreamWithPos
         structure Int32
+        structure IntFiniteOrdinal
         structure IntArb
         structure IntDict
         structure IntIntDict
         structure Intr
         structure IntSet
+        structure IntFiniteOrdinal
         structure LayoutUtils
         structure Locus
         structure Lub
