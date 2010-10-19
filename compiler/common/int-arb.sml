@@ -10,7 +10,9 @@ sig
   datatype typ = T of size * signed
   type t
   val stringOfSize : size -> string
+  val sizeFromString : string -> size option
   val stringOfSigned : signed -> string
+  val signedFromString : string -> signed option
   val stringOfTyp : typ -> string
   val stringOfTypShort : typ -> string
   val stringOf : t -> string
@@ -60,8 +62,14 @@ struct
   fun stringOfSize sz =
       case sz of S8 => "8" | S16 => "16" | S32 => "32" | S64 => "64"
 
+  val sizeFromString = 
+      fn s => case s of "8" => SOME S8 | "16" => SOME S16 | "32" => SOME S32 | "64" => SOME S64 | _ => NONE
+
   fun stringOfSigned signed =
       case signed of Signed => "S" | Unsigned => "U"
+
+  val signedFromString = 
+   fn s => case s of "S" => SOME Signed | "U" => SOME Unsigned | _ => NONE
 
   fun stringOfTyp (T (sz, signed)) =
       stringOfSigned signed ^ "Int" ^ stringOfSize sz

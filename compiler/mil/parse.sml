@@ -26,6 +26,8 @@ struct
   structure VI = VectorInstructions
   structure M = Mil
   structure MU = MilUtils
+  structure MP = Mil.Prims
+  structure MUP = MilUtils.Prims
 
   (*** Parser Utilities ***)
 
@@ -33,6 +35,11 @@ struct
   val && = P.&&
 
   infix || &&
+
+  val -&& : unit P.t * 'b P.t -> 'b P.t = fn (p1, p2) => P.map (p1 && p2, fn (_, b) => b)
+  val &&- : 'a P.t * unit P.t -> 'a P.t = fn (p1, p2) => P.map (p1 && p2, fn (a, _) => a)
+
+  infix -&& &&-
 
   (* Convention:
    *   With an F suffix, a parser should fail if the first lexical item does not look like the beginning of thing
@@ -236,12 +243,6 @@ struct
 
   (*** The Parsers ***)
 
-  val vectorElemType : VI.elemType P.t =
-      P.required (P.map (identifierF, VI.elemTypeOfString), "Expected long vector element type")
-
-  val vectorElemTypeShort : VI.elemType P.t =
-      P.required (P.map (identifierF, VI.elemTypeOfStringShort), "Expected short vector element type")
-
   val hintLF : string P.t =
       let
         fun hintChar c = Char.isAlphaNum c orelse String.contains("_\\-$#", c)
@@ -317,6 +318,18 @@ struct
   fun fieldVariance (state : state, env : env) : M.fieldVariance P.t =
       syntax (P.satisfyMap (MU.FieldVariance.fromChar)) || P.error "Expected field variance"
 
+  val vectorDescriptorF : MP.vectorDescriptor P.t = 
+      PrimsParse.vectorDescriptor
+
+  val vectorDescriptor : MP.vectorDescriptor P.t = 
+      PrimsParse.vectorDescriptor || P.error "Expected vector descriptor"
+      
+  val vectorSizeF : MP.vectorSize P.t = 
+      PrimsParse.vectorSize
+
+  val vectorSize : MP.vectorSize P.t = 
+      PrimsParse.vectorSize || P.error "Expected vector size"
+
   fun typ (state : state, env : env) : M.typ P.t =
       let
         val nameTyp = P.map (name (state, env) && keycharS #":" && P.$$ typ (state, env), fn ((n, _), t) => (n, t))
@@ -339,12 +352,10 @@ struct
               | "Bits512" => P.succeed (M.TBits M.Vs512)
               | "Cont" => P.map (parenSeq (typ (state, env)), fn ts => M.TContinuation ts)
               | "CStr" => P.succeed M.TCString
-              | "Double" => P.succeed M.TDouble
-              | "Float" => P.succeed M.TFloat
               | "Idx" => P.succeed M.TIdx
-              | "Int" => P.succeed M.TInteger
-              | "Mask" => P.map (paren vectorElemType, M.TViMask)
+              | "Mask" => P.map (bracket vectorDescriptor, M.TViMask)
               | "Name" => P.succeed M.TName
+              | "Boolean" => P.succeed M.TBoolean
               | "None" => P.succeed M.TNone
               | "PAny" => P.succeed M.TPAny
               | "PSet" => P.map (paren (typ (state, env)), fn t => M.TPType {kind = M.TkE, over = t})
@@ -352,18 +363,19 @@ struct
               | "PRef" => P.map (paren (typ (state, env)), M.TPRef)
               | "Ptr" => P.succeed M.TPtr
               | "PType" => P.map (paren (typ (state, env)), fn t => M.TPType {kind = M.TkI, over = t})
-              | "Rat" => P.succeed M.TRat
+              | "Rat" => P.succeed MUP.NumericTyp.tRat
               | "Ref" => P.succeed M.TRef
-              | "SInt8" => P.succeed (M.TIntegral (IntArb.T (IntArb.S8, IntArb.Signed)))
-              | "SInt16" => P.succeed (M.TIntegral (IntArb.T (IntArb.S16, IntArb.Signed)))
-              | "SInt32" => P.succeed (M.TIntegral (IntArb.T (IntArb.S32, IntArb.Signed)))
-              | "SInt64" => P.succeed (M.TIntegral (IntArb.T (IntArb.S64, IntArb.Signed)))
+              | "SInt8" => P.succeed (MUP.NumericTyp.tIntegerFixed (IntArb.T (IntArb.S8, IntArb.Signed)))
+              | "SInt16" => P.succeed (MUP.NumericTyp.tIntegerFixed (IntArb.T (IntArb.S16, IntArb.Signed)))
+              | "SInt32" => P.succeed (MUP.NumericTyp.tIntegerFixed (IntArb.T (IntArb.S32, IntArb.Signed)))
+              | "SInt64" => P.succeed (MUP.NumericTyp.tIntegerFixed (IntArb.T (IntArb.S64, IntArb.Signed)))
               | "Thunk" => P.map (paren (typ (state, env)), M.TThunk)
-              | "UInt8" => P.succeed (M.TIntegral (IntArb.T (IntArb.S8, IntArb.Unsigned)))
-              | "UInt16" => P.succeed (M.TIntegral (IntArb.T (IntArb.S16, IntArb.Unsigned)))
-              | "UInt32" => P.succeed (M.TIntegral (IntArb.T (IntArb.S32, IntArb.Unsigned)))
-              | "UInt64" => P.succeed (M.TIntegral (IntArb.T (IntArb.S64, IntArb.Unsigned)))
-              | "Vec" => P.map (paren vectorElemType, M.TViVector)
+              | "UInt8" => P.succeed (MUP.NumericTyp.tIntegerFixed (IntArb.T (IntArb.S8, IntArb.Unsigned)))
+              | "UInt16" => P.succeed (MUP.NumericTyp.tIntegerFixed (IntArb.T (IntArb.S16, IntArb.Unsigned)))
+              | "UInt32" => P.succeed (MUP.NumericTyp.tIntegerFixed (IntArb.T (IntArb.S32, IntArb.Unsigned)))
+              | "UInt64" => P.succeed (MUP.NumericTyp.tIntegerFixed (IntArb.T (IntArb.S64, IntArb.Unsigned)))
+              | "Vec" => P.map (bracket vectorSize && angleBracket (P.$$ typ (state, env)),
+                                (fn (vs, t) => M.TViVector {vectorSize = vs, elementTyp = t}))
               | _ => P.fail
         val idBased = P.bind identifierF doId
         val code =
@@ -473,8 +485,8 @@ struct
               | "Double" => P.succeed (M.CPok M.PokDouble)
               | "I" => P.map (paren intInf, M.CInteger)
               | "M" =>
-                P.map (angleBracket (vectorElemTypeShort && keycharS #";" && bools),
-                       fn ((et, _), bs) => M.CViMask {typ = et, elts = bs})
+                P.map (bracket vectorDescriptor && angleBracket bools,
+                       fn (vd, bs) => M.CViMask {descriptor = vd, elts = bs})
               | "Name" => P.succeed (M.CPok M.PokName)
               | "None" => P.succeed (M.CPok M.PokNone)
               | "Ptr" => P.succeed (M.CPok M.PokPtr)
@@ -492,9 +504,6 @@ struct
               | "U16" => intArb (IntArb.Unsigned, IntArb.S16)
               | "U32" => intArb (IntArb.Unsigned, IntArb.S32)
               | "U64" => intArb (IntArb.Unsigned, IntArb.S64)
-              | "V" =>
-                P.map (angleBracketSemiComma (vectorElemTypeShort, constant (state, env)),
-                       fn (et, cs) => M.CViVector {typ = et, elts = cs})
               | _ => P.fail
         val p = P.map (nameF (state, env), M.CName) || P.bind identifierF doIt
       in p
@@ -512,17 +521,51 @@ struct
 
   fun fieldIdentifier (state : state, env : env) : M.fieldIdentifier P.t =
       let
-        val kw = syntax (P.map (P.get && P.get && keycharLF #":", #1))
-        fun withType (p, f) = P.map (p && keycharS #":" && vectorElemTypeShort, fn ((x, _), t) => f (x, t))
-        fun doIt (c1, c2) =
-            case (c1, c2)
-             of (#"s", #"f") => P.map (decimal, M.FiFixed)
-              | (#"s", #"v") => P.map (operand (state, env), M.FiVariable)
-              | (#"v", #"f") => withType (decimal, fn (i, t) => M.FiViFixed {typ = t, idx = i})
-              | (#"v", #"v") => withType (operand (state, env), fn (opnd, t) => M.FiViVariable {typ = t, idx = opnd})
-              | (#"v", #"i") => withType (operand (state, env), fn (opnd, t) => M.FiViIndexed {typ = t, idx = opnd})
-              | _ => P.fail
-        val p = P.bind kw doIt || P.error "Expected field identifier"
+        val fiFixed = 
+            let
+              val fi = P.map (keywordLF "sf:" -&& decimal, M.FiFixed)
+            in syntax fi
+            end
+
+        val fiVariable = 
+            let
+              val fv = P.map (keywordLF "sv:" -&& operand (state, env), M.FiVariable)
+            in syntax fv
+            end
+
+        val fiVectorFixed = 
+            let
+              val mask = P.optional (keycharLF #"?" -&& operand (state, env))
+              val p = keywordLF "vf" -&& bracket vectorDescriptor &&- keycharLF #":" && decimal && mask
+              val p = P.map (p, fn ((vd, i), mo) => M.FiVectorFixed {descriptor = vd, mask = mo, index = i})
+            in syntax p
+            end
+
+        val fiVectorVariable = 
+            let
+              val mask = P.optional (keycharLF #"?" -&& operand (state, env))
+              val base = P.optional (keycharLF #"^")
+              val vd = bracket vectorDescriptor 
+              val vectorIndex = P.map (angleBracket (operand (state, env)), fn i => (M.VikVector, i))
+              val stridedIndex = 
+                  let
+                    val p = angleBracket (operand (state, env) &&- keycharLF #":" &&
+                                          operand (state, env) &&- keycharLF #"+" && 
+                                          paren (decimal &&- keywordLF "*n"))
+                  in P.map (p, fn ((idx, _), i) => (M.VikStrided i, idx))
+                  end
+              val index = vectorIndex || stridedIndex
+              val p = keywordLF "vv" -&& vd &&- keycharLF #":" && base && index && mask
+              val p = P.map (p, fn (((vd, base), (kind, idx)), mask) => 
+                                   M.FiVectorVariable {descriptor = vd, 
+                                                       base = case base of NONE => M.TbScalar | SOME _ => M.TbVector,
+                                                       mask = mask,
+                                                       index = idx,
+                                                       kind = kind})
+            in syntax p
+            end
+
+        val p = fiFixed || fiVariable || fiVectorFixed || fiVectorVariable || P.error "Expected field identifier"
       in p
       end
 
@@ -611,20 +654,17 @@ struct
         val varStuff = P.bind (variableF (state, env)) doVar
         val tup = P.map (tupleF (state, env), fn (mdd, os) => M.RhsTuple {mdDesc = mdd, inits = os})
         val const = P.map (constantF (state, env), fn c => M.RhsSimple (M.SConstant c))
-        fun doPrim s =
-            if s = "" then
-              P.fail
-            else
-              let
-                val len = String.length s
-                val ct = String.sub (s, len - 1) = #"T"
-                val s = String.substring (s, 0, len - 1)
-              in
-                case Prims.fromString s
-                 of NONE => P.fail
-                  | SOME p => P.map (parenSeq (operand (state, env)),
-                                     fn os => M.RhsPrim {prim = p, createThunks = ct, args = os})
-              end
+        val primApp = 
+            let
+              val p = PrimsParse.t && P.optional (bracket (keycharLF #"T")) 
+                   && P.optional (braceSeq (typ (state, env))) && parenSeq (operand (state, env))
+            in P.map (p, fn (((prim, tO), typsO), args) => M.RhsPrim {prim = prim, 
+                                                                      createThunks = isSome tO,
+                                                                      typs = case typsO 
+                                                                              of SOME typs => typs 
+                                                                               | NONE => Vector.new0 (),
+                                                                      args = args})
+            end
         fun doKw s =
             case s
              of "ClosureGetFv" =>
@@ -666,10 +706,10 @@ struct
               | "ThunkMk" => P.map (parenSemiComma (fieldKind (state, env), fieldKind (state, env)),
                                     fn (fk, fks) => M.RhsThunkMk {typ = fk, fvs = fks})
               | "ThunkMkVal" => thunkMkVal NONE
-              | _ => doPrim s
+              | _ => P.fail
         val kw = P.bind identifierF doKw
         val setQuery = P.map (keycharSF #"?" && operand (state, env), fn (_, opnd) => M.RhsPSetQuery opnd)
-        val p = varStuff || tup || const || kw || setQuery || P.error "Expected right-hand side"
+        val p = varStuff || tup || const || kw || setQuery || primApp || P.error "Expected right-hand side"
       in p
       end
 

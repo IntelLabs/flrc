@@ -76,10 +76,7 @@ struct
 
   (*** Build structures ***)
 
-  structure Pil = PilF(type env = env
-                       val extract = getConfig)
-
-  structure RT = RuntimeF(structure Pil = Pil)
+  structure RT = Runtime
 
   structure Chat = ChatF(type env = env
                          val extract = getConfig
@@ -931,43 +928,20 @@ struct
         | M.TRef => Pil.T.named RT.T.object
         | M.TBits vs =>
           (case vs
-            of M.Vs8   => Pil.T.uint8
-             | M.Vs16  => Pil.T.uint16
-             | M.Vs32  => Pil.T.uint32
-             | M.Vs64  => Pil.T.uint64
-             | M.Vs128 => Fail.fail ("MilToPil", "genTyp", "TBits128")
-             | M.Vs256 => Fail.fail ("MilToPil", "genTyp", "TBits256")
-             | M.Vs512 => Fail.fail ("MilToPil", "genTyp", "TBits512"))
+            of M.Vs8    => Pil.T.uint8
+             | M.Vs16   => Pil.T.uint16
+             | M.Vs32   => Pil.T.uint32
+             | M.Vs64   => Pil.T.uint64
+             | M.Vs128  => Fail.fail ("MilToPil", "genTyp", "TBits128")
+             | M.Vs256  => Fail.fail ("MilToPil", "genTyp", "TBits256")
+             | M.Vs512  => Fail.fail ("MilToPil", "genTyp", "TBits512")
+             | M.Vs1024 => Fail.fail ("MilToPil", "genTyp", "TBits1024"))
         | M.TNone => Pil.T.named RT.T.object
-        | M.TRat => Pil.T.named RT.T.rat
-        | M.TInteger => Pil.T.named RT.T.integer
+        | M.TNumeric t => RT.Prim.numericTyp t
+        | M.TBoolean   => Pil.T.named RT.T.boolean
         | M.TName => Pil.T.named RT.T.pAny
-        | M.TIntegral (IntArb.T x) =>
-          (case x
-            of (IntArb.S8,   IntArb.Signed  ) => Pil.T.sint8
-             | (IntArb.S16,  IntArb.Signed  ) => Pil.T.sint16
-             | (IntArb.S32,  IntArb.Signed  ) => Pil.T.sint32
-             | (IntArb.S64,  IntArb.Signed  ) => Pil.T.sint64
-             | (IntArb.S8,   IntArb.Unsigned) => Pil.T.uint8
-             | (IntArb.S16,  IntArb.Unsigned) => Pil.T.uint16
-             | (IntArb.S32,  IntArb.Unsigned) => Pil.T.uint32
-             | (IntArb.S64,  IntArb.Unsigned) => Pil.T.uint64)
-        | M.TFloat => Pil.T.float
-        | M.TDouble => Pil.T.double
-        | M.TViVector et =>
-          (case VI.numElemTypeBytes et
-            of 1 => Pil.T.named RT.T.viVec8
-             | 2 => Pil.T.named RT.T.viVec16
-             | 4 => Pil.T.named RT.T.viVec32
-             | 8 => Pil.T.named RT.T.viVec64
-             | _ => Fail.fail ("MilToPil", "genTyp", "TViVector"))
-        | M.TViMask et =>
-          (case VI.numMaskBytes (targetVectorSize env, et)
-            of 1  => Pil.T.uint8
-             | 2 => Pil.T.uint16
-             | 4 => Pil.T.uint32
-             | 8 => Pil.T.uint64
-             | _  => Fail.fail ("MilToPil", "genTyp", "TViMask"))
+        | M.TViVector {vectorSize, elementTyp} => Fail.fail ("MilToPil", "genTyp", "TViVector")
+        | M.TViMask et => Fail.fail ("MilToPil", "genTyp", "TViMask")
         | M.TCode {cc, args, ress} =>
           Pil.T.ptr (genCodeType (state, env, (cc, args, ress)))
         | M.TTuple _ => Pil.T.named RT.T.pAny
@@ -1029,12 +1003,12 @@ struct
          * we should figure out how to make it do the right
          * thing.  -leaf *)
         | M.CIntegral i => Pil.E.intInf (IntArb.toIntInf i)
+        | M.CBoolean b => Pil.E.boolean b
         | M.CFloat r => Pil.E.float r
         | M.CDouble r => Pil.E.double r
         (* FIXME: WL: add runtime routine *)
-        | M.CViVector _ => Pil.E.variable RT.Vec.static
-        | M.CViMask {typ, elts, ...} =>
-          (if VI.numMaskBytes (targetVectorSize env, typ) > 4 then 
+        | M.CViMask _ => Fail.fail ("MilToPil", "genConstant", "CViMask")
+(*          (if VI.numMaskBytes (targetVectorSize env, typ) > 4 then 
              Fail.fail ("MilTOPil", "genConstant", "Unspported mask size > 32")
            else  
              let
@@ -1047,7 +1021,7 @@ struct
                val m = Vector.foldr (elts, Word32.fromInt 0, shiftBool)
              in 
                Pil.E.word32 m
-             end) 
+             end) *)
         | M.CPok pok => Pil.E.namedConstant (RT.MD.pObjKindTag pok)
         | M.COptionSetEmpty =>
           notCoreMil (env, "genConstant", "COptionSetEmpty")
@@ -1178,7 +1152,9 @@ struct
            SOME (genOperand (state, env, opnd)),
            SskScalar,
            getArrayDescriptor tupDesc)
-        | M.FiViFixed {typ, idx} =>
+        | M.FiVectorFixed _ => Fail.fail ("MilToPil", "doTupleField", "FiVectorFixed")
+        | M.FiVectorVariable _ => Fail.fail ("MilToPil", "doTupleField", "FiVectorFixed")
+(*
           (OM.fieldOffset (state, env, tupDesc, idx),
            NONE,
            SskVectorResult typ,
@@ -1193,7 +1169,7 @@ struct
            SOME (genOperand (state, env, idx)),
            SskVectorResult typ,
            getArrayDescriptor tupDesc)
-
+*)
   fun genTupleSub (state, env, dest, tf) =
       let
         val M.TF {tup, ...} = tf
@@ -1208,12 +1184,12 @@ struct
                 (RT.Object.field, [v, off, fte])
               | (SOME e, SskScalar) =>
                 (RT.Object.extra, [v, off, fte, e])
-              | (NONE, SskVectorResult et) =>
-                (RT.Vec.loadF et, [v, off])
-              | (SOME e, SskVectorResult et) =>
-                (RT.Vec.loadV et, [v, off, e])
-              | (_, SskVectorIndex et) =>
-                (RT.Vec.gather et, [v, off, Option.valOf eo])
+              | (NONE, SskVectorResult et) => Fail.fail ("MilToPil", "genTupleSub", "SskVectorResult")
+(*                (RT.Vec.loadF et, [v, off])*)
+              | (SOME e, SskVectorResult et) => Fail.fail ("MilToPil", "genTupleSub", "SskVectorResult")
+(*                (RT.Vec.loadV et, [v, off, e])*)
+              | (_, SskVectorIndex et) =>Fail.fail ("MilToPil", "genTupleSub", "SskVectorIndex")
+(*                (RT.Vec.gather et, [v, off, Option.valOf eo])*)
         val sub = Pil.E.call (Pil.E.namedConstant loader, args)
         val a = Pil.E.assign (genVarE (state, env, dest), sub)
       in Pil.S.expr a
@@ -1237,15 +1213,15 @@ struct
               | (SOME e, SskScalar) =>
                 doWB (Pil.E.call (Pil.E.namedConstant RT.Object.extra,
                                   [v, off, ft, e]))
-              | (NONE, SskVectorResult et) =>
-                Pil.E.call (Pil.E.namedConstant (RT.Vec.storeF et),
-                            [v, off, nv])
-              | (SOME e, SskVectorResult et) =>
-                Pil.E.call (Pil.E.namedConstant (RT.Vec.storeV et),
-                            [v, off, e, nv])
-              | (_, SskVectorIndex et) =>
-                Pil.E.call (Pil.E.namedConstant (RT.Vec.scatter et),
-                            [v, off, Option.valOf eo, nv])
+              | (NONE, SskVectorResult et) => Fail.fail ("MilToPil", "genTupleSet", "SskVectorResult")
+(*                Pil.E.call (Pil.E.namedConstant (RT.Vec.storeF et),
+                            [v, off, nv])*)
+              | (SOME e, SskVectorResult et) => Fail.fail ("MilToPil", "genTupleSet", "SskVectorResult")
+(*                Pil.E.call (Pil.E.namedConstant (RT.Vec.storeV et),
+                            [v, off, e, nv])*)
+              | (_, SskVectorIndex et) => Fail.fail ("MilToPil", "genTupleSet", "SskVectorIndex")
+(*                Pil.E.call (Pil.E.namedConstant (RT.Vec.scatter et),
+                            [v, off, Option.valOf eo, nv])*)
       in set
       end
 
@@ -1434,7 +1410,7 @@ struct
       in
         case rhs
          of M.RhsSimple s => assignP (genSimple (state, env, s))
-          | M.RhsPrim {prim, createThunks, args} =>
+          | M.RhsPrim {prim, createThunks, typs, args} =>
             let
               val d = Option.map (dest, fn v => genVarE (state, env, v))
               val args = genOperands(state, env, args)
@@ -1686,7 +1662,7 @@ struct
              of M.RNormal {rets, block, cuts, ...} =>
                 let
                   val cuts = genCutsTo (state, env, cuts)
-                  val c = Pil.E.callAlsoCutsTo (env, f, args, cuts)
+                  val c = Pil.E.callAlsoCutsTo (getConfig env, f, args, cuts)
                   val c =
                       case Vector.length rets
                        of 0 => Pil.S.expr c
@@ -1722,7 +1698,7 @@ struct
                        val rets = Pil.S.call (ret, [genVarE (state, env, t), vret])
                      in Pil.S.sequence [calls, rets]
                      end
-                   | NONE => Pil.S.tailCall (env, f, args))
+                   | NONE => Pil.S.tailCall (getConfig env, f, args))
       in s
       end
 
@@ -1776,7 +1752,7 @@ struct
         val slowf = Pil.E.namedConstant slowf
         val slowargs = List.map (slowargs, fn v => genVarE (state, env, v))
         val cuts = genCutsTo (state, env, cuts)
-        val slowpath = Pil.E.callAlsoCutsTo (env, slowf, slowargs, cuts)
+        val slowpath = Pil.E.callAlsoCutsTo (getConfig env, slowf, slowargs, cuts)
         val slowpath = Pil.E.cast (t, slowpath)
         val slowpath = cont slowpath
         val fastpath = genThunkGetValueE (state, env, fk, t, thunk)
@@ -2334,10 +2310,10 @@ struct
         in
           Pil.D.sequence
             [Pil.D.comment "Report Global Roots",
-             Pil.D.managed (env, false),
+             Pil.D.managed (getConfig env, false),
              Pil.D.staticFunction
                (Pil.T.void, RT.GC.reportRoots, [vd1, vd2], [], body),
-             Pil.D.managed (env, true),
+             Pil.D.managed (getConfig env, true),
              Pil.D.blank]
         end
       else
@@ -2404,14 +2380,14 @@ struct
               val (s, m) =
                   case (m, kind)
                    of (false, M.IkC     ) => (Pil.D.sequence [],          false)
-                    | (false, M.IkTarget) => (Pil.D.managed (env, true),  true )
-                    | (true,  M.IkC     ) => (Pil.D.managed (env, false), false)
+                    | (false, M.IkTarget) => (Pil.D.managed (getConfig env, true),  true )
+                    | (true,  M.IkC     ) => (Pil.D.managed (getConfig env, false), false)
                     | (true,  M.IkTarget) => (Pil.D.sequence [],          true )
               val d = Pil.D.sequence [s, Pil.D.includeLocalFile name]
             in (d, m)
             end
         val (incs, m) = Vector.mapAndFold (includes, true, doOne)
-        val incs = Pil.D.sequence (Vector.toList incs @ (if m then [] else [Pil.D.managed (env, true)]))
+        val incs = Pil.D.sequence (Vector.toList incs @ (if m then [] else [Pil.D.managed (getConfig env, true)]))
         fun doOne extern =
             let
               (* NG XXX: Should we special case this on functions and generate a slightly different syntax? *)

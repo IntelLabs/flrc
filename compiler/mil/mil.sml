@@ -111,7 +111,8 @@ struct
   (* Unboxed constants *)
   datatype constant =
     (* Core *)
-      CRat      of IntInf.t   (* Only optimised reps *)
+      CBoolean  of bool
+    | CRat      of IntInf.t   (* Only optimised reps *)
     | CInteger  of IntInf.t   (* Only optimised reps *)
     | CName     of name
     | CIntegral of IntArb.t

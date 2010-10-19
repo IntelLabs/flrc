@@ -84,7 +84,7 @@ sig
 
   structure Arity : 
   sig
-    datatype arity = ArAA | ArAB | ArAAA | ArAAB | ArABC | ArOther of Int.t * Int.t
+    datatype arity = ArAtoA | ArAAtoA | ArAAtoB | ArOther of Int.t * Int.t
     type 'a t = 'a -> arity
 
     val count : arity -> Int.t * Int.t
@@ -274,6 +274,8 @@ sig
     val hash    : t Hash.t
     structure Dec : 
     sig
+      val faACos  : t -> unit option
+      val faASin  : t -> unit option
       val faCeil  : t -> unit option
       val faCos   : t -> unit option
       val faFloor : t -> unit option
@@ -588,7 +590,9 @@ struct
         let
           val res = 
 	      case p
-	       of Mil.Prims.FaCeil     => "Ceil"
+	       of Mil.Prims.FaACos     => "ACos"
+	        | Mil.Prims.FaASin     => "ASin"
+                | Mil.Prims.FaCeil     => "Ceil"
 	        | Mil.Prims.FaCos      => "Cos"
 	        | Mil.Prims.FaFloor    => "Floor"
 	        | Mil.Prims.FaMod      => "Mod"
@@ -785,40 +789,40 @@ struct
           val res = 
 	      case p
 	       of Mil.Prims.RtFloatMk              => "FloatMk"
-	        | Mil.Prims.RtWriteln              => "Writeln"
-	        | Mil.Prims.RtReadln               => "Readln"
-	        | Mil.Prims.RtAssert               => "Assert"
-	        | Mil.Prims.RtError                => "Error"
-	        | Mil.Prims.RtDebug                => "Debug"
-	        | Mil.Prims.RtOpenOut              => "OpenOut"
-	        | Mil.Prims.RtGetStdout            => "GetStdout"
-	        | Mil.Prims.RtOutputByte           => "OutputByte"
-	        | Mil.Prims.RtCloseOut             => "CloseOut"
-	        | Mil.Prims.RtOpenIn               => "OpenIn"
-	        | Mil.Prims.RtGetStdin             => "GetStdin"
-	        | Mil.Prims.RtInputByte            => "InputByte"
-	        | Mil.Prims.RtInputString          => "InputString"
-	        | Mil.Prims.RtInputAll             => "InputAll"
-	        | Mil.Prims.RtIsEOF                => "IsEOF"
-	        | Mil.Prims.RtCloseIn              => "CloseIn"
-	        | Mil.Prims.RtCommandLine          => "CommandLine"
-	        | Mil.Prims.RtStringToNat          => "StringToNat"
-	        | Mil.Prims.RtStringToFloat        => "StringToFloat"
-	        | Mil.Prims.RtFloatToString        => "FloatToString"
-	        | Mil.Prims.RtFloatToStringI       => "FloatToStringI"
-	        | Mil.Prims.RtRatNumerator         => "RatNumerator"
-	        | Mil.Prims.RtRatDenominator       => "RatDenominator"
-	        | Mil.Prims.RtEqual                => "Equal"
-	        | Mil.Prims.RtDom                  => "Dom"
-	        | Mil.Prims.RtNub                  => "Nub"
-	        | Mil.Prims.RtRatToUIntpChecked    => "RatToUIntpChecked"
-	        | Mil.Prims.RtRatToString          => "RatToString"
-	        | Mil.Prims.RtStringToRat          => "StringToRat"
-	        | Mil.Prims.RtResetTimer           => "ResetTimer"
-	        | Mil.Prims.RtGetTimer             => "GetTimer"
-	        | Mil.Prims.RtVtuneAttach          => "VtuneAttach"
-	        | Mil.Prims.RtVtuneDetach          => "VtuneDetach"
-	        | Mil.Prims.RtArrayEval            => "ArrayEval"
+	        | Mil.Prims.RtWriteln              => "PWriteln"
+	        | Mil.Prims.RtReadln               => "PReadln"
+	        | Mil.Prims.RtAssert               => "PAssert"
+	        | Mil.Prims.RtError                => "PError"
+	        | Mil.Prims.RtDebug                => "PDebug"
+	        | Mil.Prims.RtOpenOut              => "POpenOut"
+	        | Mil.Prims.RtGetStdout            => "PGetStdout"
+	        | Mil.Prims.RtOutputByte           => "POutputByte"
+	        | Mil.Prims.RtCloseOut             => "PCloseOut"
+	        | Mil.Prims.RtOpenIn               => "POpenIn"
+	        | Mil.Prims.RtGetStdin             => "PGetStdin"
+	        | Mil.Prims.RtInputByte            => "PInputByte"
+	        | Mil.Prims.RtInputString          => "PInputString"
+	        | Mil.Prims.RtInputAll             => "PInputAll"
+	        | Mil.Prims.RtIsEOF                => "PIsEOF"
+	        | Mil.Prims.RtCloseIn              => "PCloseIn"
+	        | Mil.Prims.RtCommandLine          => "PCommandLine"
+	        | Mil.Prims.RtStringToNat          => "PStringToNat"
+	        | Mil.Prims.RtStringToFloat        => "PStringToFloat"
+	        | Mil.Prims.RtFloatToString        => "PFloatToString"
+	        | Mil.Prims.RtFloatToStringI       => "PFloatToStringI"
+	        | Mil.Prims.RtRatNumerator         => "PRatNumerator"
+	        | Mil.Prims.RtRatDenominator       => "PRatDenominator"
+	        | Mil.Prims.RtEqual                => "PEqual"
+	        | Mil.Prims.RtDom                  => "PDom"
+	        | Mil.Prims.RtNub                  => "PNub"
+	        | Mil.Prims.RtRatToUIntpChecked    => "PRatToUIntpChecked"
+	        | Mil.Prims.RtRatToString          => "PRatToString"
+	        | Mil.Prims.RtStringToRat          => "PStringToRat"
+	        | Mil.Prims.RtResetTimer           => "PResetTimer"
+	        | Mil.Prims.RtGetTimer             => "PGetTimer"
+	        | Mil.Prims.RtVtuneAttach          => "PVtuneAttach"
+	        | Mil.Prims.RtVtuneDetach          => "PVtuneDetach"
+	        | Mil.Prims.RtArrayEval            => "PArrayEval"
         in
           res
         end
@@ -942,7 +946,8 @@ struct
            fn nt => 
               (case nt
                 of Prims.NtRat        => IFO.base 0
-                 | Prims.NtInteger ip => IFO.shift (1, intPrecision ip))
+                 | Prims.NtInteger ip => IFO.shift (1, intPrecision ip)
+                 | Prims.NtFloat fp   => IFO.shift (2, floatPrecision fp))
         in inject
         end
            
@@ -986,16 +991,18 @@ struct
           val number = 
            fn fo => 
               (case fo
-                of Prims.FaCeil  => 0
-                 | Prims.FaCos   => 1
-                 | Prims.FaFloor => 2
-                 | Prims.FaMod   => 3
-                 | Prims.FaRcp   => 4
-                 | Prims.FaSin   => 5
-                 | Prims.FaSqrt  => 6
-                 | Prims.FaTan   => 7
-                 | Prims.FaTrunc => 8
-                 | Prims.FaPow   => 9)
+                of Prims.FaACos  => 0
+                 | Prims.FaASin  => 1
+                 | Prims.FaCeil  => 2
+                 | Prims.FaCos   => 3
+                 | Prims.FaFloor => 4
+                 | Prims.FaMod   => 5
+                 | Prims.FaRcp   => 6
+                 | Prims.FaSin   => 7
+                 | Prims.FaSqrt  => 8
+                 | Prims.FaTan   => 9
+                 | Prims.FaTrunc => 10
+                 | Prims.FaPow   => 11)
         in IFO.base o number
         end
 
@@ -1308,35 +1315,41 @@ struct
               val any = Effect.PAny
               val fx = 
                   (case r
-                    of Mil.Prims.RtFloatMk        => total
-                     | Mil.Prims.RtWriteln        => io
-                     | Mil.Prims.RtReadln         => io
-                     | Mil.Prims.RtAssert         => partial
-                     | Mil.Prims.RtError          => partial
-                     | Mil.Prims.RtDebug          => partial
-                     | Mil.Prims.RtOpenOut        => io
-                     | Mil.Prims.RtGetStdout      => io
-                     | Mil.Prims.RtOutputByte     => io
-                     | Mil.Prims.RtCloseOut       => io
-                     | Mil.Prims.RtOpenIn         => io
-                     | Mil.Prims.RtGetStdin       => io
-                     | Mil.Prims.RtInputByte      => io
-                     | Mil.Prims.RtInputString    => io
-                     | Mil.Prims.RtInputAll       => io
-                     | Mil.Prims.RtIsEOF          => io
-                     | Mil.Prims.RtCloseIn        => io
-                     | Mil.Prims.RtCommandLine    => total
-                     | Mil.Prims.RtStringToNat    => total
-                     | Mil.Prims.RtStringToFloat  => total
-                     | Mil.Prims.RtFloatToString  => total
-                     | Mil.Prims.RtFloatToStringI => total
-                     | Mil.Prims.RtRatToString    => total
-                     | Mil.Prims.RtStringToRat    => total
-                     | Mil.Prims.RtResetTimer     => io
-                     | Mil.Prims.RtGetTimer       => io
-                     | Mil.Prims.RtVtuneAttach    => io
-                     | Mil.Prims.RtVtuneDetach    => io
-                     | Mil.Prims.RtArrayEval      => any)
+                    of Mil.Prims.RtFloatMk           => total
+                     | Mil.Prims.RtWriteln           => io
+                     | Mil.Prims.RtReadln            => io
+                     | Mil.Prims.RtAssert            => partial
+                     | Mil.Prims.RtError             => partial
+                     | Mil.Prims.RtDebug             => partial
+                     | Mil.Prims.RtOpenOut           => io
+                     | Mil.Prims.RtGetStdout         => io
+                     | Mil.Prims.RtOutputByte        => io
+                     | Mil.Prims.RtCloseOut          => io
+                     | Mil.Prims.RtOpenIn            => io
+                     | Mil.Prims.RtGetStdin          => io
+                     | Mil.Prims.RtInputByte         => io
+                     | Mil.Prims.RtInputString       => io
+                     | Mil.Prims.RtInputAll          => io
+                     | Mil.Prims.RtIsEOF             => io
+                     | Mil.Prims.RtCloseIn           => io
+                     | Mil.Prims.RtCommandLine       => total
+                     | Mil.Prims.RtStringToNat       => total
+                     | Mil.Prims.RtStringToFloat     => total
+                     | Mil.Prims.RtFloatToString     => total
+                     | Mil.Prims.RtFloatToStringI    => total
+                     | Mil.Prims.RtRatNumerator      => total
+                     | Mil.Prims.RtRatDenominator    => total
+                     | Mil.Prims.RtEqual             => total
+                     | Mil.Prims.RtDom               => total
+                     | Mil.Prims.RtNub               => total
+                     | Mil.Prims.RtRatToUIntpChecked => total
+                     | Mil.Prims.RtRatToString       => total
+                     | Mil.Prims.RtStringToRat       => total
+                     | Mil.Prims.RtResetTimer        => io
+                     | Mil.Prims.RtGetTimer          => io
+                     | Mil.Prims.RtVtuneAttach       => io
+                     | Mil.Prims.RtVtuneDetach       => io
+                     | Mil.Prims.RtArrayEval         => any)
             in fx
             end)
 
@@ -1409,7 +1422,7 @@ struct
      fn (Mil.Prims.Vd {vectorSize, elementSize}) => elementSize
     structure Dec = 
     struct
-      val vd = fn ve => (case ve of Mil.Prims.Vd r => SOME r | _ => NONE)
+      val vd = fn ve => (case ve of Mil.Prims.Vd r => SOME r)
     end (* structure Dec *)
   end (* structure VectorDescriptor *)
 
@@ -1501,6 +1514,8 @@ struct
     val hash    = Hash.floatOp
     structure Dec = 
     struct
+      val faASin  = fn fl => (case fl of Mil.Prims.FaACos => SOME () | _ => NONE)
+      val faACos  = fn fl => (case fl of Mil.Prims.FaASin => SOME () | _ => NONE)
       val faCeil  = fn fl => (case fl of Mil.Prims.FaCeil => SOME () | _ => NONE)
       val faCos   = fn fl => (case fl of Mil.Prims.FaCos => SOME () | _ => NONE)
       val faFloor = fn fl => (case fl of Mil.Prims.FaFloor => SOME () | _ => NONE)
@@ -1719,95 +1734,96 @@ struct
     val count : arity -> Int.t * Int.t = 
      fn ar => 
         (case ar
-          of ArAA      => (1, 1)
-           | ArAB      => (1, 1)
-           | ArAAA     => (2, 1)
-           | ArAAB     => (2, 1)
+          of ArAtoA      => (1, 1)
+           | ArAAtoA     => (2, 1)
+           | ArAAtoB     => (2, 1)
            | ArOther p => p)
 
     val arithOp          : Mil.Prims.arithOp t =
         (fn ao => 
             (case ao
-              of Prims.AAbs       => ArAA
-               | Prims.ANegate    => ArAA
-               | Prims.ANegateSat => ArAA
-               | Prims.ADivide    => ArAAA
-               | Prims.ADiv dk    => ArAAA
-               | Prims.AMax       => ArAAA
-               | Prims.AMin       => ArAAA
-               | Prims.AMinus     => ArAAA
-               | Prims.AMinusSat  => ArAAA
-               | Prims.AMod dk    => ArAAA
-               | Prims.APlus      => ArAAA
-               | Prims.APlusSat   => ArAAA
-               | Prims.ATimes     => ArAAA
-               | Prims.ATimesSat  => ArAAA
+              of Prims.AAbs       => ArAtoA
+               | Prims.ANegate    => ArAtoA
+               | Prims.ANegateSat => ArAtoA
+               | Prims.ADivide    => ArAAtoA
+               | Prims.ADiv dk    => ArAAtoA
+               | Prims.AMax       => ArAAtoA
+               | Prims.AMin       => ArAAtoA
+               | Prims.AMinus     => ArAAtoA
+               | Prims.AMinusSat  => ArAAtoA
+               | Prims.AMod dk    => ArAAtoA
+               | Prims.APlus      => ArAAtoA
+               | Prims.APlusSat   => ArAAtoA
+               | Prims.ATimes     => ArAAtoA
+               | Prims.ATimesSat  => ArAAtoA
                | Prims.ADivMod dk => ArOther (2, 2)))
 
     val floatOp          : Mil.Prims.floatOp t =
         (fn fo => 
             (case fo 
-              of Prims.FaCeil  => ArAA
-               | Prims.FaCos   => ArAA
-               | Prims.FaFloor => ArAA
-               | Prims.FaMod   => ArAAA
-               | Prims.FaRcp   => ArAA
-               | Prims.FaSin   => ArAA
-               | Prims.FaSqrt  => ArAA
-               | Prims.FaTan   => ArAA
-               | Prims.FaTrunc => ArAA
-               | Prims.FaPow   => ArAAA))
+              of Prims.FaACos  => ArAtoA
+               | Prims.FaASin  => ArAtoA
+               | Prims.FaCeil  => ArAtoA
+               | Prims.FaCos   => ArAtoA
+               | Prims.FaFloor => ArAtoA
+               | Prims.FaMod   => ArAAtoA
+               | Prims.FaRcp   => ArAtoA
+               | Prims.FaSin   => ArAtoA
+               | Prims.FaSqrt  => ArAtoA
+               | Prims.FaTan   => ArAtoA
+               | Prims.FaTrunc => ArAtoA
+               | Prims.FaPow   => ArAAtoA))
 
     val bitwiseOp        : Mil.Prims.bitwiseOp t =
         (fn bo => 
             (case bo
-              of Prims.BNot    => ArAA
-               | Prims.BAnd    => ArAAA
-               | Prims.BOr     => ArAAA
-               | Prims.BRotL   => AROther (2, 1)
-               | Prims.BRotR   => AROther (2, 1)
-               | Prims.BShiftL => AROther (2, 1)
-               | Prims.BShiftR => AROther (2, 1)
-               | Prims.BXor    => ArAAA))
+              of Prims.BNot    => ArAtoA
+               | Prims.BAnd    => ArAAtoA
+               | Prims.BOr     => ArAAtoA
+               | Prims.BRotL   => ArOther (2, 1)
+               | Prims.BRotR   => ArOther (2, 1)
+               | Prims.BShiftL => ArOther (2, 1)
+               | Prims.BShiftR => ArOther (2, 1)
+               | Prims.BXor    => ArAAtoA))
 
     val logicOp          : Mil.Prims.logicOp t =
         (fn lo => 
             (case lo
-              of Prims.LNot => ArAA
-               | Prims.LAnd => ArAAA
-               | Prims.LOr  => ArAAA
-               | Prims.LXor => ArAAA
-               | Prims.LEq  => ArAAA))
+              of Prims.LNot => ArAtoA
+               | Prims.LAnd => ArAAtoA
+               | Prims.LOr  => ArAAtoA
+               | Prims.LXor => ArAAtoA
+               | Prims.LEq  => ArAAtoA))
 
     val compareOp        : Mil.Prims.compareOp t = 
         (fn co => 
             (case co
-              of Prims.CEq => ArAAB
-               | Prims.CNe => ArAAB
-               | Prims.CLt => ArAAB
-               | Prims.CLe => ArAAB))
+              of Prims.CEq => ArAAtoB
+               | Prims.CNe => ArAAtoB
+               | Prims.CLt => ArAAtoB
+               | Prims.CLe => ArAAtoB))
 
     val stringOp         : Mil.Prims.stringOp t =
         (fn so => 
             (case so
-              of Mil.Prims.SAllocate   => ArOther (1, 
-               | Mil.Prims.SDeallocate => 1
-               | Mil.Prims.SGetLen     => 1
-               | Mil.Prims.SGetChar    => 2
-               | Mil.Prims.SSetChar    => 3
-               | Mil.Prims.SEqual      => 2))
+              of Mil.Prims.SAllocate   => ArOther (1, 1)
+               | Mil.Prims.SDeallocate => ArOther (1, 0)
+               | Mil.Prims.SGetLen     => ArOther (1, 1)
+               | Mil.Prims.SGetChar    => ArOther (2, 1)
+               | Mil.Prims.SSetChar    => ArOther (3, 1)
+               | Mil.Prims.SEqual      => ArAAtoB))
 
     val dataOp           : Mil.Prims.vectorDescriptor -> Mil.Prims.dataOp t = 
         (fn vd => 
          fn d =>
             (case d 
-              of Prims.DBroadcast => 1
-               | Prims.DVector    => VectorDescriptor.elementCount vd
-               | Prims.DSub i     => 2
-               | Prims.DPermute v => 1
-               | Prims.DBlend     => 3
-               | Prims.DSplit     => 1
-               | Prims.DConcat    => 2))
+              of Prims.DBroadcast => ArOther (1, 1)
+               | Prims.DVector    => ArOther (VectorDescriptor.elementCount vd, 1)
+               | Prims.DSub i     => ArOther (1, 1)
+               | Prims.DPermute v => ArAtoA 
+               | Prims.DBlend     => ArAAtoA
+               | Prims.DSplit     => ArOther (1, 2)
+               | Prims.DConcat    => ArAAtoB))
 
 
     val prim             : Mil.Prims.prim t = 
@@ -1816,7 +1832,7 @@ struct
               of Mil.Prims.PNumArith  {typ, operator}  => arithOp operator
                | Mil.Prims.PFloatOp {typ, operator}    => floatOp operator
                | Mil.Prims.PNumCompare {typ, operator} => compareOp operator
-               | Mil.Prims.PNumConvert {to, from}      => 1
+               | Mil.Prims.PNumConvert {to, from}      => ArOther (1, 1)
                | Mil.Prims.PBitwise {typ, operator}    => bitwiseOp operator
                | Mil.Prims.PBoolean l                  => logicOp l
                | Mil.Prims.PCString s                  => stringOp s))
@@ -1825,46 +1841,52 @@ struct
         (fn v =>
             (case v
               of Mil.Prims.ViPointwise {descriptor, masked, operator}        => prim operator
-               | Mil.Prims.ViConvert {to, from}                              => 1
+               | Mil.Prims.ViConvert {to, from}                              => ArOther (1, 1)
                | Mil.Prims.ViCompare {descriptor, typ, operator}             => compareOp operator
                | Mil.Prims.ViReduction {descriptor, associativity, operator} => prim operator
                | Mil.Prims.ViData {descriptor, operator}                     => dataOp descriptor operator
                | Mil.Prims.ViMaskData {descriptor, operator}                 => dataOp descriptor operator
                | Mil.Prims.ViMaskBoolean {descriptor, operator}              => logicOp operator
-               | Mil.Prims.ViMaskConvert {to, from}                          => 1))
+               | Mil.Prims.ViMaskConvert {to, from}                          => ArOther (1, 1)))
 
     val runtime          : Mil.Prims.runtime t = 
         (fn r => 
             (case r
-              of Mil.Prims.RtFloatMk        => 2
-               | Mil.Prims.RtWriteln        => 1
-               | Mil.Prims.RtReadln         => 0
-               | Mil.Prims.RtAssert         => 1
-               | Mil.Prims.RtError          => 1
-               | Mil.Prims.RtDebug          => 1
-               | Mil.Prims.RtOpenOut        => 1
-               | Mil.Prims.RtGetStdout      => 0
-               | Mil.Prims.RtOutputByte     => 2
-               | Mil.Prims.RtCloseOut       => 1
-               | Mil.Prims.RtOpenIn         => 1
-               | Mil.Prims.RtGetStdin       => 0
-               | Mil.Prims.RtInputByte      => 1
-               | Mil.Prims.RtInputString    => 2
-               | Mil.Prims.RtInputAll       => 1
-               | Mil.Prims.RtIsEOF          => 1
-               | Mil.Prims.RtCloseIn        => 1
-               | Mil.Prims.RtCommandLine    => 0
-               | Mil.Prims.RtStringToNat    => 1
-               | Mil.Prims.RtStringToFloat  => 1
-               | Mil.Prims.RtFloatToString  => 2
-               | Mil.Prims.RtFloatToStringI => 2
-               | Mil.Prims.RtRatToString    => 1
-               | Mil.Prims.RtStringToRat    => 1
-               | Mil.Prims.RtResetTimer     => 1
-               | Mil.Prims.RtGetTimer       => 1
-               | Mil.Prims.RtVtuneAttach    => 0
-               | Mil.Prims.RtVtuneDetach    => 0
-               | Mil.Prims.RtArrayEval      => 1))
+	        of Mil.Prims.RtFloatMk              => ArAAtoB
+	         | Mil.Prims.RtWriteln              => ArOther (1, 0)
+	         | Mil.Prims.RtReadln               => ArOther (0, 1)
+	         | Mil.Prims.RtAssert               => ArOther (1, 1)
+	         | Mil.Prims.RtError                => ArAtoA
+	         | Mil.Prims.RtDebug                => ArOther (1, 0)
+	         | Mil.Prims.RtOpenOut              => ArOther (1, 1)
+	         | Mil.Prims.RtGetStdout            => ArOther (0, 1)
+	         | Mil.Prims.RtOutputByte           => ArOther (2, 0)
+	         | Mil.Prims.RtCloseOut             => ArOther (1, 0)
+	         | Mil.Prims.RtOpenIn               => ArOther (1, 1)
+	         | Mil.Prims.RtGetStdin             => ArOther (0, 1)
+	         | Mil.Prims.RtInputByte            => ArAtoA
+	         | Mil.Prims.RtInputString          => ArOther (2, 1)
+	         | Mil.Prims.RtInputAll             => ArOther (1, 1)
+	         | Mil.Prims.RtIsEOF                => ArOther (1, 1)
+	         | Mil.Prims.RtCloseIn              => ArOther (1, 0)
+	         | Mil.Prims.RtCommandLine          => ArOther (0, 1)
+	         | Mil.Prims.RtStringToNat          => ArOther (1, 1)
+	         | Mil.Prims.RtStringToFloat        => ArOther (1, 1)
+	         | Mil.Prims.RtFloatToString        => ArOther (2, 1)
+	         | Mil.Prims.RtFloatToStringI       => ArOther (2, 1)
+	         | Mil.Prims.RtRatNumerator         => ArAtoA
+	         | Mil.Prims.RtRatDenominator       => ArAtoA
+	         | Mil.Prims.RtEqual                => ArAAtoB
+	         | Mil.Prims.RtDom                  => ArOther (1, 1)
+	         | Mil.Prims.RtNub                  => ArOther (1, 1)
+	         | Mil.Prims.RtRatToUIntpChecked    => ArOther (1, 1)
+	         | Mil.Prims.RtRatToString          => ArOther (1, 1)
+	         | Mil.Prims.RtStringToRat          => ArOther (1, 1)
+	         | Mil.Prims.RtResetTimer           => ArOther (1, 0)
+	         | Mil.Prims.RtGetTimer             => ArOther (1, 1)
+	         | Mil.Prims.RtVtuneAttach          => ArOther (0, 0)
+	         | Mil.Prims.RtVtuneDetach          => ArOther (0, 0)
+	         | Mil.Prims.RtArrayEval            => ArOther (1, 0)))
 
     val t                : Mil.Prims.t t =
         (fn t => 

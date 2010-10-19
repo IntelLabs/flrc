@@ -31,7 +31,7 @@ sig
 
   datatype floatOp = 
     (* Unary *)
-      FaCeil | FaCos | FaFloor | FaMod | FaRcp | FaSin | FaSqrt | FaTan | FaTrunc 
+      FaACos | FaASin | FaCeil | FaCos | FaFloor | FaMod | FaRcp | FaSin | FaSqrt | FaTan | FaTrunc 
     (* Binary *)
     | FaPow
 
@@ -158,7 +158,7 @@ struct
 
   datatype floatOp = 
     (* Unary *)
-      FaCeil | FaCos | FaFloor | FaMod | FaRcp | FaSin | FaSqrt | FaTan | FaTrunc 
+      FaACos | FaASin | FaCeil | FaCos | FaFloor | FaMod | FaRcp | FaSin | FaSqrt | FaTan | FaTrunc 
     (* Binary *)
     | FaPow
 

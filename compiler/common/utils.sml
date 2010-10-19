@@ -130,6 +130,11 @@ structure Utils = struct
     struct
     (* List utilities *)
 
+    val dec : 'a MltonList.t -> ('a * 'a MltonList.t) option = 
+        fn l => (case l
+                  of [] => NONE
+                   | a::aa => SOME (a, aa))
+
     fun concatOption (l : 'a option MltonList.t) : 'a MltonList.t = MltonList.keepAllMap (l, Function.id)
 
     fun allEq eq l = 

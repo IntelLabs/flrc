@@ -119,11 +119,21 @@ functor MilAnalyseF (
 
   fun analyseFieldIdentifier (s, e, fi) =
       case fi
-       of M.FiFixed      idx        => ()
-        | M.FiVariable   opnd       => analyseOperand (s, e, opnd)
-        | M.FiViFixed    {typ, idx} => ()
-        | M.FiViVariable {typ, idx} => analyseOperand (s, e, idx)
-        | M.FiViIndexed  {typ, idx} => analyseOperand (s, e, idx)
+       of M.FiFixed      idx              => ()
+        | M.FiVariable   opnd             => analyseOperand (s, e, opnd)
+        | M.FiVectorFixed {descriptor, 
+                           mask, 
+                           index}         => analyseOperandO (s, e, mask)
+        | M.FiVectorVariable {descriptor, 
+                              base,
+                              mask,
+                              index, 
+                              kind}       => 
+          let
+            val () = analyseOperandO (s, e, mask)
+            val () = analyseOperand (s, e, index)
+          in ()
+          end
 
   fun analyseTupleField (s, e, M.TF {tupDesc, tup, field}) =
       let
@@ -135,7 +145,7 @@ functor MilAnalyseF (
   fun analyseRhs (s, e, rhs) =
       case rhs
        of M.RhsSimple simple => analyseSimple (s, e, simple)
-        | M.RhsPrim {prim, createThunks, args} => analyseOperands (s, e, args)
+        | M.RhsPrim {prim, createThunks, typs, args} => analyseOperands (s, e, args)
         | M.RhsTuple {mdDesc, inits} => analyseOperands (s, e, inits)
         | M.RhsTupleSub tf => analyseTupleField (s, e, tf)
         | M.RhsTupleSet {tupField, ofVal} =>

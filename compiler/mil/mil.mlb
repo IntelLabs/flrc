@@ -9,6 +9,7 @@ local
         mil.sml
         prims-utils.sml
         utils.sml
+        prims-parse-and-layout.sml
         layout.sml
         cfg.sml
         rewrite.sml

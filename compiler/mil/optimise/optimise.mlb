@@ -33,7 +33,7 @@ local
         rep-optimize.sml
         rep.sml
         flatten.sml
-        vectorize.sml
+(*        vectorize.sml*)
         branch-remove.sml
         loop-invert.sml
         (* normalize.sml *)
@@ -49,7 +49,7 @@ in
         structure MilRemoveBranch
         structure MilRep
         structure MilSimplify
-        structure MilVectorize
+(*        structure MilVectorize*)
         (* structure MilNewVectorize *)
         structure MilInlineAggressive   
         structure MilInlineProfile   

@@ -129,7 +129,6 @@ struct
                 | M.CIntegral n     => prints (d, "SConstant " ^ IntArb.stringOf n )
                 | M.CFloat n        => fail ("SConstant ", "float" )
                 | M.CDouble n       => fail ("SConstant ", "double" )
-                | M.CViVector n     => fail ("SConstant ", "vivector" )
                 | M.CViMask n       => fail ("SConstant ", "vimask" )
                 | M.CPok n          => fail ("SConstant ", "pok" )
                 | M.COptionSetEmpty => fail ("SConstant ", "optionsetempty" )

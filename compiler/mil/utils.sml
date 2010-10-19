@@ -6,6 +6,7 @@
 signature MACHINE_INT =
 sig
   val intArbTyp : Config.t -> IntArb.typ
+  val numericTyp : Config.t -> Mil.Prims.numericTyp
   val t : Config.t -> Mil.typ
   val fieldKind : Config.t -> Mil.fieldKind
   val int : Config.t * int -> Mil.constant
@@ -193,6 +194,7 @@ sig
   structure Prims : 
   sig
     structure Utils : PRIMS_UTILS
+
     structure NumericTyp : 
     sig 
       val tFloat  : Mil.typ
@@ -202,6 +204,7 @@ sig
       val tRat : Mil.typ
       val traceabilitySize : Config.t * Mil.Prims.numericTyp -> TraceabilitySize.t
     end
+
   end
 
   structure Typ :
@@ -343,6 +346,7 @@ sig
     val pObjKind : t -> Mil.pObjKind option
     structure Dec :
     sig
+      val cBoolean : t -> bool option
       val cRat : t -> IntInf.t option
       val cInteger : t -> IntInf.t option
       val cName : t -> Mil.name option
@@ -1076,9 +1080,9 @@ struct
 
   fun intArbTyp config = IA.T (Config.targetWordSize' config, sgn)
 
-  fun primNumTyp config = MP.NtInteger (MP.IpFixed (intArbTyp config))
+  fun numericTyp config = MP.NtInteger (MP.IpFixed (intArbTyp config))
 
-  fun t config = M.TNumeric (primNumTyp config)
+  fun t config = M.TNumeric (numericTyp config)
 
   fun fieldKind config = M.FkBits (ptrSize config)
 
@@ -1109,13 +1113,13 @@ struct
   fun maxValue config = intInf (config, IA.maxValue (intArbTyp config))
 
   fun binArith (config, a, o1, o2) =
-      M.RhsPrim {prim = MP.Prim (MP.PNumArith {typ = primNumTyp config, operator = a}),
+      M.RhsPrim {prim = MP.Prim (MP.PNumArith {typ = numericTyp config, operator = a}),
                  createThunks = false,
                  typs = Vector.new0 (),
                  args = Vector.new2 (o1, o2)}
 
   fun cmp (config, c, o1, o2) =
-      M.RhsPrim {prim = MP.Prim (MP.PNumCompare {typ = primNumTyp config, operator = c}),
+      M.RhsPrim {prim = MP.Prim (MP.PNumCompare {typ = numericTyp config, operator = c}),
                  createThunks = false,
                  typs = Vector.new0 (),
                  args = Vector.new2 (o1, o2)}
@@ -1420,7 +1424,10 @@ struct
                                #elts, C.vector Bool.compare)
         in
           case (c1, c2)
-           of (M.CRat r1,         M.CRat r2        ) => IntInf.compare (r1, r2)
+           of (M.CBoolean b1,     M.CBoolean b2    ) => Bool.compare (b1, b2)
+            | (M.CBoolean _,      _                ) => LESS 
+            | (_,                 M.CBoolean _     ) => GREATER
+            | (M.CRat r1,         M.CRat r2        ) => IntInf.compare (r1, r2)
             | (M.CRat _,          _                ) => LESS
             | (_,                 M.CRat _         ) => GREATER
             | (M.CInteger i1,     M.CInteger i2    ) => IntInf.compare (i1, i2)
@@ -1983,6 +1990,7 @@ struct
            | M.TBits vs                   => NONE
            | M.TNone                      => NONE
            | M.TNumeric _                 => NONE
+           | M.TBoolean                   => NONE
            | M.TName                      => SOME M.PokName
            | M.TViVector et               => NONE
            | M.TViMask et                 => NONE
@@ -2256,6 +2264,7 @@ struct
           | M.TBits vs                   => TS.TsBits vs
           | M.TNone                      => TS.TsNone
           | M.TNumeric nt                => Prims.NumericTyp.traceabilitySize (c, nt)
+          | M.TBoolean                   => TS.TsBits (ValueSize.wordSize c)
           | M.TName                      => TS.TsRef
           | M.TViVector et               => TS.TsBits (ValueSize.vectorSize c)
           | M.TViMask et                 => TS.TsMask et
@@ -2301,6 +2310,7 @@ struct
           | M.TBits vs                   => true
           | M.TNone                      => true
           | M.TNumeric _                 => true
+          | M.TBoolean                   => true
           | M.TName                      => true
           | M.TViVector et               => true
           | M.TViMask et                 => true
@@ -2466,6 +2476,7 @@ struct
            | M.TBits vs                   => SOME (M.FkBits (vsToFs vs))
            | M.TNone                      => NONE
            | M.TNumeric nt                => SOME (fromNumericTyp (c, nt))
+           | M.TBoolean                   => SOME (M.FkBits (FieldSize.wordSize c))
            | M.TName                      => SOME M.FkRef
            | M.TViVector et               => NONE
            | M.TViMask et                 => NONE
@@ -2576,7 +2587,8 @@ struct
 
     fun isCore c =
         case c
-         of M.CRat _          => true
+         of M.CBoolean _      => true
+          | M.CRat _          => true
           | M.CInteger _      => true
           | M.CName _         => true
           | M.CIntegral _     => true
@@ -2594,7 +2606,8 @@ struct
     val pObjKind = 
      fn c => 
         (case c
-          of M.CRat _          => NONE
+          of M.CBoolean _      => NONE
+           | M.CRat _          => NONE
            | M.CInteger _      => NONE
            | M.CName _         => SOME M.PokName
            | M.CIntegral _     => NONE
@@ -2607,6 +2620,8 @@ struct
 
     structure Dec =
     struct
+      val cBoolean  = 
+       fn c => (case c of M.CBoolean b => SOME b | _ => NONE)
       val cRat = 
        fn c => (case c of M.CRat r => SOME r | _ => NONE)
       val cInteger = 
@@ -2954,7 +2969,7 @@ struct
     fun arity (config, rhs) =
         case rhs
          of M.RhsSimple _                          => 1
-          | M.RhsPrim {prim, ...}                  => PrimsUtils.Arity.t prim
+          | M.RhsPrim {prim, ...}                  => #1 (PrimsUtils.Arity.count (PrimsUtils.Arity.t prim))
           | M.RhsTuple x                           => 1
           | M.RhsTupleSub _                        => 1
           | M.RhsTupleSet _                        => 0
@@ -4476,6 +4491,7 @@ struct
            | M.TPtr                       => t
            | M.TRef                       => t
            | M.TBits vs                   => t
+           | M.TNone                      => t
            | M.TNumeric _                 => t
            | M.TBoolean                   => t
            | M.TName                      => t

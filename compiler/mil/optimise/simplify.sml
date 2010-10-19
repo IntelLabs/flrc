@@ -14,14 +14,155 @@ sig
   val reduce : (PassData.t * IMil.t * IMil.WorkSet.ws) * t -> IMil.item List.t option
 end
 
+structure PrimsReduce :
+sig
+
+    structure Constant :
+    sig
+      datatype t =
+          CRat of Rat.t
+        | CInteger of IntInf.t
+        | CIntegral of IntArb.t
+        | CFloat of Real32.t
+        | CDouble of Real64.t
+        | CBool of bool
+      val fromMilConstant : Mil.constant -> t option
+      val toMilGlobal : Config.t * t -> Mil.global
+      val toMilConstant : Config.t * t -> Mil.constant option
+    end (* structure Constant *)
+
+    structure Operation :
+    sig
+      datatype 'a t =
+          OConstant of Constant.t
+        | OPrim of Mil.Prims.prim * 'a Vector.t
+        | OOther
+      val fromMilConstant : Mil.constant -> Mil.operand t
+      val fromMilGlobal : Mil.global -> Mil.operand t
+      val fromMilRhs : Mil.rhs -> Mil.operand t
+      val fromDef : MilUtils.Def.t -> Mil.operand t
+    end (* structure Operation *)
+
+    structure Reduce :
+    sig
+      datatype 'a t =
+          RrUnchanged
+        | RrBase of 'a
+        | RrConstant of Constant.t
+        | RrPrim of Mil.Prims.prim * 'a Vector.t
+
+      val prim : Config.t * Mil.Prims.prim * 'a Vector.t * ('a -> 'a Operation.t) -> 'a t
+
+    end (* structure Reduce *)
+
+end = 
+struct
+    structure Constant =
+    struct
+
+      datatype t =
+          CRat of Rat.t
+        | CInteger of IntInf.t
+        | CIntegral of IntArb.t
+        | CFloat of Real32.t
+        | CDouble of Real64.t
+        | CBool of bool
+
+      val fromMilConstant = 
+       fn c => 
+          (case c
+            of Mil.CRat i          => SOME (CRat (Rat.fromIntInf i))
+             | Mil.CInteger i      => SOME (CInteger i)
+             | Mil.CName _         => NONE
+             | Mil.CIntegral i     => SOME (CIntegral i)
+             | Mil.CBoolean b      => SOME (CBool b)
+             | Mil.CFloat f        => SOME (CFloat f)
+             | Mil.CDouble d       => SOME (CDouble d)
+             | Mil.CViMask _       => NONE
+             | Mil.CPok _          => NONE
+             | Mil.COptionSetEmpty => NONE
+             | Mil.CTypePH         => NONE)
+
+      val toMilGlobal = 
+       fn (config, c) => 
+          let
+            val simple = fn c => fn i => (Mil.GSimple o Mil.SConstant o c) i
+          in
+            case c
+             of CRat r      => Mil.GRat r
+              | CInteger i  => Mil.GInteger i
+              | CIntegral i => simple Mil.CIntegral i
+              | CFloat r    => simple Mil.CFloat r
+              | CDouble r   => simple Mil.CDouble r
+              | CBool b     => simple Mil.CBoolean b
+          end
+
+      val toMilConstant = 
+       fn (config, c) =>
+          (case toMilGlobal (config, c)
+            of Mil.GSimple (Mil.SConstant c) => SOME c
+             | _ => NONE)
+
+    end (* structure Constant *)
+
+    structure Operation =
+    struct
+
+      datatype 'a t =
+               OConstant of Constant.t
+             | OPrim of Mil.Prims.prim * 'a Vector.t
+             | OOther
+
+      val fromMilConstant = 
+       fn c => 
+          (case Constant.fromMilConstant c
+            of SOME c => OConstant c
+             | NONE   => OOther)
+
+      val fromMilGlobal = 
+       fn g => 
+          (case g
+            of Mil.GRat r     => OConstant (Constant.CRat r)
+             | Mil.GInteger i => OConstant (Constant.CInteger i)
+             | _              => OOther)
+
+      val fromMilRhs = 
+       fn rhs => 
+          (case rhs 
+            of Mil.RhsPrim {prim = Mil.Prims.Prim p, args, ...} => OPrim (p, args)
+             | _ => OOther)
+
+      val fromDef = 
+       fn def => 
+          (case def
+            of MilUtils.Def.DefGlobal g => fromMilGlobal g
+             | MilUtils.Def.DefRhs rhs => fromMilRhs rhs)
+
+    end (* structure Operation *)
+
+    structure Reduce =
+    struct
+      datatype 'a t =
+               RrUnchanged
+             | RrBase of 'a
+             | RrConstant of Constant.t
+             | RrPrim of Mil.Prims.prim * 'a Vector.t
+
+      val prim : Config.t * Mil.Prims.prim * 'a Vector.t * ('a -> 'a Operation.t) -> 'a t = fn _ => RrUnchanged
+
+    end (* structure Reduce *)
+
+end
+
 structure MilSimplify :> MIL_SIMPLIFY = 
 struct
 
   val passname = "MilSimplify"
 
   structure M = Mil
-  structure P = Prims
+  structure P = M.Prims
   structure MU = MilUtils
+  structure PU = MilUtils.Prims.Utils
   structure POM = PObjectModelCommon
   structure I = IMil
   structure IML = I.Layout
@@ -1593,15 +1734,15 @@ struct
     val primToLen = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dests, {prim, createThunks, args})) =>
+           fn ((d, imil, ws), (i, dests, {prim, createThunks, typs, args})) =>
               let
                 val dv = Try.V.singleton dests
-                val p = <@ MU.Prims.Dec.prim prim
-                val () = Try.require (p = Prims.PNub)
+                val p = <@ PU.T.Dec.runtime prim
+                val () = Try.require (p = P.RtNub)
                 val v1 = <@ MU.Simple.Dec.sVariable o Try.V.singleton @@ args
                 val {prim, args, ...} = <@ MU.Rhs.Dec.rhsPrim <! Def.toRhs o Def.get @@ (imil, v1)
-                val p = <@ MU.Prims.Dec.prim prim
-                val () = Try.require (p = Prims.PDom)
+                val p = <@ PU.T.Dec.runtime prim
+                val () = Try.require (p = P.RtDom)
                 val arrv = <@ MU.Simple.Dec.sVariable o Try.V.singleton @@ args
                 val config = PD.getConfig d
                 val uintv = IMil.Var.related (imil, dv, "uint", MU.Uintp.t config, M.VkLocal)
@@ -1627,48 +1768,49 @@ struct
     val primPrim = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dests, {prim, createThunks, args})) =>
+           fn ((d, imil, ws), (i, dests, {prim, createThunks, typs, args})) =>
               let
                 val dv = Try.V.singleton dests
 
-                val p = <@ MU.Prims.Dec.prim prim
+                val p = <@ PU.T.Dec.prim prim
 
                 val milToPrim = 
                  fn p => 
                     (case p
-                      of M.SConstant c => MU.Prims.Operation.fromMilConstant c
+                      of M.SConstant c => PrimsReduce.Operation.fromMilConstant c
                        | M.SVariable v => 
                          (case Def.toMilDef o Def.get @@ (imil, v)
-                           of SOME def => MU.Prims.Operation.fromDef def
-                            | NONE => Prims.OOther))
+                           of SOME def => PrimsReduce.Operation.fromDef def
+                            | NONE     => PrimsReduce.Operation.OOther))
 
                 val config = PD.getConfig d
 
-                val rr = P.reduce (config, p, Vector.toList args, milToPrim)
+                val rr = PrimsReduce.Reduce.prim (config, p, args, milToPrim)
 
                 val l = 
                     (case rr
-                      of P.RrUnchanged => Try.fail ()
-                       | P.RrBase new  =>
+                      of PrimsReduce.Reduce.RrUnchanged => Try.fail ()
+                       | PrimsReduce.Reduce.RrBase new  =>
                          let
                            val () = Use.replaceUses (imil, dv, new)
                            val () = IInstr.delete (imil, i)
                          in []
                          end
-                       | P.RrConstant c =>
+                       | PrimsReduce.Reduce.RrConstant c =>
                          let
                            val gv = Var.new (imil, "mrt_#", MU.Rational.t, M.VkGlobal)
-                           val mg = MU.Prims.Constant.toMilGlobal (PD.getConfig d, c)
+                           val mg = PrimsReduce.Constant.toMilGlobal (PD.getConfig d, c)
                            val g = IGlobal.build (imil, (gv, mg))
                            val () = Use.replaceUses (imil, dv, M.SVariable gv)
                            val () = IInstr.delete (imil, i)
                          in [I.ItemGlobal g]
                          end
-                       | P.RrPrim (p, ops) =>
+                       | PrimsReduce.Reduce.RrPrim (p, ops) =>
                          let
                            val rhs = M.RhsPrim {prim = P.Prim p, 
                                                 createThunks = createThunks,
-                                                args = Vector.fromList ops}
+                                                typs = typs,
+                                                args = ops}
                            val ni = MU.Instruction.new (dv, rhs)
                            val () = IInstr.replaceInstruction (imil, i, ni)
                          in [I.ItemInstr i]
