@@ -22,7 +22,7 @@ sig
   val operand     : Mil.operand                 rewriter
   val instruction : Mil.instruction             rewriterE
   val transfer    : Mil.transfer                rewriter
-  val block       : Mil.block                  rewriter
+  val block       : (Mil.label * Mil.block)     rewriter
   val codeBody    : Mil.codeBody                rewriter
   val code        : Mil.code                    rewriter
   val global      : (Mil.variable * Mil.global) rewriter
@@ -41,8 +41,8 @@ functor MilRewriterF (
   val operand     : (state, env, Mil.operand    ) MilRewriterClient.rewriter
   val instruction : (state, env, Mil.instruction) MilRewriterClient.rewriter
   val transfer    : (state, env, Mil.transfer   ) MilRewriterClient.rewriter
-  val block       : (state, env, Mil.block      ) MilRewriterClient.rewriter
-  val global      : (state, env, Mil.variable*Mil.global) MilRewriterClient.rewriter
+  val block       : (state, env, Mil.label * Mil.block) MilRewriterClient.rewriter
+  val global      : (state, env, Mil.variable * Mil.global) MilRewriterClient.rewriter
   val bind        : (state, env, Mil.variable   ) MilRewriterClient.binder
   val bindLabel   : (state, env, Mil.label      ) MilRewriterClient.binder
   (* Allows the rewriter to specify an ordering on the blocks *)
@@ -315,24 +315,25 @@ struct
         callClientCode (clientTransfer, doTransfer, state, env, transfer)
       end
 
-  fun block (state, env, blk) =
+  fun block (state, env, labelled_blk) =
       let
-        fun doBlock (state, env, M.B {parameters, instructions = is , transfer = t}) =
+        fun doBlock (state, env, (label, M.B {parameters, instructions = is , transfer = t})) =
           let
             val (env, ps) = bindVars (state, env, parameters)
             val (env, is) = instructions (state, env, is)
             val t = transfer (state, env, t)
             val blk = M.B {parameters = ps, instructions = is, transfer = t}
-          in blk
+          in (label, blk)
           end
       in
-        callClientCode (clientBlock, doBlock, state, env, blk)
+        callClientCode (clientBlock, doBlock, state, env, labelled_blk)
       end
       
   fun codeBody (state, env, cb) =
       let
         val entry = MilUtils.CodeBody.entry cb
         val lbts = cfgEnum (state, env, cb)
+
         fun bind (Tree.T ((l, blk), children), env) =
             let
               val (env, l) = bindLabel (state, env, l)
@@ -341,11 +342,13 @@ struct
               (Tree.T ((l, blk), children), env)
             end 
         and binds (children, env) = Vector.mapAndFold (children, env, bind)
+
         val (lbts, env) = binds (lbts, env)
         val entry = label (state, env, entry)
+
         fun doBlocks (Tree.T ((l, blk), children), env, blks) =
             let
-              val blk = block (state, env, blk)
+              val (l, blk) = block (state, env, (l, blk))
               val blks = doBlockss (children, env, blks)
               val blks = LD.insert (blks, l, blk)
             in blks
@@ -356,6 +359,7 @@ struct
               val blks = Vector.fold (children, blks, doOne)
             in blks
             end
+
         val blks = doBlockss (lbts, env, LD.empty)
         val cb = M.CB {entry = entry, blocks = blks}
       in cb

@@ -96,6 +96,7 @@ sig
                                                         step     : Rat.t}
                                                        
   val genInductionVariables : t * FMil.t * MilCfg.t -> t (* pre: requires all nodes *)
+
   val getInductionVariables : t * Mil.label -> inductionVariable list
   val inductionVars : t -> inductionVariable list Identifier.LabelDict.t
 
@@ -128,8 +129,43 @@ sig
    * pre: requires all nodes, exits, and induction variables
    *)
   val genTripCounts : t * FMil.t * MilCfg.t * (Mil.label * Mil.block) Tree.t -> t
+
   val getTripCount : t * Mil.label -> tripCount option
   val allTripCounts : t -> tripCount Identifier.LabelDict.t
+ 
+  (* Generate location inform on bindings, essentially
+     what is header of the loop that defines variable v *)
+
+  (* getBinderLocations returns a map from variables to the 
+    label of the header of the (inner most) 
+    loop in which the variable is defined
+   This information is used to calculate whether a variable is
+   a loop invariant in the current loop i.e. if it has a different 
+   header than the current loop then it is invariant in the current loop
+
+        example: consider a loop L1, L2, L3, where L2 is a nested loop.
+
+           L1(x):
+             y = a * x
+             ... L2(0)..
+           L2(z):
+             w = b + y
+             u = z * y
+             ... L2 ..L3 ...
+           L3:
+           ... L1 ...
+
+       getBinderLocations returns the map:
+         x -> L1
+         y -> L1
+         w -> L2
+         u -> L2
+         a -> ?  (thus invariant in both L1 and L2)
+         b -> ?  (ditto )
+        *)
+
+  val genBinderLocations : t -> t
+  val getBinderLocations : t -> Mil.label Identifier.VariableDict.t
 
   val layout : Config.t * Mil.symbolInfo * t -> Layout.t
   val layoutInductionVariable : Config.t * Mil.symbolInfo * inductionVariable -> Layout.t
@@ -156,6 +192,10 @@ struct
   structure MU = MilUtils
   structure MSTM = MU.SymbolTableManager
   structure Cfg = MilCfg
+  structure L = Layout
+  structure LU = LayoutUtils
+  structure ML = MilLayout
+
 
   type blocks = M.block LD.t
 
@@ -203,7 +243,8 @@ struct
     exits            : LS.t LD.t option,
     preheaders       : M.label LD.t option,
     inductionVars    : inductionVariable list LD.t option,
-    tripCounts       : tripCount LD.t option
+    tripCounts       : tripCount LD.t option,
+    binderLocations  : Mil.label Identifier.VariableDict.t
   }
 
   (* inLoops tracks which loops a block is in, nested or otherwise
@@ -350,7 +391,7 @@ struct
 
   fun fromLoops (c, si, {entry, loops, blocksNotInLoops}) = 
       LS {config = c, si = si, entry = entry, loops = loops, blocksNotInLoops = blocksNotInLoops, allNodes = NONE,
-          exits = NONE, preheaders = NONE, inductionVars = NONE, tripCounts = NONE}
+          exits = NONE, preheaders = NONE, inductionVars = NONE, tripCounts = NONE, binderLocations = VD.empty}
 
   fun build (c, si, cfg, dt) =
       let
@@ -383,7 +424,7 @@ struct
 
   fun genAllNodes ls =
       let
-        val LS {config, si, entry, loops, blocksNotInLoops, allNodes, exits, preheaders, inductionVars, tripCounts} =
+        val LS {config, si, entry, loops, blocksNotInLoops, allNodes, exits, preheaders, inductionVars, tripCounts, binderLocations} =
             ls
         val allNodes = ref LD.empty
         fun addNodes (h, ns) = allNodes := LD.insert (!allNodes, h, ns)
@@ -406,7 +447,7 @@ struct
         val r =
             LS {config = config, si = si, entry = entry, loops = loops, blocksNotInLoops = blocksNotInLoops,
                 allNodes = SOME (!allNodes), exits = exits, preheaders = preheaders, inductionVars = inductionVars,
-                tripCounts = tripCounts}
+                tripCounts = tripCounts, binderLocations = binderLocations}
       in r
       end
 
@@ -425,7 +466,8 @@ struct
 
   fun genExits ls =
       let
-        val LS {config, si, entry, loops, blocksNotInLoops, allNodes, exits, preheaders, inductionVars, tripCounts} =
+        val LS {config, si, entry, loops, blocksNotInLoops, allNodes, exits, preheaders, inductionVars, tripCounts, 
+               binderLocations} =
             ls
         val exits = ref LD.empty
         fun addExits (h, es) = exits := LD.insert (!exits, h, es)
@@ -449,7 +491,7 @@ struct
         val r =
             LS {config = config, si = si, entry = entry, loops = loops, blocksNotInLoops = blocksNotInLoops,
                 allNodes = allNodes, exits = SOME (!exits), preheaders = preheaders, inductionVars = inductionVars,
-                tripCounts = tripCounts}
+                tripCounts = tripCounts, binderLocations = binderLocations}
       in r
       end
 
@@ -540,7 +582,8 @@ struct
 
   fun addPreheadersA (ls, stm, phs) =
       let
-        val LS {config, si, entry, loops, blocksNotInLoops, allNodes, exits, preheaders, inductionVars, tripCounts} =
+        val LS {config, si, entry, loops, blocksNotInLoops, allNodes, exits, preheaders, inductionVars, tripCounts,
+                binderLocations} =
             ls
         val entry = Utils.Option.get (LD.lookup (phs, entry), entry)
         val blks = LD.map (blocksNotInLoops, fn (_, b) => retargetBlock (ls, phs, b))
@@ -567,7 +610,7 @@ struct
         val r =
             LS {config = config, si = si, entry = entry, loops = loops, blocksNotInLoops = blks,
                 allNodes = NONE, exits = exits, preheaders = SOME phs, inductionVars = inductionVars,
-                tripCounts = tripCounts}
+                tripCounts = tripCounts, binderLocations = binderLocations}
       in r
       end
 
@@ -857,6 +900,7 @@ struct
               val Tree.T (L {header, blocks, ...}, children) = lt
               val hb = Option.valOf (LD.lookup (blocks, header))
               val params = MU.Block.parameters hb
+              val M.B {parameters, ...} = hb
               val allNodes = getAllNodes (ls, header)
               (* Initial analysis *)
               fun doOne p = (p, IaUndetermined, LaUndetermined)
@@ -984,9 +1028,13 @@ struct
         val r =
             LS {config = #config x, si = #si x, entry = #entry x, loops = #loops x,
                 blocksNotInLoops = #blocksNotInLoops x, allNodes = #allNodes x, exits = #exits x,
-                preheaders = #preheaders x, inductionVars = SOME ivs, tripCounts = #tripCounts x}
+                preheaders = #preheaders x, inductionVars = SOME ivs, tripCounts = #tripCounts x, 
+                binderLocations = #binderLocations x}
       in r
       end
+ 
+  fun genInductionVariables' (fmil, cfg) ls =
+      genInductionVariables (ls, fmil,cfg)
 
   fun inductionVars (LS {inductionVars, ...})= 
       (case inductionVars
@@ -1152,9 +1200,13 @@ struct
         val r =
             LS {config = #config x, si = #si x, entry = #entry x, loops = #loops x,
                 blocksNotInLoops = #blocksNotInLoops x, allNodes = #allNodes x, exits = #exits x,
-                preheaders = #preheaders x, inductionVars = #inductionVars x, tripCounts = SOME tcs}
+                preheaders = #preheaders x, inductionVars = #inductionVars x, tripCounts = SOME tcs,
+               binderLocations = #binderLocations x}
       in r
       end
+
+  fun genTripCounts' (fmil, cfg, dt) ls =
+      genTripCounts (ls, fmil, cfg, dt)
 
   fun allTripCounts (LS {tripCounts, ...}) = 
       (case tripCounts
@@ -1162,6 +1214,97 @@ struct
          | NONE => fail ("allTripCounts", "trip counts have not been generated"))
 
   fun getTripCount (ls, h) = LD.lookup (allTripCounts ls, h)
+
+  (*** Invariant/binder locations calculation *)
+
+  val genBinderLocations : t -> t = 
+      fn ls =>
+       let
+         (* /appInstr/ - For a given loop header, tag all the variables defined
+                         by this instruction with the loop header *)
+         val appInstr : M.label -> (M.instruction * (M.label VD.t)) ->
+                        (M.label VD.t) =
+           fn header => fn (instr, dict) =>
+             let val M.I {dests, ...} = instr
+                 val destsMap = Vector.map (dests, fn x => (x, header))
+                 val dict' = VD.insertAll (dict, Vector.toList destsMap)
+             in dict'
+             end
+
+         (* /appBlocks/ - For a given loop header, tag all the formal parameters
+                          of a block, and then run appInstr on its instructions *)
+         val appBlock : M.label -> (M.block * (M.label VD.t)) -> (M.label VD.t) =
+           fn header => fn (block, dict) =>
+              let val M.B {parameters, instructions, ...} = block
+                  val paramsMap = Vector.map (parameters, fn x => (x, header))
+                  val dict' = VD.insertAll (dict, Vector.toList paramsMap)
+                  val dict'' = foldl (appInstr header) dict' (Vector.toList instructions)
+              in dict''
+              end
+  
+         (* /appLoop/ - Tag all the variables defined in a loop to be 
+                        by the loop's header *)
+         val appLoop : loop * (M.label VD.t) -> (M.label VD.t) =
+           fn (loop, dict) =>
+             let val L {header, blocks} = loop
+                 val dict' = foldl (appBlock header) dict (LD.range blocks)
+             in dict'
+             end
+
+         (* /appTree/ - Apply the binder location information process to a loopTree *)
+         val rec appTree : loopTree * (M.label VD.t) -> (M.label VD.t) =
+           fn (loopTree, dict) =>
+              let
+                val (Tree.T (node, children)) = loopTree
+              in
+                if (Vector.isEmpty children) then
+                  (* leaf node *)
+                  appLoop (node, dict)
+                else
+                  (* non-leaf node, recurse *)
+                  let
+                    val dict' = appLoop (node, dict)
+                    val dict'' = Vector.fold (children, dict', appTree)
+                  in 
+                    dict''
+                  end
+               end         
+
+         val debugPrint : (M.label VD.t) -> unit = 
+           fn dict =>
+            let
+              val varMap = VD.toList dict
+              val varMap' = map (fn (v, l) => 
+                                    L.seq [L.str (I.variableString' v),
+                                           L.str " => ",
+                                           L.str (I.labelString l),
+                                           L.str "\n"]) varMap
+              val header = L.str "Binder locations:\n"
+            in (LU.printLayout header;
+                LU.printLayout (L.seq (varMap')))
+            end
+
+         val LS {config, si, entry, loops, blocksNotInLoops,
+                 allNodes, exits, preheaders, inductionVars,
+                 tripCounts, ...} = ls             
+
+         val dict = VD.empty
+         (* for each loop tree, calculate the binding info *)
+         val dict' = Vector.fold (loops, dict, appTree)
+                     
+         val () = if Config.debug then
+                    debugPrint dict'
+                  else
+                    ()
+       in
+        LS {config = config, si = si, entry = entry, loops = loops,
+            blocksNotInLoops = blocksNotInLoops, allNodes = allNodes,
+            exits = exits, preheaders = preheaders, inductionVars = inductionVars,
+            tripCounts = tripCounts, binderLocations = dict'}
+       end             
+  
+  val getBinderLocations : t -> (Mil.label Identifier.VariableDict.t) =
+     fn (LS {binderLocations, ...}) => binderLocations
 
   (*** Layout ***)
 

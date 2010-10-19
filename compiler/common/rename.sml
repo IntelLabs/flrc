@@ -29,9 +29,16 @@ signature RENAME = sig
     (* Compose a specified renaming after *)
     val renameAfter  : variable * variable * t -> t
 
+    (* Outputs a list of pairs of the renamings *)
+    val toList : t -> (variable * variable) list
+
+    (* Reverse a renaming *)
+    val invert : t -> t
+
+    (* Compse two renamins e.g. compose (g, f) = Lookup(g, Lookup(f, x)) *)
     val compose      : t * t -> t
 
-    val layout       : t -> Layout.t
+    val layout       : t -> Layout.t    
 end
 
 
@@ -91,8 +98,24 @@ struct
               renameTo(map, x, y)
           end
 
-    fun compose (map1,map2) =
-        Fail.unimplemented ("Rename", "compose", "*")
+    fun toList (renaming) = VD.toList renaming
+
+    fun invert (renaming) = 
+        let
+          fun swap (a, b) = (b, a)
+         in
+          VD.fromList (map swap (VD.toList renaming))
+         end
+
+    fun compose (map2, map1) =
+        let
+          fun go ([], map') = map'
+            | go ((x, y)::rs, map') = 
+              case (use' (map2, y))
+               of SOME z => go (rs, renameTo(map', x, z))
+                | NONE => go (rs, map')
+        in go (VD.toList map1, none)
+        end
 
     fun layout map = 
         let

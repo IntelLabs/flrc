@@ -21,6 +21,7 @@ local
         analyse.sml
         stats.sml
         free-vars.sml
+        bound-vars.sml
         rename.sml      
         stream.sml
         stream2.sml
@@ -64,6 +65,7 @@ in
         structure MilCheck
         structure MilFragment
         structure MilFreeVars
+        structure MilBoundVars
         structure MilLayout
         structure MilLoop
         structure MilNameSmallValues

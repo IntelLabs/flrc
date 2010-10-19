@@ -13,6 +13,9 @@ structure Utils = struct
     (* General utilities *)
     fun flip2 (a,b) = (b,a) 
 
+
+ 
+
     structure Imperative = 
     struct
       val block : unit list -> unit = fn l => ()
@@ -42,11 +45,18 @@ structure Utils = struct
       val @@ : ('a -> 'b) * 'a -> 'b = 
        fn (f, a) => f a
 
-      (*(* infix left-associative application *)
-      infix 3 $
-      val $ : 'a -> ('a -> 'b) -> 'b =
-         fn f => (fn x => f x)*)
+      (* left-associating infix application operator *)
+      (* infix 3 $
+      fun (x:'a) $ (f:'a->'b) = f x *)
 
+      val curry : ('a * 'b -> 'c) -> ('a -> 'b -> 'c) =
+       fn f => (fn x => (fn y => f (x, y)))
+ 
+      val uncurry : ('a -> 'b -> 'c) -> ('a * 'b -> 'c) =
+       fn f => (fn (x, y) => f x y)
+
+      val flipExp : ('a -> 'b -> 'c) -> ('b -> 'a -> 'c) =
+       fn f => (fn y => (fn x => f x y))
 
       (* MLton sectioning and application operators *)
       (* infix 3 <\ \> *)
@@ -159,7 +169,10 @@ structure Utils = struct
         in (l1, l2, l3)
         end
 
-    fun mapFoldl (l, ix, f) =
+    val mapFoldl : ('a list * 'c * (('a * 'c) -> ('b * 'c)))
+                   -> ('b list * 'c) =
+       fn (l, ix, f) =>
+        
         let fun aux (item, (cx, a)) =
                 let val (nitem, nx) = f (item, cx) in (nx, nitem::a) end
           val (fx, l) = MltonList.fold (l, (ix, []), aux)
@@ -271,6 +284,23 @@ structure Utils = struct
           (case opt
             of SOME a => [a]
              | NONE => [])
+
+      val rec distribute : ('a option) list -> ('a list) option = 
+       fn list =>
+          case list
+           of []      => SOME []
+            | (x::xs) => Try.try (fn () =>
+                                  let val x' = Try.<- x
+                                      val xs' = Try.<- (distribute xs)
+                                  in (x'::xs')
+                                  end)
+
+      val distributeV : ('a option) vector -> ('a vector) option =
+       fn vector =>
+          case (distribute (MltonVector.toList vector))
+           of SOME vector' => SOME (MltonVector.fromList vector')
+            | NONE => NONE
+
 
     end (* structure Option *)
 
@@ -557,8 +587,7 @@ signature DICT = sig
     val foreach : 'a t * (key * 'a -> unit) -> unit
     val map : 'a t * (key * 'a -> 'b) -> 'b t
     val keepAllMap : 'a t * (key * 'a -> 'b option) -> 'b t
-    val mapFold :
-        'a t * 'b * (key * 'a * 'b -> 'c * 'b) -> 'c t * 'b
+    val mapFold : 'a t * 'b * (key * 'a * 'b -> 'c * 'b) -> 'c t * 'b
     val union : 'a t * 'a t * (key * 'a * 'a -> 'a) -> 'a t
     val intersect : 'a t * 'b t * (key * 'a * 'b -> 'c) -> 'c t
     val forall : 'a t * (key * 'a -> bool) -> bool
