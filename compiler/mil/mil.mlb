@@ -20,6 +20,7 @@ local
         free-vars.sml
         rename.sml      
         stream.sml
+        stream2.sml
         transform.sml
         loop.sml
         name-small-values.sml
@@ -48,6 +49,7 @@ in
         functor MilAnalyseF
         functor MilRewriterF
         functor MilStreamF
+        functor MilStreamUtilsF
         functor MilTransformF
 
         structure BothMil
@@ -57,6 +59,7 @@ in
         structure MilCallGraph
         structure MilCfg
         structure MilCheck
+        structure MilFragment
         structure MilFreeVars
         structure MilLayout
         structure MilLoop
@@ -66,6 +69,7 @@ in
         structure MilRename
         structure MilRewriterClient
         structure MilStats
+        structure MilStream
         structure MilType
         structure MilUtils
         structure MilUtils2

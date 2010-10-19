@@ -39,6 +39,17 @@ struct
    *   being parsed.  If the first lexical item matches, then errors result if the subsequent parse cannot be
    *   completed.
    *   Without an F suffix, a parser should produce an error if it cannot parse something.
+   *
+   * The rational between these conventions has to do with making choices between different forms and for combinators
+   * like zeroOrMore.  The || operator will try the second parser if the first parser fails.  Similar the zeroOrMore
+   * combinator needs to iterated parser to fail when there are no longer any items.  Thus we need parsers that
+   * fail when the current input does not look like the item we are trying to parse, but that once enough is seen
+   * to identify the item versus other alternatives then gives errors if the item is not completed correctly - so
+   * that we get more specific errors.  For the parser so far, one token of look ahead in the toplevel parsers is
+   * sufficient for this.  Some parser (e.g. typ) internally use multiple token look ahead to distinguish alternative
+   * (e.g. code versus closure type), but this is not exposed at the top-level parser level.  When there are not
+   * choices then we want to get an error even if the first token does not match.  Hence the different kinds of parsers
+   * and the naming conventions for them.
    *)
 
   val whiteF = P.satisfy (fn c => c = Char.space orelse c = Char.newline orelse c = #"\t")
@@ -46,7 +57,7 @@ struct
   val whitespace = P.ignore (P.zeroOrMore whiteF)
 
   (* Something is lexical if it matches exactly characters of the thing being parsed and not whitespace.
-   * Something is syntactically if it parses surrounding whitespace as well as the thing being parsed.
+   * Something is syntactic if it parses surrounding whitespace as well as the thing being parsed.
    * Convention: all syntactic parsers assume there is no whitespace at the beginning and parse whitespace at the end;
    *             the only exception is top-level parsers such as program that must also parse the initial whitespace.
    *)
@@ -188,6 +199,12 @@ struct
   val double = P.$$ unimplemented ("constant", "double")
 
   (*** State ***)
+
+  (* We use state even though we use a parsing monad.
+   * To make this work, two things must be true of the state and the use of it:
+   *   (1) The state update/lookup functions must be called during parsing and not during parser construction.
+   *   (2) The state updates must not require rollback when a paser fails as we have no way to call rollback functions.
+   *)
 
   datatype state = S of {stm : M.symbolTableManager, vars : M.variable SD.t ref, labels : M.label SD.t ref}
 

@@ -1,852 +1,526 @@
 (* The Intel P to C/Pillar Compiler *)
 (* Copyright (C) Intel Corporation, October 2006 *)
 
+(* This file contains two abstractions for building up code bodies for Mil code.
+ * Both are intended to contain parts of a code body.
+ * Fragments are just collections of complete blocks, complete in the sense of having a label, parameters,
+ * instructions, and transfer.
+ * Streams are collections of complete blocks plus a partial entry block and a partial exit block.  A partial entry
+ * block is one without a label and paramters.  A partial exit block is one without a transfer.  Note that the entry
+ * and exit blocks could be the same, and thus consist of just instructions.
+ * Another way to view streams is that it is a collection of code that can be fallen into and that can fall out.
+ * Two streams can be sequenced, the fall out of the first will fall into the second.  Similarly, code can be added
+ * before the fall in, or after the fall out.
+ * A fragment then is a collection code that has no fall in or fall out.
+ * For convenience, we also supply sources and sinks that have just a fall out or fall in respectively; alternatively
+ * that have a partial exit block or partial entry block respectively.
+ *)
+
+signature MIL_FRAGMENT =
+sig
+
+  type t
+
+  val empty      : t
+  val fromBlock  : Mil.label * Mil.block -> t
+  val fromBlocks : (Mil.label * Mil.block) list -> t
+
+  val merge      : t * t -> t
+  val mergen     : t list -> t
+
+  val toBlocksD  : t -> Mil.block Identifier.LabelDict.t
+  val toBlocksL  : t -> (Mil.label * Mil.block) list
+  val toBlocksV  : t -> (Mil.label * Mil.block) Vector.t
+
+end;
+
+structure MilFragment :> MIL_FRAGMENT =
+struct
+
+  structure AL = AppendList
+  structure LD = Identifier.LabelDict
+  structure M = Mil
+
+  datatype t = F of (M.label * M.block) AL.t
+
+  val empty : t = F AL.empty
+
+  fun fromBlock (l : M.label, b : M.block) : t = F (AL.single (l, b))
+
+  fun fromBlocks (lbs : (M.label * M.block) list) : t = F (AL.fromList lbs)
+
+  fun merge (F f1 : t, F f2 : t) : t = F (AL.append (f1, f2))
+
+  fun mergen (fs : t list) : t = F (AL.appends (List.map (fs, fn F f => f)))
+
+  fun toBlocksD (F f : t) : M.block LD.t =
+      AL.fold (f, LD.empty, fn ((l, b), blks) => LD.insert (blks, l, b))
+
+  fun toBlocksL (F f : t) : (M.label * M.block) list = AL.toList f
+
+  fun toBlocksV (F f : t) : (M.label * M.block) Vector.t = AL.toVector f
+
+end;
+
 signature MIL_STREAM =
+sig
+
+  type t
+  type source = Mil.label * Mil.variable Vector.t * t
+  type sink = t * Mil.transfer
+
+  val empty        : t
+  val instruction  : Mil.instruction -> t
+  val instructions : Mil.instruction list -> t
+  val bindsRhs     : Mil.variable Vector.t * Mil.rhs -> t
+  val bindRhs      : Mil.variable * Mil.rhs -> t
+  val doRhs        : Mil.rhs -> t
+  val transfer     : Mil.transfer * Mil.label * Mil.variable Vector.t -> t
+
+  val prependI  : Mil.instruction * t -> t
+  val prependIs : Mil.instruction list * t -> t
+  val prependTL : Mil.transfer * Mil.label * Mil.variable Vector.t * t -> t
+  val appendI   : t * Mil.instruction -> t
+  val appendIs  : t * Mil.instruction list -> t
+  val appendTL  : t * Mil.transfer * Mil.label * Mil.variable Vector.t -> t
+  val merge     : t * MilFragment.t -> t
+  val mergen    : t * MilFragment.t list -> t
+
+  val seq  : t * t -> t
+  val seqn : t list -> t
+
+  val finish : Mil.label * Mil.variable Vector.t * t * Mil.transfer -> MilFragment.t
+
+end;
+
+structure MilStream :> MIL_STREAM =
+struct
+
+  structure AL = AppendList
+  structure LD = Identifier.LabelDict
+  structure M = Mil
+  structure F = MilFragment
+
+  datatype partials =
+      PBB of M.instruction AL.t
+    | PExt of {entry : M.instruction AL.t * M.transfer, exit : M.label * M.variable Vector.t * M.instruction AL.t}
+
+  datatype t = S of {partials : partials, complete : F.t}
+
+  type source = Mil.label * Mil.variable Vector.t * t
+  type sink = t * Mil.transfer
+
+  val empty : t = S {partials = PBB AL.empty, complete = F.empty}
+
+  fun mkBlk (l : M.label, vs : M.variable Vector.t, is : M.instruction AL.t, t : M.transfer) : F.t =
+      F.fromBlock (l, M.B {parameters = vs, instructions = AL.toVector is, transfer = t})
+
+  fun seq (S {partials = p1, complete = c1} : t, S {partials = p2, complete = c2} : t) : t =
+    let
+      val (p, c') =
+          case (p1, p2)
+           of (PBB is1, PBB is2) => (PBB (AL.append (is1, is2)), F.empty)
+            | (PBB is1, PExt {entry = (is2, t2), exit}) =>
+              (PExt {entry = (AL.append (is1, is2), t2), exit = exit}, F.empty)
+            | (PExt {entry, exit = (l, vs, is1)}, PBB is2) =>
+              (PExt {entry = entry, exit = (l, vs, AL.append (is1, is2))}, F.empty)
+            | (PExt {entry = e1, exit = (l, vs, is1)}, PExt {entry = (is2, t), exit = e2}) =>
+              (PExt {entry = e1, exit = e2}, mkBlk (l, vs, AL.append (is1, is2), t))
+      val c = F.mergen [c1, c', c2]
+      val s = S {partials = p, complete = c}
+    in s
+    end
+
+  fun seqn (ss : t list) : t = List.fold (ss, empty, seq o Utils.flip2)
+
+  fun merge (S {partials, complete} : t, f : F.t) : t =
+      S {partials = partials, complete = F.merge (complete, f)}
+
+  fun mergen (S {partials, complete} : t, fs : F.t list) : t =
+      S {partials = partials, complete = F.mergen (complete::fs)}
+
+  fun instruction (i : M.instruction) : t = S {partials = PBB (AL.single i), complete = F.empty}
+
+  fun instructions (is : M.instruction list) : t = S {partials = PBB (AL.fromList is), complete = F.empty}
+
+  fun bindsRhs (vs : M.variable Vector.t, r : M.rhs) : t = instruction (M.I {dests = vs, n = 0, rhs = r})
+
+  fun bindRhs (v : M.variable, r : M.rhs) : t = bindsRhs (Vector.new1 v, r)
+
+  fun doRhs (r : M.rhs) : t = instruction (M.I {dests = Vector.new0 (), n = 0, rhs = r})
+
+  fun transfer (t : M.transfer, l : M.label, vs : M.variable Vector.t) : t =
+      S {partials = PExt {entry = (AL.empty, t), exit = (l, vs, AL.empty)}, complete = F.empty}
+
+  fun prependI (i : Mil.instruction, s : t) : t = seq (instruction i, s)
+  fun prependIs (is : Mil.instruction list, s : t) : t = seq (instructions is, s)
+  fun prependTL (t : Mil.transfer, l : Mil.label, vs : Mil.variable Vector.t, s : t) = seq (transfer (t, l, vs), s)
+  fun appendI (s : t, i : Mil.instruction) : t = seq (s, instruction i)
+  fun appendIs (s : t, is : Mil.instruction list) : t = seq (s, instructions is)
+  fun appendTL (s : t, t : Mil.transfer, l : Mil.label, vs : Mil.variable Vector.t) : t = seq (s, transfer (t, l, vs))
+
+  fun finish (l : M.label, vs : M.variable Vector.t, S {partials, complete} : t, t : M.transfer) : F.t =
+      case partials
+       of PBB is => F.merge (mkBlk (l, vs, is, t), complete)
+        | PExt {entry = (is1, t1), exit = (l2, vs2, is2)} =>
+          F.mergen [mkBlk (l, vs, is1, t1), complete, mkBlk (l2, vs2, is2, t)]
+
+end;
+
+signature MIL_STREAM_UTILS =
 sig
 
   type state
   type env
 
-  structure Fragment :
-  sig
+  type exp = MilStream.t * Mil.operand Vector.t
 
-    (* A fragment is a collection of label & blocks pairs. *)
-    type t
+  val join : state * env * (Mil.label * Mil.label -> MilStream.sink) * exp * exp * Mil.variable Vector.t -> MilStream.t
 
-    val merge     : state * env * t * t -> t
-    val mergen    : state * env * t list -> t
-    val block     : state * env * Mil.label * Mil.block -> t
-    val blocks    : state * env * t -> (Mil.label * Mil.block) List.t
-    val codeBody  : state * env * t -> Mil.block Identifier.LabelDict.t
+  val joinn : state * env * (Mil.label Vector.t -> MilStream.sink) * exp Vector.t * Mil.variable Vector.t
+              -> MilStream.t
 
-  end
+  val goto : state * env * Mil.label * Mil.operand Vector.t -> MilStream.t
 
-  structure Stream :
-  sig
+  val ifBool : state * env * Mil.operand * exp * exp * Mil.variable Vector.t -> MilStream.t
 
-    (* A stream has at most one designated entry point to which instructions
-     * may be prepended, and at most one designated exit point to which 
-     * instructions may be appended.  If there is no designated entry/exit
-     * point, any prepended/appended instructions are dead.  Other side exits
-     * and entries are expressible through labels, but are not tracked by the
-     * stream abstraction.
-     *)
-    type t
+  val ifConst : state * env * Mil.operand * Mil.constant * exp * exp * Mil.variable Vector.t -> MilStream.t
 
-    val new       : state * env -> t
+  val ifConsts : state * env * Mil.operand * (Mil.constant * exp) Vector.t * exp option * Mil.variable Vector.t
+                 -> MilStream.t
 
-    val seq       : state * env * t * t -> t
-    val seqn      : state * env * t list -> t
+  val ifZero : state * env * Mil.operand * exp * exp * Mil.variable Vector.t -> MilStream.t
 
-    val append    : state * env * t * Mil.instruction -> t
-    val appendl   : state * env * t * Mil.instruction list -> t
-    val prepend   : state * env * Mil.instruction * t -> t
-    val prependl  : state * env * Mil.instruction list * t -> t
+  val whenTrue : state * env * Mil.operand * MilStream.t -> MilStream.t
 
-    val instr     : state * env * Mil.instruction -> t
-    val instrs    : state * env * Mil.instruction list -> t
-    val instrMk   : state * env * Mil.variable vector * Mil.rhs -> t
-    val bindRhs   : state * env * Mil.variable * Mil.rhs -> t
-    val doRhs     : state * env * Mil.rhs -> t
+  val whenFalse : state * env * Mil.operand * MilStream.t -> MilStream.t
 
-    (* Label the entry, returning the label of the entry block.  The block
-     * entry is closed.
-     * 
-     * label (state, vs, S) == (l1, S') 
-     * where S' ==
-     * l1 (vs):
-     *    S;
-     *)
-    val label     : state 
-                    * env
-                    * (Mil.variable Vector.t)
-                    * t
-                    -> Mil.label * t
-    val labelWith : state 
-                    * env
-                    * Mil.label 
-                    * (Mil.variable Vector.t) 
-                    * t
-                    -> t
+  val call : state * env * Mil.call * Mil.operand Vector.t * Mil.cuts * Mil.effects * Mil.variable Vector.t
+             -> MilStream.t
 
-    (* Stream entry is left open
-     * enterWith (state, S, parms, F) = (l1, S')
-     * where S' = 
-     *
-     *    F (l1);
-     * l1 (parms):
-     *    S;
-     * 
-     *)
-    val enterWith  : state 
-                     * env
-                     * t 
-                     * Mil.variable Vector.t  (* Destinations *)
-                     * (state * env * Mil.label -> Mil.transfer) 
-                     -> Mil.label * t
+  val tailcall : state * env * Mil.call * Mil.operand Vector.t * bool * Mil.effects -> MilStream.t
 
-    (* Stream exit is closed.  Any subsequently appended 
-     * instructions are dead
-     *)
-    val terminate : state * env * t * Mil.transfer -> t
+  val return : state * env * Mil.operand Vector.t -> MilStream.t
 
-    (* Stream exit is closed. *)
-    val transfer : state * env * Mil.transfer -> t
+  val cut : state * env * Mil.variable * Mil.operand Vector.t * Mil.cuts -> MilStream.t
 
-    (* Stream exit is left open. 
-     * 
-     * exitWith (state, S, parms, F) = (S', l1) 
-     * where S' = 
-     *    S;
-     *    F (l1);
-     * l1 (parms):
-     * 
-     *)
-    val exitWith  : state 
-                    * env
-                    * t 
-                    * Mil.variable Vector.t  (* Destinations *)
-                    * (state * env * Mil.label -> Mil.transfer) 
-                    -> t * Mil.label
+  val loop :
+      state * env * (Mil.label * Mil.label -> MilStream.sink) * Mil.variable Vector.t *
+      (Mil.label * Mil.label -> MilStream.sink) * Mil.variable Vector.t
+      -> MilStream.t
 
-    (* Given a loop body and functions enterF and exitF,
-     * generate labels for the entry and exit points, 
-     * and use enterF and exitF to generate the appropriate
-     * transfers.
-     * loop (state, enterF, inargs, S, exitF, outargs) = (entry, exit, S')
-     * where S' =
-     * 
-     *   enterF (entry, exit)
-     * entry (inargs):
-     *   S
-     *   exitF (entry, exit)
-     * exit (outargs):
-     *
-     *)
-    val loop : state
-               * env
-               * (state * env * Mil.label * Mil.label -> Mil.transfer)
-               * Mil.variable Vector.t
-               * t
-               * (state * env * Mil.label * Mil.label -> Mil.transfer)
-               * Mil.variable Vector.t
-               -> Mil.label * Mil.label * t
+  type carriedVars = {
+    inits    : Mil.operand Vector.t,
+    bodyVars : Mil.variable Vector.t,
+    next     : Mil.operand Vector.t,
+    outVars  : Mil.variable Vector.t
+  }
 
-    (*  Given two streams, merge them to a common exit point
-     * (if they exit), and emit the two blocks.  The merge function 
-     * is called  with the two labels to produce an entry transfer point.
-     *  join (state, vs, (S1, rs1), (S2, rs2), F) ==
-     *
-     *       F (l1, l2):
-     *    l1: 
-     *       S1
-     *       goto exit (rs1)
-     *    l2:
-     *       S2
-     *       goto exit (rs2)
-     *    exit (vs):
-     *)
-    val join : state
-               * env
-               * Mil.variable Vector.t
-               * (t * (Mil.operand Vector.t))
-               * (t * (Mil.operand Vector.t))
-               * (state * env * Mil.label * Mil.label -> Mil.transfer)
-               -> t * Mil.label * Mil.label
-           
-   (* Stream should already be terminated.
-    * close (state, S, vs) = (l, f)
-    * where f = 
-    * l (vs):
-    *   S;
-    *)
-    val close : state * env * t * Mil.variable Vector.t
-                -> Mil.label * Fragment.t
+  val noCarried : carriedVars
 
-   (* Stream will be terminated. 
-    * closeWith (state, S, vs, t) = (l, f)
-    * where f = 
-    * l (vs):
-    *   S;
-    *   t;
-    *)
-    val closeWith : state 
-                    * env
-                    * t 
-                    * Mil.variable Vector.t 
-                    * Mil.transfer
-                    -> Mil.label * Fragment.t
+  val whileDo : state * env * carriedVars * (MilStream.t * Mil.operand) * MilStream.t -> MilStream.t
 
-  end
+  val doWhile : state * env * carriedVars * (Mil.operand Vector.t -> MilStream.t * Mil.operand) * MilStream.t
+                -> MilStream.t
 
-  structure Utils :
-  sig
-
-    (* Stream is terminated *)
-    val goto : state * env * Mil.label * Mil.operand Vector.t -> Stream.t
-
-    val ifTrue : state
-                 * env
-                 * Mil.variable Vector.t
-                 * Mil.operand
-                 * (Stream.t * (Mil.operand Vector.t))  (* then / true  *)
-                 * (Stream.t * (Mil.operand Vector.t))  (* else / false *)
-                 -> Stream.t
-
-    val ifFalse : state
-                  * env
-                  * Mil.variable Vector.t
-                  * Mil.operand
-                  * (Stream.t * (Mil.operand Vector.t)) (* then / false *)
-                  * (Stream.t * (Mil.operand Vector.t)) (* else / true  *)
-                  -> Stream.t
-
-    val ifConst : state
-                  * env
-                  * Mil.variable Vector.t
-                  * Mil.operand
-                  * Mil.constant
-                  * (Stream.t * (Mil.operand Vector.t))
-                  * (Stream.t * (Mil.operand Vector.t))
-                  -> Stream.t
-
-    (* operand should be a signed platform sized machine integer *)
-    val ifZero : state 
-                 * env
-                 * Mil.variable Vector.t
-                 * Mil.operand
-                 * (Stream.t * (Mil.operand Vector.t))
-                 * (Stream.t * (Mil.operand Vector.t))
-                 -> Stream.t
-
-    (* operand should be a signed platform sized machine integer *)
-    val ifNonZero : state 
-                    * env
-                    * Mil.variable Vector.t
-                    * Mil.operand
-                    * (Stream.t * (Mil.operand Vector.t))
-                    * (Stream.t * (Mil.operand Vector.t))
-                    -> Stream.t
-
-    val whenTrue : state * env * Mil.operand * Stream.t -> Stream.t
-
-    val whenFalse : state * env * Mil.operand * Stream.t -> Stream.t
-
-    (* Stream remains open ended *)
-    val call : state
-               * env
-               * Mil.variable Vector.t (* dests *)
-               * Mil.call
-               * Mil.operand Vector.t
-               * Mil.cuts
-               * Mil.effects
-               -> Stream.t
-
-    (* Stream is terminated *)
-    val tailcall : state
-                   * env
-                   * Mil.call
-                   * Mil.operand Vector.t
-                   * bool (* exits *)
-                   * Mil.effects
-                   -> Stream.t
-
-    (* Stream remains open ended *)
-    val evalThunk : state 
-                    * env
-                    * Mil.variable (* dest *)
-                    * Mil.fieldKind
-                    * Mil.eval
-                    * Mil.cuts
-                    * Mil.effects
-                    -> Stream.t
-
-    (* Stream is terminated *)
-    val return : state * env * Mil.operand Vector.t -> Stream.t
-
-    (* Stream is terminated *)
-    val cut : state * env * Mil.variable * Mil.operand Vector.t * Mil.cuts
-              -> Stream.t
-                     
-    (* Loop over an unsigned integer.
-     * intLoop (state, start, i, limit, incr, S) = S'
-     * where i is an unsigned platformsized machine integer and S' = 
-     * 
-     *    if (limit == start) 
-     *      goto exit ()
-     *    else 
-     *      goto loop (start)
-     *  loop (i):
-     *    S
-     *    ni = i + incr 
-     *    if ni < limit
-     *       goto loop (ni)
-     *    else
-     *       goto exit ()
-     *  exit ():
-     *)
-
-    val uintpLoop : state
-                    * env
-                    * Mil.operand
-                    * Mil.variable
-                    * Mil.operand
-                    * Mil.operand
-                    * Stream.t
-                    -> Stream.t
-
-    (* Loop over an unsigned integer with loop carried arguments.
-     * intLoop (state, start, i, limit, incr, inits, inargs, S, ops, outargs) 
-     *   = S'
-     * where is an unsigned platformsized machine integer and S' = 
-     * 
-     *    if (limit == start) 
-     *      goto exit (start, inits)
-     *    else 
-     *      goto loop (start, inits)
-     *  loop (i, vs):
-     *    S
-     *    ni = i + incr 
-     *    if ni < limit
-     *       goto loop (ni, ops)
-     *    else
-     *       goto exit (ni, ops)
-     *  exit (i', outargs):
-     *)
-    val uintpLoopCV : state
-                     * env
-                     * Mil.operand
-                     * Mil.variable
-                     * Mil.operand
-                     * Mil.operand 
-                     * Mil.operand Vector.t
-                     * Mil.variable Vector.t
-                     * Stream.t
-                     * Mil.operand Vector.t
-                     * Mil.variable Vector.t
-                     -> Stream.t
-
-  end
+  val uintpLoop : state * env * carriedVars * Mil.operand * Mil.operand * Mil.operand * (Mil.variable -> MilStream.t)
+                  -> MilStream.t
 
 end;
 
-functor MilStreamF (
-  type state
-  type env
-  val toConfig   : env -> Config.t
-  val getStm     : state -> Mil.symbolTableManager
-  val indent : int
-) :> MIL_STREAM where type state = state and type env = env =
+functor MilStreamUtilsF(type state
+                        type env
+                        val getStm : state -> Mil.symbolTableManager
+                        val getConfig : env -> Config.t)
+  :> MIL_STREAM_UTILS where type state = state and type env = env =
 struct
 
-   structure AL = AppendList 
-   structure LD = Identifier.LabelDict
-   structure M = Mil
-   structure MU = MilUtils
-
-   structure Chat = ChatF (struct
-                             type env = env
-                             val extract = toConfig
-                             val name = "MilStream"
-                             val indent = indent
-                           end)
-
-   type state = state
-   type env = env
-
-   fun nextBlock state = MU.SymbolTableManager.labelFresh (getStm state)
-
-   fun namedVar (state, hint, t, g) =
-       MU.SymbolTableManager.variableFresh (getStm state, hint ^ "_#", t, g)
-
-   fun relatedVar (state, v, hint, t, g) =
-       MU.SymbolTableManager.variableRelated (getStm state, v, hint, t, g)
-
-   structure Fragment =
-   struct
-
-     datatype t = F of (M.label * M.block) AL.t
-
-     val empty = F AL.empty
-
-     fun mergen (state, env, fs) = F (AL.appends (List.map (fs, fn F f => f)))
-
-     fun merge (state, env, F f1, F f2) = F (AL.append (f1, f2))
-
-     fun block (state, env, l, b) = F (AL.single (l, b))
-
-     fun blocks (state, env, F f) = AL.toList f
-
-     fun codeBody (state, env, F f) =
-         AL.fold (f, LD.empty, fn ((l, b), blks) => LD.insert (blks, l, b))
-
-     fun emitMilBlockI (F f, l, b) = F (AL.cons ((l, b), f))
-
-     fun emitPhiBlockI (state, env, f, l, ps, is, t) =
-         let
-           val b = M.B {parameters = ps,
-                        instructions = AL.toVector is,
-                        transfer = t}
-           val f = emitMilBlockI (f, l, b)
-         in f
-         end
-       
-     fun emitBlockI (state, env, f, l, is, t) =
-         emitPhiBlockI (state, env, f, l, Vector.new0 (), is, t)
-
-     fun emitPhiBlock (state, env, f, ps, is, t) =
-         let
-           val l = nextBlock state
-           val f = emitPhiBlockI (state, env, f, l, ps, is, t)
-         in (l, f)
-         end
-
-     fun emitBlock (state, env, f, is, t) =
-         emitPhiBlock (state, env, f, Vector.new0 (), is, t)
-
-   end
-
-   structure Stream =
-   struct
-
-     structure F = Fragment
-
-     datatype entry = 
-              ELabeled of M.label
-            | EBlock of (M.instruction AL.t * M.transfer) 
-
-     datatype exit = 
-              EClosed
-            | EOpen of (M.label * M.variable Vector.t * M.instruction AL.t)
-        
-     datatype t = BB of M.instruction AL.t
-                | EXT of {head : entry, tail : exit, frag : F.t}
-
-     fun getFrag (state, env, s) = 
-       (case s 
-         of BB _ => F.empty
-          | EXT {frag, ...} => frag)
-
-     fun getTail (state, env, s) = 
-         (case s 
-           of BB l => EOpen (nextBlock state, Vector.new0 (), l)
-            | EXT {tail, ...} => tail)
-
-     fun new (state, env) = BB AL.empty
-
-     fun seq (state, env, s1, s2) =
-         case (s1, s2)
-          of (EXT {head, tail = EClosed, frag = frag1}, 
-              EXT {head = ELabeled l, tail, frag = frag2}) =>
-             EXT {head = head, 
-                  tail = tail, 
-                  frag = F.merge (state, env, frag1, frag2)}
-           | (EXT {head, tail = EClosed, frag = frag1}, s2) =>
-             let
-               val () = Chat.warn0 (env,
-                                    "seq: Dropping dead code, tail is closed")
-               val f2 = getFrag (state, env, s2)
-               val f = F.merge (state, env, frag1, f2)
-               val s = 
-                   EXT {head = head, tail = getTail (state, env, s2), frag = f}
-             in s
-             end
-           | (s1, EXT {head = ELabeled l, tail, frag = frag2}) =>
-             let
-               val () = Chat.warn0 (env,
-                                    "seq: Dropping dead code, head is closed")
-               val head =
-                   case s1
-                    of EXT {head, ...} => head
-                     | _ => ELabeled l
-               val f1 = getFrag (state, env, s1)
-               val f = F.merge (state, env, f1, frag2)
-               val s = EXT {head = head, tail = tail, frag = f}
-             in s
-             end
-           | (BB l1, BB l2)  => BB (AL.append (l1, l2))
-           | (BB l1, EXT {head = EBlock (l2, t), tail, frag}) =>
-             let
-               val head = EBlock (AL.append (l1, l2), t)
-               val s = EXT {head = head, tail = tail, frag = frag}
-             in s
-             end
-           | (EXT {head, tail = EOpen (b1, vs, l1), frag}, BB l2) => 
-             let
-               val tail = EOpen (b1, vs, AL.append (l1, l2))
-               val s = EXT {head = head, tail = tail, frag = frag}
-             in s
-             end
-           | (EXT {head = head1, tail = EOpen (b1, vs1, l1), frag = frag1},
-              EXT {head = EBlock (l2, t2), tail = tail2, frag = frag2}) => 
-             let
-               val frag = F.merge (state, env, frag1, frag2)
-               val l = AL.append (l1, l2)
-               val frag = F.emitPhiBlockI (state, env, frag, b1, vs1, l, t2)
-               val s = EXT {head = head1, tail = tail2, frag = frag}
-             in s
-             end
-
-     fun seqn (state, env, ss) =
-         case ss
-          of [] => new (state, env)
-           | (s::ss) => 
-             List.fold (ss, s, fn (s, sofar) => seq (state, env, sofar, s))
-
-     fun appendl (state, env, s, i) =
-         let
-           val il = AL.fromList i
-           val res = 
-               case s
-                of BB l => BB (AL.append (l, il))
-                 | EXT {head, tail = EOpen (bid, args, l), frag} => 
-                   EXT {head = head, 
-                        tail = EOpen (bid, args, AL.append (l, il)),
-                        frag = frag}
-                 | EXT {head, tail = EClosed, frag} => 
-                   let
-                     val () = Chat.warn2 (env, "append: dropping dead code")
-                   in
-                     s
-                   end
-         in res
-         end
-
-
-     fun append (state, env, s, i) = appendl (state, env, s, [i])
-       
-     fun prependl (state, env, i, s) = 
-         let
-           val il = AL.fromList i
-           val res = 
-               case s
-                of BB l => BB (AL.append (il, l))
-                 | EXT {head = EBlock (l, tfer), tail, frag} => 
-                   EXT {head = EBlock (AL.append (il, l), tfer), 
-                        tail = tail, 
-                        frag = frag}
-                 | EXT {head = ELabeled l, tail, frag} => 
-                   let
-                     val () = Chat.warn2 (env, "prepend: dropping dead code")
-                   in s
-                   end
-         in res
-         end
-             
-     fun prepend (state, env, i, s) = prependl (state, env, [i], s)
-
-     fun instr (state, env, i) = append (state, env, new (state, env), i)
-
-     fun instrs (state, env, is) = appendl (state, env, new (state, env), is)
-
-     fun instrMk (state, env, dests, rhs) =
-         instr (state, env, M.I {dests = dests, n = 0, rhs = rhs})
-
-     fun bindRhs (state, env, x, rhs) = instrMk (state, env, Vector.new1 x, rhs)
-
-     fun doRhs (state, env, rhs) = instrMk (state, env, Vector.new0 (), rhs)
-
-     fun labelWith' (state, env, s, l, vs) =
-         case s
-          of BB is => 
-             let
-               val tail = EOpen (l, vs, is)
-               val f = F.empty
-             in (tail, f)
-             end
-           | EXT {head, tail, frag} => 
-             let
-               val (is, t) = 
-                   case head
-                    of ELabeled l => 
-                       (AL.empty, M.TGoto (MU.Target.fromVars (l, vs)))
-                     | EBlock b => b
-               val frag = F.emitPhiBlockI (state, env, frag, l, vs, is, t)
-             in (tail, frag)
-             end
-
-     fun label' (state, env, s, vs) =
-         case s
-          of BB is => 
-             let
-               val l = nextBlock state
-               val tail = EOpen (l, vs, is)
-               val f = F.empty
-             in (l, tail, f)
-             end
-           | EXT {head = ELabeled l, tail, frag} => (l, tail, frag)
-           | EXT {head = EBlock (is, t), tail, frag} => 
-             let
-               val l = nextBlock state
-               val frag = F.emitPhiBlockI (state, env, frag, l, vs, is, t)
-             in (l, tail, frag)
-             end
-
-     fun label (state, env, vs, s) =
-         let
-           val (l, tail, frag) = label' (state, env, s, vs)
-           val head = ELabeled l
-           val s = EXT {head = head, tail = tail, frag = frag}
-         in (l, s)
-         end
-
-     fun labelWith (state, env, l, vs, s) =
-         let
-           val (tail, frag) = labelWith' (state, env, s, l, vs)
-           val head = ELabeled l
-           val s = EXT {head = head, tail = tail, frag = frag}
-         in s
-         end
-
-     fun enterWith (state, env, s, vs, f) =
-         let
-           val (l, tail, frag) = label' (state, env, s, vs)
-           val t = f (state, env, l)
-           val head = EBlock (AL.empty, t)
-           val s = EXT {head = head, tail = tail, frag = frag}
-         in (l, s)
-         end
-
-     fun terminate' (state, env, s, t) =
-         case s
-          of BB is => (EBlock (is, t), F.empty)
-           | EXT {head, tail = EClosed, frag} => (head, frag)
-           | EXT {head, tail = EOpen (bid, args, instrs), frag} => 
-             let
-               val f = F.emitPhiBlockI (state, env, frag, bid, args, instrs, t)
-               val ef = (head, f)
-             in ef
-             end
-
-     fun terminate (state, env, s, t) =
-         let
-           val (head, frag) = terminate' (state, env, s, t)
-           val tail = EClosed
-           val s = EXT {head = head, tail = tail, frag = frag}
-         in s
-         end
-
-     fun transfer (state, env, t) = terminate (state, env, new (state, env), t)
-
-     fun exitWith (state, env, s, vs, f) =
-         let
-           val bid = nextBlock state
-           val t = f (state, env, bid)
-           val (head, frag) = terminate' (state, env, s, t)
-           val tail = EOpen (bid, vs, AL.empty)
-           val s = EXT {head = head, tail = tail, frag = frag}
-         in (s, bid)
-         end
-
-     fun loop (state, env, enterF, inargs, body, exitF, outargs) =
-         let
-           val entry = nextBlock state
-           val exit  = nextBlock state
-           val (tail, frag) = labelWith' (state, env, body, entry, inargs)
-           val entryT = enterF (state, env, entry, exit)
-           val exitT  = exitF (state, env, entry, exit)
-           val head = EBlock (AL.empty, entryT)
-           val s = EXT {head = head, tail = tail, frag = frag}
-           val (head, frag) = terminate' (state, env, s, exitT)
-           val tail = EOpen (exit, outargs, AL.empty)
-           val s = EXT {head = head, tail = tail, frag = frag}
-         in (entry, exit, s)
-         end
-
-     fun close (state, env, s, vs) =
-         let
-           (* s is closed by assumption, so ignore tail *)
-           val (l, tail, frag) = label' (state, env, s, vs)
-         in (l, frag)
-         end
-
-     fun closeWith (state, env, s, vs, t) =
-         let
-           val s = terminate (state, env, s, t)
-           val (l, f) = close (state, env, s, vs)
-         in (l, f)
-         end
-
-     fun join (state, env, vs, (p1, rs1), (p2, rs2), mergefn) =
-         let
-           val mergeId = nextBlock state
-           val goto1 = M.TGoto (M.T {block = mergeId, arguments = rs1})
-           val goto2 = M.TGoto (M.T {block = mergeId, arguments = rs2})
-           val (i1, f1) = closeWith (state, env, p1, Vector.new0 (), goto1)
-           val (i2, f2) = closeWith (state, env, p2, Vector.new0 (), goto2)
-           val frag = F.merge (state, env, f1, f2)
-           val t = mergefn (state, env, i1, i2)
-           val head = EBlock (AL.empty, t)
-           val tail = EOpen (mergeId, vs, AL.empty)
-           val s = EXT {head = head, tail = tail, frag = frag}
-       in (s, i1, i2)
-       end
-
-   end
-
-   structure Utils =
-   struct
-
-     open Stream
-
-     fun goto (state, env, l, os) =
-         terminate (state, env, new (state, env),
-                    M.TGoto (M.T {block = l, arguments = os}))
-
-     fun binConstSw (state, env, dests, opnd, c1, p1, c2, p2) =
-         let
-           fun doIt (state, env, i1, i2) =
-               let
-                 val cases = Vector.new2 ((c1, i1), (c2, i2))
-                 val s = MU.Switch.noArgsNoDefault (opnd, cases)
-                 val t = M.TCase s
-               in t
-               end
-         in 
-           join (state, env, dests, p1, p2, doIt)
-         end
-
-     fun getBools (env, g) =
-         let
-           val c = toConfig env
-           val t = MU.Bool.T c
-           val f = MU.Bool.F c
-         in g (t, f)
-         end
-
-     fun ifTrue (state, env, dests, opnd, p1, p2) =
-         getBools (env,
-                fn (t, f) =>
-                   #1 (binConstSw (state, env, dests, opnd, t, p1, f, p2)))
-
-     fun ifFalse (state, env, dests, opnd, p1, p2) =
-         getBools (env,
-                fn (t, f) =>
-                   #1 (binConstSw (state, env, dests, opnd, f, p1, t, p2)))
-
-     fun ifConst (state, env, dests, opnd, c1, p1, p2) =
-         let
-           fun doIt (state, env, i1, i2) =
-               let
-                 val cases = Vector.new1 ((c1, i1))
-                 val s = MU.Switch.noArgs (opnd, cases, SOME i2)
-                 val t = M.TCase s
-               in t
-               end
-         in 
-           #1 (join (state, env, dests, p1, p2, doIt))
-         end
-
-     fun zero env = MU.Sintp.zero (toConfig env)
-
-     fun ifZero (state, env, dests, opnd, p1, p2) =
-         ifConst (state, env, dests, opnd, zero env, p1, p2)
-
-     fun ifNonZero (state, env, dests, opnd, p1, p2) =
-         ifConst (state, env, dests, opnd, zero env, p2, p1)
-
-     fun whenBinConst (state, env, opnd, c1, c2, p) =
-         #1 (binConstSw (state, env, Vector.new0 (), opnd,
-                         c1, (p, Vector.new0()),
-                         c2, (new (state, env), Vector.new0 ())))
-
-     fun whenTrue (state, env, opnd, p) =
-         getBools (env,
-                fn (t, f) =>
-                   whenBinConst (state, env, opnd, t, f, p))
-
-     fun whenFalse (state, env, opnd, p) =
-         getBools (env,
-                fn (t, f) =>
-                   whenBinConst (state, env, opnd, f, t, p))
-
-     fun call (state, env, dests, c, args, cuts, fx) =
-         let
-           fun doIt (state, env, t) =
-               let
-                 val c = M.IpCall {call = c, args = args}
-                 val r = M.RNormal {rets = dests, block = t, cuts = cuts}
-                 val t = M.TInterProc {callee = c, ret = r, fx = fx}
-               in t
-               end
-           val code = new (state, env)
-           val (code, _) = exitWith (state, env, code, Vector.new0 (), doIt)
-         in code
-         end
-
-     fun tailcall (state, env, c, args, exits, fx) =
-         let
-           val c = M.IpCall {call = c, args = args}
-           val r = M.RTail {exits = exits}
-           val t = M.TInterProc {callee = c, ret = r, fx = fx}
-         in
-           terminate (state, env, new (state, env), t)
-         end
-
-     fun evalThunk (state, env, dest, t, e, cuts, fx) =
-         let
-           fun doIt (state, env, target) =
-               let
-                 val c = M.IpEval {typ = t, eval = e}
-                 val dests = Vector.new1 dest
-                 val r = M.RNormal {rets = dests, block = target, cuts = cuts}
-                 val t = M.TInterProc {callee = c, ret = r, fx = fx}
-               in t
-               end
-           val code = new (state, env)
-           val (code, _) = exitWith (state, env, code, Vector.new0 (), doIt)
-         in code
-         end
-
-     fun return (state, env, rs) =
-         terminate (state, env, new (state, env), M.TReturn rs)
-
-     fun cut (state, env, opnd, args, cuts) =
-         terminate (state, env, new (state, env), M.TCut {cont = opnd, args = args, cuts = cuts})
-
-     fun uintpLoopCV (state, env, start, i, limit, incr, inits, inargs, body, resv, outargs) =
-       let
-         val c = toConfig env
-         val ni = relatedVar (state, i, "next", MU.Uintp.t c, M.VkLocal)
-         val nd = namedVar (state, "mild", MU.Bool.t c, M.VkLocal)
-         val body = 
-             let
-               val inc = MU.Uintp.add (c, M.SVariable i, incr)
-               val inc = M.I {dests = Vector.new1 ni, n = 0, rhs = inc}
-               val test = MU.Uintp.lt (c, M.SVariable ni, limit)
-               val test = M.I {dests = Vector.new1 nd, n = 0, rhs = test}
-               val body = appendl (state, env, body, [inc, test])
-             in body
-             end
-         val inits' = Utils.Vector.cons (start, inits)
-         val inargs = Utils.Vector.cons (i, inargs)
-         val resv'  = Utils.Vector.cons (M.SVariable ni, resv)
-         val nd' = namedVar (state, "mild", MU.Bool.t c, M.VkLocal)
-         val preLoop = bindRhs (state, env, nd', MU.Uintp.lt (c, start, limit))
-         fun enterF (state, env, entry, exit) = 
-             let
-               val tt = M.T {block = entry, arguments = inits'}
-               val ft = M.T {block = exit,  arguments = inits}
-             in
-               MU.Bool.ifT (toConfig env, M.SVariable nd', {trueT = tt, falseT = ft})
-             end
-         fun exitF (state, env, entry, exit) = 
-             let
-               val tt = M.T {block = entry, arguments = resv'}
-               val ft = M.T {block = exit,  arguments = resv}
-             in
-               MU.Bool.ifT (toConfig env, M.SVariable nd, {trueT = tt, falseT = ft})
-             end
-         val (_, _, loop) =
-             loop (state, env, enterF, inargs, body, exitF, outargs)
-       in
-         seq (state, env, preLoop, loop)
-       end
-
-     fun uintpLoop (state, env, start, i, incr, limit, body) =
-         uintpLoopCV (state, env, start, i, incr, limit, Vector.new0 (),
-                      Vector.new0 (), body, Vector.new0 (), Vector.new0 ())
-
-   end
-
-end; (* MilStreamF *)
+  type state = state
+  type env = env
+
+  val modname = "MilStreamUtils"
+
+  structure M = Mil
+  structure MU = MilUtils
+  structure MSTM = MU.SymbolTableManager
+  structure MS = MilStream
+
+  type exp = MS.t * M.operand Vector.t
+
+  fun variableFresh (state : state, hint : string, t : M.typ) : M.variable =
+      MSTM.variableFresh (getStm state, "m" ^ hint ^ "_#", t, M.VkLocal)
+
+  fun variableClone (state : state, v : M.variable) : M.variable =
+      MSTM.variableClone (getStm state, v)
+
+  fun variableRelated (state : state, v : M.variable, hint : string, t : M.typ) : M.variable =
+      MSTM.variableRelated (getStm state, v, hint, t, M.VkLocal)
+
+  fun labelFresh (state : state) : M.label = MSTM.labelFresh (getStm state)
+
+  fun join (state : state, env : env, f : M.label * M.label -> MS.sink, e1 : exp, e2 : exp, vs : M.variable Vector.t)
+      : MS.t =
+      let
+        val l1 = labelFresh state
+        val l2 = labelFresh state
+        val lexit = labelFresh state
+        val (s1, t1) = f (l1, l2)
+        val (s2, os2) = e1
+        val t2 = M.TGoto (M.T {block = lexit, arguments = os2})
+        val (s3, os3) = e2
+        val t3 = M.TGoto (M.T {block = lexit, arguments = os3})
+        val s = MS.seqn [s1, MS.transfer (t1, l1, Vector.new0 ()), s2, MS.transfer (t2, l2, Vector.new0 ()), s3,
+                         MS.transfer (t3, lexit, vs)]
+      in s
+      end
+
+  fun joinn (state : state, env : env, f : M.label Vector.t -> MS.sink, exps : exp Vector.t, vs : M.variable Vector.t)
+      : MS.t =
+      let
+        val n = Vector.length exps
+        val ls = Vector.map (exps, fn _ => labelFresh state)
+        val lexit = labelFresh state
+        val (s1, t1) = f ls
+        val (l1, vs1) = if n > 0 then (Vector.sub (ls, 0), Vector.new0 ()) else (lexit, vs)
+        val s1 = MS.appendTL (s1, t1, l1, vs1)
+        fun doOne (i, (s, os)) =
+            let
+              val (l, vs) = if i + 1 < n then (Vector.sub (ls, i + 1), Vector.new0 ()) else (lexit, vs)
+              val s = MS.appendTL (s, M.TGoto (M.T {block = lexit, arguments = os}), l, vs)
+            in s
+            end
+        val ss = Vector.mapi (exps, doOne)
+        val s = MS.seq (s1, MS.seqn (Vector.toList ss))
+      in s
+      end
+
+  fun goto (state : state, env : env, l : M.label, args : M.operand Vector.t) : MS.t =
+      MS.transfer (M.TGoto (M.T {block = l, arguments = args}), labelFresh state, Vector.new0 ())
+
+  fun ifBool (state : state, env : env, on : M.operand, t : exp, f : exp, vs : M.variable Vector.t) : MS.t =
+      let
+        val config = getConfig env
+        val tc = MU.Bool.T config
+        val fc = MU.Bool.T config
+        fun genSwitch (lt, lf) = (MS.empty, M.TCase (MU.Switch.noArgsNoDefault (on, Vector.new2 ((tc, lt), (fc, lf)))))
+        val s = join (state, env, genSwitch, t, f, vs)
+      in s
+      end
+
+  fun ifConst (state : state, env : env, on : M.operand, c : M.constant, t : exp, f : exp, vs : M.variable Vector.t)
+      : MS.t =
+      let
+        fun genSwitch (lt, lf) = (MS.empty, M.TCase (MU.Switch.noArgs (on, Vector.new1 (c, lt), SOME lf)))
+        val s = join (state, env, genSwitch, t, f, vs)
+      in s
+      end
+
+  fun ifConsts (state   : state,
+                env     : env,
+                on      : M.operand,
+                cexps   : (M.constant * exp) Vector.t,
+                default : exp option,
+                vs      : M.variable Vector.t)
+      : MS.t =
+      let
+        val n = Vector.length cexps
+        val (cs, exps) = Vector.unzip cexps
+        fun genSwitch ls =
+            let
+              fun genCase (i, c) = (c, M.T {block = Vector.sub (ls, i), arguments = Vector.new0 ()})
+              val cases = Vector.mapi (cs, genCase)
+              fun genDefault _ = M.T {block = Vector.sub (ls, n - 1), arguments = Vector.new0 ()}
+              val default = Option.map (default, genDefault)
+              val t = M.TCase {on = on, cases = cases, default = default}
+            in (MS.empty, t)
+            end
+        val exps =
+            case default
+             of NONE => exps
+              | SOME e => Vector.concat [exps, Vector.new1 e]
+        val s = joinn (state, env, genSwitch, exps, vs)
+      in s
+      end
+
+  fun ifZero (state : state, env : env, on : M.operand, t : exp, f : exp, vs : M.variable Vector.t) : MS.t =
+      let
+        val config = getConfig env
+        val zero = MU.Uintp.zero config
+        val s = ifConst (state, env, on, zero, t, f, vs)
+      in s
+      end
+
+  fun whenTrue (state : state, env : env, on : M.operand, s : MS.t) : MS.t =
+      ifBool (state, env, on, (s, Vector.new0 ()), (MS.empty, Vector.new0 ()), Vector.new0 ())
+
+  fun whenFalse (state : state, env : env, on : M.operand, s : MS.t) : MS.t =
+      ifBool (state, env, on, (MS.empty, Vector.new0 ()), (s, Vector.new0 ()), Vector.new0 ())
+
+  fun call (state : state,
+            env   : env,
+            c     : M.call,
+            args  : M.operand Vector.t,
+            cuts  : M.cuts,
+            fx    : M.effects,
+            ress  : M.variable Vector.t)
+      : MS.t =
+      let
+        val lret = labelFresh state
+        val c = M.IpCall {call = c, args = args}
+        val r = M.RNormal {rets = ress, block = lret, cuts = cuts}
+        val t = M.TInterProc {callee = c, ret = r, fx = fx}
+        val s = MS.transfer (t, lret, Vector.new0 ())
+      in s
+      end
+
+  fun tailcall (state : state,
+                env   : env,
+                c     : M.call,
+                args  : M.operand Vector.t,
+                exits : bool,
+                fx    : M.effects)
+      : MS.t =
+      let
+        val ldummy = labelFresh state
+        val c = M.IpCall {call = c, args = args}
+        val r = M.RTail {exits = exits}
+        val t = M.TInterProc {callee = c, ret = r, fx = fx}
+        val s = MS.transfer (t, ldummy, Vector.new0 ())
+      in s
+      end
+
+  fun return (state : state, env : env, ress : M.operand Vector.t) : MS.t =
+      let
+        val ldummy = labelFresh state
+        val t = M.TReturn ress
+        val s = MS.transfer (t, ldummy, Vector.new0 ())
+      in s
+      end
+
+  fun cut (state : state, env : env, c : M.variable, args : M.operand Vector.t, cuts : M.cuts) : MS.t =
+      let
+        val ldummy = labelFresh state
+        val t = M.TCut {cont = c, args = args, cuts = cuts}
+        val s = MS.transfer (t, ldummy, Vector.new0 ())
+      in s
+      end
+
+  fun halt (state : state, env : env, arg : M.operand) : MS.t =
+      let
+        val ldummy = labelFresh state
+        val t = M.THalt arg
+        val s = MS.transfer (t, ldummy, Vector.new0 ())
+      in s
+      end
+
+  fun loop (state    : state,
+            env      : env,
+            genEnter : M.label * M.label -> MS.sink,
+            bodyVars : M.variable Vector.t,
+            genBody  : M.label * M.label -> MS.sink,
+            outVars  : M.variable Vector.t)
+      : MS.t =
+      let
+        val lbody = labelFresh state
+        val lexit = labelFresh state
+        val (s1, t1) = genEnter (lbody, lexit)
+        val (s2, t2) = genBody (lbody, lexit)
+        val s = MS.seqn [s1, MS.transfer (t1, lbody, bodyVars), s2, MS.transfer (t2, lexit, outVars)]
+      in s
+      end
+
+  type carriedVars = {
+    inits    : M.operand Vector.t,
+    bodyVars : M.variable Vector.t,
+    next     : M.operand Vector.t,
+    outVars  : M.variable Vector.t
+  }
+
+  val noCarried : carriedVars =
+      {inits = Vector.new0 (), bodyVars = Vector.new0 (), next = Vector.new0 (), outVars = Vector.new0 ()}
+
+  fun whileDo (state : state,
+               env   : env,
+               cvs   : carriedVars,
+               test  : MS.t * M.operand,
+               body  : MS.t)
+      : MS.t =
+      let
+        val config = getConfig env
+        val ct = MU.Bool.T config
+        val cf = MU.Bool.F config
+        val {inits, bodyVars, next, outVars} = cvs
+        fun genEntry (lbody, lexit) = (MS.empty, M.TGoto (M.T {block = lbody, arguments = inits}))
+        fun genBody (lbody, lexit) =
+            let
+              val lcont = labelFresh state
+              val case1 = (ct, M.T {block = lcont, arguments = Vector.new0 ()})
+              val case2 = (cf, M.T {block = lexit, arguments = Vector.map (bodyVars, M.SVariable)})
+              val t1 = M.TCase {on = #2 test, cases = Vector.new2 (case1, case2), default = NONE}
+              val s = MS.seqn [#1 test, MS.transfer (t1, lcont, Vector.new0 ()), body]
+              val t2 = M.TGoto (M.T {block = lbody, arguments = next})
+            in (s, t2)
+            end
+        val s = loop (state, env, genEntry, bodyVars, genBody, outVars)
+      in s
+      end
+
+  fun doWhile (state   : state,
+               env     : env,
+               cvs     : carriedVars,
+               genTest : M.operand Vector.t -> MS.t * M.operand,
+               body    : MS.t)
+      : MS.t =
+      let
+        val config = getConfig env
+        val ct = MU.Bool.T config
+        val cf = MU.Bool.T config
+        val {inits, bodyVars, next, outVars} = cvs
+        fun genEntry (lbody, lexit) =
+            let
+              val (s, b) = genTest inits
+              val cases = ((ct, M.T {block = lbody, arguments = inits}), (cf, M.T {block = lexit, arguments = inits}))
+              val t = M.TCase {on = b, cases = Vector.new2 cases, default = NONE}
+            in (s, t)
+            end
+        fun genBody (lbody, lexit) =
+            let
+              val (s', b) = genTest next
+              val cases = ((ct, M.T {block = lbody, arguments = next}), (cf, M.T {block = lexit, arguments = next}))
+              val t = M.TCase {on = b, cases = Vector.new2 cases, default = NONE}
+              val s = MS.seq (body, s')
+            in (s, t)
+            end
+        val s = loop (state, env, genEntry, bodyVars, genBody, outVars)
+      in s
+      end
+
+  fun uintpLoop (state   : state,
+                 env     : env,
+                 cvs     : carriedVars,
+                 init    : M.operand,
+                 limit   : M.operand,
+                 step    : M.operand,
+                 genBody : M.variable -> MS.t)
+      : MS.t =
+      let
+        val config = getConfig env
+        val index = variableFresh (state, "idx", MU.Uintp.t config)
+        val index' = variableClone (state, index)
+        val nexti = variableRelated (state, index, "next", MU.Uintp.t config)
+        val {inits, bodyVars, next, outVars} = cvs
+        val vcons = Utils.Vector.cons
+        val cvs = {inits = vcons (init, inits), bodyVars = vcons (index, bodyVars),
+                   next = vcons (M.SVariable nexti, next), outVars = vcons (index', outVars)}
+        fun genTest os =
+            let
+              val nd = variableFresh (state, "ild", MU.Bool.t config)
+              val s = MS.bindRhs (nd, MU.Uintp.lt (config, Vector.sub (os, 0), limit))
+            in (s, M.SVariable nd)
+            end
+        val body = MS.seq (genBody index, MS.bindRhs (nexti, MU.Uintp.add (config, M.SVariable index, step)))
+        val s = doWhile (state, env, cvs, genTest, body)
+      in s
+      end
+
+end;
