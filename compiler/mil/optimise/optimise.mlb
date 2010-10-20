@@ -36,7 +36,6 @@ local
         vectorize.sml
         branch-remove.sml
         loop-invert.sml
-        normalize.sml
         new-vectorize.sml
 in
         structure MilContify
