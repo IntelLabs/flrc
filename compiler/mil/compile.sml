@@ -30,11 +30,10 @@ struct
        (#"S", MilSimplify.pass        ),
        (#"s", MilLowerPSums.pass      ),
        (#"t", MilLowerPTypes.pass     ),
-       (*(#"n", MilNormalize.pass       ),*)
        (#"V", MilCse.pass             ),
-       (#"Y", MilLoopInvert.pass      ) (*,
-       (#"z", MilNewVectorize.pass    ),*)
-(*       (#"Z", MilVectorize.pass       )*)
+       (#"Y", MilLoopInvert.pass      ),
+       (#"z", MilNewVectorize.pass    )
+   (*  (#"Z", MilVectorize.pass       )*)
       ]
 
   val subPasses = List.map (passes, #2)
