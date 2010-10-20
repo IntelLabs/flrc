@@ -789,7 +789,7 @@ struct
         let
           val res = 
 	      case p
-	       of Mil.Prims.RtFloatMk              => "FloatMk"
+	       of Mil.Prims.RtFloatMk              => "PFloatMk"
 	        | Mil.Prims.RtWriteln              => "PWriteln"
 	        | Mil.Prims.RtReadln               => "PReadln"
 	        | Mil.Prims.RtAssert               => "PAssert"

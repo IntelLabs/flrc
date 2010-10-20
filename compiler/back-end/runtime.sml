@@ -431,8 +431,8 @@ struct
     val getFloatPrecisionName = 
      fn fp => 
         (case fp
-          of P.FpSingle => "Float"
-           | P.FpDouble => "Double")
+          of P.FpSingle => "Float32"
+           | P.FpDouble => "Float64")
 
     val getIntPrecisionName = 
         fn ip => 
