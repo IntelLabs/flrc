@@ -806,7 +806,7 @@ struct
       in ts
       end
 
-  fun instruction (s, e, msg, M.I {dests, n, rhs = r}) =
+  fun instruction (s, e, msg, (M.I {dests, n, rhs = r})) =
       let
         val ts = rhs (s, e, msg, r)
         (* XXX NG: If we used the dominator tree then we would bind dest *)

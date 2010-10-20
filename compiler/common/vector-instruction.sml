@@ -111,7 +111,9 @@ struct
       ViUInt8   | ViUInt16  | ViUInt32 | ViUInt64
     | ViSInt8   | ViSInt16  | ViSInt32 | ViSInt64
     | ViFloat16 | ViFloat32 | ViFloat64
-   
+
+  structure IA = IntArb
+  
   datatype prim =
          (* bitwise ops per element *)
            ViShiftL of elemType (* shift logical *)
@@ -171,6 +173,7 @@ struct
 
   datatype t = TVector of elemType | TMask of elemType
 
+
   fun typeOf prim = 
       case prim
        of  ViShiftL et  => ([TVector et, TVector et], TVector et)
@@ -220,7 +223,8 @@ struct
          | ViLe et      => ([TVector et, TVector et], TVector et)
          | ViSelect et  => ([TVector et, TVector et], TVector et)
          | ViPermute (et,  _) => ([TVector et, TVector et], TVector et)
-         | ViInit et    => ([TVector et            ], TVector et)
+         | ViInit et    => ([TVector et            ], TVector et) 
+
 
   fun numElemTypeBytes vet =
       case vet
