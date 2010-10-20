@@ -212,6 +212,7 @@ sig
 
     type t = Mil.typ
     val valueSize : Config.t * t -> ValueSize.t option
+    val fieldSize : Config.t * t -> Mil.fieldSize (* PRE: valid conversion *)
     val numBits : Config.t * t -> int option
     val numBytes : Config.t * t -> int option
     val traceabilitySize : Config.t * t -> TraceabilitySize.t
@@ -2294,6 +2295,11 @@ struct
            | TS.TsMask et   => M.TViMask et)
 
     fun valueSize (config, t) =  TS.valueSize (config, traceabilitySize (config, t))
+
+    fun fieldSize (config, t) = 
+        (case valueSize (config, t)
+          of SOME vs => FieldSize.fromValueSize vs
+           | NONE => Fail.fail ("MilUtils.Typ", "fieldSize", "Typ has not size"))
 
     fun numBytes (config, t) = Option.map (valueSize (config, t), ValueSize.numBytes)
 
