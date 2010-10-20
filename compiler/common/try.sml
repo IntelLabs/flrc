@@ -19,7 +19,7 @@ sig
   val otherwise : 'a t * 'a -> 'a
   val bool : 'a t -> bool
   val option : 'a t -> 'a option
-
+ 
 
   (* Destructors.  These all might fail *)
   val fail : unit -> 'a

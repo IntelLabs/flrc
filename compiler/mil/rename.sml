@@ -6,6 +6,7 @@ sig
   type t
   val program     : Config.t * t * Mil.t -> Mil.t
   val global      : Config.t * t * Mil.variable * Mil.global -> Mil.variable * Mil.global
+  val block       : Config.t * t * Mil.label * Mil.block -> (Mil.label * Mil.block)
   val instruction : Config.t * t * Mil.instruction -> Mil.instruction
   val transfer    : Config.t * t * Mil.transfer -> Mil.transfer
 end
@@ -79,6 +80,13 @@ struct
                     val cfgEnum = cfgEnum
                   end)
 
+    fun block (c, r, l, b) = 
+     let
+       val (s, e) = mkStateEnv (c, r)
+       val (l, b) = MR.block (s, e, (l, b))
+     in (l, b)
+     end
+
     fun global (c, r, v, g) =
         let
           val (s, e) = mkStateEnv (c, r)
@@ -115,6 +123,7 @@ struct
     type t = Rename.t
     fun lifts (r : t) : VarLabel.t = (r, LD.empty)
     fun global (c, r, v, g) = VarLabel.global (c, lifts r, v, g)
+    fun block (c, r, l, b) = VarLabel.block (c, lifts r, l, b)
     fun lift f (c, r, i) = f (c, lifts r, i)
     val instruction = lift VarLabel.instruction
     val transfer = lift VarLabel.transfer
@@ -126,6 +135,7 @@ struct
     type t = Mil.label LD.t
     fun lifts d = (Rename.none, d)
     fun global (c, r, v, g) = VarLabel.global (c, lifts r, v, g)
+    fun block (c, r, l, b) = VarLabel.block (c, lifts r, l, b)
     fun lift f (c, r, i) = f (c, lifts r, i)
     val instruction = lift VarLabel.instruction
     val transfer = lift VarLabel.transfer
