@@ -159,6 +159,7 @@ sig
     val toValueSize : t -> Mil.valueSize
     val halfSize : t -> t option
     val doubleSize : t -> t option
+    val platformSize : Config.t -> t
     structure Dec : 
     sig
       val vs64   : t -> unit option
@@ -1395,6 +1396,12 @@ struct
            | Mil.Prims.Vs1024 => Mil.Vs1024)
     val halfSize : t -> t option = fn vs => fromBits ((numBits vs) div 2)
     val doubleSize : t -> t option = fn vs => fromBits ((numBits vs) * 2)
+    val platformSize : Config.t -> t = 
+     fn c =>
+        (case Config.targetVectorSize c
+          of Config.Vs128 => Mil.Prims.Vs128
+           | Config.Vs256 => Mil.Prims.Vs256
+           | Config.Vs512 => Mil.Prims.Vs512)
     structure Dec = 
     struct
       val vs64   = fn ve => (case ve of Mil.Prims.Vs64 => SOME () | _ => NONE)
