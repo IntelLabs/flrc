@@ -127,6 +127,8 @@ sig
     val vectorTyp : Mil.Prims.vectorSize -> Pil.T.t
     val numericTyp : Mil.Prims.numericTyp -> Pil.T.t
     val call : Mil.Prims.t * bool * Pil.E.t Vector.t * Pil.E.t list -> Pil.S.t
+    val vectorLoadV : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorStoreV : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
   end
 
   structure Object :
@@ -570,6 +572,36 @@ struct
         val s = Pil.S.expr e
       in s
       end
+
+    val fieldKindName = 
+        fn fk => 
+           (case fk 
+             of M.FkRef         => 
+                Fail.unimplemented ("Runtime.Prims", "fieldKindName", "Ref")
+              | M.FkBits M.Fs8  =>
+                Fail.unimplemented ("Runtime.Prims", "fieldKindName", "B8")
+              | M.FkBits M.Fs16 =>
+                Fail.unimplemented ("Runtime.Prims", "fieldKindName", "B16")
+              | M.FkBits M.Fs32 => "32"
+              | M.FkBits M.Fs64 => "64"
+              | M.FkFloat       => "F32"
+              | M.FkDouble      => "F64")
+
+    val vectorLoadV : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier = 
+     fn (vd, fk) => 
+        let
+          val vs = getVectorSizeName (PU.VectorDescriptor.vectorSize vd)
+          val fk = fieldKindName fk
+        in Pil.identifier ("pLsrVector" ^ vs ^ fk ^ "LoadV")
+        end
+
+    val vectorStoreV : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier = 
+     fn (vd, fk) => 
+        let
+          val vs = getVectorSizeName (PU.VectorDescriptor.vectorSize vd)
+          val fk = fieldKindName fk
+        in Pil.identifier ("pLsrVector" ^ vs ^ fk ^ "StoreV")
+        end
 
   end
 

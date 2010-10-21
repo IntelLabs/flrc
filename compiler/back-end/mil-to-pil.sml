@@ -1130,7 +1130,7 @@ struct
 
   datatype subSetKind =
       SskScalar
-    | SskVectorResult of VI.elemType
+    | SskVectorResult of Mil.Prims.vectorDescriptor
     | SskVectorIndex of VI.elemType
 
   fun getFieldDescriptor (M.TD {fixed, array, ...}, i) =
@@ -1153,6 +1153,15 @@ struct
            SskScalar,
            getArrayDescriptor tupDesc)
         | M.FiVectorFixed _ => Fail.fail ("MilToPil", "doTupleField", "FiVectorFixed")
+        | M.FiVectorVariable {descriptor, 
+                              base = M.TbScalar, 
+                              mask = NONE, 
+                              index, 
+                              kind = M.VikStrided 1} =>
+          (OM.arrayOffset (state, env, tupDesc),
+           SOME (genOperand (state, env, index)),
+           SskVectorResult descriptor,
+           getArrayDescriptor tupDesc)
         | M.FiVectorVariable _ => Fail.fail ("MilToPil", "doTupleField", "FiVectorFixed")
 (*
           (OM.fieldOffset (state, env, tupDesc, idx),
@@ -1176,7 +1185,7 @@ struct
         val v = genVarE (state, env, tup)
         val ft = Pil.T.ptr (genTyp (state, env, getVarTyp (state, dest)))
         val fte = Pil.E.hackTyp ft
-        val (off, eo, ssk, _) = doTupleField (state, env, tf)
+        val (off, eo, ssk, M.FD {kind, ...}) = doTupleField (state, env, tf)
         val off = Pil.E.int off
         val (loader, args) =
             case (eo, ssk)
@@ -1186,8 +1195,8 @@ struct
                 (RT.Object.extra, [v, off, fte, e])
               | (NONE, SskVectorResult et) => Fail.fail ("MilToPil", "genTupleSub", "SskVectorResult")
 (*                (RT.Vec.loadF et, [v, off])*)
-              | (SOME e, SskVectorResult et) => Fail.fail ("MilToPil", "genTupleSub", "SskVectorResult")
-(*                (RT.Vec.loadV et, [v, off, e])*)
+              | (SOME e, SskVectorResult et) => 
+                (Runtime.Prims.vectorLoadV (et, kind), [v, off])
               | (_, SskVectorIndex et) =>Fail.fail ("MilToPil", "genTupleSub", "SskVectorIndex")
 (*                (RT.Vec.gather et, [v, off, Option.valOf eo])*)
         val sub = Pil.E.call (Pil.E.namedConstant loader, args)
@@ -1214,11 +1223,10 @@ struct
                 doWB (Pil.E.call (Pil.E.namedConstant RT.Object.extra,
                                   [v, off, ft, e]))
               | (NONE, SskVectorResult et) => Fail.fail ("MilToPil", "genTupleSet", "SskVectorResult")
-(*                Pil.E.call (Pil.E.namedConstant (RT.Vec.storeF et),
+(*                Pil.E.call (Pil.E.namedConstant (RT.Prims.storeF et),
                             [v, off, nv])*)
-              | (SOME e, SskVectorResult et) => Fail.fail ("MilToPil", "genTupleSet", "SskVectorResult")
-(*                Pil.E.call (Pil.E.namedConstant (RT.Vec.storeV et),
-                            [v, off, e, nv])*)
+              | (SOME e, SskVectorResult et) => 
+                Pil.E.call (Pil.E.namedConstant (RT.Prims.vectorStoreV (et, kind)), [v, off, e, nv])
               | (_, SskVectorIndex et) => Fail.fail ("MilToPil", "genTupleSet", "SskVectorIndex")
 (*                Pil.E.call (Pil.E.namedConstant (RT.Vec.scatter et),
                             [v, off, Option.valOf eo, nv])*)
