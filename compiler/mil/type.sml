@@ -833,13 +833,13 @@ struct
            val unBin = 
             fn (ats, rts) => 
                (case (Vector.length ats, Vector.length rts)
-                 of (2, 1) => (Vector.sub (ats, 0), Vector.sub (ats, 1), Vector.sub (rts, 2))
+                 of (2, 1) => (Vector.sub (ats, 0), Vector.sub (ats, 1), Vector.sub (rts, 0))
                   | _ => fail ("vector", "Not a binary operator"))
 
            val unUn = 
             fn (ats, rts) => 
                (case (Vector.length ats, Vector.length rts)
-                 of (1, 1) => (Vector.sub (ats, 0), Vector.sub (ats, 1))
+                 of (1, 1) => (Vector.sub (ats, 0), Vector.sub (rts, 0))
                   | _ => fail ("vector", "Not a unary operator"))
                
            val res = 
