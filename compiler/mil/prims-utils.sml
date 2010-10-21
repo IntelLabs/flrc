@@ -779,7 +779,7 @@ struct
 	        | Mil.Prims.ViData r1        => doOne ("VData", #descriptor r1, NONE, dataOp (#operator r1))
 	        | Mil.Prims.ViMaskData r1    => doOne ("VMaskData", #descriptor r1, NONE, dataOp (#operator r1))
 	        | Mil.Prims.ViMaskBoolean r1 => doOne ("VMaskBool", #descriptor r1, NONE, logicOp (#operator r1))
-	        | Mil.Prims.ViMaskConvert r1 => doOne ("VMaskCvt", #from r1, SOME (#to r1), "")
+	        | Mil.Prims.ViMaskConvert r1 => doOne ("VMaskConvert", #to r1, SOME (#from r1), "")
         in
           res
         end

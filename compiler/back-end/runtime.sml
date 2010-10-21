@@ -122,16 +122,9 @@ sig
 
   end
 
-  structure Vector :
+  structure Prims :
   sig
     val vectorTyp : Mil.Prims.vectorSize -> Pil.T.t
-  end
-
-
-
-
-  structure Prim :
-  sig
     val numericTyp : Mil.Prims.numericTyp -> Pil.T.t
     val call : Mil.Prims.t * bool * Pil.E.t option * Pil.E.t list -> Pil.S.t
   end
@@ -213,19 +206,6 @@ struct
   structure M = Mil
   structure P = M.Prims
   structure PU = MilUtils.Prims.Utils
-
-  structure Vector =
-  struct
-
-    val vectorTypName : Mil.Prims.vectorSize -> string = 
-        fn vs => "pLsrViVec" ^ PU.ToString.vectorSize vs
-
-    val vectorTyp : Mil.Prims.vectorSize -> Pil.T.t = 
-     fn vs => Pil.T.named (Pil.identifier (vectorTypName vs))
-
-  end
-
-
 
   structure MD =
   struct
@@ -400,12 +380,19 @@ struct
 
   end
 
-  structure Prim =
+  structure Prims =
   struct
     structure P = Mil.Prims
     structure PU = MilUtils.Prims.Utils
 
-    val numericTyp : P.numericTyp -> Pil.T.t = 
+    val getVectorSizeName : Mil.Prims.vectorSize -> string = PU.ToString.vectorSize 
+    val getVectorTypName : Mil.Prims.vectorSize -> string = 
+        fn vs => "PlsrVector" ^ getVectorSizeName vs
+
+    val vectorTyp : Mil.Prims.vectorSize -> Pil.T.t = 
+     fn vs => Pil.T.named (Pil.identifier (getVectorTypName vs))
+
+    val numericTyp : Mil.Prims.numericTyp -> Pil.T.t = 
      fn nt => 
         (case nt
           of P.NtRat                                  => Pil.T.named T.rat
@@ -461,6 +448,10 @@ struct
 
     val getStringOpName = PU.ToString.stringOp
 
+    val getDataOpName = PU.ToString.dataOp
+
+    val getAssocName = PU.ToString.assoc
+
     val getCompareOpName =
      fn c => 
         case c
@@ -471,34 +462,34 @@ struct
 
     val getNumArithName 
       = fn {typ, operator} =>
-        "pLsrPrim" ^ (getNumericTypName typ) ^ (getArithOpName operator)
+        (getNumericTypName typ) ^ (getArithOpName operator)
 
     val getFloatOpName =
      fn {typ, operator} =>
-        "pLsrPrim" ^ (getFloatPrecisionName typ) ^ (getFloatOpName operator)
+        (getFloatPrecisionName typ) ^ (getFloatOpName operator)
 
     val getNumCompareName = 
      fn {typ, operator} =>
-        "pLsrPrim" ^ (getNumericTypName typ) ^ (getCompareOpName operator)
+        (getNumericTypName typ) ^ (getCompareOpName operator)
 
     val getNumConvertName = 
      fn {to, from} =>
-        "pLsrPrim" ^ (getNumericTypName to) ^ "From" ^ (getNumericTypName from)
+        (getNumericTypName to) ^ "From" ^ (getNumericTypName from)
 
     val getBitwiseName = 
      fn {typ, operator} =>
-        "pLsrPrim" ^ (getIntPrecisionName typ) ^ (getBitwiseOpName operator)
+        (getIntPrecisionName typ) ^ (getBitwiseOpName operator)
 
     val getBooleanName = 
      fn l =>
-        "pLsrPrim" ^ "Boolean" ^ (getLogicOpName l)
+        "Boolean" ^ (getLogicOpName l)
 
     val getCStringName = 
      fn s =>
-        "pLsrPrim" ^ "CString" ^ (getStringOpName s)
+        "CString" ^ (getStringOpName s)
 
     val getPrimName = 
-     fn (p, t) =>
+     fn p =>
         (case p
           of P.PNumArith r            => getNumArithName r
            | P.PFloatOp r             => getFloatOpName r
@@ -509,86 +500,61 @@ struct
            | P.PCString r             => getCStringName r)
 
     val getRuntimeName = 
-     fn (rt, t) => "pLsr" ^ PU.ToString.runtime rt ^ thnk t
+     fn (rt, t) => PU.ToString.runtime rt ^ thnk t
 
-(*    local
-      open VectorInstructions
-    in
+    val getVectorName = 
+     fn v => 
+        let
+          val doOne = 
+           fn (name, descriptor1, descriptor2O, operator) =>
+              let
+                val vsName = fn desc => getVectorSizeName (PU.VectorDescriptor.vectorSize desc)
+                val sz1 = vsName descriptor1
+                val sz2 = case descriptor2O
+                           of SOME descriptor2 => vsName descriptor2
+                            | NONE => ""
+              in sz1 ^ sz2 ^ name ^ operator
+              end
+          val res = 
+              (case v
+                of P.ViPointwise {descriptor, masked, operator} =>
+                   let
+                     val name = if masked then "PointwiseM" else "Pointwise"
+                   in doOne (name, descriptor, NONE, getPrimName operator)
+                   end
+	         | Mil.Prims.ViConvert {to, from}     => 
+                   let
+                     val operator = Mil.Prims.PNumConvert {to = #typ to, from = #typ from}
+                   in doOne ("Convert", #descriptor to, SOME (#descriptor from), getPrimName operator)
+                   end
+	        | Mil.Prims.ViCompare {descriptor, typ, operator}     => 
+                  let
+                    val operator = Mil.Prims.PNumCompare {typ = typ, operator = operator}
+                  in doOne ("Compare", descriptor, NONE, getPrimName operator)
+                  end
+	        | Mil.Prims.ViReduction {descriptor, associativity, operator}   => 
+                  let
+                    val name = "Reduce" ^ getAssocName associativity
+                  in doOne (name, descriptor, NONE, getPrimName operator)
+                  end
+	        | Mil.Prims.ViData {descriptor, operator}        => 
+                  doOne ("Data", descriptor, NONE, getDataOpName operator)
+	        | Mil.Prims.ViMaskData {descriptor, operator}    => 
+                  doOne ("MaskData", descriptor, NONE, getDataOpName operator)
+	        | Mil.Prims.ViMaskBoolean {descriptor, operator} => 
+                  doOne ("MaskBool", descriptor, NONE, getLogicOpName operator)
+	        | Mil.Prims.ViMaskConvert {to, from} => 
+                  doOne ("MaskConvert", to, SOME from, ""))
+        in res
+        end
 
-    fun genElemTypSuffix et =
-        case et
-         of P.ViUInt8   => "UI8"
-          | P.ViUInt16  => "UI16"
-          | P.ViUInt32  => "UI32"
-          | P.ViUInt64  => "UI64"
-          | P.ViSInt8   => "SI8"
-          | P.ViSInt16  => "SI16"
-          | P.ViSInt32  => "SI32"
-          | P.ViSInt64  => "SI64"
-          | P.ViFloat16 => "F16"
-          | P.ViFloat32 => "F32"
-          | P.ViFloat64 => "F64"
-
-    fun getViName (p, t) = 
-        case p 
-         of P.ViShiftL et        => "pLsrViShiftL" ^ genElemTypSuffix et
-          | P.ViShiftA et        => "pLsrViShiftA" ^ genElemTypSuffix et
-          | P.ViRotateL et       => "pLsrViRotateL" ^ genElemTypSuffix et
-          | P.ViRotateR et       => "pLsrViRotateR" ^ genElemTypSuffix et
-          | P.ViBitNot et        => "pLsrViBitNot" ^ genElemTypSuffix et
-          | P.ViBitAnd et        => "pLsrViBitAnd" ^ genElemTypSuffix et
-          | P.ViBitXor et        => "pLsrViBitXor" ^ genElemTypSuffix et
-          | P.ViBitOr et         => "pLsrViBitOr" ^ genElemTypSuffix et
-          | P.ViNot et           => "pLsrViNot" ^ genElemTypSuffix et
-          | P.ViAnd et           => "pLsrViAnd" ^ genElemTypSuffix et
-          | P.ViOr et            => "pLsrViOr" ^ genElemTypSuffix et
-          | P.ViMaskNot et       => "pLsrViMaskNot" ^ genElemTypSuffix et
-          | P.ViMaskAnd et       => "pLsrViMaskAnd" ^ genElemTypSuffix et
-          | P.ViMaskOr  et       => "pLsrViMaskOr" ^ genElemTypSuffix et
-          | P.ViAdd et           => "pLsrViAdd" ^ genElemTypSuffix et
-          | P.ViSub et           => "pLsrViSub" ^ genElemTypSuffix et
-          | P.ViMul et           => "pLsrViMul" ^ genElemTypSuffix et
-          | P.ViDiv et           => "pLsrViDiv" ^ genElemTypSuffix et
-          | P.ViMod et           => "pLsrViMod" ^ genElemTypSuffix et
-          | P.ViFma et           => "pLsrViFma" ^ genElemTypSuffix et
-          | P.ViFms et           => "pLsrViFms" ^ genElemTypSuffix et
-          | P.ViMax et           => "pLsrViMax" ^ genElemTypSuffix et
-          | P.ViMin et           => "pLsrViMin" ^ genElemTypSuffix et
-          | P.ViNeg et           => "pLsrViNeg" ^ genElemTypSuffix et
-          | P.ViSqrt et          => "pLsrViSqrt" ^ genElemTypSuffix et
-          | P.ViSqrtRcp et       => "pLsrViSqrtRcp" ^ genElemTypSuffix et
-          | P.ViRcp et           => "pLsrViRcp" ^ genElemTypSuffix et
-          | P.ViExp2 et          => "pLsrViExp2" ^ genElemTypSuffix et
-          | P.ViExp2m1 et        => "pLsrViExp2m1" ^ genElemTypSuffix et
-          | P.ViLog2 et          => "pLsrViLog2" ^ genElemTypSuffix et
-          | P.ViLog2p1 et        => "pLsrViLog2p1" ^ genElemTypSuffix et
-          | P.ViSin et           => "pLsrViSin" ^ genElemTypSuffix et
-          | P.ViAsin et          => "pLsrViAsin" ^ genElemTypSuffix et
-          | P.ViCos et           => "pLsrViCos" ^ genElemTypSuffix et
-          | P.ViAcos et          => "pLsrViAcos" ^ genElemTypSuffix et
-          | P.ViTan et           => "pLsrViTan" ^ genElemTypSuffix et
-          | P.ViAtan et          => "pLsrViAtan" ^ genElemTypSuffix et
-          | P.ViSign et          => "pLsrViSign" ^ genElemTypSuffix et
-          | P.ViAbs et           => "pLsrViAbs" ^ genElemTypSuffix et
-          | P.ViEq et            => "pLsrViEq" ^ genElemTypSuffix et
-          | P.ViNe et            => "pLsrViNe" ^ genElemTypSuffix et
-          | P.ViGt et            => "pLsrViGt" ^ genElemTypSuffix et
-          | P.ViGe et            => "pLsrViGe" ^ genElemTypSuffix et
-          | P.ViLt et            => "pLsrViLt" ^ genElemTypSuffix et
-          | P.ViLe et            => "pLsrViLe" ^ genElemTypSuffix et
-          | P.ViSelect et        => "pLsrViSelect" ^ genElemTypSuffix et
-          | P.ViPermute (et, _)  => "pLsrViPermute" ^ genElemTypSuffix et
-          | P.ViInit et          => "pLsrViInit" ^ genElemTypSuffix et
-
-    end
-    *)
     fun getName (p, t) =
         let
           val s =
               case p
-               of P.Prim p     => getPrimName (p, t)
-                | P.Runtime rt => getRuntimeName (rt, t)
-                | P.Vector p       => Fail.fail ("Runtime.Prims", "getName", "Vector instructions not implemented")
+               of P.Prim p     => "pLsrPrim" ^ getPrimName p
+                | P.Runtime rt => "pLsr" ^ getRuntimeName (rt, t)
+                | P.Vector p   => "pLsrVector" ^ getVectorName p
         in Pil.identifier s
         end
 

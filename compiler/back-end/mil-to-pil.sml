@@ -937,10 +937,10 @@ struct
              | M.Vs512  => Fail.fail ("MilToPil", "genTyp", "TBits512")
              | M.Vs1024 => Fail.fail ("MilToPil", "genTyp", "TBits1024"))
         | M.TNone => Pil.T.named RT.T.object
-        | M.TNumeric t => RT.Prim.numericTyp t
+        | M.TNumeric t => RT.Prims.numericTyp t
         | M.TBoolean   => Pil.T.named RT.T.boolean
         | M.TName => Pil.T.named RT.T.pAny
-        | M.TViVector {vectorSize, elementTyp} => RT.Vector.vectorTyp vectorSize
+        | M.TViVector {vectorSize, elementTyp} => RT.Prims.vectorTyp vectorSize
         | M.TViMask et => Fail.fail ("MilToPil", "genTyp", "TViMask")
         | M.TCode {cc, args, ress} =>
           Pil.T.ptr (genCodeType (state, env, (cc, args, ress)))
@@ -1054,7 +1054,7 @@ struct
 
   (*** Primitives ***)
 
-  fun genPrim (state, env, p, t, d, args) = RT.Prim.call (p, t, d, args)
+  fun genPrim (state, env, p, t, d, args) = RT.Prims.call (p, t, d, args)
 
   (*** Operands ***)
 
