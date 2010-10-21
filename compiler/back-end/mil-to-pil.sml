@@ -1054,7 +1054,7 @@ struct
 
   (*** Primitives ***)
 
-  fun genPrim (state, env, p, t, d, args) = RT.Prims.call (p, t, d, args)
+  fun genPrim (state, env, p, t, ds, args) = RT.Prims.call (p, t, ds, args)
 
   (*** Operands ***)
 
@@ -1368,28 +1368,29 @@ struct
   fun genRhs (state, env, dests, rhs) =
       let
 
-        val dest = 
+        val zeroOneDest = 
+         fn dests => 
             (case Utils.Option.fromVector dests
               of SOME opt => opt
                | NONE => fail ("genRhs", "Don't know how to generate multiple destinations"))
 
         (* Assign effectful *)
         fun assign rhs =
-            case dest 
+            case zeroOneDest dests
              of SOME v =>
                 Pil.S.expr (Pil.E.assign (genVarE (state, env, v), rhs))
               | NONE   => Pil.S.expr rhs
 
         (* Assign pure *)
         fun assignP rhs =
-            case dest 
+            case zeroOneDest dests 
              of SOME v =>
                 Pil.S.expr (Pil.E.assign (genVarE (state, env, v), rhs))
               | NONE   => Pil.S.empty
 
         (* Assign pure and cast to target type *)
         fun assignPCast rhs =
-            case dest
+            case zeroOneDest dests
              of SOME v =>
                 let
                   val t = getVarTyp (state, v)
@@ -1403,7 +1404,7 @@ struct
 
         (* Pass in dest, drop if no dest. *)
         fun bind f = 
-            case dest 
+            case zeroOneDest dests 
              of SOME v => f v
               | NONE   => Pil.S.empty
 
@@ -1412,15 +1413,15 @@ struct
          of M.RhsSimple s => assignP (genSimple (state, env, s))
           | M.RhsPrim {prim, createThunks, typs, args} =>
             let
-              val d = Option.map (dest, fn v => genVarE (state, env, v))
+              val ds = Vector.map (dests, fn v => genVarE (state, env, v))
               val args = genOperands(state, env, args)
-            in genPrim (state, env, prim, createThunks, d, args)
+            in genPrim (state, env, prim, createThunks, ds, args)
             end
           | M.RhsTuple {mdDesc, inits} =>
             let
               fun doIt v =
                   let
-                    val no = mkAllocSiteName (state, env, dest)
+                    val no = mkAllocSiteName (state, env, zeroOneDest dests)
                     val t = genTuple (state, env, no, v, mdDesc, inits)
                   in t
                   end
@@ -1435,7 +1436,7 @@ struct
               val () = Fail.assert ("MilToPil",
                                     "genInstr",
                                     "TupleInited returns no value",
-                                    (fn () => not (isSome dest)))
+                                    (fn () => Vector.isEmpty dests))
               val fvtb = MD.genMetaData (state, env, NONE, mdDesc, true)
               val tpl = genVarE (state, env, tup)
               val finalise =
@@ -1473,12 +1474,12 @@ struct
           | M.RhsThunkMk {typ, fvs} =>
             bind (fn v => mkThunk (state, env, v, typ, fvs))
           | M.RhsThunkInit {typ, thunk, fx, code, fvs} =>
-            genThunkInit (state, env, dest, typ, thunk, code, fvs)
+            genThunkInit (state, env, zeroOneDest dests, typ, thunk, code, fvs)
           | M.RhsThunkGetFv {typ, fvs, thunk, idx} =>
             bind (fn dest =>
                      genThunkGetFv (state, env, dest, typ, fvs, thunk, idx))
           | M.RhsThunkValue {typ, thunk, ofVal} =>
-            genThunkValue (state, env, dest, typ, thunk, ofVal)
+            genThunkValue (state, env, zeroOneDest dests, typ, thunk, ofVal)
           | M.RhsThunkGetValue {typ, thunk} =>
             bind (fn dest => genThunkGetValue (state, env, dest, typ, thunk))
           | M.RhsThunkSpawn {typ, thunk, fx} =>

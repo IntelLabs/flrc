@@ -126,7 +126,7 @@ sig
   sig
     val vectorTyp : Mil.Prims.vectorSize -> Pil.T.t
     val numericTyp : Mil.Prims.numericTyp -> Pil.T.t
-    val call : Mil.Prims.t * bool * Pil.E.t option * Pil.E.t list -> Pil.S.t
+    val call : Mil.Prims.t * bool * Pil.E.t Vector.t * Pil.E.t list -> Pil.S.t
   end
 
   structure Object :
@@ -558,14 +558,16 @@ struct
         in Pil.identifier s
         end
 
-    fun call (p, t, d, args) = 
+    fun call (p, t, ds, args) = 
       let
         val m = Pil.E.namedConstant (getName (p, t))
-        val s = 
-            Pil.S.expr (case (d, p)
-                         of (SOME d, P.Prim p) => Pil.E.call (m, d::args)
-                          | (SOME d, _)        => Pil.E.assign (d, Pil.E.call (m, args))
-                          | (NONE, _)          => Pil.E.call (m, args))
+        val e = 
+            case (p, Vector.length ds)
+             of (P.Prim p, _) => Pil.E.call (m, (Vector.toList ds)@args)
+              | (_,        0) => Pil.E.call (m, args)
+              | (_,        1) => Pil.E.assign (Vector.sub (ds, 0), Pil.E.call (m, args))
+              | (_,        _) => Fail.fail ("Runtime.Prims", "call", "Multiple dests only supported for Prims")
+        val s = Pil.S.expr e
       in s
       end
 
