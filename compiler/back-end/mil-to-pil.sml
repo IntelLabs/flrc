@@ -940,7 +940,7 @@ struct
         | M.TNumeric t => RT.Prim.numericTyp t
         | M.TBoolean   => Pil.T.named RT.T.boolean
         | M.TName => Pil.T.named RT.T.pAny
-        | M.TViVector {vectorSize, elementTyp} => Fail.fail ("MilToPil", "genTyp", "TViVector")
+        | M.TViVector {vectorSize, elementTyp} => RT.Vector.vectorTyp vectorSize
         | M.TViMask et => Fail.fail ("MilToPil", "genTyp", "TViMask")
         | M.TCode {cc, args, ress} =>
           Pil.T.ptr (genCodeType (state, env, (cc, args, ress)))

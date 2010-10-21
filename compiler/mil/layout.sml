@@ -584,8 +584,8 @@ struct
        case rhs
         of M.RhsSimple s => layoutSimple (env, s)
          | M.RhsPrim {prim, createThunks, typs, args} =>
-           L.seq [L.seq [MPU.Layout.t prim, L.str (if createThunks then "T" else "D")],
-                  LU.braceSeq (layoutTyps (env, typs)),
+           L.seq [L.seq [MPU.Layout.t prim, if createThunks then LU.bracket (L.str "T") else L.str ""],
+                  if Vector.length typs > 0 then LU.braceSeq (layoutTyps (env, typs)) else L.empty,
                   LU.parenSeq (layoutOperands (env, args))]
          | M.RhsTuple {mdDesc, inits} => layoutTuple (env, mdDesc, inits)
          | M.RhsTupleSub tf => layoutTupleField (env, tf)

@@ -122,6 +122,13 @@ sig
 
   end
 
+  structure Vector :
+  sig
+    val vectorTyp : Mil.Prims.vectorSize -> Pil.T.t
+  end
+
+
+
 
   structure Prim :
   sig
@@ -204,25 +211,20 @@ structure Runtime :> RUNTIME =
 struct
 
   structure M = Mil
-(*
-  structure Vec =
+  structure P = M.Prims
+  structure PU = MilUtils.Prims.Utils
+
+  structure Vector =
   struct
 
-    structure VI = VectorInstructions
+    val vectorTypName : Mil.Prims.vectorSize -> string = 
+        fn vs => "pLsrViVec" ^ PU.ToString.vectorSize vs
 
-    val static = Pil.identifier "pLsrViVectorStatic"
-
-    fun elemType et = VI.stringOfElemTypeShort et
-
-    fun loadF et   = Pil.identifier ("pLsrViLoad"    ^ elemType et ^ "Field")
-    fun loadV et   = Pil.identifier ("pLsrViLoad"    ^ elemType et ^ "Extra")
-    fun gather et  = Pil.identifier ("pLsrViGather"  ^ elemType et ^ "Extra")
-    fun storeF et  = Pil.identifier ("pLsrViStore"   ^ elemType et ^ "Field")
-    fun storeV et  = Pil.identifier ("pLsrViStore"   ^ elemType et ^ "Extra")
-    fun scatter et = Pil.identifier ("pLsrViScatter" ^ elemType et ^ "Extra")
+    val vectorTyp : Mil.Prims.vectorSize -> Pil.T.t = 
+     fn vs => Pil.T.named (Pil.identifier (vectorTypName vs))
 
   end
-*)
+
 
 
   structure MD =

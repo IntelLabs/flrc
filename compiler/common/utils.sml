@@ -2030,6 +2030,7 @@ sig
   datatype 'a result = Success of stream * 'a | Failure | Error of pos * error
   val return : 'a -> 'a t
   val bind : 'a t -> ('a -> ('b t)) -> 'b t
+  val debug : 'a t * (pos -> unit) * (pos * 'a -> unit) * (unit -> unit) * (pos * error -> unit) -> 'a t 
   val succeed : 'a -> 'a t
   val fail : 'a t
   val error : error -> 'a t
@@ -2109,6 +2110,20 @@ struct
         of Success (cs, r) => Success (cs, f r)
          | Failure => Failure
          | Error pe => Error pe)
+
+  val debug : 'a t * (pos -> unit) * (pos * 'a -> unit) * (unit -> unit) * (pos * error -> unit) -> 'a t = 
+      fn (p, fp, fs, ff, fe) => 
+      fn cs => 
+         let
+           val () = fp (pos cs)
+           val res = p cs
+           val () = 
+               (case p cs
+                 of Success (cs, a) => fs (pos cs, a)
+                  | Failure         => ff ()
+                  | Error pe        => fe pe)
+         in res
+         end
 
   val parse : 'a t * stream -> 'a result = fn (p, s) => p s
 

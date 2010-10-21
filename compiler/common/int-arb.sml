@@ -45,6 +45,24 @@ sig
   val quot : t * t -> t
   val rem : t * t -> t
   val maxValue : typ -> IntInf.t
+  structure Signed :
+  sig
+    structure Dec :
+    sig
+      val signed   : signed -> unit option
+      val unsigned : signed -> unit option
+    end (* structure Dec *)
+  end (* structure Signed *)
+  structure Size :
+  sig
+    structure Dec :
+    sig
+      val s8  : size -> unit option
+      val s16 : size -> unit option
+      val s32 : size -> unit option
+      val s64 : size -> unit option
+    end (* structure Dec *)
+  end (* structure Size *)
 end;
 
 structure IntArb :> INT_ARB =
@@ -237,5 +255,30 @@ struct
         truncResult (t1, IntInf.rem (i1, i2))
       else
         Fail.fail ("IntArb", "rem", "mismatched types")
+
+  structure Signed =
+  struct
+    structure Dec =
+    struct
+      val signed   : signed -> unit option = 
+       fn a => case a of Signed => SOME () | _ => NONE
+      val unsigned : signed -> unit option =
+       fn a => case a of Unsigned => SOME () | _ => NONE
+    end (* structure Dec *)
+  end (* structure Signed *)
+  structure Size =
+  struct
+    structure Dec =
+    struct
+      val s8  : size -> unit option = 
+       fn a => case a of S8 => SOME () | _ => NONE
+      val s16 : size -> unit option = 
+       fn a => case a of S16 => SOME () | _ => NONE
+      val s32 : size -> unit option = 
+       fn a => case a of S32 => SOME () | _ => NONE
+      val s64 : size -> unit option = 
+       fn a => case a of S64 => SOME () | _ => NONE
+    end (* structure Dec *)
+  end (* structure Size *)
 
 end;

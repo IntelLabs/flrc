@@ -59,7 +59,7 @@ struct
    * and the naming conventions for them.
    *)
 
-  val whiteF = P.satisfy (fn c => c = Char.space orelse c = Char.newline orelse c = #"\t")
+  val whiteF = P.satisfy (fn c => c = Char.space orelse c = Char.newline orelse c = #"\t" orelse c = #"\r")
 
   val whitespace = P.ignore (P.zeroOrMore whiteF)
 
@@ -129,6 +129,10 @@ struct
   fun braceSeq (pi : 'a P.t) : 'a Vector.t P.t =
       P.sequenceV
         {left = keycharS #"{", sep = keycharSF #",", right = keycharSF #"}", err = "Expected } or ,", item = pi}
+
+  fun braceSeqF (pi : 'a P.t) : 'a Vector.t P.t =
+      P.sequenceV
+        {left = keycharSF #"{", sep = keycharSF #",", right = keycharSF #"}", err = "Expected } or ,", item = pi}
 
   fun pair (p1 : 'a P.t, p2 : 'b P.t) : ('a * 'b) P.t =
       P.map (paren (p1 && keycharS #"," && p2), fn ((x, _), y) => (x, y))
@@ -363,21 +367,13 @@ struct
               | "PRef" => P.map (paren (typ (state, env)), M.TPRef)
               | "Ptr" => P.succeed M.TPtr
               | "PType" => P.map (paren (typ (state, env)), fn t => M.TPType {kind = M.TkI, over = t})
-              | "Rat" => P.succeed MUP.NumericTyp.tRat
               | "Ref" => P.succeed M.TRef
-              | "SInt8" => P.succeed (MUP.NumericTyp.tIntegerFixed (IntArb.T (IntArb.S8, IntArb.Signed)))
-              | "SInt16" => P.succeed (MUP.NumericTyp.tIntegerFixed (IntArb.T (IntArb.S16, IntArb.Signed)))
-              | "SInt32" => P.succeed (MUP.NumericTyp.tIntegerFixed (IntArb.T (IntArb.S32, IntArb.Signed)))
-              | "SInt64" => P.succeed (MUP.NumericTyp.tIntegerFixed (IntArb.T (IntArb.S64, IntArb.Signed)))
               | "Thunk" => P.map (paren (typ (state, env)), M.TThunk)
-              | "UInt8" => P.succeed (MUP.NumericTyp.tIntegerFixed (IntArb.T (IntArb.S8, IntArb.Unsigned)))
-              | "UInt16" => P.succeed (MUP.NumericTyp.tIntegerFixed (IntArb.T (IntArb.S16, IntArb.Unsigned)))
-              | "UInt32" => P.succeed (MUP.NumericTyp.tIntegerFixed (IntArb.T (IntArb.S32, IntArb.Unsigned)))
-              | "UInt64" => P.succeed (MUP.NumericTyp.tIntegerFixed (IntArb.T (IntArb.S64, IntArb.Unsigned)))
               | "Vec" => P.map (bracket vectorSize && angleBracket (P.$$ typ (state, env)),
                                 (fn (vs, t) => M.TViVector {vectorSize = vs, elementTyp = t}))
               | _ => P.fail
         val idBased = P.bind identifierF doId
+        val tNumeric = syntax (P.map (PrimsParse.numericTyp, M.TNumeric))
         val code =
             P.map (parenSemiCommaF (callConvF (state, env, typ), P.$$ typ (state, env))
                    && keywordS "->"
@@ -393,7 +389,7 @@ struct
                    && keywordS "=>"
                    && parenSeq (P.$$ typ (state, env)),
                    fn ((args, _), ress) => M.TClosure {args = args, ress = ress})
-        val p = idBased || code || tuple || closure || P.error "Expected type"
+        val p = idBased || tNumeric || code || tuple || closure || P.error "Expected type"
       in p
       end
 
@@ -656,8 +652,8 @@ struct
         val const = P.map (constantF (state, env), fn c => M.RhsSimple (M.SConstant c))
         val primApp = 
             let
-              val p = PrimsParse.t && P.optional (bracket (keycharLF #"T")) 
-                   && P.optional (braceSeq (typ (state, env))) && parenSeq (operand (state, env))
+              val p = PrimsParse.t && P.optional (bracketF (keycharLF #"T")) 
+                   && P.optional (braceSeqF (typ (state, env))) && parenSeq (operand (state, env))
             in P.map (p, fn (((prim, tO), typsO), args) => M.RhsPrim {prim = prim, 
                                                                       createThunks = isSome tO,
                                                                       typs = case typsO 

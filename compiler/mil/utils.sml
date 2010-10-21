@@ -268,6 +268,13 @@ sig
     val compare : t Compare.t
     val eq : t * t -> bool
     val fromValueSize : ValueSize.t -> t (* pre: valid conversion *)
+    structure Dec :
+    sig
+      val fs8  : t -> unit option
+      val fs16 : t -> unit option
+      val fs32 : t -> unit option
+      val fs64 : t -> unit option
+    end (* structure Dec *)
   end
 
   structure FieldKind :
@@ -1230,6 +1237,18 @@ struct
             | M.Vs512 => err "Vs512"
             | M.Vs1024 => err "Vs1024"
         end
+
+    structure Dec =
+    struct
+      val fs8  : t -> unit option = 
+       fn a => case a of M.Fs8 => SOME () | _ => NONE
+      val fs16 : t -> unit option = 
+       fn a => case a of M.Fs16 => SOME () | _ => NONE
+      val fs32 : t -> unit option = 
+       fn a => case a of M.Fs32 => SOME () | _ => NONE
+      val fs64 : t -> unit option = 
+       fn a => case a of M.Fs64 => SOME () | _ => NONE
+    end (* structure Dec *)
 
   end (* structure FieldSize *)
 
@@ -2299,7 +2318,7 @@ struct
     fun fieldSize (config, t) = 
         (case valueSize (config, t)
           of SOME vs => FieldSize.fromValueSize vs
-           | NONE => Fail.fail ("MilUtils.Typ", "fieldSize", "Typ has not size"))
+           | NONE => Fail.fail ("MilUtils.Typ", "fieldSize", "Typ has no size"))
 
     fun numBytes (config, t) = Option.map (valueSize (config, t), ValueSize.numBytes)
 
