@@ -581,7 +581,7 @@ struct
 	        | Mil.Prims.APlusSat      => "PlusSat"
 	        | Mil.Prims.ATimes        => "Times"
 	        | Mil.Prims.ATimesSat     => "TimesSat"
-	        | Mil.Prims.ADivMod r1    => "Divmod" ^ divKind r1
+	        | Mil.Prims.ADivMod r1    => "DivMod" ^ divKind r1
         in
           res
         end
@@ -821,8 +821,8 @@ struct
 	        | Mil.Prims.RtStringToRat          => "PStringToRat"
 	        | Mil.Prims.RtResetTimer           => "PResetTimer"
 	        | Mil.Prims.RtGetTimer             => "PGetTimer"
-	        | Mil.Prims.RtVtuneAttach          => "PVtuneAttach"
-	        | Mil.Prims.RtVtuneDetach          => "PVtuneDetach"
+	        | Mil.Prims.RtVtuneAttach          => "PVTuneAttach"
+	        | Mil.Prims.RtVtuneDetach          => "PVTuneDetach"
 	        | Mil.Prims.RtArrayEval            => "PArrayEval"
         in
           res
