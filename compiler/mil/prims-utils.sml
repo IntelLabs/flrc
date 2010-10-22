@@ -156,6 +156,7 @@ sig
     val hash    : t Hash.t
     val toString : t -> string
     val numBits : t -> int
+    val fromBits : int -> t option
     val toValueSize : t -> Mil.valueSize
     val halfSize : t -> t option
     val doubleSize : t -> t option
@@ -1465,6 +1466,7 @@ struct
     val compare = Compare.numericTyp
     val eq      = Eq.numericTyp
     val hash    = Hash.numericTyp
+                     
     structure Dec = 
     struct
       val ntRat     = fn nu => (case nu of Mil.Prims.NtRat => SOME () | _ => NONE)
