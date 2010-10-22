@@ -940,7 +940,12 @@ struct
         | M.TNumeric t => RT.Prims.numericTyp t
         | M.TBoolean   => Pil.T.named RT.T.boolean
         | M.TName => Pil.T.named RT.T.pAny
-        | M.TViVector {vectorSize, elementTyp} => RT.Prims.vectorTyp vectorSize
+        | M.TViVector {vectorSize, elementTyp} => 
+          let
+            val fk = typToFieldKind (env, elementTyp)
+            val t = RT.Prims.vectorTyp (vectorSize, fk)
+          in t
+          end
         | M.TViMask et => Fail.fail ("MilToPil", "genTyp", "TViMask")
         | M.TCode {cc, args, ress} =>
           Pil.T.ptr (genCodeType (state, env, (cc, args, ress)))

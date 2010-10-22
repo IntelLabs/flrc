@@ -2361,7 +2361,7 @@ struct
       (case p
         of (FoBase b1, FoBase b2) => Base.eq (b1, b2)
          | (FoPair (r11, r12), 
-            FoPair (r21, r22))    => eqRep (r11, r21) andalso eqRep (r21, r22)
+            FoPair (r21, r22))    => eqRep (r11, r21) andalso eqRep (r12, r22)
          | (_, FoBase _)          => false
          | (FoBase _, _)          => false)
 

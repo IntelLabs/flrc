@@ -67,6 +67,7 @@ in
         structure MilFreeVars
         structure MilBoundVars
         structure MilLayout
+        structure PrimsLayout
         structure MilLoop
         structure MilNameSmallValues
         structure MilNumberInstructions

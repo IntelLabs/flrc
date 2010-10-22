@@ -14,145 +14,6 @@ sig
   val reduce : (PassData.t * IMil.t * IMil.WorkSet.ws) * t -> IMil.item List.t option
 end
 
-structure PrimsReduce :
-sig
-
-    structure Constant :
-    sig
-      datatype t =
-          CRat of Rat.t
-        | CInteger of IntInf.t
-        | CIntegral of IntArb.t
-        | CFloat of Real32.t
-        | CDouble of Real64.t
-        | CBool of bool
-      val fromMilConstant : Mil.constant -> t option
-      val toMilGlobal : Config.t * t -> Mil.global
-      val toMilConstant : Config.t * t -> Mil.constant option
-    end (* structure Constant *)
-
-    structure Operation :
-    sig
-      datatype 'a t =
-          OConstant of Constant.t
-        | OPrim of Mil.Prims.prim * 'a Vector.t
-        | OOther
-      val fromMilConstant : Mil.constant -> Mil.operand t
-      val fromMilGlobal : Mil.global -> Mil.operand t
-      val fromMilRhs : Mil.rhs -> Mil.operand t
-      val fromDef : MilUtils.Def.t -> Mil.operand t
-    end (* structure Operation *)
-
-    structure Reduce :
-    sig
-      datatype 'a t =
-          RrUnchanged
-        | RrBase of 'a
-        | RrConstant of Constant.t
-        | RrPrim of Mil.Prims.prim * 'a Vector.t
-
-      val prim : Config.t * Mil.Prims.prim * 'a Vector.t * ('a -> 'a Operation.t) -> 'a t
-
-    end (* structure Reduce *)
-
-end = 
-struct
-    structure Constant =
-    struct
-
-      datatype t =
-          CRat of Rat.t
-        | CInteger of IntInf.t
-        | CIntegral of IntArb.t
-        | CFloat of Real32.t
-        | CDouble of Real64.t
-        | CBool of bool
-
-      val fromMilConstant = 
-       fn c => 
-          (case c
-            of Mil.CRat i          => SOME (CRat (Rat.fromIntInf i))
-             | Mil.CInteger i      => SOME (CInteger i)
-             | Mil.CName _         => NONE
-             | Mil.CIntegral i     => SOME (CIntegral i)
-             | Mil.CBoolean b      => SOME (CBool b)
-             | Mil.CFloat f        => SOME (CFloat f)
-             | Mil.CDouble d       => SOME (CDouble d)
-             | Mil.CViMask _       => NONE
-             | Mil.CPok _          => NONE
-             | Mil.COptionSetEmpty => NONE
-             | Mil.CTypePH         => NONE)
-
-      val toMilGlobal = 
-       fn (config, c) => 
-          let
-            val simple = fn c => fn i => (Mil.GSimple o Mil.SConstant o c) i
-          in
-            case c
-             of CRat r      => Mil.GRat r
-              | CInteger i  => Mil.GInteger i
-              | CIntegral i => simple Mil.CIntegral i
-              | CFloat r    => simple Mil.CFloat r
-              | CDouble r   => simple Mil.CDouble r
-              | CBool b     => simple Mil.CBoolean b
-          end
-
-      val toMilConstant = 
-       fn (config, c) =>
-          (case toMilGlobal (config, c)
-            of Mil.GSimple (Mil.SConstant c) => SOME c
-             | _ => NONE)
-
-    end (* structure Constant *)
-
-    structure Operation =
-    struct
-
-      datatype 'a t =
-               OConstant of Constant.t
-             | OPrim of Mil.Prims.prim * 'a Vector.t
-             | OOther
-
-      val fromMilConstant = 
-       fn c => 
-          (case Constant.fromMilConstant c
-            of SOME c => OConstant c
-             | NONE   => OOther)
-
-      val fromMilGlobal = 
-       fn g => 
-          (case g
-            of Mil.GRat r     => OConstant (Constant.CRat r)
-             | Mil.GInteger i => OConstant (Constant.CInteger i)
-             | _              => OOther)
-
-      val fromMilRhs = 
-       fn rhs => 
-          (case rhs 
-            of Mil.RhsPrim {prim = Mil.Prims.Prim p, args, ...} => OPrim (p, args)
-             | _ => OOther)
-
-      val fromDef = 
-       fn def => 
-          (case def
-            of MilUtils.Def.DefGlobal g => fromMilGlobal g
-             | MilUtils.Def.DefRhs rhs => fromMilRhs rhs)
-
-    end (* structure Operation *)
-
-    structure Reduce =
-    struct
-      datatype 'a t =
-               RrUnchanged
-             | RrBase of 'a
-             | RrConstant of Constant.t
-             | RrPrim of Mil.Prims.prim * 'a Vector.t
-
-      val prim : Config.t * Mil.Prims.prim * 'a Vector.t * ('a -> 'a Operation.t) -> 'a t = fn _ => RrUnchanged
-
-    end (* structure Reduce *)
-
-end
 
 structure MilSimplify :> MIL_SIMPLIFY = 
 struct
@@ -184,6 +45,7 @@ struct
   structure SS = StringSet
   structure VS = M.VS
   structure LU = LayoutUtils
+  structure L = Layout
 
   structure Chat = ChatF (struct 
                             type env = PD.t
@@ -479,7 +341,206 @@ struct
        (<@ MU.Rhs.Dec.rhsThunkInit <! Def.toRhs o Def.get)
          || (<@ MU.Rhs.Dec.rhsThunkInit o MU.Instruction.rhs <! getUniqueInit)
 
-  
+
+   structure PrimsReduce :
+   sig
+
+     structure Constant :
+               sig
+                 datatype t =
+                          CRat of Rat.t
+                        | CInteger of IntInf.t
+                        | CIntegral of IntArb.t
+                        | CFloat of Real32.t
+                        | CDouble of Real64.t
+                        | CBool of bool
+                 val fromMilConstant : Mil.constant -> t option
+                 val toMilGlobal : Config.t * t -> Mil.global
+                 val toMilConstant : Config.t * t -> Mil.constant option
+               end (* structure Constant *)
+
+     structure Operation :
+               sig
+                 datatype t =
+                          OConstant of Constant.t
+                        | OPrim of Mil.Prims.prim * Mil.operand Vector.t
+                        | OOther
+                 val fromMilConstant : Mil.constant -> t
+                 val fromMilGlobal : Mil.global -> t
+                 val fromMilRhs : Mil.rhs -> t
+                 val fromDef : MilUtils.Def.t -> t
+               end (* structure Operation *)
+
+     structure Reduce :
+               sig
+                 datatype t =
+                          RrUnchanged
+                        | RrBase of Mil.operand
+                        | RrConstant of Constant.t
+                        | RrPrim of Mil.Prims.prim * Mil.operand Vector.t
+
+                 val prim : Config.t * Mil.Prims.prim * Mil.operand Vector.t * (Mil.operand -> Operation.t) -> t
+
+               end (* structure Reduce *)
+
+   end = 
+   struct
+     structure Constant =
+     struct
+
+       datatype t =
+                CRat of Rat.t
+              | CInteger of IntInf.t
+              | CIntegral of IntArb.t
+              | CFloat of Real32.t
+              | CDouble of Real64.t
+              | CBool of bool
+
+       val fromMilConstant = 
+        fn c => 
+           (case c
+             of Mil.CRat i          => SOME (CRat (Rat.fromIntInf i))
+              | Mil.CInteger i      => SOME (CInteger i)
+              | Mil.CName _         => NONE
+              | Mil.CIntegral i     => SOME (CIntegral i)
+              | Mil.CBoolean b      => SOME (CBool b)
+              | Mil.CFloat f        => SOME (CFloat f)
+              | Mil.CDouble d       => SOME (CDouble d)
+              | Mil.CViMask _       => NONE
+              | Mil.CPok _          => NONE
+              | Mil.COptionSetEmpty => NONE
+              | Mil.CTypePH         => NONE)
+
+       val toMilGlobal = 
+        fn (config, c) => 
+           let
+             val simple = fn c => fn i => (Mil.GSimple o Mil.SConstant o c) i
+           in
+             case c
+              of CRat r      => Mil.GRat r
+               | CInteger i  => Mil.GInteger i
+               | CIntegral i => simple Mil.CIntegral i
+               | CFloat r    => simple Mil.CFloat r
+               | CDouble r   => simple Mil.CDouble r
+               | CBool b     => simple Mil.CBoolean b
+           end
+
+       val toMilConstant = 
+        fn (config, c) =>
+           (case toMilGlobal (config, c)
+             of Mil.GSimple (Mil.SConstant c) => SOME c
+              | _ => NONE)
+
+     end (* structure Constant *)
+
+     structure Operation =
+     struct
+
+       datatype t =
+                OConstant of Constant.t
+              | OPrim of Mil.Prims.prim * Mil.operand Vector.t
+              | OOther
+
+       val fromMilConstant = 
+        fn c => 
+           (case Constant.fromMilConstant c
+             of SOME c => OConstant c
+              | NONE   => OOther)
+
+       val fromMilGlobal = 
+        fn g => 
+           (case g
+             of Mil.GRat r     => OConstant (Constant.CRat r)
+              | Mil.GInteger i => OConstant (Constant.CInteger i)
+              | _              => OOther)
+
+       val fromMilRhs = 
+        fn rhs => 
+           (case rhs 
+             of Mil.RhsPrim {prim = Mil.Prims.Prim p, args, ...} => OPrim (p, args)
+              | _ => OOther)
+
+       val fromDef = 
+        fn def => 
+           (case def
+             of MilUtils.Def.DefGlobal g => fromMilGlobal g
+              | MilUtils.Def.DefRhs rhs => fromMilRhs rhs)
+
+       structure Dec =
+       struct
+         val oConstant = fn oper => case oper of OConstant c => SOME c | _ => NONE
+         val oPrim     = fn oper => case oper of OPrim c => SOME c | _ => NONE
+         val oOther    = fn oper => case oper of OOther => SOME () | _ => NONE
+       end (* structure Dec *)
+     end (* structure Operation *)
+
+     datatype reduction = 
+              RrUnchanged
+            | RrBase of Mil.operand
+            | RrConstant of Constant.t
+            | RrPrim of Mil.Prims.prim * Mil.operand Vector.t
+                        
+     structure NumConvert = 
+     struct
+       val identity = 
+        fn(c, {to, from}, args, get) => 
+          Try.try 
+            (fn () => 
+                let
+                  val () = Try.require (PU.NumericTyp.eq (to, from))
+                  val arg = Try.V.singleton args
+                in RrBase arg
+                end)
+
+       val transitivity = 
+        fn(c, {to = ntC, from = ntB}, args, get) => 
+          Try.try 
+            (fn () => 
+                let
+                  val arg = get (Try.V.singleton args)
+                  val (p, args) = <@ Operation.Dec.oPrim arg
+                  val {to = ntB', from = ntA} = <@ PU.Prim.Dec.pNumConvert p
+                  val () = Try.require (PU.NumericTyp.eq (ntB, ntB'))
+                in RrPrim (P.PNumConvert {to = ntC, from = ntA}, args)
+                end)
+
+(*       val toRat = 
+        fn (nt, operation) = 
+       val fold = 
+        fn(c, {to = ntC, from = ntB}, args, get) => 
+          Try.try 
+            (fn () => 
+                let
+*)
+       val reduce : Config.t * {to : P.numericTyp, from : P.numericTyp} 
+                    * Mil.operand Vector.t * (Mil.operand -> Operation.t) 
+                    -> reduction Try.t =
+           identity or transitivity
+     end (* structure NumConvert *)
+
+     structure Reduce =
+     struct
+       datatype t = datatype reduction
+
+       val out : ('a -> t Try.t) -> ('a -> t) = 
+        fn f => fn args => Try.otherwise (f args, RrUnchanged)
+
+       val prim : Config.t * Mil.Prims.prim * Mil.operand Vector.t * (Mil.operand -> Operation.t) -> t = 
+        fn (c, p, args, get) => 
+           (case p
+             of P.PNumArith r1   => RrUnchanged
+	      | P.PFloatOp r1    => RrUnchanged
+	      | P.PNumCompare r1 => RrUnchanged
+	      | P.PNumConvert r1 => out NumConvert.reduce (c, r1, args, get)
+	      | P.PBitwise r1    => RrUnchanged
+	      | P.PBoolean r1    => RrUnchanged
+	      | P.PCString r1    => RrUnchanged)
+
+
+     end (* structure Reduce *)
+
+   end (* structure PrimsReduce *)
+   
   structure FuncR : REDUCE = 
   struct
     type t = I.iFunc
