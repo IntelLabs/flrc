@@ -387,7 +387,7 @@ struct
    struct
      structure Constant =
      struct
-
+       
        datatype t =
                 CRat of Rat.t
               | CInteger of IntInf.t
@@ -430,6 +430,22 @@ struct
            (case toMilGlobal (config, c)
              of Mil.GSimple (Mil.SConstant c) => SOME c
               | _ => NONE)
+
+       val toRat = 
+           Try.lift 
+             (fn c =>
+                 let
+                   val r = 
+                       (case c
+                         of CRat r       => r
+                          | CInteger i   => Rat.fromIntInf i
+                          | CIntegral ia => Rat.fromIntInf (IntArb.toIntInf ia)
+                          | CFloat  _    => Try.fail ()
+                          | CDouble _    => Try.fail ()
+                          | CBool   _    => Try.fail ())
+                 in r
+                 end)
+
 
      end (* structure Constant *)
 
@@ -482,6 +498,8 @@ struct
                         
      structure NumConvert = 
      struct
+       structure O = Operation
+       structure C = Constant
        val identity = 
         fn(c, {to, from}, args, get) => 
           Try.try 
@@ -504,18 +522,37 @@ struct
                 in RrPrim (P.PNumConvert {to = ntC, from = ntA}, args)
                 end)
 
-(*       val toRat = 
-        fn (nt, operation) = 
+       val doConvert = 
+           Try.lift 
+             (fn (r, nt) => 
+                 let
+                   val c = 
+                       (case nt
+                         of P.NtRat => C.CRat r
+                          | P.NtInteger ip => 
+                            (case ip
+                              of P.IpArbitrary => C.CInteger (<@ Rat.toIntInf r)
+                               | P.IpFixed typ => C.CIntegral (IntArb.fromIntInf (typ, <@ Rat.toIntInf r)))
+                          | P.NtFloat fp  => Try.fail ())
+                 in c
+                 end)
+
        val fold = 
-        fn(c, {to = ntC, from = ntB}, args, get) => 
-          Try.try 
-            (fn () => 
+           Try.lift
+             (fn(c, {to = ntC, from = ntB}, args, get) => 
                 let
-*)
+                  val arg = Try.V.singleton args
+                  val arg = get arg
+                  val v = <@ Operation.Dec.oConstant arg
+                  val r = <@ Constant.toRat v
+                  val i = <@ doConvert (r, ntC)
+                in RrConstant i
+                end)
+
        val reduce : Config.t * {to : P.numericTyp, from : P.numericTyp} 
                     * Mil.operand Vector.t * (Mil.operand -> Operation.t) 
                     -> reduction Try.t =
-           identity or transitivity
+           identity or transitivity or fold
      end (* structure NumConvert *)
 
      structure Reduce =
