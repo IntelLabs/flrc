@@ -124,7 +124,7 @@ sig
 
   structure Prims :
   sig
-    val vectorTyp : Mil.Prims.vectorSize -> Pil.T.t
+    val vectorTyp : Mil.Prims.vectorSize * Mil.fieldKind -> Pil.T.t
     val numericTyp : Mil.Prims.numericTyp -> Pil.T.t
     (*         dests              prim          thnk?  typs                     args            call  *)
     val call : Pil.E.t Vector.t * Mil.Prims.t * bool * Mil.fieldKind Vector.t * Pil.E.t list -> Pil.S.t
@@ -388,7 +388,7 @@ struct
     structure P = Mil.Prims
     structure PU = MilUtils.Prims.Utils
 
-    val fieldKindName = 
+    val getFieldKindName = 
         fn fk => 
            (case fk 
              of M.FkRef         => "Ref"
@@ -403,8 +403,8 @@ struct
     val getVectorTypName : Mil.Prims.vectorSize -> string = 
         fn vs => "PlsrVector" ^ getVectorSizeName vs
 
-    val vectorTyp : Mil.Prims.vectorSize -> Pil.T.t = 
-     fn vs => Pil.T.named (Pil.identifier (getVectorTypName vs))
+    val vectorTyp : Mil.Prims.vectorSize * Mil.fieldKind -> Pil.T.t = 
+     fn (vs, fk) => Pil.T.named (Pil.identifier (getVectorTypName vs ^ getFieldKindName fk))
 
     val numericTyp : Mil.Prims.numericTyp -> Pil.T.t = 
      fn nt => 
@@ -466,7 +466,7 @@ struct
      fn (d, typs) => 
         let
           val d = PU.ToString.dataOp d
-          val typs = Vector.map (typs, fieldKindName)
+          val typs = Vector.map (typs, getFieldKindName)
           val typs = String.concatV typs
         in d ^ typs
         end
@@ -596,7 +596,7 @@ struct
      fn (vd, fk) => 
         let
           val vs = getVectorSizeName (PU.VectorDescriptor.vectorSize vd)
-          val fk = fieldKindName fk
+          val fk = getFieldKindName fk
         in Pil.identifier ("pLsrVector" ^ vs ^ fk ^ "LoadV")
         end
 
@@ -604,7 +604,7 @@ struct
      fn (vd, fk) => 
         let
           val vs = getVectorSizeName (PU.VectorDescriptor.vectorSize vd)
-          val fk = fieldKindName fk
+          val fk = getFieldKindName fk
         in Pil.identifier ("pLsrVector" ^ vs ^ fk ^ "StoreV")
         end
 
