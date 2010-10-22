@@ -126,7 +126,8 @@ sig
   sig
     val vectorTyp : Mil.Prims.vectorSize -> Pil.T.t
     val numericTyp : Mil.Prims.numericTyp -> Pil.T.t
-    val call : Mil.Prims.t * bool * Pil.E.t Vector.t * Pil.E.t list -> Pil.S.t
+    (*         dests              prim          thnk?  typs                     args            call  *)
+    val call : Pil.E.t Vector.t * Mil.Prims.t * bool * Mil.fieldKind Vector.t * Pil.E.t list -> Pil.S.t
     val vectorLoadV : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
     val vectorStoreV : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
   end
@@ -387,6 +388,17 @@ struct
     structure P = Mil.Prims
     structure PU = MilUtils.Prims.Utils
 
+    val fieldKindName = 
+        fn fk => 
+           (case fk 
+             of M.FkRef         => "Ref"
+              | M.FkBits M.Fs8  => "B8"
+              | M.FkBits M.Fs16 => "B16"
+              | M.FkBits M.Fs32 => "B32"
+              | M.FkBits M.Fs64 => "B64"
+              | M.FkFloat       => "F32"
+              | M.FkDouble      => "F64")
+
     val getVectorSizeName : Mil.Prims.vectorSize -> string = PU.ToString.vectorSize 
     val getVectorTypName : Mil.Prims.vectorSize -> string = 
         fn vs => "PlsrVector" ^ getVectorSizeName vs
@@ -450,7 +462,14 @@ struct
 
     val getStringOpName = PU.ToString.stringOp
 
-    val getDataOpName = PU.ToString.dataOp
+    val getDataOpName = 
+     fn (d, typs) => 
+        let
+          val d = PU.ToString.dataOp d
+          val typs = Vector.map (typs, fieldKindName)
+          val typs = String.concatV typs
+        in d ^ typs
+        end
 
     val getAssocName = PU.ToString.assoc
 
@@ -505,7 +524,7 @@ struct
      fn (rt, t) => PU.ToString.runtime rt ^ thnk t
 
     val getVectorName = 
-     fn v => 
+     fn (v, typs) => 
         let
           val doOne = 
            fn (name, descriptor1, descriptor2O, operator) =>
@@ -540,9 +559,9 @@ struct
                   in doOne (name, descriptor, NONE, getPrimName operator)
                   end
 	        | Mil.Prims.ViData {descriptor, operator}        => 
-                  doOne ("Data", descriptor, NONE, getDataOpName operator)
+                  doOne ("Data", descriptor, NONE, getDataOpName (operator, typs))
 	        | Mil.Prims.ViMaskData {descriptor, operator}    => 
-                  doOne ("MaskData", descriptor, NONE, getDataOpName operator)
+                  doOne ("MaskData", descriptor, NONE, getDataOpName (operator, typs))
 	        | Mil.Prims.ViMaskBoolean {descriptor, operator} => 
                   doOne ("MaskBool", descriptor, NONE, getLogicOpName operator)
 	        | Mil.Prims.ViMaskConvert {to, from} => 
@@ -550,19 +569,19 @@ struct
         in res
         end
 
-    fun getName (p, t) =
+    fun getName (p, t, typs) =
         let
           val s =
               case p
                of P.Prim p     => "pLsrPrim" ^ getPrimName p
                 | P.Runtime rt => "pLsr" ^ getRuntimeName (rt, t)
-                | P.Vector p   => "pLsrVector" ^ getVectorName p
+                | P.Vector p   => "pLsrVector" ^ getVectorName (p, typs)
         in Pil.identifier s
         end
 
-    fun call (p, t, ds, args) = 
+    fun call (ds, p, t, typs, args) = 
       let
-        val m = Pil.E.namedConstant (getName (p, t))
+        val m = Pil.E.namedConstant (getName (p, t, typs))
         val e = 
             case (p, Vector.length ds)
              of (P.Prim p, _) => Pil.E.call (m, (Vector.toList ds)@args)
@@ -572,20 +591,6 @@ struct
         val s = Pil.S.expr e
       in s
       end
-
-    val fieldKindName = 
-        fn fk => 
-           (case fk 
-             of M.FkRef         => 
-                Fail.unimplemented ("Runtime.Prims", "fieldKindName", "Ref")
-              | M.FkBits M.Fs8  =>
-                Fail.unimplemented ("Runtime.Prims", "fieldKindName", "B8")
-              | M.FkBits M.Fs16 =>
-                Fail.unimplemented ("Runtime.Prims", "fieldKindName", "B16")
-              | M.FkBits M.Fs32 => "32"
-              | M.FkBits M.Fs64 => "64"
-              | M.FkFloat       => "F32"
-              | M.FkDouble      => "F64")
 
     val vectorLoadV : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier = 
      fn (vd, fk) => 

@@ -380,7 +380,7 @@ struct
     fun mt (config, compiler) =
         (case compiler
           of CcGCC  => []
-           | CcICC  => if useFutures config then ["-MT"] else []
+           | CcICC  => ["-MT"] 
            | CcPillar => ["-MT"])
 
   end (* structure CcOptions *)
@@ -472,13 +472,15 @@ struct
         )
 
     fun debug (config, ld) = 
-        (case ld
-          of LdGCC  => ["-g"]
-           | LdICC  => ["-debug"]
-           | LdPillar => ["-debug"]
+        (case (ld, Config.pilDebug config)
+          of (LdGCC, _)     => ["-g"]
+           | (LdICC, true)  => ["-debug", "-NODEFAULTLIB:LIBCMT"] 
+           (* The NODEFAULTLIB is a temporary hack because gc-bdwd.lib is pulling in libcmt -leaf *)
+           | (LdICC, false) => ["-debug"] 
+           | (LdPillar, _)  => ["-debug"]
         )
 
-  end (* structure CcOptions *)
+  end (* structure LdOptions *)
 
   fun gcLibraries (config, ldTag) = 
       let

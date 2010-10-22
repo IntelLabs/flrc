@@ -4337,7 +4337,7 @@ struct
     val t = Prims.NumericTyp.tIntegerArbitrary
     val nt = MP.NtInteger MP.IpArbitrary
     val from =
-     fn (nt', p) => M.RhsPrim {prim = MP.Prim (MP.PNumConvert {from = nt, to = nt'}),
+     fn (nt', p) => M.RhsPrim {prim = MP.Prim (MP.PNumConvert {from = nt', to = nt}),
                                createThunks = false,
                                typs = Vector.new0 (),
                                args = Vector.new1 p}
@@ -4380,7 +4380,7 @@ struct
     val nt = MP.NtRat
 
     val from =
-     fn (nt', p) => M.RhsPrim {prim = MP.Prim (MP.PNumConvert {from = nt, to = nt'}),
+     fn (nt', p) => M.RhsPrim {prim = MP.Prim (MP.PNumConvert {from = nt', to = nt}),
                                createThunks = false,
                                typs = Vector.new0 (),
                                args = Vector.new1 p}

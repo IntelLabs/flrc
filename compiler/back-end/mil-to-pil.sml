@@ -1054,7 +1054,7 @@ struct
 
   (*** Primitives ***)
 
-  fun genPrim (state, env, p, t, ds, args) = RT.Prims.call (p, t, ds, args)
+  fun genPrim (state, env, p, t, ds, typs, args) = RT.Prims.call (ds, p, t, typs, args)
 
   (*** Operands ***)
 
@@ -1423,7 +1423,8 @@ struct
             let
               val ds = Vector.map (dests, fn v => genVarE (state, env, v))
               val args = genOperands(state, env, args)
-            in genPrim (state, env, prim, createThunks, ds, args)
+              val typs = Vector.map (typs, fn t => typToFieldKind (env, t))
+            in genPrim (state, env, prim, createThunks, ds, typs, args)
             end
           | M.RhsTuple {mdDesc, inits} =>
             let
