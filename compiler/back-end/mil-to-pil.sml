@@ -1201,7 +1201,7 @@ struct
               | (NONE, SskVectorResult et) => Fail.fail ("MilToPil", "genTupleSub", "SskVectorResult")
 (*                (RT.Vec.loadF et, [v, off])*)
               | (SOME e, SskVectorResult et) => 
-                (Runtime.Prims.vectorLoadV (et, kind), [v, off])
+                (Runtime.Prims.vectorLoadV (et, kind), [v, off, e])
               | (_, SskVectorIndex et) =>Fail.fail ("MilToPil", "genTupleSub", "SskVectorIndex")
 (*                (RT.Vec.gather et, [v, off, Option.valOf eo])*)
         val sub = Pil.E.call (Pil.E.namedConstant loader, args)
