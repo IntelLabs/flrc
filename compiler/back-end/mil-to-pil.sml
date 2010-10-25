@@ -1167,7 +1167,7 @@ struct
            SOME (genOperand (state, env, index)),
            SskVectorResult descriptor,
            getArrayDescriptor tupDesc)
-        | M.FiVectorVariable _ => Fail.fail ("MilToPil", "doTupleField", "FiVectorFixed")
+        | M.FiVectorVariable _ => Fail.fail ("MilToPil", "doTupleField", "FiVectorVariable (not unit stride)")
 (*
           (OM.fieldOffset (state, env, tupDesc, idx),
            NONE,
