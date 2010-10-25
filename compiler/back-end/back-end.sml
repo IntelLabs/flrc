@@ -360,6 +360,11 @@ struct
            | CcPillar => ["-W3", "-Qwd 177", "-Qwd 279"]
         )
 
+    fun align (config, compiler) = 
+        (case compiler 
+          of CcGCC => ["-malign-double"]
+           | _     => [])
+
     fun lang (config, compiler) =
         (case compiler
           of CcGCC  => ["-std=c99"]
@@ -401,6 +406,7 @@ struct
              CcOptions.float cfg,
              CcOptions.warn cfg,
              CcOptions.lang cfg,
+             CcOptions.align cfg,
              CcOptions.runtime cfg,
              CcOptions.mt cfg
             ]
