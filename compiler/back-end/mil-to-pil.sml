@@ -1134,9 +1134,13 @@ struct
       end
 
   datatype subSetKind =
-      SskScalar
-    | SskVectorResult of Mil.Prims.vectorDescriptor
-    | SskVectorIndex of VI.elemType
+      SskScalarFixed
+    | SskScalarVariable of Pil.E.t
+    | SskVectorFixed of Mil.Prims.vectorDescriptor
+    | SskVectorVariableStrided of Mil.Prims.vectorDescriptor * Pil.E.t * Pil.E.t
+    | SskVectorVariableIndexed of Mil.Prims.vectorDescriptor * Pil.E.t
+    | SskVectorVariableVectorStrided of Mil.Prims.vectorDescriptor * Pil.E.t * Pil.E.t
+    | SskVectorVariableVectorIndexed of Mil.Prims.vectorDescriptor * Pil.E.t
 
   fun getFieldDescriptor (M.TD {fixed, array, ...}, i) =
       if i < Vector.length fixed
@@ -1148,62 +1152,65 @@ struct
   fun doTupleField (state, env, M.TF {tupDesc, tup, field}) =
       case field
        of M.FiFixed i =>
-          (OM.fieldOffset (state, env, tupDesc, i),
-           NONE,
-           SskScalar,
-           getFieldDescriptor (tupDesc, i))
+          let
+            val off = OM.fieldOffset (state, env, tupDesc, i)
+            val ssk = SskScalarFixed
+            val fd = getFieldDescriptor (tupDesc, i)
+          in (off, ssk, fd)
+          end
         | M.FiVariable opnd =>
-          (OM.arrayOffset (state, env, tupDesc),
-           SOME (genOperand (state, env, opnd)),
-           SskScalar,
-           getArrayDescriptor tupDesc)
-        | M.FiVectorFixed _ => Fail.fail ("MilToPil", "doTupleField", "FiVectorFixed")
-        | M.FiVectorVariable {descriptor, 
-                              base = M.TbScalar, 
-                              mask = NONE, 
-                              index, 
-                              kind = M.VikStrided 1} =>
-          (OM.arrayOffset (state, env, tupDesc),
-           SOME (genOperand (state, env, index)),
-           SskVectorResult descriptor,
-           getArrayDescriptor tupDesc)
-        | M.FiVectorVariable _ => Fail.fail ("MilToPil", "doTupleField", "FiVectorVariable (not unit stride)")
-(*
-          (OM.fieldOffset (state, env, tupDesc, idx),
-           NONE,
-           SskVectorResult typ,
-           getFieldDescriptor (tupDesc, idx))
-        | M.FiViVariable {typ, idx} =>
-          (OM.arrayOffset (state, env, tupDesc),
-           SOME (genOperand (state, env, idx)),
-           SskVectorResult typ,
-           getArrayDescriptor tupDesc)
-        | M.FiViIndexed {typ, idx} =>
-          (OM.arrayOffset (state, env, tupDesc),
-           SOME (genOperand (state, env, idx)),
-           SskVectorResult typ,
-           getArrayDescriptor tupDesc)
-*)
+          let
+            val off = OM.arrayOffset (state, env, tupDesc)
+            val ssk = SskScalarVariable (genOperand (state, env, opnd))
+            val fd = getArrayDescriptor tupDesc
+          in (off, ssk, fd)
+          end
+        | M.FiVectorFixed {descriptor, mask, index} => 
+          let
+            val () =
+                case mask 
+                 of SOME _ => Fail.fail ("MilToPil", "doTupleField", "FiVectorFixed: masking unimplimented")
+                  | NONE   => ()
+            val off = OM.fieldOffset (state, env, tupDesc, index)
+            val ssk = SskVectorFixed descriptor
+            val fd = getFieldDescriptor (tupDesc, index)
+          in (off, ssk, fd)
+          end
+        | M.FiVectorVariable {descriptor, base, mask, index, kind} =>
+          let
+            val () =
+                case mask 
+                 of SOME _ => Fail.fail ("MilToPil", "doTupleField", "FiVectorVariable: masking unimplimented")
+                  | NONE   => ()
+            val off = OM.arrayOffset (state, env, tupDesc)
+            val ext = genOperand (state, env, index)
+            val ssk = 
+                (case (base, kind)
+                  of (M.TbScalar, M.VikStrided i) => SskVectorVariableStrided (descriptor, Pil.E.int i, ext)
+                   | (M.TbScalar, M.VikVector)    => SskVectorVariableIndexed (descriptor, ext)
+                   | (M.TbVector, M.VikStrided i) => SskVectorVariableVectorStrided (descriptor, Pil.E.int i, ext)
+                   | (M.TbVector, M.VikVector)    => SskVectorVariableVectorIndexed (descriptor, ext))
+            val fd = getArrayDescriptor tupDesc
+          in (off, ssk, fd)
+          end
+
   fun genTupleSub (state, env, dest, tf) =
       let
         val M.TF {tup, ...} = tf
         val v = genVarE (state, env, tup)
         val ft = Pil.T.ptr (genTyp (state, env, getVarTyp (state, dest)))
         val fte = Pil.E.hackTyp ft
-        val (off, eo, ssk, M.FD {kind, ...}) = doTupleField (state, env, tf)
+        val (off, ssk, M.FD {kind, ...}) = doTupleField (state, env, tf)
         val off = Pil.E.int off
         val (loader, args) =
-            case (eo, ssk)
-             of (NONE, SskScalar) =>
-                (RT.Object.field, [v, off, fte])
-              | (SOME e, SskScalar) =>
-                (RT.Object.extra, [v, off, fte, e])
-              | (NONE, SskVectorResult et) => Fail.fail ("MilToPil", "genTupleSub", "SskVectorResult")
-(*                (RT.Vec.loadF et, [v, off])*)
-              | (SOME e, SskVectorResult et) => 
-                (Runtime.Prims.vectorLoadV (et, kind), [v, off, e])
-              | (_, SskVectorIndex et) =>Fail.fail ("MilToPil", "genTupleSub", "SskVectorIndex")
-(*                (RT.Vec.gather et, [v, off, Option.valOf eo])*)
+            case ssk
+             of SskScalarFixed                            => (RT.Object.field, [v, off, fte])
+              | SskScalarVariable e                       => (RT.Object.extra, [v, off, fte, e])
+              | SskVectorFixed et                         => (RT.Prims.vectorLoadF   (et, kind), [v, off])
+              | SskVectorVariableStrided (et, i, e)       => (RT.Prims.vectorLoadVS  (et, kind), [v, off, e, i])
+              | SskVectorVariableIndexed (et, e)          => (RT.Prims.vectorLoadVI  (et, kind), [v, off, e])
+              | SskVectorVariableVectorStrided (et, i, e) => (RT.Prims.vectorLoadVVS (et, kind), [v, off, e, i])
+              | SskVectorVariableVectorIndexed (et, e)    => (RT.Prims.vectorLoadVVI (et, kind), [v, off, e])
         val sub = Pil.E.call (Pil.E.namedConstant loader, args)
         val a = Pil.E.assign (genVarE (state, env, dest), sub)
       in Pil.S.expr a
@@ -1215,26 +1222,26 @@ struct
         val v = genVarE (state, env, tup)
         val ft = MTT.operand (getConfig env, getSymbolInfo state, ofVal)
         val ft = Pil.E.hackTyp (Pil.T.ptr (genTyp (state, env, ft)))
-        val (off, eo, ssk, M.FD {kind, ...}) = doTupleField (state, env, tf)
+        val (off, ssk, M.FD {kind, ...}) = doTupleField (state, env, tf)
         val off = Pil.E.int off
         val nv = genOperand (state, env, ofVal)
         fun doWB trg = writeBarrier (state, env, v, trg, nv, kind, false)
         val set =
-            case (eo, ssk)
-             of (NONE, SskScalar) =>
-                doWB (Pil.E.call (Pil.E.namedConstant RT.Object.field,
-                                  [v, off, ft]))
-              | (SOME e, SskScalar) =>
-                doWB (Pil.E.call (Pil.E.namedConstant RT.Object.extra,
-                                  [v, off, ft, e]))
-              | (NONE, SskVectorResult et) => Fail.fail ("MilToPil", "genTupleSet", "SskVectorResult")
-(*                Pil.E.call (Pil.E.namedConstant (RT.Prims.storeF et),
-                            [v, off, nv])*)
-              | (SOME e, SskVectorResult et) => 
-                Pil.E.call (Pil.E.namedConstant (RT.Prims.vectorStoreV (et, kind)), [v, off, e, nv])
-              | (_, SskVectorIndex et) => Fail.fail ("MilToPil", "genTupleSet", "SskVectorIndex")
-(*                Pil.E.call (Pil.E.namedConstant (RT.Vec.scatter et),
-                            [v, off, Option.valOf eo, nv])*)
+            case ssk
+             of SskScalarFixed                            => 
+                doWB (Pil.E.call (Pil.E.namedConstant RT.Object.field, [v, off, ft]))
+              | SskScalarVariable e                       =>
+                doWB (Pil.E.call (Pil.E.namedConstant RT.Object.extra, [v, off, ft, e]))
+              | SskVectorFixed et                         => 
+                Pil.E.call (Pil.E.namedConstant (RT.Prims.vectorStoreF (et, kind)), [v, off, nv])
+              | SskVectorVariableStrided (et, i, e)       =>
+                Pil.E.call (Pil.E.namedConstant (RT.Prims.vectorStoreVS (et, kind)), [v, off, e, i, nv])
+              | SskVectorVariableIndexed (et, e)          => 
+                Pil.E.call (Pil.E.namedConstant (RT.Prims.vectorStoreVI (et, kind)), [v, off, e, nv])
+              | SskVectorVariableVectorStrided (et, i, e) => 
+                Pil.E.call (Pil.E.namedConstant (RT.Prims.vectorStoreVVS (et, kind)), [v, off, e, i, nv])
+              | SskVectorVariableVectorIndexed (et, e)    => 
+                Pil.E.call (Pil.E.namedConstant (RT.Prims.vectorStoreVVI (et, kind)), [v, off, e, nv])
       in set
       end
 

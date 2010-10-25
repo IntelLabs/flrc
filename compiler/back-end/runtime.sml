@@ -128,8 +128,17 @@ sig
     val numericTyp : Mil.Prims.numericTyp -> Pil.T.t
     (*         dests              prim          thnk?  typs                     args            call  *)
     val call : Pil.E.t Vector.t * Mil.Prims.t * bool * Mil.fieldKind Vector.t * Pil.E.t list -> Pil.S.t
-    val vectorLoadV : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
-    val vectorStoreV : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorLoadF   : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorLoadVS  : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorLoadVI  : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorLoadVVS : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorLoadVVI : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorStoreF   : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorStoreVS  : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorStoreVI  : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorStoreVVS : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorStoreVVI : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+
   end
 
   structure Object :
@@ -592,21 +601,26 @@ struct
       in s
       end
 
-    val vectorLoadV : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier = 
+    val vectorLoadStoreHelp : string -> Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier = 
+     fn name => 
      fn (vd, fk) => 
         let
           val vs = getVectorSizeName (PU.VectorDescriptor.vectorSize vd)
           val fk = getFieldKindName fk
-        in Pil.identifier ("pLsrVector" ^ vs ^ fk ^ "LoadV")
+        in Pil.identifier ("pLsrVector" ^ vs ^ fk ^ name)
         end
+        
+    val vectorLoadF   = vectorLoadStoreHelp "LoadF"
+    val vectorLoadVS  = vectorLoadStoreHelp "LoadVS"
+    val vectorLoadVI  = vectorLoadStoreHelp "LoadVI"
+    val vectorLoadVVS = vectorLoadStoreHelp "LoadVVS"
+    val vectorLoadVVI = vectorLoadStoreHelp "LoadVVI"
 
-    val vectorStoreV : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier = 
-     fn (vd, fk) => 
-        let
-          val vs = getVectorSizeName (PU.VectorDescriptor.vectorSize vd)
-          val fk = getFieldKindName fk
-        in Pil.identifier ("pLsrVector" ^ vs ^ fk ^ "StoreV")
-        end
+    val vectorStoreF   = vectorLoadStoreHelp "StoreF"
+    val vectorStoreVS  = vectorLoadStoreHelp "StoreVS"
+    val vectorStoreVI  = vectorLoadStoreHelp "StoreVI"
+    val vectorStoreVVS = vectorLoadStoreHelp "StoreVVS"
+    val vectorStoreVVI = vectorLoadStoreHelp "StoreVVI"
 
   end
 
