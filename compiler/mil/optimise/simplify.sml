@@ -422,7 +422,7 @@ struct
                | CIntegral i => simple Mil.CIntegral i
                | CFloat r    => simple Mil.CFloat r
                | CDouble r   => simple Mil.CDouble r
-               | CBool b     => simple Mil.CBoolean b
+               | CBool b     => simple MU.Bool.fromBool (config, b)
            end
 
        val toMilConstant = 
@@ -446,7 +446,21 @@ struct
                  in r
                  end)
 
-
+       structure Dec = 
+       struct
+         val cRat      : t -> Rat.t option    = 
+          fn c => case c of CRat r => SOME r | _ => NONE
+         val cInteger  : t -> IntInf.t option = 
+          fn c => case c of CInteger r => SOME r | _ => NONE
+         val cIntegral : t -> IntArb.t option = 
+          fn c => case c of CIntegral r => SOME r | _ => NONE
+         val cFloat    : t -> Real32.t option = 
+          fn c => case c of CFloat r => SOME r | _ => NONE
+         val cDouble   : t -> Real64.t option =
+          fn c => case c of CDouble r => SOME r | _ => NONE
+         val cBool     : t -> bool option     =
+          fn c => case c of CBool r => SOME r | _ => NONE
+       end
      end (* structure Constant *)
 
      structure Operation =
@@ -495,11 +509,12 @@ struct
             | RrBase of Mil.operand
             | RrConstant of Constant.t
             | RrPrim of Mil.Prims.prim * Mil.operand Vector.t
+
+     structure O = Operation
+     structure C = Constant
                         
      structure NumConvert = 
      struct
-       structure O = Operation
-       structure C = Constant
        val identity = 
         fn(c, {to, from}, args, get) => 
           Try.try 
@@ -555,6 +570,115 @@ struct
            identity or transitivity or fold
      end (* structure NumConvert *)
 
+     structure NumCompare =
+     struct
+
+       val identity = 
+        fn(c, {typ, operator}, args, get) => 
+          Try.try 
+            (fn () => 
+                let
+                  val (arg1, arg2) = Try.V.doubleton args
+                  val () = Try.require (MU.Operand.eq (arg1, arg2))
+                  val () = case typ
+                            of P.NtFloat _ => Try.fail ()
+                             | _           => ()
+                  val b = case operator
+                           of P.CEq => true
+                            | P.CNe => false
+                            | P.CLt => false
+                            | P.CLe => true
+                in RrConstant (C.CBool b)
+                end)
+
+       val doCompare = 
+        fn (dec, eq, lt, le) => 
+           Try.lift 
+             (fn (x1, c, x2) =>
+                 let
+                   val x1 = <@ dec x1
+                   val x2 = <@ dec x2
+                   val r = 
+                       (case c
+                         of P.CEq => C.CBool (eq (x1, x2))
+                          | P.CNe => C.CBool (not (eq (x1, x2)))
+                          | P.CLt => C.CBool (lt (x1, x2))
+                          | P.CLe => C.CBool (le (x1, x2)))
+                 in r
+                 end)
+           
+       val fold = 
+           Try.lift
+             (fn(c, {typ, operator}, args, get) => 
+                let
+                  val (r1, r2) = Try.V.doubleton args
+                  val r1 = <@ Operation.Dec.oConstant (get r1)
+                  val r2 = <@ Operation.Dec.oConstant (get r2)
+                  val doIt = 
+                      (case typ
+                        of P.NtRat                    => doCompare (C.Dec.cRat,         Rat.equals,    Rat.<,    Rat.<=)
+                         | P.NtInteger (P.IpFixed ia) => doCompare (C.Dec.cIntegral, IntArb.equals, IntArb.<, IntArb.<=)
+                         | P.NtInteger P.IpArbitrary  => doCompare (C.Dec.cInteger,  IntInf.equals, IntInf.<, IntInf.<=)
+                         | P.NtFloat P.FpSingle       => doCompare (C.Dec.cFloat,    Real32.equals, Real32.<, Real32.<=)
+                         | P.NtFloat P.FpDouble       => doCompare (C.Dec.cDouble,   Real64.equals, Real64.<, Real64.<=))
+                  val r = <@ doIt (r1, operator, r2)
+                in RrConstant r
+                end)
+
+       val reduce : Config.t * {typ : P.numericTyp, operator : P.compareOp} 
+                    * Mil.operand Vector.t * (Mil.operand -> Operation.t) 
+                    -> reduction Try.t =
+           identity or fold
+
+     end (* structure NumCompare *)
+
+     structure NumArith =
+     struct
+
+       val doArith = 
+        fn (dec, con, plus, neg, minus, times, divide) => 
+           Try.lift 
+             (fn (operator, args) =>
+                 let
+                   val args = Vector.map (args, <@ dec)
+                   val c = 
+                       case operator
+                        of P.APlus   => con (plus (Try.V.doubleton args))
+                         | P.ANegate => con (neg (Try.V.singleton args))
+                         | P.AMinus  => con (minus (Try.V.doubleton args))
+                         | P.ATimes  => con (times (Try.V.doubleton args))
+                         | P.ADivide => con (<- divide (Try.V.doubleton args))
+                         | _         => Try.fail ()
+                   val r = RrConstant c
+                 in r
+                 end)
+           
+       val fold = 
+           Try.lift
+           (fn(c, {typ, operator}, args, get) => 
+              let
+                val args = Vector.map (args, <@ O.Dec.oConstant o get)
+                val doIt = 
+                    (case typ
+                      of P.NtRat                    => doArith (C.Dec.cRat,      C.CRat, 
+                                                                Rat.+, Rat.~, Rat.-, Rat.*, SOME Rat./)
+                       | P.NtInteger (P.IpFixed ia) => doArith (C.Dec.cIntegral, C.CIntegral,
+                                                                IntArb.+, IntArb.~, IntArb.-, IntArb.*, NONE)
+                       | P.NtInteger P.IpArbitrary  => doArith (C.Dec.cInteger, C.CInteger,
+                                                                IntInf.+, IntInf.~, IntInf.-, IntInf.*, NONE)
+                       | P.NtFloat P.FpSingle       => Try.fail ()
+                       | P.NtFloat P.FpDouble       => Try.fail ())
+                val r = <@ doIt (operator, args)
+              in r
+              end)
+                    
+       val reduce : Config.t * {typ : P.numericTyp, operator : P.arithOp} 
+                    * Mil.operand Vector.t * (Mil.operand -> Operation.t) 
+                    -> reduction Try.t =
+           fold
+
+     end (* structure NumArith *)
+
      structure Reduce =
      struct
        datatype t = datatype reduction
@@ -565,9 +689,9 @@ struct
        val prim : Config.t * Mil.Prims.prim * Mil.operand Vector.t * (Mil.operand -> Operation.t) -> t = 
         fn (c, p, args, get) => 
            (case p
-             of P.PNumArith r1   => RrUnchanged
+             of P.PNumArith r1   => out NumArith.reduce (c, r1, args, get)
 	      | P.PFloatOp r1    => RrUnchanged
-	      | P.PNumCompare r1 => RrUnchanged
+	      | P.PNumCompare r1 => out NumCompare.reduce (c, r1, args, get)
 	      | P.PNumConvert r1 => out NumConvert.reduce (c, r1, args, get)
 	      | P.PBitwise r1    => RrUnchanged
 	      | P.PBoolean r1    => RrUnchanged
@@ -1882,6 +2006,7 @@ struct
                             | NONE     => PrimsReduce.Operation.OOther))
 
                 val config = PD.getConfig d
+                val si = IMil.T.getSi imil
 
                 val rr = PrimsReduce.Reduce.prim (config, p, args, milToPrim)
 
@@ -1896,8 +2021,9 @@ struct
                          end
                        | PrimsReduce.Reduce.RrConstant c =>
                          let
-                           val gv = Var.new (imil, "mrt_#", MU.Rational.t, M.VkGlobal)
                            val mg = PrimsReduce.Constant.toMilGlobal (PD.getConfig d, c)
+                           val t = MilType.Typer.global (config, si, mg)
+                           val gv = Var.new (imil, "mrt_#", t, M.VkGlobal)
                            val g = IGlobal.build (imil, (gv, mg))
                            val () = Use.replaceUses (imil, dv, M.SVariable gv)
                            val () = IInstr.delete (imil, i)
@@ -1918,7 +2044,118 @@ struct
         in try (Click.primPrim, f)
         end
 
-    val prim = primPrim or primToLen
+    structure Operation = PrimsReduce.Operation
+    structure Constant = PrimsReduce.Constant
+
+   (* This is a hack. Technically, these are uninterpreted primitives.  
+    * Since we have temporarily moved some prims over here on the way 
+    * to phasing them out, I interpret them here for the sake of 
+    * preservering performance.  
+    *)
+    val primRuntime = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dests, {prim, createThunks, typs, args})) =>
+              let
+                val dv = Try.V.singleton dests
+
+                val p = <@ PU.T.Dec.runtime prim
+
+                val config = PD.getConfig d
+                val si = IMil.T.getSi imil
+
+                val milToPrim = 
+                 fn p => 
+                    (case p
+                      of M.SConstant c => PrimsReduce.Operation.fromMilConstant c
+                       | M.SVariable v => 
+                         (case Def.toMilDef o Def.get @@ (imil, v)
+                           of SOME def => PrimsReduce.Operation.fromDef def
+                            | NONE     => PrimsReduce.Operation.OOther))
+
+                val replace = 
+                 fn c => 
+                    let
+                      val mg = PrimsReduce.Constant.toMilGlobal (PD.getConfig d, c)
+                      val t = MilType.Typer.global (config, si, mg)
+                      val gv = Var.new (imil, "mrt_#", t, M.VkGlobal)
+                      val g = IGlobal.build (imil, (gv, mg))
+                      val () = Use.replaceUses (imil, dv, M.SVariable gv)
+                      val () = IInstr.delete (imil, i)
+                    in [I.ItemGlobal g]
+                    end
+                    
+                val l = 
+                    (case p
+                      of P.RtRatNumerator =>
+                         (case Vector.toListMap (args, milToPrim)
+                           of [Operation.OConstant (Constant.CRat r)] => replace (Constant.CRat (Rat.numerator r))
+                            | _                                       => [])
+                       | P.RtRatDenominator =>
+                         (case Vector.toListMap (args, milToPrim)
+                           of [Operation.OConstant (Constant.CRat r)] => replace (Constant.CRat (Rat.denominator r))
+                            | _                                       => [])
+                       | P.RtEqual =>
+                         (case Vector.toListMap (args, milToPrim)
+                           of [Operation.OConstant c1, Operation.OConstant c2] =>
+                              let
+                                val b = 
+                                    case (c1, c2)
+                                     of (Constant.CRat r1,      Constant.CRat r2     ) => Rat.equals (r1, r2)
+                                      | (Constant.CRat _,       _                    ) => false
+                                      | (Constant.CInteger i1,  Constant.CInteger i2 ) => IntInf.equals (i1, i2)
+                                      | (Constant.CInteger _,   _                    ) => false
+                                      | (Constant.CIntegral i1, Constant.CIntegral i2) => IntArb.sameTyps (i1, i2) andalso
+                                                                                          IntArb.equals (i1, i2)
+                                      | (Constant.CIntegral _,  _                    ) => false
+                                      | (Constant.CFloat f1,    Constant.CFloat f2   ) => Real32.equals (f1, f2)
+                                      | (Constant.CFloat _,     _                    ) => false
+                                      | (Constant.CDouble d1,   Constant.CDouble d2  ) => Real64.equals (d1, d2)
+                                      | (Constant.CDouble _,    _                    ) => false
+                                      | (Constant.CBool b1,     Constant.CBool b2    ) => b1 = b2
+                                      | (Constant.CBool _,      _                    ) => false
+                                val c = Constant.CBool b
+                              in replace c
+                              end
+                            | _ => [])
+                       | P.RtRatToUIntpChecked =>
+                         (case Vector.toListMap (args, milToPrim)
+                           of [Operation.OConstant c] => 
+                              let
+                                val typ = IntArb.T (Config.targetWordSize' config, IntArb.Unsigned)
+                                val maxUIntp = IntArb.maxValue typ
+                                fun mkUIntp i = replace (Constant.CIntegral (IntArb.fromIntInf (typ, i)))
+                              in
+                                case c
+                                 of Constant.CRat r =>
+                                    (case Rat.toIntInf r
+                                      of SOME i =>
+                                         if i < IntInf.zero orelse i >= maxUIntp then
+                                           mkUIntp maxUIntp
+                                         else
+                                           mkUIntp i
+                                       | NONE => mkUIntp maxUIntp)
+                                  | _ => []
+                              end
+                            | [Operation.OPrim (p, args)] => 
+                              (case (p, Vector.toList args) 
+                                of (P.PNumConvert {to = P.NtRat, 
+                                                   from = P.NtInteger (P.IpFixed (IntArb.T (IntArb.S32, IntArb.Unsigned)))},
+                                    [b])    => 
+                                   let
+                                     val () = Use.replaceUses (imil, dv, b)
+                                     val () = IInstr.delete (imil, i)
+                                   in []
+                                   end
+                                 | _             => [])
+                            | _ => [])
+                       | _ => [])
+              in l
+              end   
+        in try (Click.primPrim, f)
+        end
+
+    val prim = primPrim or primToLen or primRuntime
 
     val tuple = fn (state, (i, dests, r)) => NONE
 
