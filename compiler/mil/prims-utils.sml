@@ -281,7 +281,6 @@ sig
       val faCeil  : t -> unit option
       val faCos   : t -> unit option
       val faFloor : t -> unit option
-      val faMod   : t -> unit option
       val faRcp   : t -> unit option
       val faSin   : t -> unit option
       val faSqrt  : t -> unit option
@@ -597,7 +596,6 @@ struct
                 | Mil.Prims.FaCeil     => "Ceil"
 	        | Mil.Prims.FaCos      => "Cos"
 	        | Mil.Prims.FaFloor    => "Floor"
-	        | Mil.Prims.FaMod      => "Mod"
 	        | Mil.Prims.FaRcp      => "Rcp"
 	        | Mil.Prims.FaSin      => "Sin"
 	        | Mil.Prims.FaSqrt     => "Sqrt"
@@ -998,13 +996,12 @@ struct
                  | Prims.FaCeil  => 2
                  | Prims.FaCos   => 3
                  | Prims.FaFloor => 4
-                 | Prims.FaMod   => 5
-                 | Prims.FaRcp   => 6
-                 | Prims.FaSin   => 7
-                 | Prims.FaSqrt  => 8
-                 | Prims.FaTan   => 9
-                 | Prims.FaTrunc => 10
-                 | Prims.FaPow   => 11)
+                 | Prims.FaRcp   => 5
+                 | Prims.FaSin   => 6
+                 | Prims.FaSqrt  => 7
+                 | Prims.FaTan   => 8
+                 | Prims.FaTrunc => 9
+                 | Prims.FaPow   => 10)
         in IFO.base o number
         end
 
@@ -1528,7 +1525,6 @@ struct
       val faCeil  = fn fl => (case fl of Mil.Prims.FaCeil => SOME () | _ => NONE)
       val faCos   = fn fl => (case fl of Mil.Prims.FaCos => SOME () | _ => NONE)
       val faFloor = fn fl => (case fl of Mil.Prims.FaFloor => SOME () | _ => NONE)
-      val faMod   = fn fl => (case fl of Mil.Prims.FaMod => SOME () | _ => NONE)
       val faRcp   = fn fl => (case fl of Mil.Prims.FaRcp => SOME () | _ => NONE)
       val faSin   = fn fl => (case fl of Mil.Prims.FaSin => SOME () | _ => NONE)
       val faSqrt  = fn fl => (case fl of Mil.Prims.FaSqrt => SOME () | _ => NONE)
@@ -1775,7 +1771,6 @@ struct
                | Prims.FaCeil  => ArAtoA
                | Prims.FaCos   => ArAtoA
                | Prims.FaFloor => ArAtoA
-               | Prims.FaMod   => ArAAtoA
                | Prims.FaRcp   => ArAtoA
                | Prims.FaSin   => ArAtoA
                | Prims.FaSqrt  => ArAtoA
