@@ -34,6 +34,7 @@ sig
   structure V : sig
     val sub : 'a Vector.t * int -> 'a
     val singleton : 'a Vector.t -> 'a
+    val doubleton : 'a Vector.t -> 'a * 'a
     val lenEq : 'a Vector.t * int -> unit
     val isEmpty : 'a Vector.t -> unit
   end
@@ -125,6 +126,14 @@ struct
           val () = require (Vector.length v = 1)
           val r = Vector.sub (v, 0)
         in r
+        end
+
+    fun doubleton v = 
+        let
+          val () = require (Vector.length v = 2)
+          val r1 = Vector.sub (v, 0)
+          val r2 = Vector.sub (v, 1)
+        in (r1, r2)
         end
 
     fun lenEq (v, i) = require (Vector.length v = i)

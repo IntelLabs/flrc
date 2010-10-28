@@ -125,7 +125,7 @@ struct
                 (case path
                   of PRel arcs => collapse arcs
                    | PAbs (Root, arcs) => raise (Path ("Can't use root volume in windows"))
-                   | PAbs (Drive c, arcs) => (Char.toString c)^":\\\\"^collapse arcs)
+                   | PAbs (Drive c, arcs) => (Char.toString c)^":\\"^collapse arcs)
             val s = OS.Path.mkCanonical s
           in s
           end)

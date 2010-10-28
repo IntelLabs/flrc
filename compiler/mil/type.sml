@@ -846,17 +846,15 @@ struct
 	       case p
 	        of MP.ViPointwise r1   => 
                    let
-                     val (t1, t2, t3) = unBin (prim (c, #operator r1))
+                     val (ats, rts) = prim (c, #operator r1)
                      val size = PU.VectorDescriptor.vectorSize (#descriptor r1)
-                     val t1 = tVector (size, t1)
-                     val t2 = tVector (size, t2)
-                     val t3 = tVector (size, t3)
+                     val ats = Vector.map (ats, fn t => tVector (size, t))
+                     val rts = Vector.map (rts, fn t => tVector (size, t))
                      val ats = 
                          if #masked r1 then 
-                           Vector.new3 (t1, t2, tMask (#descriptor r1))
+                           Utils.Vector.snoc (ats, tMask (#descriptor r1))
                          else 
-                           Vector.new2 (t1, t2)
-                     val rts = Vector.new1 t3
+                           ats
                    in (ats, rts)
                    end
 	         | MP.ViConvert r1     => 
