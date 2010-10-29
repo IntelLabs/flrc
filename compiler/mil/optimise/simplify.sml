@@ -357,6 +357,16 @@ struct
                  val fromMilConstant : Mil.constant -> t option
                  val toMilGlobal : Config.t * t -> Mil.global
                  val toMilConstant : Config.t * t -> Mil.constant option
+                 structure Dec :
+                 sig
+                   val cRat      : t -> Rat.t option     
+                   val cInteger  : t -> IntInf.t option  
+                   val cIntegral : t -> IntArb.t option  
+                   val cFloat    : t -> Real32.t option  
+                   val cDouble   : t -> Real64.t option 
+                   val cBool     : t -> bool option     
+                 end (* structure Dec *)
+
                end (* structure Constant *)
 
      structure Operation :
@@ -369,6 +379,12 @@ struct
                  val fromMilGlobal : Mil.global -> t
                  val fromMilRhs : Mil.rhs -> t
                  val fromDef : MilUtils.Def.t -> t
+                 structure Dec :
+                 sig
+                   val oConstant : t -> Constant.t option
+                   val oPrim     : t -> (Mil.Prims.prim * Mil.operand Vector.t) option
+                   val oOther    : t -> unit option
+                 end (* structure Dec *)
                end (* structure Operation *)
 
      structure Reduce :
@@ -2090,66 +2106,75 @@ struct
                       of P.RtRatNumerator =>
                          (case Vector.toListMap (args, milToPrim)
                            of [Operation.OConstant (Constant.CRat r)] => replace (Constant.CRat (Rat.numerator r))
-                            | _                                       => [])
+                            | _                                       => Try.fail ())
                        | P.RtRatDenominator =>
                          (case Vector.toListMap (args, milToPrim)
                            of [Operation.OConstant (Constant.CRat r)] => replace (Constant.CRat (Rat.denominator r))
-                            | _                                       => [])
+                            | _                                       => Try.fail ())
                        | P.RtEqual =>
-                         (case Vector.toListMap (args, milToPrim)
-                           of [Operation.OConstant c1, Operation.OConstant c2] =>
-                              let
-                                val b = 
-                                    case (c1, c2)
-                                     of (Constant.CRat r1,      Constant.CRat r2     ) => Rat.equals (r1, r2)
-                                      | (Constant.CRat _,       _                    ) => false
-                                      | (Constant.CInteger i1,  Constant.CInteger i2 ) => IntInf.equals (i1, i2)
-                                      | (Constant.CInteger _,   _                    ) => false
-                                      | (Constant.CIntegral i1, Constant.CIntegral i2) => IntArb.sameTyps (i1, i2) andalso
-                                                                                          IntArb.equals (i1, i2)
-                                      | (Constant.CIntegral _,  _                    ) => false
-                                      | (Constant.CFloat f1,    Constant.CFloat f2   ) => Real32.equals (f1, f2)
-                                      | (Constant.CFloat _,     _                    ) => false
-                                      | (Constant.CDouble d1,   Constant.CDouble d2  ) => Real64.equals (d1, d2)
-                                      | (Constant.CDouble _,    _                    ) => false
-                                      | (Constant.CBool b1,     Constant.CBool b2    ) => b1 = b2
-                                      | (Constant.CBool _,      _                    ) => false
-                                val c = Constant.CBool b
-                              in replace c
-                              end
-                            | _ => [])
+                         let
+                           val (arg1, arg2) = Try.V.doubleton args
+                           val arg1 = milToPrim arg1
+                           val arg2 = milToPrim arg2
+                           val c1 = <@ Operation.Dec.oConstant arg1
+                           val c2 = <@ Operation.Dec.oConstant arg2
+                           val b = 
+                               case (c1, c2)
+                                of (Constant.CRat r1,      Constant.CRat r2     ) => Rat.equals (r1, r2)
+                                 | (Constant.CRat _,       _                    ) => false
+                                 | (Constant.CInteger i1,  Constant.CInteger i2 ) => IntInf.equals (i1, i2)
+                                 | (Constant.CInteger _,   _                    ) => false
+                                 | (Constant.CIntegral i1, Constant.CIntegral i2) => IntArb.sameTyps (i1, i2) andalso
+                                                                                     IntArb.equals (i1, i2)
+                                 | (Constant.CIntegral _,  _                    ) => false
+                                 | (Constant.CFloat f1,    Constant.CFloat f2   ) => Real32.equals (f1, f2)
+                                 | (Constant.CFloat _,     _                    ) => false
+                                 | (Constant.CDouble d1,   Constant.CDouble d2  ) => Real64.equals (d1, d2)
+                                 | (Constant.CDouble _,    _                    ) => false
+                                 | (Constant.CBool b1,     Constant.CBool b2    ) => b1 = b2
+                                 | (Constant.CBool _,      _                    ) => false
+                           val c = Constant.CBool b
+                         in replace c
+                         end
                        | P.RtRatToUIntpChecked =>
-                         (case Vector.toListMap (args, milToPrim)
-                           of [Operation.OConstant c] => 
-                              let
-                                val typ = IntArb.T (Config.targetWordSize' config, IntArb.Unsigned)
-                                val maxUIntp = IntArb.maxValue typ
-                                fun mkUIntp i = replace (Constant.CIntegral (IntArb.fromIntInf (typ, i)))
-                              in
-                                case c
-                                 of Constant.CRat r =>
-                                    (case Rat.toIntInf r
-                                      of SOME i =>
-                                         if i < IntInf.zero orelse i >= maxUIntp then
-                                           mkUIntp maxUIntp
-                                         else
-                                           mkUIntp i
-                                       | NONE => mkUIntp maxUIntp)
-                                  | _ => []
-                              end
-                            | [Operation.OPrim (p, args)] => 
-                              (case (p, Vector.toList args) 
-                                of (P.PNumConvert {to = P.NtRat, 
-                                                   from = P.NtInteger (P.IpFixed (IntArb.T (IntArb.S32, IntArb.Unsigned)))},
-                                    [b])    => 
-                                   let
-                                     val () = Use.replaceUses (imil, dv, b)
-                                     val () = IInstr.delete (imil, i)
-                                   in []
-                                   end
-                                 | _             => [])
-                            | _ => [])
-                       | _ => [])
+                         let
+                           val arg1 = Try.V.singleton args
+                           val arg1 = milToPrim arg1
+                           val l = 
+                               (case arg1
+                                 of Operation.OConstant c => 
+                                    let
+                                      val typ = IntArb.T (Config.targetWordSize' config, IntArb.Unsigned)
+                                      val maxUIntp = IntArb.maxValue typ
+                                      fun mkUIntp i = replace (Constant.CIntegral (IntArb.fromIntInf (typ, i)))
+                                      val r = <@ Constant.Dec.cRat c
+                                      val l = 
+                                          (case Rat.toIntInf r
+                                            of SOME i =>
+                                               if i < IntInf.zero orelse i >= maxUIntp then
+                                                 mkUIntp maxUIntp
+                                               else
+                                                 mkUIntp i
+                                             | NONE => mkUIntp maxUIntp)
+                                    in l
+                                    end
+                                  | Operation.OPrim (p, args) => 
+                                    let
+                                      val b = Try.V.singleton args
+                                      val {to, from} = <@ PU.Prim.Dec.pNumConvert p
+                                      val () = <@ PU.NumericTyp.Dec.ntRat to
+                                      val ip = <@ PU.NumericTyp.Dec.ntInteger from
+                                      val IntArb.T (size, signed) = <@ PU.IntPrecision.Dec.ipFixed ip
+                                      val () = <@ IntArb.Size.Dec.s32 size
+                                      val () = <@ IntArb.Signed.Dec.unsigned signed
+                                      val () = Use.replaceUses (imil, dv, b)
+                                      val () = IInstr.delete (imil, i)
+                                    in []
+                                    end
+                                  | _             => Try.fail())
+                         in l
+                         end
+                       | _ => Try.fail ())
               in l
               end   
         in try (Click.primPrim, f)
