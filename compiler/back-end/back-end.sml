@@ -159,6 +159,7 @@ struct
             case (Config.va config)
              of Config.ViREF => ["P_USE_VI_REF"]
               | Config.ViSSE => ["P_USE_VI_SSE"]
+              | Config.ViAVX => ["P_USE_VI_AVX"]
               | Config.ViLRB => ["P_USE_VI_LRB"]
 
         val numericDefines =

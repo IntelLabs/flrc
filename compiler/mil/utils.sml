@@ -2077,6 +2077,7 @@ struct
         case Config.va config
          of Config.ViREF => M.Vs128
           | Config.ViSSE => M.Vs128
+          | Config.ViAVX => M.Vs256
           | Config.ViLRB => M.Vs512
 
     val compare = Compare.valueSize
