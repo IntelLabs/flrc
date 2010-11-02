@@ -593,10 +593,11 @@ struct
         val m = Pil.E.namedConstant (getName (p, t, typs))
         val e = 
             case (p, Vector.length ds)
-             of (P.Prim p, _) => Pil.E.call (m, (Vector.toList ds)@args)
-              | (_,        0) => Pil.E.call (m, args)
-              | (_,        1) => Pil.E.assign (Vector.sub (ds, 0), Pil.E.call (m, args))
-              | (_,        _) => Fail.fail ("Runtime.Prims", "call", "Multiple dests only supported for Prims")
+             of (P.Prim _, _)   => Pil.E.call (m, (Vector.toList ds)@args)
+              | (P.Vector _, _) => Pil.E.call (m, (Vector.toList ds)@args)
+              | (_,        0)   => Pil.E.call (m, args)
+              | (_,        1)   => Pil.E.assign (Vector.sub (ds, 0), Pil.E.call (m, args))
+              | (_,        _)   => Fail.fail ("Runtime.Prims", "call", "Multiple dests only supported for Prims")
         val s = Pil.S.expr e
       in s
       end

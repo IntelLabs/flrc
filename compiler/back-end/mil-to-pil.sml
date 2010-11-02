@@ -1202,17 +1202,18 @@ struct
         val fte = Pil.E.hackTyp ft
         val (off, ssk, M.FD {kind, ...}) = doTupleField (state, env, tf)
         val off = Pil.E.int off
-        val (loader, args) =
+        val d = genVarE (state, env, dest)
+        val assign = fn (loader, args) => Pil.E.assign (d, Pil.E.call (Pil.E.namedConstant loader, args))
+        val call = fn (loader, args) => Pil.E.call (Pil.E.namedConstant loader, d::args)
+        val a =
             case ssk
-             of SskScalarFixed                            => (RT.Object.field, [v, off, fte])
-              | SskScalarVariable e                       => (RT.Object.extra, [v, off, fte, e])
-              | SskVectorFixed et                         => (RT.Prims.vectorLoadF   (et, kind), [v, off])
-              | SskVectorVariableStrided (et, i, e)       => (RT.Prims.vectorLoadVS  (et, kind), [v, off, e, i])
-              | SskVectorVariableIndexed (et, e)          => (RT.Prims.vectorLoadVI  (et, kind), [v, off, e])
-              | SskVectorVariableVectorStrided (et, i, e) => (RT.Prims.vectorLoadVVS (et, kind), [v, off, e, i])
-              | SskVectorVariableVectorIndexed (et, e)    => (RT.Prims.vectorLoadVVI (et, kind), [v, off, e])
-        val sub = Pil.E.call (Pil.E.namedConstant loader, args)
-        val a = Pil.E.assign (genVarE (state, env, dest), sub)
+             of SskScalarFixed                            => assign (RT.Object.field, [v, off, fte])
+              | SskScalarVariable e                       => assign (RT.Object.extra, [v, off, fte, e])
+              | SskVectorFixed et                         => call (RT.Prims.vectorLoadF   (et, kind), [v, off])
+              | SskVectorVariableStrided (et, i, e)       => call (RT.Prims.vectorLoadVS  (et, kind), [v, off, e, i])
+              | SskVectorVariableIndexed (et, e)          => call (RT.Prims.vectorLoadVI  (et, kind), [v, off, e])
+              | SskVectorVariableVectorStrided (et, i, e) => call (RT.Prims.vectorLoadVVS (et, kind), [v, off, e, i])
+              | SskVectorVariableVectorIndexed (et, e)    => call (RT.Prims.vectorLoadVVI (et, kind), [v, off, e])
       in Pil.S.expr a
       end
 
@@ -1226,22 +1227,17 @@ struct
         val off = Pil.E.int off
         val nv = genOperand (state, env, ofVal)
         fun doWB trg = writeBarrier (state, env, v, trg, nv, kind, false)
+        val scalar = fn (field, args) => doWB (Pil.E.call (Pil.E.namedConstant field, args))
+        val vector = fn (field, args) => Pil.E.call (Pil.E.namedConstant field, args)
         val set =
             case ssk
-             of SskScalarFixed                            => 
-                doWB (Pil.E.call (Pil.E.namedConstant RT.Object.field, [v, off, ft]))
-              | SskScalarVariable e                       =>
-                doWB (Pil.E.call (Pil.E.namedConstant RT.Object.extra, [v, off, ft, e]))
-              | SskVectorFixed et                         => 
-                Pil.E.call (Pil.E.namedConstant (RT.Prims.vectorStoreF (et, kind)), [v, off, nv])
-              | SskVectorVariableStrided (et, i, e)       =>
-                Pil.E.call (Pil.E.namedConstant (RT.Prims.vectorStoreVS (et, kind)), [v, off, e, i, nv])
-              | SskVectorVariableIndexed (et, e)          => 
-                Pil.E.call (Pil.E.namedConstant (RT.Prims.vectorStoreVI (et, kind)), [v, off, e, nv])
-              | SskVectorVariableVectorStrided (et, i, e) => 
-                Pil.E.call (Pil.E.namedConstant (RT.Prims.vectorStoreVVS (et, kind)), [v, off, e, i, nv])
-              | SskVectorVariableVectorIndexed (et, e)    => 
-                Pil.E.call (Pil.E.namedConstant (RT.Prims.vectorStoreVVI (et, kind)), [v, off, e, nv])
+             of SskScalarFixed                            => scalar (RT.Object.field, [v, off, ft])
+              | SskScalarVariable e                       => scalar (RT.Object.extra, [v, off, ft, e])
+              | SskVectorFixed et                         => vector (RT.Prims.vectorStoreF (et, kind), [v, off, nv])
+              | SskVectorVariableStrided (et, i, e)       => vector (RT.Prims.vectorStoreVS (et, kind), [v, off, e, i, nv])
+              | SskVectorVariableIndexed (et, e)          => vector (RT.Prims.vectorStoreVI (et, kind), [v, off, e, nv])
+              | SskVectorVariableVectorStrided (et, i, e) => vector (RT.Prims.vectorStoreVVS (et, kind), [v, off, e, i, nv])
+              | SskVectorVariableVectorIndexed (et, e)    => vector (RT.Prims.vectorStoreVVI (et, kind), [v, off, e, nv])
       in set
       end
 
