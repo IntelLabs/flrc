@@ -92,6 +92,10 @@ struct
       Config.Feature.mk ("Plsr:tagged-ints-assume-small",
                          "use 32 bit ints for tagged ints (unchecked)")
 
+  val (p2cF, p2c) =
+      Config.Feature.mk ("PPiler:p2c",
+                         "Use the p2c backend")
+
 
   fun defines (config : Config.t) =
       let
@@ -285,7 +289,11 @@ struct
         (case compiler
           of CcGCC => ["-msse3"] (* without -msse, we should use -ffloat-store in float*)
            | CcICC => ["-QxT"]
-           | CcPillar => ["-QxB"])
+           | CcPillar => 
+             if p2c config then
+               ["-QxT"]
+             else
+               ["-QxB"])
 
     fun opt (config, compiler) =
         let
@@ -310,22 +318,34 @@ struct
                  | CcPillar => 
                    let
                      val oLevel = 
-                         (case level
-                           of 0 => "-Od"
-                            | 1 => 
-                              let
-                                val () = Chat.warn0 (config, 
-                                                     "Ignoring optimization flag to avoid Pillar bug")
-                              in "-O2"
-                              end
-                            | 2 => "-O2"
-                            | 3 => "-O2"
-                            | _ => fail ("picc", "Bad opt level"))
-
+                         if p2c config then
+                           (case level
+                             of 0 => ["-Od"]
+                              | 1 => ["-O1"]
+                              | 2 => ["-O2"]
+                              | 3 => ["-O3", "-Qip",
+                                      "-Qvec-report0", "-Qdiag-disable:cpu-dispatch"]
+                              | _ => fail ("picc", "Bad opt level"))
+                         else
+                           (case level
+                             of 0 => ["-Od"]
+                              | 1 => 
+                                let
+                                  val () = Chat.warn0 (config, 
+                                                       "Ignoring optimization flag to avoid Pillar bug")
+                                in ["-O2"]
+                                end
+                              | 2 => ["-O2"]
+                              | 3 => ["-O2"]
+                              | _ => fail ("picc", "Bad opt level"))
+                           
                      val opts = 
-                         [oLevel, "-Ob0", (* disable inlining*)
-                          "-mP2OPT_pre=false", (* disable PRE *)
-                          "-mCG_opt_mask=0xfffe"]
+                         if p2c config then
+                           oLevel
+                         else
+                           oLevel @[ "-Ob0", (* disable inlining*)
+                                     "-mP2OPT_pre=false", (* disable PRE *)
+                                     "-mCG_opt_mask=0xfffe"]
                    in opts
                    end
               )
@@ -344,8 +364,16 @@ struct
                                        (* Pillar doesn't have -Qftz *)
                  | (CcICC, true)  => ["-fp:fast", "-Qftz"]
                  | (CcICC, false) => ["-fp:source", "-Qftz-", "-Qprec-div", "-Qprec-sqrt", "-Qvec-"]
-                 | (CcPillar, true)  => ["-fp:fast"]
-                 | (CcPillar, false) => ["-fp:source", "-Qprec-div", "-Qprec-sqrt", "-Qvec-"]
+                 | (CcPillar, true)  => 
+                   if p2c config then 
+                     ["-fp:fast", "-Qftz"]
+                   else
+                     ["-fp:fast"]
+                 | (CcPillar, false) => 
+                   if p2c config then
+                     ["-fp:source", "-Qftz-", "-Qprec-div", "-Qprec-sqrt", "-Qvec-"]
+                   else
+                     ["-fp:source", "-Qprec-div", "-Qprec-sqrt", "-Qvec-"]
               )
         in os
         end
@@ -369,11 +397,15 @@ struct
         (case compiler
           of CcGCC  => ["-std=c99"]
            | CcICC  => ["-TC", "-Qc99"]
-           | CcPillar => ["-TC", "-Qc99",
-                          "-Qtlsregister:ebx",
-                          "-Qoffsetvsh:0", 
-                          "-Qoffsetusertls:4", 
-                          "-Qoffsetstacklimit:16"]
+           | CcPillar => 
+             if p2c config then 
+               ["-TC", "-Qc99", "-p2c"]
+             else
+               ["-TC", "-Qc99",
+                "-Qtlsregister:ebx",
+                "-Qoffsetvsh:0", 
+                "-Qoffsetusertls:4", 
+                "-Qoffsetstacklimit:16"]
         )
 
     fun runtime (config, compiler) = 
@@ -453,7 +485,7 @@ struct
         (case ld
           of LdGCC  => []
            | LdICC  => ["-link"]
-           | LdPillar => []
+           | LdPillar => ["-p2c"]
         )
 
     fun opt (config, ld) = 
@@ -682,7 +714,8 @@ struct
                                   instrumentVtbAllocationF,
                                   vtableChangeF,
                                   usePortableTaggedIntsF,
-                                  assumeSmallIntsF],
+                                  assumeSmallIntsF,
+                                  p2cF],
                       subPasses = []}
     fun pilCompile ((), pd, basename) =
         compile (PassData.getConfig pd, basename)
