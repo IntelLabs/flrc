@@ -794,6 +794,7 @@ struct
                      | P.AMinus  => binary getMinusValue
                      | P.ATimes  => binary getTimesValue
                      | _ => NONE)
+                | P.Prim (P.PNumConvert _) => unary (fn v => SOME v)
                 | _ => NONE
             end
         and binaryLf (x1, x2, f) =
