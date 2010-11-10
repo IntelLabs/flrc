@@ -486,7 +486,10 @@ struct
         (case ld
           of LdGCC  => []
            | LdICC  => ["-link"]
-           | LdPillar => ["-p2c"]
+           | LdPillar => if p2c config then 
+                           ["-p2c"]
+                         else
+                           []
         )
 
     fun opt (config, ld) = 
