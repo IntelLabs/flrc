@@ -385,8 +385,8 @@ struct
     fun mt (config, compiler) =
         (case compiler
           of CcGCC  => []
-           | CcICC  => if useFutures config then ["-MT"] else []
-           | CcPillar => ["-MT"])
+           | CcICC  => if Config.pilDebug config then ["-MTd"] else ["-MT"] 
+           | CcPillar => if Config.pilDebug config then ["-MTd"] else ["-MT"])
 
   end (* structure CcOptions *)
 
