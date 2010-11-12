@@ -360,6 +360,11 @@ struct
            | CcPillar => ["-W3", "-Qwd 177", "-Qwd 279"]
         )
 
+    fun align (config, compiler) = 
+        (case compiler 
+          of CcGCC => ["-malign-double"]
+           | _     => [])
+
     fun lang (config, compiler) =
         (case compiler
           of CcGCC  => ["-std=c99"]
@@ -380,8 +385,8 @@ struct
     fun mt (config, compiler) =
         (case compiler
           of CcGCC  => []
-           | CcICC  => if useFutures config then ["-MT"] else []
-           | CcPillar => ["-MT"])
+           | CcICC  => if Config.pilDebug config then ["-MTd"] else ["-MT"] 
+           | CcPillar => if Config.pilDebug config then ["-MTd"] else ["-MT"])
 
   end (* structure CcOptions *)
 
@@ -401,6 +406,7 @@ struct
              CcOptions.float cfg,
              CcOptions.warn cfg,
              CcOptions.lang cfg,
+             CcOptions.align cfg,
              CcOptions.runtime cfg,
              CcOptions.mt cfg
             ]
