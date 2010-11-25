@@ -687,11 +687,48 @@ struct
                 val r = <@ doIt (operator, args)
               in r
               end)
+
+       val doSimplify = 
+           Try.lift 
+             (fn (operator1, typ1, args1, get) =>
+                 let
+                   val res = 
+                       (case operator1
+                         of P.APlus   => 
+                            let
+                              val (b1, b2) = Try.V.doubleton args1
+                              val p1 = get b2
+                              val (p, args2) = <@ Operation.Dec.oPrim p1
+                              val {typ = typ2, operator = operator2} = <@ PU.Prim.Dec.pNumArith p
+                              val () = <@ PU.ArithOp.Dec.aNegate operator2
+                              val b3 = Try.V.singleton args2
+                              val () = Try.require (PU.NumericTyp.eq (typ1, typ2))
+                              val new = RrPrim (P.PNumArith {typ = typ1, operator = P.AMinus}, Vector.new2 (b1, b3))
+                            in new
+                            end
+                          | _         => Try.fail ())
+                 in res
+                 end)
+
+       val simplify = 
+           Try.lift
+           (fn(c, {typ, operator}, args, get) => 
+              let
+                val doIt = 
+                    (case typ
+                      of P.NtRat                    => doSimplify
+                       | P.NtInteger (P.IpFixed ia) => doSimplify
+                       | P.NtInteger P.IpArbitrary  => doSimplify
+                       | P.NtFloat P.FpSingle       => Try.fail ()
+                       | P.NtFloat P.FpDouble       => Try.fail ())
+                val r = <@ doIt (operator, typ, args, get)
+              in r
+              end)
                     
        val reduce : Config.t * {typ : P.numericTyp, operator : P.arithOp} 
                     * Mil.operand Vector.t * (Mil.operand -> Operation.t) 
                     -> reduction Try.t =
-           fold
+           fold or simplify
 
      end (* structure NumArith *)
 
