@@ -127,13 +127,13 @@ struct
                 | M.CRat n          => fail ("SConstant ", "rat" )
                 | M.CInteger n      => fail ("SConstant ", "integer" )
                 | M.CIntegral n     => prints (d, "SConstant " ^ IntArb.stringOf n )
+                | M.CBoolean b      => prints (d, "SConstant " ^ (if b then "true" else "false"))
                 | M.CFloat n        => fail ("SConstant ", "float" )
                 | M.CDouble n       => fail ("SConstant ", "double" )
-                | M.CViVector n     => fail ("SConstant ", "vivector" )
                 | M.CViMask n       => fail ("SConstant ", "vimask" )
                 | M.CPok n          => fail ("SConstant ", "pok" )
                 | M.COptionSetEmpty => fail ("SConstant ", "optionsetempty" )
-                | CTypePH           => fail ("SConstant ", "typeph" )))
+                | M.CTypePH         => fail ("SConstant ", "typeph" )))
 
     fun printOpndOp (d, opndo) = case opndo
                                   of SOME opnd => printOpnd (d, opnd)

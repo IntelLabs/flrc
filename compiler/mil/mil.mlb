@@ -5,8 +5,11 @@ local
         $(SML_LIB)/mlton/sources.mlb
         ../common/common.mlb
         ../core-p/core-p.mlb
+        prims.sml
         mil.sml
+        prims-utils.sml
         utils.sml
+        prims-parse-and-layout.sml
         layout.sml
         cfg.sml
         rewrite.sml
@@ -64,6 +67,7 @@ in
         structure MilFreeVars
         structure MilBoundVars
         structure MilLayout
+        structure PrimsLayout
         structure MilLoop
         structure MilNameSmallValues
         structure MilNumberInstructions

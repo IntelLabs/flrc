@@ -240,7 +240,7 @@ struct
 
     val td = B.td (M.FkDouble)
 
-    val typ = B.t (M.PokDouble, M.TDouble)
+    val typ = B.t (M.PokDouble, MU.Prims.NumericTyp.tDouble)
 
     fun mk (c, opnd) = B.box (c, M.PokDouble, M.FkDouble, opnd)
 
@@ -259,7 +259,7 @@ struct
 
     val td = B.td (M.FkFloat)
 
-    val typ = B.t (M.PokFloat, M.TFloat)
+    val typ = B.t (M.PokFloat, MU.Prims.NumericTyp.tFloat)
 
     fun mk (c, opnd) = B.box (c, M.PokFloat, M.FkFloat, opnd)
 
@@ -332,7 +332,7 @@ struct
     val unboxTyp = fn c => if useUnsafeIntegers c then
                              MU.Sintp.t c
                            else 
-                             M.TRat
+                             MU.Prims.NumericTyp.tRat
 
     val typ = fn c => B.t (M.PokRat, unboxTyp c)
 

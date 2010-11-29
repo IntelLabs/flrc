@@ -135,6 +135,7 @@ struct
   fun doRhs (state, env, rhs) =
       let
         fun doOp opnd = operand (state, env, opnd)
+        fun doOpO oo = Option.map (oo, doOp)
         fun doOps os = Vector.map (os, doOp)
         fun doVar v = variable (state, env, v)
         fun doVarO vo = Option.map (vo, doVar)
@@ -142,19 +143,18 @@ struct
             case fi
              of M.FiFixed _ => fi
               | M.FiVariable opnd => M.FiVariable (doOp opnd)
-              | M.FiViFixed _ => fi
-              | M.FiViVariable {typ, idx} =>
-                M.FiViVariable {typ = typ, idx = doOp idx}
-              | M.FiViIndexed {typ, idx} =>
-                M.FiViIndexed {typ = typ, idx = doOp idx}
+              | M.FiVectorFixed {descriptor, mask, index} => 
+                M.FiVectorFixed {descriptor = descriptor, mask = doOpO mask, index = index}
+              | M.FiVectorVariable {descriptor, base, mask, index, kind} =>
+                M.FiVectorVariable {descriptor = descriptor, base = base, mask = doOpO mask, index = doOp index, kind = kind}
         fun doTf (M.TF {tupDesc, tup, field}) =
             M.TF {tupDesc = tupDesc, tup = doVar tup, field = doFi field}
         fun doFkOps fkos = Vector.map (fkos, fn (fk, opnd) => (fk, doOp opnd))
       in
         case rhs 
          of M.RhsSimple s => M.RhsSimple (simple (state, env, s))
-          | M.RhsPrim {prim, createThunks, args} =>
-            M.RhsPrim {prim = prim, createThunks = createThunks, args = doOps args}
+          | M.RhsPrim {prim, createThunks, typs, args} =>
+            M.RhsPrim {prim = prim, createThunks = createThunks, typs = typs, args = doOps args}
           | M.RhsTuple {mdDesc, inits} =>
             M.RhsTuple {mdDesc = mdDesc, inits = doOps inits}
           | M.RhsTupleSub tf => M.RhsTupleSub (doTf tf)

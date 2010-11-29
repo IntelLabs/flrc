@@ -64,6 +64,7 @@ sig
   (* Let # = 0 on entry to loop and incremented on each iteration.
    * Then:
    *   BIV {variable, init, step} means that variable is always
+   *    defined on the in edge to the loop header
    *    step*# + init
    *   DIV {variable=vd, base = {variable=vb, init, step}, scale, offset} means that 
    *    vd is always scale*vb + offset
@@ -116,7 +117,7 @@ sig
     block      : Mil.label,
     cond       : Mil.variable,
     flip1      : bool,
-    comparison : Prims.compare,
+    comparison : Mil.Prims.compareOp,
     flip2      : bool,
     init       : Rat.t * Mil.operand * Rat.t,
     step       : Rat.t,
@@ -186,7 +187,7 @@ struct
   structure VS = I.VariableSet
   structure LD = I.LabelDict
   structure LS = I.LabelSet
-  structure P = Prims
+  structure P = Mil.Prims
   structure M = Mil
   structure MU = MilUtils
   structure MSTM = MU.SymbolTableManager
@@ -225,7 +226,7 @@ struct
     block      : M.label,
     cond       : M.variable,
     flip1      : bool,
-    comparison : P.compare,
+    comparison : P.compareOp,
     flip2      : bool,
     init       : Rat.t * M.operand * Rat.t,
     step       : Rat.t,
@@ -786,13 +787,14 @@ struct
                     | _                  => NONE
             in
               case prim
-               of P.Prim (P.PNumArith (_, a)) =>
-                  (case a
+               of P.Prim (P.PNumArith r) =>
+                  (case #operator r
                     of P.APlus   => binary getPlusValue
                      | P.ANegate => unary  getNegateValue
                      | P.AMinus  => binary getMinusValue
                      | P.ATimes  => binary getTimesValue
                      | _ => NONE)
+                | P.Prim (P.PNumConvert _) => unary (fn v => SOME v)
                 | _ => NONE
             end
         and binaryLf (x1, x2, f) =
@@ -1157,8 +1159,8 @@ struct
                     | M.SVariable v => v
               val (cmp, o1, o2) =
                   case FMil.getVariable (fmil, v)
-                   of FMil.VdInstr (_, M.RhsPrim {prim = P.Prim (P.PNumCompare (_, cmp)), args, ...}) =>
-                      (cmp, Vector.sub (args, 0), Vector.sub (args, 1))
+                   of FMil.VdInstr (_, M.RhsPrim {prim = P.Prim (P.PNumCompare r), args, ...}) =>
+                      (#operator r, Vector.sub (args, 0), Vector.sub (args, 1))
                     | _ => Try.fail ()
               (* Determine if the comparison is between a loop invariant
                * operand and an induction variable and which is which
@@ -1337,7 +1339,7 @@ struct
                         Rat.layout c]
         val bound = MilLayout.layoutOperand (cg, si, bound)
         val (o1, o2) = if flip2 then (bound, iv) else (iv, bound)
-        val cmp = L.str (Prims.stringOfCompare comparison)
+        val cmp = PrimsLayout.compareOp comparison
         val cmp = if flip1 then L.seq [L.str "not", cmp] else cmp
         val test = L.seq [cmp, LU.parenSeq [o1, o2]]
         val i = L.seq [MilLayout.layoutVariable (cg, si, cond), L.str " = ", test]

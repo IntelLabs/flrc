@@ -4,7 +4,6 @@
 (* A Representation of Pillar & C *)
 
 signature PIL = sig
-  type env
   type identifier
   val identifier : string -> identifier
 
@@ -50,6 +49,7 @@ signature PIL = sig
     val word   : Word.t -> t
     val word32 : Word32.word -> t
     val wordInf : IntInf.t -> t (* Lay out in hex *)
+    val boolean : bool -> t
     val float : Real32.t -> t
     val double : Real64.t -> t
     val char : char -> t
@@ -63,7 +63,7 @@ signature PIL = sig
     datatype arithOp = AoAdd | AoSub | AoMul | AoDiv | AoMod
     val arith : t * arithOp * t -> t
     val call : t * t list -> t
-    val callAlsoCutsTo : env * t * t list * identifier list -> t
+    val callAlsoCutsTo : Config.t * t * t list * identifier list -> t
     val assign : t * t -> t
     val arrow : t * identifier -> t
     val sub : t * t -> t
@@ -84,13 +84,13 @@ signature PIL = sig
     val switch : E.t * (E.t * t) list * t option -> t
     val return : t
     val returnExpr : E.t -> t
-    val tailCall : env * E.t * E.t list -> t
+    val tailCall : Config.t * E.t * E.t list -> t
     val call : E.t * E.t list -> t
     val sequence : t list -> t
     val block : varDecInit list * t list -> t
     val contMake : E.t * identifier * identifier -> t
     val contEntry : identifier * identifier -> t
-    val contCutTo : env * E.t * E.t list * identifier list -> t
+    val contCutTo : Config.t * E.t * E.t list * identifier list -> t
     val noyield : t -> t
     val yield : t
     (* Pillar only *)
@@ -112,24 +112,19 @@ signature PIL = sig
     val staticVariableExpr : varDec * E.t -> t
     val staticFunction : T.t * identifier * varDec list * varDecInit list * S.t list -> t
     val function : T.t * identifier * varDec list * varDecInit list * S.t list -> t
-    val managed : env * bool -> t (* Turn managed on or off *)
+    val managed : Config.t * bool -> t (* Turn managed on or off *)
     val sequence : t list -> t
     val layout : t -> Layout.t
   end
 end;
 
-functor PilF(
-  type env
-  val extract : env -> Config.t
-) :> PIL where type env = env =
+structure Pil :> PIL =
 struct
-
-  type env = env
 
   structure L = Layout
   structure LU = LayoutUtils
 
-  fun outputKind env = Config.output (extract env)
+  val outputKind = Config.output 
 
   type identifier = L.t
 
@@ -284,6 +279,8 @@ struct
         else
           word32 (Word32.fromInt i)
 
+    fun boolean b = (L.str (if b then "true" else "false"), 16)
+
     fun float f = (L.str (fixNeg (Real32.toString f)), 16)
     fun double f = (L.str (fixNeg (Real64.toString f)), 16)
 
@@ -344,18 +341,18 @@ struct
     fun call (e, es) =
         (L.mayAlign [inPrec (e, 15), LU.indent (callArgs es)], 15)
 
-    fun cutsTo (env, cuts) =
-        if outputKind env = Config.OkPillar andalso
+    fun cutsTo (config, cuts) =
+        if outputKind config = Config.OkPillar andalso
            not (List.isEmpty cuts) then
           [LU.indent (L.seq [L.str "also cuts to ",
                              L.sequence ("", "", ",") cuts])]
         else
           []
 
-    fun callAlsoCutsTo (env, e, es, cuts) =
+    fun callAlsoCutsTo (config, e, es, cuts) =
         (L.mayAlign (inPrec (e, 15) ::
                      (LU.indent (callArgs es)) ::
-                     cutsTo (env, cuts)),
+                     cutsTo (config, cuts)),
          15)
 
     fun assign (e1, e2) =
@@ -459,7 +456,7 @@ struct
 
     fun returnExpr e = [addSemi (L.seq [L.str "return ", E.layout e])]
 
-    fun tailCall (env, e, es) =
+    fun tailCall (config, e, es) =
         [addSemi (L.mayAlign [L.str "TAILCALL",
                               LU.indent (E.inPrec (e, 15)),
                               LU.indent (E.callArgs es)])]
@@ -484,12 +481,12 @@ struct
     fun contEntry (cl, cv) =
         [L.seq [L.str "pilContinuation", L.tuple [cl, cv], L.str ";"]]
 
-    fun contCutTo (env, e, args, cuts) =
+    fun contCutTo (config, e, args, cuts) =
         [if List.isEmpty cuts then 
            if List.isEmpty args then
              L.seq [L.str "pilCutTo0", L.paren (E.inPrec (e, 1)), L.str ";"]
            else
-             if outputKind env = Config.OkC then
+             if outputKind config = Config.OkC then
                Fail.fail ("Pil", "contCutTo", "cut with arguments not supported on C")
              else
                L.seq [L.str "pilCutToA", L.tuple (List.map (e::args, fn e => E.inPrec (e, 1))), L.str ";"]
@@ -565,14 +562,14 @@ struct
     fun function (rt, f, args, locals, body) =
         functionA (L.empty, rt, f, args, locals, body)
 
-    fun managed (env, true) =
-        (case outputKind env
+    fun managed (config, true) =
+        (case outputKind config
           of Config.OkPillar =>
              L.align [L.str "#undef to",
                       L.str "#pragma pillar_managed(on)"]
            | Config.OkC => L.empty)
-      | managed (env, false) =
-        (case outputKind env
+      | managed (config, false) =
+        (case outputKind config
           of Config.OkPillar =>
              L.align [L.str "#pragma pillar_managed(off)",
                       L.str "#define to __to__"]

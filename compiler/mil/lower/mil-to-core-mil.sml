@@ -133,12 +133,9 @@ struct
               | M.TRef => t
               | M.TBits _ => t
               | M.TNone => t
-              | M.TRat => t
-              | M.TInteger => t
+              | M.TNumeric _ => t
+              | M.TBoolean => t
               | M.TName => t
-              | M.TIntegral _ => t
-              | M.TFloat => t
-              | M.TDouble => t
               | M.TViVector _ => t
               | M.TViMask _ => t
               | M.TCode {cc, args, ress} =>

@@ -28,7 +28,7 @@ signature CONFIG = sig
   datatype verbosity = VSilent | VQuiet | VInfo | VTop
   datatype wordSize = Ws32 | Ws64
   datatype vectorSize = Vs128 | Vs256 | Vs512
-  datatype vectorArch = ViREF | ViSSE | ViLRB
+  datatype vectorArch = ViREF | ViSSE | ViAVX | ViLRB
   datatype t = C of {agc: agcProg,
 		     control_: string StringDict.t,
 		     core: Path.t,
@@ -208,7 +208,7 @@ structure Config :> CONFIG = struct
 
     datatype vectorSize = Vs128 | Vs256 | Vs512 
 
-    datatype vectorArch = ViREF | ViSSE | ViLRB
+    datatype vectorArch = ViREF | ViSSE | ViAVX | ViLRB
 
     type passInfo = {
          enable   : bool,
@@ -372,6 +372,7 @@ structure Config :> CONFIG = struct
         fn config => case va config 
                       of ViREF => Vs128
                        | ViSSE => Vs128
+                       | ViAVX => Vs256
                        | ViLRB => Vs512
 
    (* These are for controlling internal compiler warnings.  Warnings are used

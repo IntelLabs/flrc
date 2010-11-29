@@ -27,12 +27,14 @@ struct
   structure ND = I.NameDict
   structure LS = I.LabelSet
   structure LD = I.LabelDict
-  structure P = Prims
   structure M = Mil
+  structure MP = Mil.Prims
   structure MU = MilUtils
   structure TS = MU.TraceabilitySize
   structure MUT = MU.Typ
   structure MT = MilType
+  structure MUP = MilUtils.Prims
+  structure PU = MUP.Utils
 
   (*** State ***)
 
@@ -176,13 +178,10 @@ struct
         | M.TRef                       => ()
         | M.TBits vs                   => ()
         | M.TNone                      => ()
-        | M.TRat                       => ()
-        | M.TInteger                   => ()
+        | M.TNumeric _                 => ()
+        | M.TBoolean                   => ()
         | M.TName                      => ()
-        | M.TIntegral sz               => ()
-        | M.TFloat                     => ()
-        | M.TDouble                    => ()
-        | M.TViVector et               => ()
+        | M.TViVector et               => typ (s, e, m, #elementTyp et)
         | M.TViMask et                 => ()
         | M.TCode {cc, args, ress}     => let
                                             val () = callConvU (s,e,typ,m, cc)
@@ -363,12 +362,6 @@ struct
       in ()
       end
 
-  fun consistentTypVElemType (s, e, msg, t, vet) =
-      if MT.Type.equalVectorElemType (getConfig e, t, vet) then
-        ()
-      else
-        reportError (s, msg () ^ ": type and vector element type inconsistent")
-
   fun fitsOptRep (s, e, i) =
       let
         val ws =
@@ -394,37 +387,27 @@ struct
        of M.CRat r =>
           let
             val () = optRatRep (s, e, msg, r)
-          in M.TRat
+          in MUP.NumericTyp.tRat
           end
         | M.CInteger i =>
           let
             val () = optIntegerRep (s, e, msg, i)
-          in M.TInteger
+          in MUP.NumericTyp.tIntegerArbitrary
           end
         | M.CName n =>
           let
             val () = name (s, e, n)
           in M.TName
           end
-        | M.CIntegral i => M.TIntegral (IntArb.typOf i)
-        | M.CFloat f => M.TFloat
-        | M.CDouble d => M.TDouble
-        | M.CViVector {typ, elts} =>
+        | M.CIntegral i => MUP.NumericTyp.tIntegerFixed (IntArb.typOf i)
+        | M.CBoolean b  => M.TBoolean
+        | M.CFloat f => MUP.NumericTyp.tFloat
+        | M.CDouble d => MUP.NumericTyp.tDouble
+        | M.CViMask {descriptor, elts} =>
           let
-            val vs = Config.targetVectorSize (getConfig e)
-            val () = assert (s, VI.numElems (vs, typ) = Vector.length elts,
-                             fn () => msg () ^ ": bad constant vector")
-            val ts = Vector.map (elts, fn c => constant (s, e, msg, c))
-            fun checkOne t = consistentTypVElemType (s, e, msg, t, typ)
-            val () = Vector.foreach (ts, checkOne)
-          in M.TViVector typ
-          end
-        | M.CViMask {typ, elts} =>
-          let
-            val vs = Config.targetVectorSize (getConfig e)
-            val () = assert (s, VI.numElems (vs, typ) = Vector.length elts,
+            val () = assert (s, PU.VectorDescriptor.elementCount descriptor = Vector.length elts,
                              fn () => msg () ^ ": bad constant mask")
-          in M.TViMask typ
+          in M.TViMask descriptor
           end
         | M.CPok _ => MU.Uintp.t (getConfig e)
         | M.COptionSetEmpty => M.TPType {kind = M.TkE, over = M.TNone}
@@ -583,36 +566,30 @@ struct
       in ts
       end
 
-  fun prim (s, e, msg, prim, args) =
+  fun prim (s, e, msg, prim, typs, args) =
       let
         fun msg' () = msg () ^ ": arg"
         val ts = operands (s, e, msg', args)
         val config = getConfig e
+        val si = getSi e
+        val (ats, rts) = MT.PrimsTyper.t (config, si, prim, typs)
         val t =
-            case P.typeOf (config, prim)
-             of NONE => Vector.new (Prims.arity (config, prim), M.TNone)
-              | SOME (ats, fx, rt) =>
-                let
-                  fun msg' () = msg () ^ ": argument number mismatch"
-                  val () =
-                      assert (s, Vector.length args = List.length ats, msg')
-                  val c = getConfig e
-                  val ord = getOrd e
-                  fun msgi i = msg () ^ ": arg " ^ Int.toString i
-                  fun checkOne (i, t1) =
-                      if MT.Prim.subtypeIn (c, ord, Vector.sub (ts, i), t1)
-                      then ()
-                      else reportError (s, msgi i ^ ": type mismatch")
+            let
+              fun msg' () = msg () ^ ": argument number mismatch"
+              val () =
+                  assert (s, Vector.length args = Vector.length ats, msg')
+              val c = getConfig e
+              fun msgi i = msg () ^ ": arg " ^ Int.toString i
+              fun checkOne (i, t1) =
+                  if MT.Type.subtype (config, Vector.sub (ts, i), t1)
+                  then ()
+                  else reportError (s, msgi i ^ ": type mismatch")
                   (* XXX NG:
                    *   this doesn't work after lowering, so disabling it
                    *)
                   (*val () = List.foreachi (ats, checkOne)*)
-                  val t =
-                      case rt
-                       of P.TVoid => Vector.new0 ()
-                        | _ => Vector.new1 (MT.Prim.typToMilTyp (c, ord, rt))
-                in t
-                end
+            in rts
+            end
       in t
       end
 
@@ -629,17 +606,17 @@ struct
                   val _ = operand (s, e, msg', opnd)
                 in M.TNone
                 end
-              | M.FiViFixed {typ, idx} => M.TNone
-              | M.FiViVariable {typ, idx} =>
+              | M.FiVectorFixed {descriptor, mask, index} => 
                 let
                   fun msg' () = msg () ^ ": index"
-                  val _ = operand (s, e, msg', idx)
+                  val _ = Option.map (mask, fn opnd => operand (s, e, msg', opnd))
                 in M.TNone
                 end
-              | M.FiViIndexed {typ, idx} =>
+              | M.FiVectorVariable {descriptor, base, mask, index, kind} =>
                 let
                   fun msg' () = msg () ^ ": index"
-                  val _ = operand (s, e, msg', idx)
+                  val _ = Option.map (mask, fn opnd => operand (s, e, msg', opnd))
+                  val _ = operand (s, e, msg', index)
                 in M.TNone
                 end
       in ft
@@ -652,7 +629,7 @@ struct
         val ts = 
             (case r
               of M.RhsSimple simp => some (simple (s, e, msg, simp))
-               | M.RhsPrim {prim = p, createThunks, args} => prim (s, e, msg, p, args)
+               | M.RhsPrim {prim = p, createThunks, typs, args} => prim (s, e, msg, p, typs, args)
                | M.RhsTuple {mdDesc, inits} =>
                  let
                    val ts = tupleMake (s, e, msg, mdDesc, inits)
@@ -832,7 +809,7 @@ struct
       in ts
       end
 
-  fun instruction (s, e, msg, M.I {dests, n, rhs = r}) =
+  fun instruction (s, e, msg, (M.I {dests, n, rhs = r})) =
       let
         val ts = rhs (s, e, msg, r)
         (* XXX NG: If we used the dominator tree then we would bind dest *)
@@ -1113,7 +1090,8 @@ struct
             fun badTyp () = reportError (s, msg () ^ ": exit code not SIntp")
             val () =
                 case t
-                 of M.TIntegral t => if IntArb.equalTyps(t, MU.Sintp.intArbTyp (getConfig e)) then () else badTyp ()
+                 of M.TNumeric (MP.NtInteger (MP.IpFixed t)) => 
+                    if IntArb.equalTyps(t, MU.Sintp.intArbTyp (getConfig e)) then () else badTyp ()
                   | _ => badTyp ()
           in ()
           end
@@ -1280,8 +1258,8 @@ struct
                   val t = MU.Typ.fixedArray (pok, tvs)
                 in t
                 end
-              | M.GRat r => M.TRat
-              | M.GInteger i => M.TInteger
+              | M.GRat r => MUP.NumericTyp.tRat
+              | M.GInteger i => MUP.NumericTyp.tIntegerArbitrary
               | M.GCString _ => M.TCString
               | M.GThunkValue {typ, ofVal} =>
                 let

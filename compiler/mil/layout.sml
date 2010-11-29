@@ -119,6 +119,7 @@ struct
    structure LU = LayoutUtils
    structure M = Mil
    structure MU = MilUtils
+   structure MPU = MU.Prims.Utils
 
    val modulename = "MilLayout"
 
@@ -256,14 +257,14 @@ struct
          | M.TRef => L.str "Ref"
          | M.TBits vs => L.str ("Bits" ^ Int.toString (MU.ValueSize.numBits vs))
          | M.TNone => L.str "None"
-         | M.TRat => L.str "Rat"
-         | M.TInteger => L.str "Int"
+         | M.TNumeric nt => MPU.Layout.numericTyp nt
+         | M.TBoolean => L.str "Boolean"
          | M.TName => L.str "Name"
-         | M.TIntegral t => IntArb.layoutTyp t
-         | M.TFloat => L.str "Float"
-         | M.TDouble => L.str "Double"
-         | M.TViVector et => L.seq [L.str "Vec", LU.paren (VI.layoutElemType et)]
-         | M.TViMask et => L.seq [L.str "Mask", LU.paren (VI.layoutElemType et)]
+         | M.TViVector {vectorSize, elementTyp} => 
+           L.seq [L.str "Vec", 
+                  LU.bracket (MPU.Layout.vectorSize vectorSize), 
+                  LU.angleBracket (layoutTyp (env, elementTyp))]
+         | M.TViMask vd => L.seq [L.str "Mask", LU.bracket (MPU.Layout.vectorDescriptor vd)]
          | M.TCode {cc, args, ress} =>
            let
              val args = layoutTyps (env, args)
@@ -400,6 +401,7 @@ struct
          | M.CInteger i => L.seq [L.str "I", L.paren (IntInf.layout i)]
          | M.CName n => layoutName (env, n)
          | M.CIntegral i => IntArb.layout i
+         | M.CBoolean b => if b then L.str "True" else L.str "False"
          | M.CFloat f =>
            let
              val f =
@@ -426,19 +428,11 @@ struct
              val l = L.seq [L.str "D", L.paren d]
            in l
            end
-         | M.CViVector {typ, elts} =>
+         | M.CViMask {descriptor, elts} =>
            let
-             val typ = VI.layoutElemTypeShort typ
-             val cs = layoutConstants (env, elts)
-             val args = semiCommaL (typ, cs)
-             val l = L.seq [L.str "V", LU.angleBracket (L.mayAlign args)]
-           in l
-           end
-         | M.CViMask {typ, elts} =>
-           let
-             val typ = VI.layoutElemTypeShort typ
+             val desc = MPU.Layout.vectorDescriptor descriptor
              val bs = L.seq (Vector.toListMap (elts, LU.layoutBool'))
-             val l = L.seq [L.str "M", LU.angleBracket (L.mayAlign (semiCommaL (typ, [bs])))]
+             val l = L.seq [L.str "M", LU.bracket desc, LU.angleBracket bs]
            in l
            end
          | M.CPok pok => layoutPObjKind (env, pok)
@@ -465,19 +459,36 @@ struct
              else l
          val l =
              case fi
-              of M.FiFixed idx => L.seq [L.str "sf:", Int.layout idx]
-               | M.FiVariable opnd => L.seq [L.str "sv:", layoutOperand (env, opnd)]
-               | M.FiViFixed {typ, idx} => wrapViElemType (L.seq [L.str "vf:", Int.layout idx], typ)
-               | M.FiViVariable {typ, idx} =>
+              of M.FiFixed idx => 
+                 L.seq [L.str "sf:", Int.layout idx]
+               | M.FiVariable opnd => 
+                 L.seq [L.str "sv:", layoutOperand (env, opnd)]
+               | M.FiVectorFixed {descriptor, mask, index} => 
                  let
-                   val l = L.seq [L.str "vv:", layoutOperand (env, idx)]
-                   val l = wrapViElemType (l, typ)
+                   val d = MPU.Layout.vectorDescriptor descriptor
+                   val m = case mask
+                            of SOME oper => L.seq [L.str "?", layoutOperand (env, oper)]
+                             | NONE      => L.empty
+                   val i = Int.layout index
+                   val l = L.seq [L.str "vf", LU.bracket d, L.str ":", i, m]
                  in l
                  end
-               | M.FiViIndexed {typ, idx} =>
+               | M.FiVectorVariable {descriptor, base, mask, index, kind} =>
                  let
-                   val l = L.seq [L.str "vi:", layoutOperand (env, idx)]
-                   val l = wrapViElemType (l, typ)
+                   val d = MPU.Layout.vectorDescriptor descriptor
+                   val m = case mask
+                            of SOME oper => L.seq [L.str "?", layoutOperand (env, oper)]
+                             | NONE      => L.empty
+                   val idx = layoutOperand (env, index)
+                   val i = case kind
+                            of M.VikStrided i => 
+                               LU.angleBracket (L.seq [idx, L.str ":", idx, L.str "+(", Int.layout i, L.str "*n)"])
+                             | M.VikVector => 
+                               LU.angleBracket idx
+                   val v = case base
+                            of M.TbScalar => L.empty
+                             | M.TbVector => L.str "^"
+                   val l = L.seq [L.str "vv", LU.bracket d, L.str ":", v, i, m]
                  in l
                  end
        in l
@@ -495,8 +506,8 @@ struct
                end
              else
                tup
-         val field = layoutFieldIdentifier (env, field)
-         val l = L.mayAlign [tup, LU.indent (LU.bracket field)]
+         val field = LU.bracket (layoutFieldIdentifier (env, field))
+         val l = L.mayAlign [tup, LU.indent field]
        in l
        end
 
@@ -572,8 +583,9 @@ struct
    fun layoutRhs (env, rhs) =
        case rhs
         of M.RhsSimple s => layoutSimple (env, s)
-         | M.RhsPrim {prim, createThunks, args} =>
-           L.seq [L.seq [Prims.layout prim, L.str (if createThunks then "T" else "D")],
+         | M.RhsPrim {prim, createThunks, typs, args} =>
+           L.seq [L.seq [MPU.Layout.t prim, if createThunks then LU.bracket (L.str "T") else L.str ""],
+                  if Vector.length typs > 0 then LU.braceSeq (layoutTyps (env, typs)) else L.empty,
                   LU.parenSeq (layoutOperands (env, args))]
          | M.RhsTuple {mdDesc, inits} => layoutTuple (env, mdDesc, inits)
          | M.RhsTupleSub tf => layoutTupleField (env, tf)

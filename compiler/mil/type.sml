@@ -13,22 +13,15 @@ sig
     val subtype : Config.t * t * t -> bool
     val lub : Config.t * t * t -> t
     val glb : Config.t * t * t -> t
-    val equalVectorElemType : Config.t * t * VectorInstructions.elemType -> bool
   end
 
 
-  structure Prim :
+  structure PrimsTyper :
   sig
-    val typToMilTyp : Config.t * Mil.name (* ord *) * Prims.typ -> Mil.typ
-    val subtypeIn : Config.t * Mil.name (* ord *) * Mil.typ * Prims.typ -> bool
-    val subtypeOut : Config.t * Mil.name (* ord *) * Prims.typ * Mil.typ
-                     -> bool
-
-    val resultTypFromPrimTyp : Config.t * Mil.symbolInfo * Prims.primTyp -> Mil.typ option 
-    val resultTypOf : Config.t * Mil.symbolInfo * Prims.t -> Mil.typ option option
-    val resultTypOfPrim : Config.t * Mil.symbolInfo * Prims.prim -> Mil.typ option 
-    val resultTypOfRuntime : Config.t * Mil.symbolInfo * Prims.runtime -> Mil.typ option option
-    val resultTypOfVi : Config.t * Mil.symbolInfo * VectorInstructions.prim -> Mil.typ option
+    val prim    : Config.t * Mil.Prims.prim -> (Mil.typ Vector.t * Mil.typ Vector.t)
+    val runtime : Config.t * Mil.symbolInfo * Mil.Prims.runtime -> (Mil.typ Vector.t * Mil.typ Vector.t)
+    val vector  : Config.t * Mil.Prims.vector * Mil.typ Vector.t -> (Mil.typ Vector.t * Mil.typ Vector.t)
+    val t       : Config.t * Mil.symbolInfo * Mil.Prims.t * Mil.typ Vector.t -> (Mil.typ Vector.t * Mil.typ Vector.t)
   end
 
   structure Typer :
@@ -158,14 +151,11 @@ struct
                 | TS.TsRef       => false
                 | TS.TsNone      => false
                 | TS.TsMask _    => false)
-           | (M.TRat, M.TRat) => true
-           | (M.TInteger, M.TInteger) => true
+           | (M.TNumeric nt1, M.TNumeric nt2) => MU.Prims.Utils.NumericTyp.eq (nt1, nt2)
            | (M.TName, M.TName) => true
-           | (M.TIntegral t1, M.TIntegral t2) => IntArb.compareTyps (t1, t2) = EQUAL
-           | (M.TFloat, M.TFloat) => true
-           | (M.TDouble, M.TDouble) => true
-           | (M.TViVector vet1, M.TViVector vet2) => VI.Compare.elemType (vet1, vet2) = EQUAL
-           | (M.TViMask vet1, M.TViMask vet2) => VI.Compare.elemType (vet1, vet2) = EQUAL
+           | (M.TViVector vet1, M.TViVector vet2) => MU.Prims.Utils.VectorSize.eq (#vectorSize vet1, #vectorSize vet2) andalso
+                                                     subtype (c, #elementTyp vet1, #elementTyp vet2)
+           | (M.TViMask vet1, M.TViMask vet2) => MU.Prims.Utils.VectorDescriptor.eq (vet1, vet2)
            | (M.TCode {cc = cc1, args = args1, ress = ress1}, M.TCode {cc = cc2, args = args2, ress = ress2}) =>
              (* Technically code might be covariant in free variable types.
               * But it probably does not hurt to make them invariant instead.
@@ -219,20 +209,6 @@ struct
      and subtypes (c, ts1, ts2) =
          Vector.size ts1 = Vector.size ts2 andalso
          Vector.forall2 (ts1, ts2, fn (t1, t2) => subtype (c, t1, t2))
-
-     fun equalVectorElemType (config, t1, t2) =
-         case (t1, t2)
-          of (M.TIntegral (IA.T (IA.S8 , IA.Unsigned)), VI.ViUInt8  ) => true
-           | (M.TIntegral (IA.T (IA.S16, IA.Unsigned)), VI.ViUInt16 ) => true
-           | (M.TIntegral (IA.T (IA.S32, IA.Unsigned)), VI.ViUInt32 ) => true
-           | (M.TIntegral (IA.T (IA.S64, IA.Unsigned)), VI.ViUInt64 ) => true
-           | (M.TIntegral (IA.T (IA.S8 , IA.Signed  )), VI.ViSInt8  ) => true
-           | (M.TIntegral (IA.T (IA.S16, IA.Signed  )), VI.ViSInt16 ) => true
-           | (M.TIntegral (IA.T (IA.S32, IA.Signed  )), VI.ViSInt32 ) => true
-           | (M.TIntegral (IA.T (IA.S64, IA.Signed  )), VI.ViSInt64 ) => true
-           | (M.TFloat                                , VI.ViFloat32) => true
-           | (M.TDouble                               , VI.ViFloat64) => true
-           | _                                                        => false
 
      structure Lub =
      struct
@@ -296,12 +272,9 @@ struct
                       | (M.TRef, M.TRef) => M.TRef
                       | (M.TBits _, M.TBits _) => <@ eq (t1, t2)
                       | (M.TNone, M.TNone) => M.TNone
-                      | (M.TRat, M.TRat) => M.TRat
-                      | (M.TInteger, M.TInteger) => M.TInteger
                       | (M.TName, M.TName) => M.TName
-                      | (M.TIntegral _, M.TIntegral _) => <@ eq (t1, t2)
-                      | (M.TFloat, M.TFloat) => M.TFloat
-                      | (M.TDouble, M.TDouble) => M.TDouble
+                      | (M.TNumeric nt1, M.TNumeric nt2) => <@ eq (t1, t2)
+                      | (M.TBoolean, M.TBoolean) => M.TBoolean
                       | (M.TViVector vit1, M.TViVector vit2) => <@ eq (t1, t2)
                       | (M.TViMask vit1, M.TViMask vit2) => <@ eq (t1, t2)
                       | (M.TCode {cc = cc1, args = args1, ress = ress1},
@@ -339,9 +312,8 @@ struct
                       | (M.TAny, _) => Try.fail ()           | (M.TAnyS _, _) => Try.fail ()
                       | (M.TPtr, _) => Try.fail ()           | (M.TRef, _) => Try.fail ()
                       | (M.TBits _, _) => Try.fail ()        | (M.TNone, _) => Try.fail ()
-                      | (M.TRat, _) => Try.fail ()           | (M.TInteger, _) => Try.fail ()
-                      | (M.TName, _) => Try.fail ()          | (M.TIntegral _, _) => Try.fail ()
-                      | (M.TFloat, _) => Try.fail ()         | (M.TDouble, _) => Try.fail ()
+                      | (M.TNumeric _, _) => Try.fail ()     | (M.TBoolean, _) => Try.fail ()
+                      | (M.TName, _) => Try.fail ()     
                       | (M.TViVector vit1, _) => Try.fail () | (M.TViMask vit1, _) => Try.fail ()
                       | (M.TCode _, _) => Try.fail ()        | (M.TTuple _, _) => Try.fail ()
                       | (M.TCString, _) => Try.fail ()
@@ -376,6 +348,19 @@ struct
             | SSized  (* TAnyS *)
             | SNone   (* TNone *)
 
+     val summarizeNumericTyp = 
+      fn (config, nt) => 
+         (case nt
+           of M.Prims.NtRat            => SRef true
+            | M.Prims.NtInteger ip     => 
+              (case ip
+                of M.Prims.IpArbitrary => SRef true
+                 | M.Prims.IpFixed ia  => SBits true)
+            | M.Prims.NtFloat fp       => 
+              (case fp
+                of M.Prims.FpSingle    => SFloat
+                 | M.Prims.FpDouble    => SDouble))
+
      val summarize =
       fn (config, t) => 
          (case t
@@ -385,12 +370,9 @@ struct
             | M.TRef                       => SRef false
             | M.TBits vs                   => SBits false
             | M.TNone                      => SNone
-            | M.TRat                       => SRef true
-            | M.TInteger                   => SRef true
             | M.TName                      => SRef true
-            | M.TIntegral sz               => SBits true
-            | M.TFloat                     => SFloat
-            | M.TDouble                    => SDouble
+            | M.TNumeric nt                => summarizeNumericTyp (config, nt)
+            | M.TBoolean                   => SBits true
             | M.TViVector et               => SBits true
             | M.TViMask et                 => SMask
             | M.TCode {cc, args, ress}     => SPtr true
@@ -668,103 +650,316 @@ struct
 
    end
 
-   structure Prim =
+
+   structure PrimsTyper =
    struct
+     structure M = Mil
+     structure MP = Mil.Prims
+     structure OA = MU.OrdinalArray
+     structure POM = PObjectModelHigh
+     structure MU = MilUtils
+     structure MUP = MilUtils.Prims
+     structure PU = MilUtils.Prims.Utils
 
-      structure P = Prims
-      structure OA = MU.OrdinalArray
+     val fail = fn (f, m) => Fail.fail ("type.sml", "PrimsTyper."^f, m)
 
-      fun typToMilTyp (c, ord, t) =
-          case t
-           of P.TAny => M.TPAny
-            | P.TNum P.NtRat => M.TRat
-            | P.TNum P.NtInteger => M.TInteger
-            | P.TNum (P.NtIntegral t) => M.TIntegral t
-            | P.TNum P.NtFloat => M.TFloat
-            | P.TNum P.NtDouble => M.TDouble
-            | P.TString =>
-              let
-                val char = MU.Boxed.t (M.PokRat, M.TRat)
-                val sum = M.TPSum (ND.singleton (ord, char))
-                val str = OA.varTyp (c, M.PokArray, char)
-              in str
-              end
-            | P.TCString => M.TCString
-            | P.TBool => MU.Uintp.t c
-            | P.TArrayF ts =>
-              let
-                fun doOne t =  typToMilTyp (c, ord, t)
-                val ts = Vector.fromListMap (ts, doOne)
-                val t = OA.fixedTyp (c, M.PokArray, ts)
-              in t
-              end
-            | P.TArrayV t =>
-              OA.varTyp (c, M.PokArray, typToMilTyp (c, ord, t))
-            | P.TRef t => M.TPRef (typToMilTyp (c, ord, t))
-            | P.TSet t =>
-              M.TPType {kind = M.TkE, over = typToMilTyp (c, ord, t)}
-            | P.TViVector et => M.TViVector et
-            | P.TViMask et => M.TViMask et
-            | P.TVoid =>
-              Fail.fail ("MilTyp.Prim", "typToMilTyp",
-                         "void is not a Mil type")
+     val tFloat = MUP.NumericTyp.tFloat
+     val tRat = MUP.NumericTyp.tRat
+     val tPAny = M.TPAny
+     val tSet = POM.OptionSet.typ
+     val tArrayV = fn (c, t) => OA.varTyp (c, M.PokArray, t)
+     val tUint8 = MUP.NumericTyp.tIntegerFixed (IntArb.T (IntArb.S8, IntArb.Unsigned))
+     val tUintp = 
+      fn c => MUP.NumericTyp.tIntegerFixed (IntArb.T (Config.targetWordSize' c, IntArb.Unsigned))
+     val tSintp = 
+      fn c => MUP.NumericTyp.tIntegerFixed (IntArb.T (Config.targetWordSize' c, IntArb.Signed))
+     val tMask = fn vd => M.TViMask vd
+     val tVector = fn (sz, t) => M.TViVector {vectorSize = sz, elementTyp = t}
+     val tCString = M.TCString
+     val tString = 
+      fn (c, si) =>
+         let
+           val ord = Prims.getOrd si
+           val char = MU.Boxed.t (M.PokRat, tRat)
+           val sum = M.TPSum (ND.singleton (ord, char))
+           val str = OA.varTyp (c, M.PokArray, char)
+         in str
+         end
+     val tBoolean = M.TBoolean
+     val nullary = Vector.new0 
+     val unary = Vector.new1 
+     val binary = Vector.new2
+     val trinary = Vector.new3
+     val mk00 = fn () => (nullary (), nullary ())
+     val mk10 = fn a1 => (unary a1, nullary ())
+     val mk01 = fn r1 => (nullary (), unary r1)
+     val mk11 = fn (a1, r1) => (unary a1, unary r1)
+     val mk20 = fn (a1, a2) => (binary (a1, a2), nullary ())
+     val mk21 = fn (a1, a2, r1) => (binary (a1, a2), unary r1)
+     val mk22 = fn (a1, a2, r1, r2) => (binary (a1, a2), binary (r1, r2))
+     val mk30 = fn (a1, a2, a3) => (trinary (a1, a2, a3), nullary ())
 
 
-      (* XXX NG: this doesn't work after lowering *)
-      fun equalTyp (config, ord, t1, t2) =
-          Type.equal (t1, typToMilTyp (config, ord, t2))
+     val rec stringOp = 
+      fn (c, p) => 
+         let
+           val res = 
+	       case p
+	        of MP.SAllocate      => mk11 (tUintp c, tCString)
+	         | MP.SDeallocate    => mk10 tCString
+	         | MP.SGetLen        => mk11 (tCString, tUintp c)
+	         | MP.SGetChar       => mk21 (tCString, tUintp c, tUint8)
+	         | MP.SSetChar       => mk30 (tCString, tUintp c, tUint8)
+	         | MP.SEqual         => mk21 (tCString, tCString, tBoolean)
+         in
+           res
+         end
 
-      (* XXX NG: this doesn't work after lowering *)
-      fun subtypeIn (config, ord, t1, t2) =
-          Type.subtype (config, t1, typToMilTyp (config, ord, t2))
+     val logicOp = 
+      fn (c, operator, t) => 
+         let
+           val res = 
+               case PU.Arity.logicOp operator
+                of PU.Arity.ArAtoA    => mk11 (t, t)
+                 | PU.Arity.ArAAtoA   => mk21 (t, t, t)
+                 | _                  => fail ("logicOp", "Unexpected logicOp arity")
+         in res
+         end
+         
+     val rec prim = 
+      fn (c, p) => 
+         let
+           val res = 
+	       case p
+	        of MP.PNumArith r1   => 
+                   let
+                     val t = M.TNumeric (#typ r1)
+                     val res = 
+                         case PU.Arity.arithOp (#operator r1)
+                          of PU.Arity.ArAtoA    => mk11 (t, t)
+                           | PU.Arity.ArAAtoA   => mk21 (t, t, t)
+                           | PU.Arity.ArAAtoB   => fail ("prim", "Unexpected arithOp arity")
+                           | PU.Arity.ArOther _ => 
+                             (case #operator r1
+                               of MP.ADivMod _  => mk22 (t, t, t, t)
+                                | _             => fail ("prim", "Unexpected arithOp arity"))
+                   in res
+                   end
+	         | MP.PFloatOp r1    => 
+                   let
+                     val t = M.TNumeric (MP.NtFloat (#typ r1))
+                     val res = 
+                         case PU.Arity.floatOp (#operator r1)
+                          of PU.Arity.ArAtoA    => mk11 (t, t)
+                           | PU.Arity.ArAAtoA   => mk21 (t, t, t)
+                           | _                  => fail ("prim", "Unexpected floatOp arity")
+                   in res
+                   end
+	         | MP.PNumCompare r1 => 
+                   let
+                     val t1 = M.TNumeric (#typ r1)
+                     val t2 = M.TBoolean
+                     val t = mk21 (t1, t1, t2)
+                   in t
+                   end
+	         | MP.PNumConvert r1 => mk11 (M.TNumeric (#from r1), M.TNumeric (#to r1))
+	         | MP.PBitwise r1    => 
+                   let
+                     val t1 = M.TNumeric (MP.NtInteger (#typ r1))
+                     val doRotShift =
+                      fn () => mk21 (t1, tUint8, t1)
+                     val res = 
+                         case PU.Arity.bitwiseOp (#operator r1)
+                          of PU.Arity.ArAtoA    => mk11 (t1, t1)
+                           | PU.Arity.ArAAtoA   => mk21 (t1, t1, t1)
+                           | PU.Arity.ArAAtoB   => fail ("prim", "Unexpected bitwiseOp arity")
+                           | PU.Arity.ArOther _ => 
+                             (case #operator r1
+                               of MP.BRotL   => doRotShift ()
+                                | MP.BRotR   => doRotShift ()
+                                | MP.BShiftL => doRotShift ()
+                                | MP.BShiftR => doRotShift ()
+                                | _          => fail ("prim", "Unexpected bitwiseOp arity"))
+                   in res
+                   end
+	         | MP.PBoolean r1    => logicOp (c, r1, M.TBoolean)
+	         | MP.PCString r1    => stringOp (c, r1)
+         in
+           res
+         end
+         
+     val dataOp = 
+      fn (c, p, desc, targs) => 
+         let
+           val t = Vector.sub (targs, 0)
+           val size = PU.VectorDescriptor.vectorSize desc
+           val tv = tVector (size, t)
+           val res = 
+	       case p
+	        of MP.DBroadcast    => mk11 (t, tv)
+	         | MP.DVector       => 
+                   let
+                     val n = PU.VectorDescriptor.elementCount desc
+                   in (Vector.new (n, t), unary tv)
+                   end
+	         | MP.DSub r1       => mk11 (tv, t)
+	         | MP.DPermute r1   => mk11 (tv, tv)
+	         | MP.DBlend        => mk21 (tv, tv, tv)
+	         | MP.DSplit        => 
+                   let
+                     val size2 = 
+                         (case PU.VectorSize.halfSize size 
+                           of SOME size => size
+                            | NONE => fail ("dataOp", "Vector size can't be split"))
+                     val tv2 = tVector (size, t)
+                   in mk11 (tv, tv2)
+                   end
+	         | MP.DConcat       => 
+                   let
+                     val size2 = 
+                         (case PU.VectorSize.doubleSize size 
+                           of SOME size => size
+                            | NONE => fail ("dataOp", "Vector size can't be doubled"))
+                     val tv2 = tVector (size, t)
+                   in mk11 (tv, tv2)
+                   end
+         in
+           res
+         end
+         
+     val vector = 
+      fn (c, p, targs) => 
+         let
+           val unBin = 
+            fn (ats, rts) => 
+               (case (Vector.length ats, Vector.length rts)
+                 of (2, 1) => (Vector.sub (ats, 0), Vector.sub (ats, 1), Vector.sub (rts, 0))
+                  | _ => fail ("vector", "Not a binary operator"))
 
-      (* XXX NG: this doesn't work after lowering *)
-      fun subtypeOut (config, ord, t1, t2) =
-          Type.subtype (config, typToMilTyp (config, ord, t1), t2)
+           val unUn = 
+            fn (ats, rts) => 
+               (case (Vector.length ats, Vector.length rts)
+                 of (1, 1) => (Vector.sub (ats, 0), Vector.sub (rts, 0))
+                  | _ => fail ("vector", "Not a unary operator"))
+               
+           val res = 
+	       case p
+	        of MP.ViPointwise r1   => 
+                   let
+                     val (ats, rts) = prim (c, #operator r1)
+                     val size = PU.VectorDescriptor.vectorSize (#descriptor r1)
+                     val ats = Vector.map (ats, fn t => tVector (size, t))
+                     val rts = Vector.map (rts, fn t => tVector (size, t))
+                     val ats = 
+                         if #masked r1 then 
+                           Utils.Vector.snoc (ats, tMask (#descriptor r1))
+                         else 
+                           ats
+                   in (ats, rts)
+                   end
+	         | MP.ViConvert r1     => 
+                   let
+                     val {to, from} = r1
+                     val p = MP.PNumConvert {to = #typ to, from = #typ from}
+                     val (t1, t2) = unUn (prim (c, p))
+                     val size1 = PU.VectorDescriptor.vectorSize (#descriptor from)
+                     val size2 = PU.VectorDescriptor.vectorSize (#descriptor to)
+                     val t1 = tVector (size1, t1)
+                     val t2 = tVector (size2, t2)
+                     val t = mk11 (t1, t2)
+                   in t
+                   end
+	         | MP.ViCompare r1     => 
+                   let
+                     val t1 = M.TNumeric (#typ r1)
+                     val size = PU.VectorDescriptor.vectorSize (#descriptor r1)
+                     val t1 = tVector (size, t1)
+                     val t2 = tMask (#descriptor r1)
+                     val t = mk21 (t1, t1, t2)
+                   in t
+                   end
+	         | MP.ViReduction r1   => 
+                   let
+                     val (t1, _, _) = unBin (prim (c, #operator r1))
+                     val size = PU.VectorDescriptor.vectorSize (#descriptor r1)
+                     val t2 = tVector (size, t1)
+                     val t = mk21 (t1, t2, t1)
+                   in t
+                   end
+	         | MP.ViData r1        => dataOp (c, #operator r1, #descriptor r1, targs)
+	         | MP.ViMaskData r1    => dataOp (c, #operator r1, #descriptor r1, targs)
+	         | MP.ViMaskBoolean r1 => logicOp (c, #operator r1, tMask (#descriptor r1))
+	         | MP.ViMaskConvert r1 => mk11 (tMask (#from r1), tMask (#to r1))
+         in
+           res
+         end
 
-      val resultTypFromPrimTyp = 
-       fn (config, si, t) => 
-          (case t
-            of (_, _, P.TVoid) => NONE
-             | (_, _, t) => SOME (typToMilTyp (config, Prims.getOrd si, t)))
+     val runtime = 
+      fn (c, si, p) => 
+         let
+           val res = 
+	       case p
+	        of MP.RtFloatMk              => mk21 (tRat, tRat, tFloat)
+	         | MP.RtWriteln              => mk10 tPAny
+	         | MP.RtReadln               => mk01 (tString (c, si))
+	         | MP.RtAssert               => mk11 (tSet tPAny, tPAny)
+	         | MP.RtError                => mk11 (tPAny, tPAny)
+	         | MP.RtDebug                => mk10 tPAny
+	         | MP.RtOpenOut              => mk11 ((tString (c, si)), tRat)
+	         | MP.RtGetStdout            => mk01 tRat
+	         | MP.RtOutputByte           => mk20 (tRat, tRat)
+	         | MP.RtCloseOut             => mk10 tRat
+	         | MP.RtOpenIn               => mk11 ((tString (c, si)), tRat)
+	         | MP.RtGetStdin             => mk01 tRat
+	         | MP.RtInputByte            => mk11 (tRat, tRat)
+	         | MP.RtInputString          => mk21 (tRat, (tString (c, si)), (tString (c, si)))
+	         | MP.RtInputAll             => mk11 (tRat, (tString (c, si)))
+	         | MP.RtIsEOF                => mk11 (tRat, tBoolean)
+	         | MP.RtCloseIn              => mk10 tRat
+	         | MP.RtCommandLine          => mk01 tPAny
+	         | MP.RtStringToNat          => mk11 ((tString (c, si)), tRat)
+	         | MP.RtStringToFloat        => mk11 ((tString (c, si)), tFloat)
+	         | MP.RtFloatToString        => mk21 (tFloat, tRat, (tString (c, si)))
+	         | MP.RtFloatToStringI       => mk21 (tFloat, tSintp c, (tString (c, si)))
+	         | MP.RtRatNumerator         => mk11 (tRat, tRat)
+	         | MP.RtRatDenominator       => mk11 (tRat, tRat)
+	         | MP.RtEqual                => mk21 (tRat, tRat, tBoolean)
+	         | MP.RtDom                  => mk11 (tArrayV (c, tPAny), tSet tPAny)
+	         | MP.RtNub                  => mk11 (tSet tPAny, tRat)
+	         | MP.RtRatToUIntpChecked    => mk11 (tRat, tUintp c)
+	         | MP.RtRatToString          => mk11 (tRat, (tString (c, si)))
+	         | MP.RtStringToRat          => mk11 ((tString (c, si)), tRat)
+	         | MP.RtResetTimer           => mk10 tRat
+	         | MP.RtGetTimer             => mk11 (tRat, tFloat)
+	         | MP.RtVtuneAttach          => mk00 ()
+	         | MP.RtVtuneDetach          => mk00 ()
+	         | MP.RtArrayEval            => mk10 (tArrayV (c, tPAny))
+         in
+           res
+         end
+         
+     val t = 
+      fn (c, si, p, targs) => 
+         let
+           val res = 
+	       case p
+	        of MP.Prim r1    => prim (c, r1)
+	         | MP.Runtime r1 => runtime (c, si, r1)
+	         | MP.Vector r1  => vector (c, r1, targs)
+         in
+           res
+         end
 
-      val resultTypOfPrim = 
-       fn (config, si, p) => 
-          let
-            val t = Prims.typeOfPrim (config, p) 
-            val to = resultTypFromPrimTyp (config, si, t)
-          in to
-          end
-
-      val resultTypOfRuntime =
-       fn (config, si, rt) => 
-          let
-            val to = 
-                (case Prims.typeOfRuntime (config, rt) 
-                  of SOME t => SOME (resultTypFromPrimTyp (config, si, t))
-                   | NONE => NONE)
-          in to
-          end
-
-      val resultTypOfVi = 
-       fn (config, si, vi) => 
-          let
-            val t = Prims.typeOfVi (config, vi) 
-            val to = resultTypFromPrimTyp (config, si, t)
-          in to
-          end
-
-      val resultTypOf =
-       fn (config, si, p) => 
-          (case p
-            of P.Prim p => SOME (resultTypOfPrim (config, si, p))
-             | P.Runtime rt => resultTypOfRuntime (config, si, rt)
-             | P.Vi vi => SOME (resultTypOfVi (config, si, vi)))
-
-   end
+   end (* structure PrimsTyper *)
 
    structure Typer =
    struct
+
+     structure M = Mil
+     structure MP = Mil.Prims
+     structure MU = MilUtils
+     structure MUP = MilUtils.Prims
+     structure PU = MilUtils.Prims.Utils
 
      type ('a, 'b) typer = Config.t * Mil.symbolInfo * 'a -> 'b
 
@@ -784,14 +979,14 @@ struct
 
      fun constant (config, si, c) =
          case c
-          of M.CRat _          => M.TRat
-           | M.CInteger _      => M.TInteger
+          of M.CRat _          => MUP.NumericTyp.tRat
+           | M.CInteger _      => MUP.NumericTyp.tIntegerArbitrary
            | M.CName _         => M.TName
-           | M.CIntegral i     => M.TIntegral (IntArb.typOf i)
-           | M.CFloat _        => M.TFloat
-           | M.CDouble _       => M.TDouble
-           | M.CViVector x     => M.TViVector (#typ x)
-           | M.CViMask x       => M.TViMask (#typ x)
+           | M.CIntegral i     => MUP.NumericTyp.tIntegerFixed (IntArb.typOf i)
+           | M.CBoolean _      => M.TBoolean
+           | M.CFloat _        => MUP.NumericTyp.tFloat
+           | M.CDouble _       => MUP.NumericTyp.tDouble
+           | M.CViMask x       => M.TViMask (#descriptor x)
            | M.CPok _          => MU.Uintp.t config
            | M.COptionSetEmpty => M.TPType {kind = M.TkE, over = M.TNone}
            | M.CTypePH         => M.TPType {kind = M.TkI, over = M.TNone}
@@ -820,8 +1015,8 @@ struct
            | M.GTuple {mdDesc, inits} => 
              MU.Typ.fixedArray (MU.MetaDataDescriptor.pok mdDesc,
                                 Vector.map (simples (config, si, inits), fn t => (t, M.FvReadWrite)))
-           | M.GRat _ => M.TRat
-           | M.GInteger _ => M.TInteger
+           | M.GRat _ => MUP.NumericTyp.tRat
+           | M.GInteger _ => MUP.NumericTyp.tIntegerArbitrary
            | M.GCString _ => M.TCString
            | M.GThunkValue {typ, ofVal} =>
              M.TThunk (simple (config, si, ofVal))
