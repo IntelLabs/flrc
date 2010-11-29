@@ -88,6 +88,7 @@ sig
 
   val seq  : t * t -> t
   val seqn : t list -> t
+  val seqnV : t Vector.t -> t
 
   val finish : Mil.label * Mil.variable Vector.t * t * Mil.transfer -> MilFragment.t
 
@@ -132,6 +133,8 @@ struct
     end
 
   fun seqn (ss : t list) : t = List.fold (ss, empty, seq o Utils.flip2)
+
+  fun seqnV (ss : t Vector.t) : t = Vector.fold (ss, empty, seq o Utils.flip2)
 
   fun merge (S {partials, complete} : t, f : F.t) : t =
       S {partials = partials, complete = F.merge (complete, f)}
@@ -290,7 +293,7 @@ struct
             in s
             end
         val ss = Vector.mapi (exps, doOne)
-        val s = MS.seq (s1, MS.seqn (Vector.toList ss))
+        val s = MS.seq (s1, MS.seqnV ss)
       in s
       end
 
@@ -301,7 +304,7 @@ struct
       let
         val config = getConfig env
         val tc = MU.Bool.T config
-        val fc = MU.Bool.T config
+        val fc = MU.Bool.F config
         fun genSwitch (lt, lf) = (MS.empty, M.TCase (MU.Switch.noArgsNoDefault (on, Vector.new2 ((tc, lt), (fc, lf)))))
         val s = join (state, env, genSwitch, t, f, vs)
       in s
@@ -329,7 +332,7 @@ struct
             let
               fun genCase (i, c) = (c, M.T {block = Vector.sub (ls, i), arguments = Vector.new0 ()})
               val cases = Vector.mapi (cs, genCase)
-              fun genDefault _ = M.T {block = Vector.sub (ls, n - 1), arguments = Vector.new0 ()}
+              fun genDefault _ = M.T {block = Vector.sub (ls, n), arguments = Vector.new0 ()}
               val default = Option.map (default, genDefault)
               val t = M.TCase {on = on, cases = cases, default = default}
             in (MS.empty, t)

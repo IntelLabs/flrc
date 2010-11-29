@@ -115,6 +115,37 @@ static PlsrPAny pLsrPPtrTypeSlow(PlsrPAny a)
 #define pLsrPPtrType(dest, a) ((dest) = pLsrPPtrTypeSlow(a))
 
 /**********************************************************************
+ * CString
+ */
+
+static char* pLsrCStringAllocate(uintp len)
+{
+    char* res = (char*) pLsrAllocC(len+1);
+    res[len] = '\0';
+    return res;
+}
+
+static void pLsrCStringDeallocate(char* str)
+{
+    pLsrFreeC(str);
+}
+
+static uintp pLsrCStringGetLen(char* str)
+{
+    return strlen(str);
+}
+
+static char pLsrCStringGetChar(char* str, uintp idx)
+{
+    return str[idx];
+}
+
+static void pLsrCStringSetChar(char* str, uintp idx, char c)
+{
+    str[idx] = c;
+}
+
+/**********************************************************************
  * IO
  */
 

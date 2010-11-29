@@ -256,6 +256,7 @@ sig
     val array : t -> FieldDescriptor.t option
     val hasArray : t -> bool
     val immutable : t -> bool
+    val getField : t * int -> FieldDescriptor.t option
     val compare : t Compare.t
     val eq : t * t -> bool
   end
@@ -477,8 +478,7 @@ sig
     val compare : 'a Compare.t -> 'a t Compare.t
     val eq : ('a * 'a -> bool) -> ('a t * 'a t -> bool)
     val noDefault : Operand.t * ('a * Target.t) Vector.t -> 'a t
-    val noArgs : Operand.t * ('a * Mil.label) Vector.t * Mil.label option
-                 -> 'a t
+    val noArgs : Operand.t * ('a * Mil.label) Vector.t * Mil.label option -> 'a t
     val noArgsNoDefault : Operand.t * ('a * Mil.label) Vector.t -> 'a t
   end
 
@@ -564,6 +564,7 @@ sig
     val compare : t Compare.t
     val eq : t * t -> bool
     val cuts : t -> Cuts.t
+    val binds : t -> Mil.variable Vector.t
     structure Dec : 
     sig
       val rNormal : t -> {rets : Mil.variable Vector.t, block : Mil.label, cuts : Mil.cuts} option
@@ -604,6 +605,7 @@ sig
     val isIntraProcedural : t -> Target.t Vector.t option
     val mapOverTargets : t * (Mil.target -> Mil.target) -> t
     val fx : Config.t * t -> Effect.set
+    val binds : t -> Mil.variable Vector.t
     structure Dec : 
     sig
       val tGoto : t -> Mil.target option
@@ -765,6 +767,7 @@ sig
     val variableTyp : t * Mil.variable -> Typ.t
     val variableKind : t * Mil.variable -> VariableKind.t
     val variableFresh : t * string * Typ.t * VariableKind.t -> Mil.variable
+    val variableFreshNoInfo : t * string -> Mil.variable
     val variableClone : t * Mil.variable -> Mil.variable
     val variableRelated : t * Mil.variable * string * Typ.t * VariableKind.t -> Mil.variable
     val variableRelatedNoInfo : t * Mil.variable * string -> Mil.variable
@@ -1734,9 +1737,9 @@ struct
           | #"B" => SOME M.PokDict     
           | #"S" => SOME M.PokTagged   
           | #"O" => SOME M.PokOptionSet
-          | #"r" => SOME M.PokPtr      
+          | #"P" => SOME M.PokPtr      
           | #"T" => SOME M.PokType     
-          | #"t" => SOME M.PokCell     
+          | #"C" => SOME M.PokCell     
           | _    => NONE
 
     fun toChar pok =
@@ -1751,9 +1754,9 @@ struct
           | M.PokDict      => #"B"
           | M.PokTagged    => #"S"
           | M.PokOptionSet => #"O"
-          | M.PokPtr       => #"r"
+          | M.PokPtr       => #"P"
           | M.PokType      => #"T"
-          | M.PokCell      => #"t"
+          | M.PokCell      => #"C"
 
     fun toString pok =
         case pok
@@ -2378,6 +2381,16 @@ struct
     fun immutable td =
         Vector.forall (fixedFields td, FieldDescriptor.immutable) andalso
         Option.forall (array td, FieldDescriptor.immutable)
+
+    fun getField (td, i) =
+        let
+          val fds = fixedFields td
+        in
+          if i < Vector.length fds then
+            SOME (Vector.sub (fds, i))
+          else
+            array td
+        end
 
     val compare = Compare.tupleDescriptor
     val eq = Compare.C.equal compare
@@ -3129,6 +3142,11 @@ struct
          of M.RNormal {cuts, ...} => cuts
           | M.RTail {exits, ...}  => M.C {exits = exits, targets = LS.empty}
 
+    fun binds r =
+        case r
+         of M.RNormal {rets, ...} => rets
+          | M.RTail _             => Vector.new0 ()
+
     structure Dec =
     struct
       val rNormal =
@@ -3388,6 +3406,16 @@ struct
         in fx
         end
 
+    fun binds t =
+        case t
+         of M.TGoto t                      => Vector.new0 ()
+          | M.TCase s                      => Vector.new0 ()
+          | M.TInterProc {callee, ret, fx} => Return.binds ret
+          | M.TReturn os                   => Vector.new0 ()
+          | M.TCut {cont, args, cuts}      => Vector.new0 ()
+          | M.THalt opnd                   => Vector.new0 ()
+          | M.TPSumCase s                  => Vector.new0 ()
+
     structure Dec =
     struct
       val tGoto = 
@@ -3475,9 +3503,7 @@ struct
 
     fun block (cb, l) =
         case LD.lookup (blocks cb, l)
-         of NONE =>
-            Fail.fail ("MilUtils.CodeBody", "block",
-                       "label " ^ (I.labelString l) ^ " not in code body")
+         of NONE => Fail.fail ("MilUtils.CodeBody", "block", "label " ^ (I.labelString l) ^ " not in code body")
           | SOME b => b
 
     fun isCore cb = LD.forall (blocks cb, fn (_, b) => Block.isCore b)
@@ -3494,8 +3520,7 @@ struct
           fun see i = seen := LS.insert (!seen, i)
           fun finish i = 
               let
-                val () = Fail.assert ("MilUtils.CodeBody", "listRPO",
-                                      "Double visited a block",
+                val () = Fail.assert ("MilUtils.CodeBody", "listRPO", "Double visited a block",
                                       (fn () => not (visited i)))
               in see i
               end
@@ -3504,7 +3529,7 @@ struct
                 acc
               else 
                 let
-                  val msg = "Unreachable node in listRPO: appending"
+                  val msg = "Unreachable node " ^ I.labelString i ^ " in listRPO: appending"
                   val () = Chat.warn1 (config, msg)
                   val acc = (i, block (cb, i))::acc
                 in acc
@@ -3514,11 +3539,21 @@ struct
                 acc
               else
                 let
-                  val b = block (cb, i)
                   val () = finish i
-                  val {blocks = ls, ...} = Block.successors b
-                  val res = LS.fold (ls, (i, b)::acc, list)
-                in res
+                in
+                  case LD.lookup (blocks cb, i)
+                   of NONE =>
+                      let
+                        val msg = "Reference to non-existent block " ^ I.labelString i ^ " in listRPO: ignoring"
+                        val () = Chat.warn1 (config, msg)
+                      in acc
+                      end
+                    | SOME b =>
+                      let
+                        val {blocks = ls, ...} = Block.successors b
+                        val res = LS.fold (ls, (i, b)::acc, list)
+                      in res
+                      end
                 end
           val rbids = list (entry cb, [])
           val rbids = LD.fold (blocks cb, rbids, checkFinished)
@@ -3761,6 +3796,9 @@ struct
 
     fun variableFresh (stm, hint, t, k) =
         IM.variableFresh (stm, hint, M.VI {typ = t, kind = k})
+
+    fun variableFreshNoInfo (stm, hint) =
+        IM.variableFreshNoInfo (stm, hint)
 
     fun variableClone (stm, v) = IM.variableClone (stm, v)
 

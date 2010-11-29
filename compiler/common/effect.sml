@@ -132,7 +132,7 @@ structure Effect :> EFFECT = struct
       else if f =  HeapRead then #"R"
       else if f =  HeapWrite then #"W"
       else if f =  Throws then #"T"
-      else if f =  Returns then #"R"
+      else if f =  Returns then #"X"
       else if f =  Fails then #"F"
       else if f =  InitGen then #"g"
       else if f =  InitRead then #"r"
@@ -142,7 +142,7 @@ structure Effect :> EFFECT = struct
   structure CD = DictF(struct type t = char val compare = Char.compare end)
 
   val charToSetMap : set CD.t =
-      CD.fromList (List.map (effects, fn e => (effectToChar e, single e)) @ [(#"A", PAny)])
+      CD.fromList (List.map (effects, fn e => (effectToChar e, single e)) @ [(#"A", PAny), (#"a", Any)])
 
   fun charToSet c = CD.lookup (charToSetMap, c)
 

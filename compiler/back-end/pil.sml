@@ -90,7 +90,7 @@ signature PIL = sig
     val block : varDecInit list * t list -> t
     val contMake : E.t * identifier * identifier -> t
     val contEntry : identifier * identifier -> t
-    val contCutTo : E.t * identifier list -> t
+    val contCutTo : env * E.t * E.t list * identifier list -> t
     val noyield : t -> t
     val yield : t
     (* Pillar only *)
@@ -484,13 +484,20 @@ struct
     fun contEntry (cl, cv) =
         [L.seq [L.str "pilContinuation", L.tuple [cl, cv], L.str ";"]]
 
-    fun contCutTo (e, cuts) =
+    fun contCutTo (env, e, args, cuts) =
         [if List.isEmpty cuts then 
-          L.seq [L.str "pilCutTo0", L.paren (E.inPrec (e, 1)), L.str ";"]
+           if List.isEmpty args then
+             L.seq [L.str "pilCutTo0", L.paren (E.inPrec (e, 1)), L.str ";"]
+           else
+             if outputKind env = Config.OkC then
+               Fail.fail ("Pil", "contCutTo", "cut with arguments not supported on C")
+             else
+               L.seq [L.str "pilCutToA", L.tuple (List.map (e::args, fn e => E.inPrec (e, 1))), L.str ";"]
          else
-           L.seq [L.str "pilCutTo",
-                  L.tuple ((E.inPrec (e, 1)) :: cuts),
-                  L.str ";"]
+           if List.isEmpty args then
+             L.seq [L.str "pilCutToC", L.tuple ((E.inPrec (e, 1)) :: cuts), L.str ";"]
+           else
+             Fail.fail ("Pil", "contCutTo", "one or more args and one or more cuts not supported")
         ]
 
     fun noyield s =

@@ -47,7 +47,7 @@ struct
              | M.PokTagged    => "VSumTag"
              | M.PokOptionSet => "VSetTag"
              | M.PokType      => "VTypeTag"
-             | M.PokPtr       => "VRefTag"
+             | M.PokPtr       => "VPtrTag"
              | M.PokCell      => "VThunkTag")
         
     fun pObjKindMetaData pok =
@@ -254,11 +254,11 @@ struct
           | PPtrWrite              => "pLsrPrimPPtrWrite"
           | PPtrNew                => "pLsrPrimPPtrNew"
           | PRatToUIntpChecked     => "pLsrPrimRationalToUInt32Checked"
-          | PCStringAllocate       => Fail.fail ("Runtime", "getPrimName", "PCStringAllocate")
-          | PCStringDeallocate     => Fail.fail ("Runtime", "getPrimName", "PCStringDeallocate")
-          | PCStringGetLen         => Fail.fail ("Runtime", "getPrimName", "PCStringGetLen")
-          | PCStringGetChar        => Fail.fail ("Runtime", "getPrimName", "PCStringGetChar")
-          | PCStringSetChar        => Fail.fail ("Runtime", "getPrimName", "PCStringSetChar")
+          | PCStringAllocate       => "pLsrCStringAllocate"
+          | PCStringDeallocate     => "pLsrCStringDeallocate"
+          | PCStringGetLen         => "pLsrCStringGetLen"
+          | PCStringGetChar        => "pLsrCStringGetChar"
+          | PCStringSetChar        => "pLsrCStringSetChar"
 
     fun getDivKindName dk =
         (case dk
@@ -490,6 +490,7 @@ struct
   end
 
   val exit = Pil.identifier "pLsrExit"
+  val halt = Pil.identifier "pLsrHalt"
   val pmain = Pil.identifier "__pmain"
   val gErrorVal = Pil.identifier "pLsrErrorVal"
 

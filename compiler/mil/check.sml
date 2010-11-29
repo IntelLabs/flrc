@@ -103,11 +103,14 @@ struct
 
   fun variable (s, e, v) =
       let
-        val () = assert (s, I.variableExists (getSt e, v),
-                         fn () =>
-                            "variable " ^ I.variableString' v ^
-                            " not in symbol table")
-        val t = getTyp (e, v)
+        val t =
+            if I.variableExists (getSt e, v) then
+              getTyp (e, v)
+            else
+              let
+                val () = reportError (s, "variable " ^ I.variableString' v ^ " not in symbol table")
+              in M.TNone
+              end
       in t
       end
 
@@ -275,15 +278,15 @@ struct
   fun bindVar (s, e, v, k) =
       let
         val t = variable (s, e, v)
-        val k' = varKind (e, v)
-        val kindCheck = k = k'
-        val () = assert (s, kindCheck,
-                         fn () =>
-                            "variable " ^ I.variableString' v ^
-                            ": kind property inconsistent with binder")
-        val () = assert (s, not (isVarBound (s, v)),
-                         fn () =>
-                            "variable " ^ I.variableString' v ^ " bound twice")
+        val () =
+            let
+              val k' = varKind (e, v)
+              val kindCheck = k = k'
+              val () = assert (s, kindCheck,
+                            fn () => "variable " ^ I.variableString' v ^ ": kind property inconsistent with binder")
+            in ()
+            end handle _ => ()
+        val () = assert (s, not (isVarBound (s, v)), fn () => "variable " ^ I.variableString' v ^ " bound twice")
         val () = addVarBound (s, v)
         val env = addVarAvailable (e, v)
         fun msg () = "variable " ^ I.variableString' v
@@ -301,7 +304,7 @@ struct
       let
         fun msg () = I.variableString' v ^ " binding inconsistent with type"
       in
-        checkConsistentTyp (s, e, msg, getTyp (e, v), t)
+        checkConsistentTyp (s, e, msg, variable (s, e, v), t)
       end
 
   fun bindVarsTo (s, e, msg, vs, ts) =
@@ -1158,7 +1161,7 @@ struct
       let
         fun doLabel (l, M.B {parameters, ...}, e) =
             let
-              val ts = Vector.map (parameters, fn x => getTyp (e, x))
+              val ts = Vector.map (parameters, fn x => variable (s, e, x))
               val e = bindLabel (s, e, l, ts)
             in e
             end

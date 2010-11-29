@@ -3,7 +3,30 @@
 
 signature MIL_PARSE =
 sig
+
+  structure Template :
+  sig
+    type t
+    val layoutTemplate : Config.t * Mil.symbolInfo * t -> Layout.t
+    datatype argument = AVar of Mil.variable | AName of Mil.name | AStream of MilStream.t
+    val apply : Mil.symbolTableManager * Config.t * t * argument Vector.t -> MilStream.t
+    val applyIs : Mil.symbolTableManager * Config.t * t * argument Vector.t -> Mil.instruction Vector.t
+  end
+
+  datatype templateFile = TF of {
+    includes            : Mil.includeFile Vector.t,
+    typs                : Mil.typ StringDict.t,
+    tupleDescriptors    : Mil.tupleDescriptor StringDict.t,
+    metaDataDescriptors : Mil.metaDataDescriptor StringDict.t,
+    constants           : Mil.constant StringDict.t,
+    templates           : Template.t StringDict.t,
+    globals             : Mil.globals
+  }
+
+  val templateFile : Config.t * string * Mil.symbolTableManager -> templateFile
+
   val pass : (unit, Mil.t) Pass.t
+
 end;
 
 structure MilParse :> MIL_PARSE =
@@ -26,6 +49,322 @@ struct
   structure VI = VectorInstructions
   structure M = Mil
   structure MU = MilUtils
+  structure MF = MilFragment
+  structure MS = MilStream
+
+  (*** Templates ***)
+
+  structure Template =
+  struct
+
+    val modname = modname ^ ".Template"
+    fun fail (f, m) = Fail.fail (modname, f, m)
+    fun unimplemented (f, m) = Fail.unimplemented (modname, f, m)
+
+    structure MR = MilRename.VarLabel
+
+    datatype parameter = PVar of M.variable | PName of M.name | PStream of string
+
+    datatype item =
+        TiInstruction of M.instruction
+      | TiStream of string
+      | TiTransfer of M.transfer * M.label * M.variable Vector.t
+      | TiApply of t * itemArg Vector.t
+    and itemArg =
+        IaVar of M.variable
+      | IaName of M.name
+      | IaStream of stream
+    and t = T of {
+      name       : string,
+      parameters : parameter Vector.t,
+      locals     : M.variable Vector.t,
+      items      : stream
+    }
+    withtype stream = item Vector.t
+
+    datatype argument = AVar of M.variable | AName of M.name | AStream of MS.t
+
+    fun remapVar (stm : M.symbolTableManager, vps : VS.t, r : Rename.t, v : M.variable) : Rename.t =
+        if VS.member (vps, v) then
+          r
+        else
+          let
+            val v' = IM.variableClone (stm, v)
+            val r = Rename.renameTo (r, v, v')
+          in r
+          end
+
+    fun remapVars (stm : M.symbolTableManager, vps : VS.t, r : Rename.t, vs : M.variable Vector.t) : Rename.t =
+        Vector.fold (vs, r, fn (v, r) => remapVar (stm, vps, r, v))
+
+    fun remapItem (stm : M.symbolTableManager, vps : VS.t, r : MR.t, i : item) : MR.t =
+        case i
+         of TiInstruction i => 
+            let
+              val (vr, lr) = r
+              val dests = MU.Instruction.dests i
+              val vr = remapVars (stm, vps, vr, dests)
+            in (vr, lr)
+            end
+          | TiStream _ => r
+          | TiTransfer (t, l, vs) =>
+            let
+              val (vr, lr) = r
+              val tvs = MU.Transfer.binds t
+              val vr = remapVars (stm, vps, vr, tvs)
+              val l' = IM.labelFresh stm
+              val lr = LD.insert (lr, l, l')
+              val vr = remapVars (stm, vps, vr, vs)
+            in (vr, lr)
+            end
+          | TiApply (t, args) => Vector.fold (args, r, fn (a, r) => remapItemArg (stm, vps, r, a))
+    and remapItemArg (stm : M.symbolTableManager, vps : VS.t, r : MR.t, ia : itemArg) : MR.t =
+        case ia
+         of IaVar _ => r
+          | IaName _ => r
+          | IaStream s => remapStream (stm, vps, r, s)
+    and remapStream (stm : M.symbolTableManager, vps : VS.t, r : MR.t, s : stream) : MR.t =
+        Vector.fold (s, r, fn (i, r) => remapItem (stm, vps, r, i))
+
+    type rewriteMaps = MR.t * M.name ND.t * MS.t SD.t
+
+    fun buildMaps (stm : M.symbolTableManager, t : t, args : argument Vector.t) : rewriteMaps =
+        let
+          val T {name, parameters, locals, items, ...} = t
+          val () =
+              if Vector.length parameters <> Vector.length args then
+                fail ("buildMaps", "argument number mismatch applying " ^ name)
+              else
+                ()
+          fun matchOne (p, a, (vm, nm, sm)) =
+              case (p, a)
+               of (PVar v1, AVar v2) => (Rename.renameTo (vm, v1, v2), nm, sm)
+                | (PName n1, AName n2) => (vm, ND.insert (nm, n1, n2), sm)
+                | (PStream s1, AStream s2) => (vm, nm, SD.insert (sm, s1, s2))
+                | _ => fail ("buildMaps.matchOne", "parameter/argument kind mismatch applying " ^ name)
+          val (vm, nm, sm) = Vector.fold2 (parameters, args, (Rename.none, ND.empty, SD.empty), matchOne)
+          fun doOne (p, vps) = case p of PVar v => VS.insert (vps, v) | _ => vps
+          val vps = Vector.fold (parameters, VS.empty, doOne)
+          val vm = remapVars (stm, vps, vm, locals)
+          val r = remapStream (stm, vps, (vm, LD.empty), items)
+          val maps = (r, nm, sm)
+        in maps
+        end
+
+    structure RewriteNames =
+    struct
+
+      type t = M.name ND.t
+
+      fun name (nm : t, n : M.name) : M.name = Utils.Option.get (ND.lookup (nm, n), n)
+
+      fun constant (nm : t, c : M.constant) : M.constant =
+          case c
+           of M.CRat _ => c
+            | M.CInteger _ => c
+            | M.CName n => M.CName (name (nm, n))
+            | M.CIntegral _ => c
+            | M.CFloat _ => c
+            | M.CDouble _ => c
+            | M.CViVector {typ, elts} => M.CViVector {typ = typ, elts = Vector.map (elts, fn c => constant (nm, c))}
+            | M.CViMask _ => c
+            | M.CPok _ => c
+            | M.COptionSetEmpty => c
+            | M.CTypePH => c
+
+      fun simple (nm : t, s : M.simple) : M.simple =
+          case s
+           of M.SVariable _ => s
+            | M.SConstant c => M.SConstant (constant (nm, c))
+
+      val operand : t * M.operand -> M.operand = simple
+
+      fun operands (nm : t, os : M.operand Vector.t) : M.operand Vector.t =
+          Vector.map (os, fn opnd => operand (nm, opnd))
+
+      fun fieldKindOperands (nm : t, fkos : (M.fieldKind * M.operand) Vector.t) : (M.fieldKind * M.operand) Vector.t =
+          Vector.map (fkos, fn (fk, opnd) => (fk, operand (nm, opnd)))
+
+      fun fieldIdentifier (nm : t, fi : M.fieldIdentifier) : M.fieldIdentifier =
+          case fi
+           of M.FiFixed _ => fi
+            | M.FiVariable opnd => M.FiVariable (operand (nm, opnd))
+            | M.FiViFixed _ => fi
+            | M.FiViVariable {typ, idx} => M.FiViVariable {typ = typ, idx = operand (nm, idx)}
+            | M.FiViIndexed {typ, idx} => M.FiViIndexed {typ = typ, idx = operand (nm, idx)}
+
+      fun tupleField (nm : t, M.TF {tupDesc, tup, field} : M.tupleField) : M.tupleField =
+          M.TF {tupDesc = tupDesc, tup = tup, field = fieldIdentifier (nm, field)}
+
+      fun rhs (nm : t, r : M.rhs) : M.rhs =
+          case r
+           of M.RhsSimple s => M.RhsSimple (simple (nm, s))
+            | M.RhsPrim {prim, createThunks, args} =>
+              M.RhsPrim {prim = prim, createThunks = createThunks, args = operands (nm, args)}
+            | M.RhsTuple {mdDesc, inits} => M.RhsTuple {mdDesc = mdDesc, inits = operands (nm, inits)}
+            | M.RhsTupleSub tf => M.RhsTupleSub (tupleField (nm, tf))
+            | M.RhsTupleSet {tupField, ofVal} =>
+              M.RhsTupleSet {tupField = tupleField (nm, tupField), ofVal = operand (nm, ofVal)}
+            | M.RhsTupleInited _ => r
+            | M.RhsIdxGet {idx, ofVal} => M.RhsIdxGet {idx = idx, ofVal = operand (nm, ofVal)}
+            | M.RhsCont _ => r
+            | M.RhsObjectGetKind _ => r
+            | M.RhsThunkMk _ => r
+            | M.RhsThunkInit {typ, thunk, fx, code, fvs} =>
+              M.RhsThunkInit {typ = typ, thunk = thunk, fx = fx, code = code, fvs = fieldKindOperands (nm, fvs)}
+            | M.RhsThunkGetFv _ => r
+            | M.RhsThunkValue {typ, thunk, ofVal} =>
+              M.RhsThunkValue {typ = typ, thunk = thunk, ofVal = operand (nm, ofVal)}
+            | M.RhsThunkGetValue _ => r
+            | M.RhsThunkSpawn _ => r
+            | M.RhsClosureMk _ => r
+            | M.RhsClosureInit {cls, code, fvs} =>
+              M.RhsClosureInit {cls = cls, code = code, fvs = fieldKindOperands (nm, fvs)}
+            | M.RhsClosureGetFv _ => r
+            | M.RhsPSetNew opnd => M.RhsPSetNew (operand (nm, opnd))
+            | M.RhsPSetGet _ => r
+            | M.RhsPSetCond {bool, ofVal} => M.RhsPSetCond {bool = operand (nm, bool), ofVal = operand (nm, ofVal)}
+            | M.RhsPSetQuery opnd => M.RhsPSetQuery (operand (nm, opnd))
+            | M.RhsPSum {tag, typ, ofVal} => M.RhsPSum {tag = name (nm, tag), typ = typ, ofVal = operand (nm, ofVal)}
+            | M.RhsPSumProj {typ, sum, tag} => M.RhsPSumProj {typ = typ, sum = sum, tag = name (nm, tag)}
+
+      fun instruction (nm : t, M.I {dests, n, rhs = r} : M.instruction) : M.instruction =
+                                                                          M.I {dests = dests, n = n, rhs = rhs (nm, r)}
+
+      fun target (nm : t, M.T {block, arguments} : M.target) : M.target =
+          M.T {block = block , arguments = operands (nm, arguments)}
+
+      fun switch (nm : t, f : t * 'a -> 'a, {on, cases, default} : 'a M.switch) : 'a M.switch =
+          {on = operand (nm, on),
+           cases = Vector.map (cases, fn (x, t) => (f (nm, x), target (nm, t))),
+           default = Option.map (default, fn t => target (nm, t))}
+
+      fun interProc (nm : t, ip : M.interProc) : M.interProc =
+          case ip
+           of M.IpCall {call, args} => M.IpCall {call = call, args = operands (nm, args)}
+            | M.IpEval _ => ip
+
+      fun transfer (nm : t, t : M.transfer) : M.transfer =
+        case t
+         of M.TGoto t => M.TGoto (target (nm, t))
+          | M.TCase sw => M.TCase (switch (nm, constant, sw))
+          | M.TInterProc {callee, ret, fx} => M.TInterProc {callee = interProc (nm, callee), ret = ret, fx = fx}
+          | M.TReturn os => M.TReturn (operands (nm, os))
+          | M.TCut {cont, args, cuts} => M.TCut {cont = cont, args = operands (nm, args), cuts = cuts}
+          | M.THalt opnd => M.THalt (operand (nm, opnd))
+          | M.TPSumCase sw => M.TPSumCase (switch (nm, name, sw))
+
+    end
+
+    fun rewriteTransfer (stm : M.symbolTableManager, config : Config.t, maps : rewriteMaps, t : M.transfer)
+        : M.transfer =
+        RewriteNames.transfer (#2 maps, MR.transfer (config, #1 maps, t))
+
+    fun rewriteItem (stm : M.symbolTableManager, config : Config.t, maps : rewriteMaps, i : item) : MS.t =
+        case i
+         of TiInstruction i => MS.instruction (RewriteNames.instruction (#2 maps, MR.instruction (config, #1 maps, i)))
+          | TiStream s =>
+            (case SD.lookup (#3 maps, s)
+              of NONE => fail ("rewriteItem", "stream " ^ s ^ " not bound")
+               | SOME s => s)
+          | TiTransfer (t, l, vs) =>
+            let
+              val t = rewriteTransfer (stm, config, maps, t)
+              val l = Option.valOf (LD.lookup (#2 (#1 maps), l))
+              val vs = Vector.map (vs, fn v => Rename.use (#1 (#1 maps), v))
+              val s = MS.transfer (t, l, vs)
+            in s
+            end
+          | TiApply (t, args) =>
+            let
+              val args = Vector.map (args, fn a => rewriteItemArg (stm, config, maps, a))
+              val s = apply (stm, config, t, args)
+            in s
+            end
+
+    and rewriteItemArg (stm : M.symbolTableManager, config : Config.t, maps : rewriteMaps, ia : itemArg) : argument =
+        case ia
+         of IaVar v => AVar (Rename.use (#1 (#1 maps), v))
+          | IaName n => AName (RewriteNames.name (#2 maps, n))
+          | IaStream s => AStream (rewriteStream (stm, config, maps, s))
+
+    and rewriteStream (stm : M.symbolTableManager, config : Config.t, maps : rewriteMaps, s : stream) : MS.t =
+        MS.seqnV (Vector.map (s, fn i => rewriteItem (stm, config, maps, i)))
+
+    and applyR (stm : M.symbolTableManager, config : Config.t, t : t, args : argument Vector.t)
+        : MS.t * rewriteMaps =
+        let
+          val T {items, ...} = t
+          val maps = buildMaps (stm, t, args)
+          val s = rewriteStream (stm, config, maps, items)
+        in (s, maps)
+        end
+
+    and apply (stm : M.symbolTableManager, config : Config.t, t : t, args : argument Vector.t) : MS.t =
+        let
+          val (s, _) = applyR (stm, config, t, args)
+        in s
+        end
+
+    fun applyIs (stm : M.symbolTableManager, config : Config.t, t : t, args : argument Vector.t)
+        : M.instruction Vector.t =
+        let
+          val T {items, ...} = t
+          val (r, nm, _) = buildMaps (stm, t, args)
+          fun doOne i =
+              case i
+               of TiInstruction i => RewriteNames.instruction (nm, MR.instruction (config, r, i))
+                | _ => fail ("applyIs.doOne", "bad template item")
+          val is = Vector.map (items, doOne)
+        in is
+        end
+
+    local
+      structure L = Layout
+      structure LU = LayoutUtils
+      structure ML = MilLayout
+    in
+    fun layoutParameter (c, si, p) =
+        case p
+         of PVar v => ML.layoutVariable (c, si, v)
+          | PName n => ML.layoutName (c, si, n)
+          | PStream s => L.str s
+    fun layoutTemplateItem (c, si, ti) =
+        case ti
+         of TiInstruction i => L.seq [L.str "i: ", ML.layoutInstruction (c, si, i)]
+          | TiStream s => L.seq [L.str "s: ", L.str s]
+          | TiTransfer (t, l, ps) =>
+            L.seq [L.str "t: ",
+                   L.mayAlign [ML.layoutTransfer (c, si, t),
+                               L.seq [ML.layoutLabel (c, si, l),
+                                      L.tuple (Vector.toListMap (ps, fn v => ML.layoutVariable (c, si, v)))]]]
+          | TiApply (t, args) =>
+            L.seq [L.str "a: ",
+                   L.align [layoutTemplate (c, si, t),
+                            L.tuple (Vector.toListMap (args, fn a => layoutTemplateItemArg (c, si, a)))]]
+    and layoutTemplateItemArg (c, si, a) =
+        case a
+         of IaVar v => ML.layoutVariable (c, si, v)
+          | IaName n => ML.layoutName (c, si, n)
+          | IaStream s => layoutStream (c, si, s)
+    and layoutStream (c, si, s) =
+        L.align [L.str "{",
+                 LU.indent (L.align (Vector.toListMap (s, fn ti => layoutTemplateItem (c, si, ti)))),
+                 L.str "}"]
+    and layoutTemplate (c, si, T {name, parameters, locals, items}) =
+        let
+          val header = L.tuple (Vector.toListMap (parameters, fn p => layoutParameter (c, si, p)))
+          val locals = L.seq [L.str "locals ",
+                              L.sequence ("", ",", "")
+                                         (Vector.toListMap (locals, fn v => ML.layoutVariable (c, si , v)))]
+          val items = L.align (Vector.toListMap (items, fn ti => layoutTemplateItem (c, si, ti)))
+          val body = L.align [L.str "{", LU.indent locals, LU.indent items, L.str "}"]
+          val l = L.align [header, body]
+        in l
+        end
+    end
+
+  end
 
   (*** Parser Utilities ***)
 
@@ -52,9 +391,27 @@ struct
    * and the naming conventions for them.
    *)
 
-  val whiteF = P.satisfy (fn c => c = Char.space orelse c = Char.newline orelse c = #"\t")
+  fun whiteChar c = c = Char.space orelse c = Char.newline orelse c = #"\t"
 
-  val whitespace = P.ignore (P.zeroOrMore whiteF)
+  val whiteF = P.satisfy whiteChar
+
+  val commentF =
+      let
+        fun match s = P.all (List.map (String.explode s, fn c => P.satisfy (fn c' => c = c')))
+        val opn = match "(*"
+        val cls = match "*)"
+        fun prnChar c = let val c = Char.ord c in c >= 32 andalso c <= 126 end
+        val commentChar = P.satisfy (fn c => prnChar c orelse whiteChar c)
+        fun pr () =
+            P.ignore cls ||
+            P.ignore (opn && P.$ pr && P.$ pr) ||
+            P.ignore (commentChar && P.$ pr) ||
+            P.error "Unterminated comment"
+        val p = P.map (opn && pr (), fn _ => #"c")
+      in p
+      end
+
+  val whitespace = P.ignore (P.zeroOrMore (whiteF || commentF))
 
   (* Something is lexical if it matches exactly characters of the thing being parsed and not whitespace.
    * Something is syntactic if it parses surrounding whitespace as well as the thing being parsed.
@@ -206,15 +563,28 @@ struct
    *   (2) The state updates must not require rollback when a paser fails as we have no way to call rollback functions.
    *)
 
-  datatype state = S of {stm : M.symbolTableManager, vars : M.variable SD.t ref, labels : M.label SD.t ref}
+  datatype state = S of {
+    stm       : M.symbolTableManager,
+    gvars     : M.variable SD.t ref,
+    lvars     : M.variable SD.t ref,
+    labels    : M.label SD.t ref,
+    typs      : M.typ SD.t ref,
+    tds       : M.tupleDescriptor SD.t ref,
+    mdds      : M.metaDataDescriptor SD.t ref,
+    consts    : M.constant SD.t ref,
+    templates : Template.t SD.t ref
+  }
 
-  fun stateMk (stm : M.symbolTableManager) : state = S {stm = stm, vars = ref SD.empty, labels = ref SD.empty}
+  fun stateMk (stm : M.symbolTableManager) : state =
+      S {stm = stm, gvars = ref SD.empty, lvars = ref SD.empty, labels = ref SD.empty, typs = ref SD.empty,
+         tds = ref SD.empty, mdds = ref SD.empty, consts = ref SD.empty, templates = ref SD.empty}
 
   fun getStm (S {stm, ...} : state) : M.symbolTableManager = stm
 
-  fun getVariable (S {stm, vars, ...} : state, pre : string, hint : string) : M.variable =
+  fun getVariable (S {stm, gvars, lvars, ...} : state, pre : string, hint : string) : M.variable =
       let
         val full = pre ^ hint
+        val vars = if String.length pre >= 2 andalso String.sub (pre, 1) = #"l" then lvars else gvars
       in
         case SD.lookup (!vars, full)
          of NONE => let val v = IM.variableFreshNoInfo (stm, hint) val () = vars := SD.insert (!vars, full, v) in v end
@@ -226,13 +596,50 @@ struct
        of NONE => let val l' = IM.labelFresh stm val () = labels := SD.insert (!labels, l, l') in l' end
         | SOME l => l
 
-  fun forkLabels (S {stm, vars, labels} : state) : state = S {stm = stm, vars = vars, labels = ref SD.empty}
+  fun forkLocal (S {stm, gvars, lvars, labels, typs, tds, mdds, consts, templates} : state) : state =
+      S {stm = stm, gvars = gvars, lvars = ref SD.empty, labels = ref SD.empty, typs = typs, tds = tds, mdds = mdds,
+         consts = consts, templates = templates}
+
+  fun getNamedTyps (S {typs, ...} : state) : M.typ SD.t = !typs
+
+  fun getNamedTyp (S {typs, ...} : state, s : string) : M.typ option = SD.lookup (!typs, s)
+
+  fun addNamedTyp (S {typs, ...} : state, s : string, t : M.typ) : unit = typs := SD.insert (!typs, s, t)
+
+  fun getNamedTDs (S {tds, ...} : state) : M.tupleDescriptor SD.t = !tds
+
+  fun getNamedTD (S {tds, ...} : state, s : string) : M.tupleDescriptor option = SD.lookup (!tds, s)
+
+  fun addNamedTD (S {tds, ...} : state, s : string, td : M.tupleDescriptor) : unit = tds := SD.insert (!tds, s, td)
+
+  fun getNamedMDDs (S {mdds, ...} : state) : M.metaDataDescriptor SD.t = !mdds
+
+  fun getNamedMDD (S {mdds, ...} : state, s : string) : M.metaDataDescriptor option = SD.lookup (!mdds, s)
+
+  fun addNamedMDD (S {mdds, ...} : state, s : string, mdd : M.metaDataDescriptor) : unit =
+      mdds := SD.insert (!mdds, s, mdd)
+
+  fun getNamedConsts (S {consts, ...} : state) : M.constant SD.t = !consts
+
+  fun getNamedConst (S {consts, ...} : state, s : string) : M.constant option = SD.lookup (!consts, s)
+
+  fun addNamedConst (S {consts, ...} : state, s : string, c : M.constant) : unit = consts := SD.insert (!consts, s, c)
+
+  fun getTemplates (S {templates, ...} : state) : Template.t SD.t = !templates
+
+  fun getTemplate (S {templates, ...}, s : string) : Template.t option = SD.lookup (!templates, s)
+
+  fun addTemplate (S {templates, ...}, s : string, t : Template.t) : unit = templates := SD.insert (!templates, s, t)
 
   (*** Environment ***)
 
   datatype env = E of {config : Config.t}
 
   fun envMk (config : Config.t) : env = E {config = config}
+
+  val ((_, getConfig)) =
+      FunctionalUpdate.mk1 (fn (E {config}) => (config),
+                            fn (c) => E {config = c})
 
   (*** The Parsers ***)
 
@@ -254,8 +661,10 @@ struct
 
   fun variableF (state : state, env : env) : M.variable P.t =
       let
-        val pre = keycharLF #"v" && P.zeroOrMore (P.satisfy Char.isDigit) && keycharLF #"_"
-        val pre = P.map (pre, fn ((_, cs), _) => "v" ^ String.implode cs ^ "_")
+        val pre =
+            keycharLF #"v" && P.optional (keycharLF #"l") && P.zeroOrMore (P.satisfy Char.isDigit) && keycharLF #"_"
+        val pre =
+            P.map (pre, fn (((_, l), cs), _) => "v" ^ (case l of NONE => "" | SOME _ => "l") ^ String.implode cs ^ "_")
         val p = syntax (P.map (pre && hintLF, fn (p, h) => getVariable (state, p, h)))
       in p
       end
@@ -317,6 +726,12 @@ struct
   fun fieldVariance (state : state, env : env) : M.fieldVariance P.t =
       syntax (P.satisfyMap (MU.FieldVariance.fromChar)) || P.error "Expected field variance"
 
+  fun typNameF (state : state, env : env) : string P.t =
+      P.bind identifierF
+             (fn s => if String.length s >= 1 andalso String.sub (s, 0) = #"t" then P.succeed s else P.fail)
+
+  fun typName (state : state, env : env) : string P.t = typNameF (state, env) || P.error "Expected type name"
+
   fun typ (state : state, env : env) : M.typ P.t =
       let
         val nameTyp = P.map (name (state, env) && keycharS #":" && P.$$ typ (state, env), fn ((n, _), t) => (n, t))
@@ -337,6 +752,7 @@ struct
               | "Bits128" => P.succeed (M.TBits M.Vs128)
               | "Bits256" => P.succeed (M.TBits M.Vs256)
               | "Bits512" => P.succeed (M.TBits M.Vs512)
+              | "Bitsp" => P.succeed (M.TBits (MU.ValueSize.ptrSize (getConfig env)))
               | "Cont" => P.map (parenSeq (typ (state, env)), fn ts => M.TContinuation ts)
               | "CStr" => P.succeed M.TCString
               | "Double" => P.succeed M.TDouble
@@ -358,11 +774,13 @@ struct
               | "SInt16" => P.succeed (M.TIntegral (IntArb.T (IntArb.S16, IntArb.Signed)))
               | "SInt32" => P.succeed (M.TIntegral (IntArb.T (IntArb.S32, IntArb.Signed)))
               | "SInt64" => P.succeed (M.TIntegral (IntArb.T (IntArb.S64, IntArb.Signed)))
+              | "SIntp" => P.succeed (M.TIntegral (IntArb.T (Config.targetWordSize' (getConfig env), IntArb.Signed)))
               | "Thunk" => P.map (paren (typ (state, env)), M.TThunk)
               | "UInt8" => P.succeed (M.TIntegral (IntArb.T (IntArb.S8, IntArb.Unsigned)))
               | "UInt16" => P.succeed (M.TIntegral (IntArb.T (IntArb.S16, IntArb.Unsigned)))
               | "UInt32" => P.succeed (M.TIntegral (IntArb.T (IntArb.S32, IntArb.Unsigned)))
               | "UInt64" => P.succeed (M.TIntegral (IntArb.T (IntArb.S64, IntArb.Unsigned)))
+              | "UIntp" => P.succeed (M.TIntegral (IntArb.T (Config.targetWordSize' (getConfig env), IntArb.Unsigned)))
               | "Vec" => P.map (paren vectorElemType, M.TViVector)
               | _ => P.fail
         val idBased = P.bind identifierF doId
@@ -381,7 +799,10 @@ struct
                    && keywordS "=>"
                    && parenSeq (P.$$ typ (state, env)),
                    fn ((args, _), ress) => M.TClosure {args = args, ress = ress})
-        val p = idBased || code || tuple || closure || P.error "Expected type"
+        fun doNamed s =
+            case getNamedTyp (state, s) of NONE => P.error ("Type " ^ s ^ " undefined") | SOME t => P.succeed t
+        val named = P.bind (typNameF (state, env)) doNamed
+        val p = idBased || code || tuple || closure || named || P.error "Expected type"
       in p
       end
 
@@ -410,6 +831,7 @@ struct
                    | "b16" => P.succeed (M.FkBits M.Fs16)
                    | "b32" => P.succeed (M.FkBits M.Fs32)
                    | "b64" => P.succeed (M.FkBits M.Fs64)
+                   | "bp"  => P.succeed (MU.FieldKind.nonRefPtr (getConfig env))
                    | "d"   => P.succeed M.FkDouble
                    | "f"   => P.succeed M.FkFloat
                    | "r"   => P.succeed M.FkRef
@@ -419,8 +841,23 @@ struct
   fun fieldDescriptor (state : state, env : env) : M.fieldDescriptor P.t =
       P.map (fieldKind (state, env) && fieldVariance (state, env), fn (k, v) => M.FD {kind = k, var = v})
 
+  fun tupleDescriptorNameF (state : state, env : env) : string P.t =
+      P.bind identifierF
+             (fn s =>
+                 if String.length s >= 2 andalso String.sub (s, 0) = #"t" andalso String.sub (s, 1) = #"d"
+                 then P.succeed s 
+                 else P.fail)
+
+  fun tupleDescriptorName (state : state, env : env) : string P.t =
+      tupleDescriptorNameF (state, env) || P.error "Expected tuple descriptor name"
+
   fun tupleDescriptor (state : state, env : env) : M.tupleDescriptor P.t =
       let
+        fun doNamed s =
+            case getNamedTD (state, s)
+             of NONE => P.error ("Tuple descriptor " ^ s ^ " undefined")
+              | SOME td => P.succeed td
+        val named = P.bind (tupleDescriptorNameF (state, env)) doNamed
         val array = P.map (keycharSF #"[" && fieldDescriptor (state, env) && keycharS #"]" && keycharS #">",
                            fn (((_, fd), _), _) => SOME fd)
         fun pr () =
@@ -432,12 +869,28 @@ struct
                 P.map (array, fn a => M.TD {fixed = Vector.new0 (), array = a}) ||
                 P.map (fieldDescriptor (state, env) && P.$ pr,
                        fn (fd, (fds, a)) => M.TD {fixed = Vector.fromList (fd::fds), array = a})
-        val p = P.map (keycharS #"<" && p, #2)
+        val p = P.map (keycharSF #"<" && p, #2) || named || P.error "Expected tuple descriptor"
       in p
       end
 
+  fun metaDataDescriptorNameF (state : state, env : env) : string P.t =
+      P.bind identifierF
+             (fn s =>
+                 if String.length s >= 3 andalso String.sub (s, 0) = #"m" andalso String.sub (s, 1) = #"d" andalso
+                    String.sub (s, 2) = #"d"
+                 then P.succeed s 
+                 else P.fail)
+
+  fun metaDataDescriptorName (state : state, env : env) : string P.t =
+      metaDataDescriptorNameF (state, env) || P.error "Expected metadata descriptor name"
+
   fun metaDataDescriptor (state : state, env : env) : M.metaDataDescriptor P.t =
       let
+        fun doNamed s =
+            case getNamedMDD (state, s)
+             of NONE => P.error ("Metadata descriptor " ^ s ^ " undefined")
+              | SOME mdd => P.succeed mdd
+        val named = P.bind (metaDataDescriptorNameF (state, env)) doNamed
         val fd = fieldDescriptor (state, env)
         val array = P.map (keycharSF #"[" && fd && keycharS #"@" && decimal && keycharS #"]" && keycharS #">",
                            fn (((((_, fd), _), n), _), _) => SOME (n, fd))
@@ -449,10 +902,18 @@ struct
         val p = P.map (keycharSF #">", fn () => (Vector.new0 (), NONE)) ||
                 P.map (array, fn a => (Vector.new0 (), a)) ||
                 P.map (fd && P.$ pr, fn (fd, (fds, a)) => (Vector.fromList (fd::fds), a))
-        val p = P.map (keycharS #"<" && pObjKind (state, env) && keycharS #";" && p,
+        val p = P.map (keycharSF #"<" && pObjKind (state, env) && keycharS #";" && p,
                        fn (((_, pok), _), (fixed, array)) => M.MDD {pok = pok, fixed = fixed, array = array})
+        val p = p || named || P.error "Expected metadata descriptor"
       in p
       end
+
+  fun constantNameF (state : state, env : env) : string P.t =
+      P.bind identifierF
+             (fn s => if String.length s >= 1 andalso String.sub (s, 0) = #"c" then P.succeed s else P.fail)
+
+  fun constantName (state : state, env : env) : string P.t =
+      constantNameF (state, env) || P.error "Expected constant name"
 
   fun constantF (state : state, env : env) : M.constant P.t =
       let
@@ -485,6 +946,7 @@ struct
               | "S32" => intArb (IntArb.Signed, IntArb.S32)
               | "S64" => intArb (IntArb.Signed, IntArb.S64)
               | "Set" => P.succeed (M.CPok M.PokOptionSet)
+              | "SP" => intArb (IntArb.Signed, Config.targetWordSize' (getConfig env))
               | "Tag" => P.succeed (M.CPok M.PokTagged)
               | "Type" => P.succeed (M.CPok M.PokType)
               | "TypePH" => P.succeed M.CTypePH
@@ -492,11 +954,17 @@ struct
               | "U16" => intArb (IntArb.Unsigned, IntArb.S16)
               | "U32" => intArb (IntArb.Unsigned, IntArb.S32)
               | "U64" => intArb (IntArb.Unsigned, IntArb.S64)
+              | "UP" => intArb (IntArb.Unsigned, Config.targetWordSize' (getConfig env))
               | "V" =>
                 P.map (angleBracketSemiComma (vectorElemTypeShort, constant (state, env)),
                        fn (et, cs) => M.CViVector {typ = et, elts = cs})
               | _ => P.fail
-        val p = P.map (nameF (state, env), M.CName) || P.bind identifierF doIt
+        fun doNamed s =
+            case getNamedConst (state, s)
+             of NONE => P.error ("Constant " ^ s ^ " undefined")
+              | SOME c => P.succeed c
+        val named = P.bind (constantNameF (state, env)) doNamed
+        val p = P.map (nameF (state, env), M.CName) || P.bind identifierF doIt || named
       in p
       end
 
@@ -703,21 +1171,34 @@ struct
       in p
       end
 
-  fun codes (state : state, env : env) : M.codes P.t =
+  fun codesD (state : state, env : env, d : M.codes) : M.codes P.t =
       let
-        val exhaustive =
-            P.map (keywordSF "<=", fn _ => true) || P.map (keycharSF #"?", fn _ => false) || P.error "Expected codes"
+        val exhaustive = P.map (keywordSF "<=", fn _ => true) || P.map (keycharSF #"?", fn _ => false)
         val vs = P.map (braceSeq (variable (state, env)), VS.fromVector)
-        val p = P.map (exhaustive && vs, fn (e, vs) => {possible = vs, exhaustive = e})
+        val p = P.map (exhaustive && vs, fn (e, vs) => {possible = vs, exhaustive = e}) || P.succeed d
       in p
       end
 
   fun callA (state : state, env : env, s : string) : M.call P.t =
       case s
        of "Call" =>
-          P.map (paren (variable (state, env)) && codes (state, env), fn (v, cs) => M.CCode {ptr = v, code = cs})
+          let
+            fun doIt v =
+                let
+                  val d =
+                      (case MU.SymbolTableManager.variableKind (getStm state, v)
+                        of M.VkExtern => MU.Codes.all
+                         | _ => {possible = VS.singleton v, exhaustive = true})
+                      handle _ => {possible = VS.singleton v, exhaustive = true}
+                  val p = P.map (codesD (state, env, d), fn cs => M.CCode {ptr = v, code = cs})
+                in p
+                end
+            val p = P.bind (paren (variable (state, env))) doIt
+          in p
+          end
         | "CallClos" =>
-          P.map (paren (variable (state, env)) && codes (state, env), fn (v, cs) => M.CClosure {cls = v, code = cs})
+          P.map (paren (variable (state, env)) && codesD (state, env, MU.Codes.all),
+                 fn (v, cs) => M.CClosure {cls = v, code = cs})
         | "CallDir" =>
           P.map (pair (variable (state, env), variable (state, env)),
                  fn (v1, v2) => M.CDirectClosure {cls = v1, code = v2})
@@ -728,7 +1209,8 @@ struct
   fun evalA (state : state, env : env, s : string) : M.eval P.t =
       case s
        of "Eval" =>
-          P.map (paren (variable (state, env)) && codes (state, env), fn (v, cs) => M.EThunk {thunk = v, code = cs})
+          P.map (paren (variable (state, env)) && codesD (state, env, MU.Codes.all),
+                 fn (v, cs) => M.EThunk {thunk = v, code = cs})
         | "EvalDir" =>
           P.map (pair (variable (state, env), variable (state, env)),
                  fn (v1, v2) => M.EDirectThunk {thunk = v1, code = v2})
@@ -785,7 +1267,7 @@ struct
       in p
       end
 
-  fun transfer (state : state, env : env) : M.transfer P.t =
+  fun transferF (state : state, env : env) : M.transfer P.t =
       let
         fun interProc s =
             P.map (interProcA (state, env, s) && return (state, env) && effects (state, env),
@@ -805,31 +1287,103 @@ struct
               | "PSumCase" => P.map (switch (state, env, nameF), M.TPSumCase)
               | "Return" => P.map (parenSeq (operand (state, env)), M.TReturn)
               | _ => P.fail
-        val p = P.bind identifierF doIt || P.error "Expected transfer"
+        val p = P.bind identifierF doIt
       in p
       end
 
+  fun transfer (state : state, env : env) : M.transfer P.t =
+      transferF (state, env) || P.error "Expected transfer"
+
+  fun blockHeaderF (state : state, env : env) : (M.label * M.variable Vector.t) P.t =
+      labelF (state, env) && parenSeq (binder (state, env, M.VkLocal))
+
+  fun blockHeader (state : state, env : env) : (M.label * M.variable Vector.t) P.t =
+      blockHeaderF (state, env) || P.error "Expected block header"
+
   fun blockF (state : state, env : env) : (M.label * M.block) P.t =
       let
-        val header = labelF (state, env) && parenSeq (binder (state, env, M.VkLocal))
-        val p = header && P.zeroOrMoreV (instructionF (state, env)) && transfer (state, env)
+        val p = blockHeaderF (state, env) && P.zeroOrMoreV (instructionF (state, env)) && transfer (state, env)
         val p = P.map (p, fn (((l, ps), is), t) => (l, M.B {parameters = ps, instructions = is, transfer = t}))
       in p
       end
 
   fun block (state : state, env : env) : (M.label * M.block) P.t = blockF (state, env) || P.error "Expected block"
 
+  fun templateNameF (state : state, env : env) : string P.t =
+      P.bind identifierF
+             (fn s => if String.length s >= 1 andalso String.sub (s, 0) = #"T" then P.succeed s else P.fail)
+
+  fun templateName (state : state, env : env) : string P.t =
+      templateNameF (state, env) || P.error "Expected template name"
+
+  fun streamNameF (state : state, env : env) : string P.t =
+      P.bind identifierF
+             (fn s => if String.length s >= 1 andalso String.sub (s, 0) = #"s" then P.succeed s else P.fail)
+
+  fun streamName (state : state, env : env) : string P.t =
+      streamNameF (state, env) || P.error "Expected stream name"
+
+  fun templateItemF (state : state, env : env) : Template.item P.t =
+      let
+        val instruction = P.map (instructionF (state, env), Template.TiInstruction)
+        val namedStream = P.map (streamNameF (state, env), Template.TiStream)
+        val header = blockHeader (state, env)
+        fun doIt (t, (l, ps)) = Template.TiTransfer (t, l, ps)
+        val transfer = P.map (transferF (state, env) && blockHeaderF (state, env), doIt)
+        fun mkApply (t, args) =
+            case getTemplate (state, t)
+             of NONE => P.error ("Template " ^ t ^ " undefined")
+              | SOME t => P.succeed (Template.TiApply (t, args))
+        val apply = P.bind (templateNameF (state, env) && parenSeq (P.$$ templateArgumentF (state, env))) mkApply
+        val p = instruction || namedStream || transfer || apply
+      in p
+      end
+
+  and templateArgumentF (state : state, env : env) : Template.itemArg P.t =
+      P.map (variableF (state, env), Template.IaVar) ||
+      P.map (nameF (state, env), Template.IaName) ||
+      P.map (P.$$ streamF (state, env), Template.IaStream)
+
+  and streamF (state : state, env : env) : Template.stream P.t =
+      let
+        val p = keycharSF #"{" && P.zeroOrMoreV (P.$$ templateItemF (state, env)) && keycharS #"}"
+        val p = P.map (p, fn ((_, is), _) => is)
+      in p
+      end
+
+  fun localsF (state : state, env : env) : M.variable Vector.t P.t =
+      let
+        val p = keywordSF "Local" && P.seqSepV (binder (state, env, M.VkLocal), keycharSF #",") && keycharS #";"
+        fun build x =
+            case x
+             of NONE => Vector.new0 ()
+              | SOME ((_, ls), _) => ls
+        val p = P.map (P.optional p, build)
+      in p
+      end
+
   fun codeBody (state : state, env : env) : M.codeBody P.t =
       let
-        val state = forkLabels state
         val entry = P.map (keywordS "Entry" && label (state, env), #2)
-        val blks = P.map (P.zeroOrMore (blockF (state, env)), LD.fromList)
-        val p = P.map (entry && blks, fn (e, bs) => M.CB {entry = e, blocks = bs})
+        val blks = blockHeader (state, env) && P.zeroOrMoreV (templateItemF (state, env)) && transfer (state, env)
+        fun build ((e, ls), (((l, vs), is), t)) =
+            let
+              val stm = getStm state
+              val c = getConfig env
+              val temp = Template.T {name = "", parameters = Vector.new0 (), locals = ls, items = is}
+              val (s, maps) = Template.applyR (stm, c, temp, Vector.new0 ())
+              val t = Template.rewriteTransfer (stm, c, maps, t)
+              val blks = MF.toBlocksD (MS.finish (l, vs, s, t))
+              val cb = M.CB {entry = e, blocks = blks}
+            in cb
+            end
+        val p = P.map (entry && localsF (state, env) && blks, build)
       in p
       end
 
   fun codeA (state : state, env : env) : M.code P.t =
       let
+        val state = forkLocal state
         val binder' = fn (s, e) => binder (s, e, M.VkLocal)
         val args = parenSemiComma (callConv (state, env, binder'), binder (state, env, M.VkLocal))
         val header = P.map (optFlag #"^" && optFlag #"*" && args && effects (state, env),
@@ -875,6 +1429,9 @@ struct
   fun varGlobalF (state : state, env : env) : (M.variable * M.global) P.t =
       P.map (binderF (state, env, M.VkGlobal) && keycharS #"=" && global (state, env), fn ((v, _), g) => (v, g))
 
+  fun varGlobal (state : state, env : env) : (M.variable * M.global) P.t =
+      varGlobalF (state, env) || P.error "Expected global binding"
+
   fun globals (state : state, env : env) : M.global VD.t P.t =
       P.map (P.zeroOrMore (varGlobalF (state, env)), VD.fromList)
 
@@ -905,6 +1462,125 @@ struct
             end
         val p = P.map (whitespace && includes && externs && globals && entry, finish)
       in p
+      end
+
+  fun templateParameterF (state : state, env : env) : Template.parameter P.t =
+      P.map (variableF (state, env), Template.PVar) ||
+      P.map (nameF (state, env), Template.PName) ||
+      P.map (streamNameF (state, env), Template.PStream)
+
+  fun templateBody (state : state, env : env) : (M.variable Vector.t * Template.stream) P.t =
+      let
+        val p =
+            keycharS #"{" && localsF (state, env) && P.zeroOrMoreV (P.$$ templateItemF (state, env)) && keycharS #"}"
+        val p = P.map (p, fn (((_, ls), is), _) => (ls, is))
+      in p
+      end
+
+  fun template (state : state, env : env) : (string * Template.t) P.t =
+      let
+        val state = forkLocal state
+        val params = parenSeq (templateParameterF (state, env))
+        val p = params && templateBody (state, env)
+        fun doIt n (ps, (ls, is)) = (n, Template.T {name = n, parameters = ps, locals = ls, items = is})
+        val p = P.bind (templateName (state, env)) (fn n => P.map (p, doIt n))
+      in p
+      end
+
+  datatype declaration =
+      DInclude of M.includeFile
+    | DType of string * M.typ
+    | DTupleDescriptor of string * M.tupleDescriptor
+    | DMetaDataDescriptor of string * M.metaDataDescriptor
+    | DConstant of string * M.constant
+    | DGlobal of M.variable * M.global
+    | DTemplate of string * Template.t
+
+  fun declarationF (state : state, env : env) : declaration P.t =
+      let
+        fun doConstant ((n, _), c) =
+            let
+              val () = addNamedConst (state, n, c)
+            in DConstant (n, c)
+            end
+        fun doMDD ((n, _), mdd) =
+            let
+              val () = addNamedMDD (state, n, mdd)
+              val n' = "td" ^ String.substring (n, 3, String.length n - 3)
+              val td = addNamedTD (state, n', MU.MetaDataDescriptor.toTupleDescriptor mdd)
+            in DMetaDataDescriptor (n, mdd)
+            end
+        fun doTemplate (n, t) =
+            let
+              val () = addTemplate (state, n, t)
+            in DTemplate (n, t)
+            end
+        fun doTD ((n, _), td) =
+            let
+              val () = addNamedTD (state, n, td)
+            in DTupleDescriptor (n, td)
+            end
+        fun doTyp ((n, _), t) =
+            let
+              val () = addNamedTyp (state, n, t)
+            in DType (n, t)
+            end
+        fun doIt s =
+            case s
+             of "Constant" => P.map (constantName (state, env) && keycharS #"=" && constant (state, env), doConstant)
+              | "Global" => P.map (varGlobal (state, env), fn (v, d) => DGlobal (v, d))
+              | "Include" => P.map (includeFile (state, env), DInclude)
+              | "Metadata" =>
+                P.map (metaDataDescriptorName (state, env) && keycharS #"=" && metaDataDescriptor (state, env), doMDD)
+              | "Template" => P.map (template (state, env), doTemplate)
+              | "TupleDescriptor" =>
+                P.map (tupleDescriptorName (state, env) && keycharS #"=" && tupleDescriptor (state, env), doTD)
+              | "Type" => P.map (typName (state, env) && keycharS #"=" && typ (state, env), doTyp)
+              | _ => P.fail
+        val p = P.bind identifierF doIt
+      in p
+      end
+
+  datatype templateFile = TF of {
+    includes            : M.includeFile Vector.t,
+    typs                : M.typ SD.t,
+    tupleDescriptors    : M.tupleDescriptor SD.t,
+    metaDataDescriptors : M.metaDataDescriptor SD.t,
+    constants           : M.constant SD.t,
+    templates           : Template.t SD.t,
+    globals             : M.globals
+  }
+
+  fun templateFile (config : Config.t, fname : string, stm : M.symbolTableManager) : templateFile =
+      let
+        val strm = Pervasive.TextIO.openIn fname
+        val instrm = Pervasive.TextIO.getInstream strm
+        val instrm = InStreamWithPos.mk instrm
+        val state = stateMk stm
+        val env = envMk config
+        val parser =
+            P.map (whitespace && P.zeroOrMore (declarationF (state, env)) && P.atEnd "Expected end of file",
+                   fn ((_, ds), _) => ds)
+        val ds =
+            case P.parse (parser, instrm)
+             of P.Success (_, ds) => ds
+              | P.Failure => fail ("parseFile", "Parse failed")
+              | P.Error ({line, col}, e) =>
+                fail ("parseFile", "Parse error: line " ^ Int.toString line ^ " col " ^ Int.toString col ^ ": " ^ e)
+        fun doOne (d, (is, gs)) =
+            case d
+             of DInclude i => (i::is, gs)
+              | DGlobal (v, g) => (is, VD.insert (gs, v, g))
+              | _ => (is, gs)
+        val (is, gs) = List.fold (ds, ([], VD.empty), doOne)
+        val typs = getNamedTyps state
+        val tds = getNamedTDs state
+        val mdds = getNamedMDDs state
+        val cs = getNamedConsts state
+        val ts = getTemplates state
+        val tf = TF {includes = Vector.fromList (List.rev is), typs = typs, tupleDescriptors = tds,
+                     metaDataDescriptors = mdds, constants = cs, templates = ts, globals = gs}
+      in tf
       end
 
   (*** Pass Stuff ***)

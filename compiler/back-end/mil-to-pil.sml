@@ -606,14 +606,17 @@ struct
        in v
        end
 
-  fun genVar (state, env, v) = Pil.identifier (stringOfVar (state, env, v))
+  fun genVar (state, env, v) =
+      case MSTM.variableKind (getStm state, v)
+       of M.VkExtern => Pil.identifier (IM.variableName (getStm state, v))
+        | _ => Pil.identifier (stringOfVar (state, env, v))
   fun genVarE (state, env, v) = Pil.E.variable (genVar (state, env, v))
   fun genVars (state, env, vs) =
       Vector.toListMap (vs, fn v => genVar (state, env, v))
 
   (*** Metadata ***)
 
-  (* This structure creates and memoises vtables for various objects
+  (* This structure creates and memoises metadata for various objects
    * we want to create.
    *)
 
@@ -1821,18 +1824,16 @@ struct
                        end
                      | NONE => Pil.S.returnExpr opnd
                  end
-               | _ => Fail.fail ("MilToPil", "genTransfer",
-                                 "multiple returns not supported"))
+               | _ => Fail.fail ("MilToPil", "genTransfer", "multiple returns not supported"))
           | M.TCut {cont, args, cuts} =>
             let
-              val () = Fail.assert("MilToPil", "genTransfer",
-                                   "Cut with args not supported",
-                                   (fn () => (Vector.length args) = 0))
+              (* XXX NG: there is a bug in Pillar for arguments and no C implementation - for now punt and hope! *)
+              val args = [] (*genOperands (state, env, args)*)
               val cuts = genCutsTo (state, env, cuts)
-              val cut = Pil.S.contCutTo (genVarE (state, env, cont), cuts)
+              val cut = Pil.S.contCutTo (env, genVarE (state, env, cont), args, cuts)
             in cut
             end
-          | M.THalt opnd => Pil.S.call (Pil.E.namedConstant RT.exit, [genOperand (state, env, opnd)])
+          | M.THalt opnd => Pil.S.call (Pil.E.namedConstant RT.halt, [genOperand (state, env, opnd)])
           | M.TPSumCase _ => notCoreMil (env, "genTransfer", "TPSumCase")
        end
 
@@ -2245,7 +2246,8 @@ struct
                 in d
                 end
               | M.GCString s =>
-                Pil.D.staticVariableExpr (Pil.varDec (Pil.T.ptr Pil.T.char, genVar (state, env, var)), Pil.E.string s)
+                Pil.D.staticVariableExpr
+                  (Pil.varDec (Pil.T.array Pil.T.char, genVar (state, env, var)), Pil.E.string s)
               | M.GThunkValue {typ, ofVal} =>
                  let
                    val s = genSimple (state, env, ofVal)

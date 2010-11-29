@@ -1702,8 +1702,7 @@ struct
                 val extras = Vector.new (idx + 1, fd)
                 val idx = Vector.length fields + idx
                 val fi = M.FiFixed idx
-                val td = M.TD {fixed = Vector.concat [fields, extras],
-                               array = NONE}
+                val td = M.TD {fixed = Vector.concat [fields, extras], array = NONE}
                 val tf = M.TF {tupDesc = td, tup = tup, field = fi}
                 val rhs = con (tf, remainder)
                 val mil = Mil.I {dests = dests, n = 0, rhs = rhs}
@@ -1732,6 +1731,8 @@ struct
                          in fields + idx
                          end
                        | _ => Try.fail ())
+                val fd = <@ MU.TupleDescriptor.getField (tupDesc, idx)
+                val () = Try.require (MU.FieldDescriptor.immutable fd)
                 val inits = #inits <! MU.Def.Out.tuple <! Def.toMilDef o Def.get @@ (imil, tup)
                 val p = Try.V.sub (inits, idx)
                 val () = Use.replaceUses (imil, dv, p)
