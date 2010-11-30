@@ -279,7 +279,7 @@ struct
         else
           word32 (Word32.fromInt i)
 
-    fun boolean b = (L.str (if b then "true" else "false"), 16)
+    fun boolean b = (L.str (if b then "1" else "0"), 16)
 
     fun float f = (L.str (fixNeg (Real32.toString f)), 16)
     fun double f = (L.str (fixNeg (Real64.toString f)), 16)

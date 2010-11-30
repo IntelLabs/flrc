@@ -725,6 +725,11 @@ struct
                  | _                  => fail ("logicOp", "Unexpected logicOp arity")
          in res
          end
+
+     fun nameOp (c : Config.t, no : MP.nameOp) =
+         case no
+          of MP.NGetString => mk11 (M.TName, M.TCString)
+           | MP.NGetHash => mk11 (M.TName, tUintp c)
          
      val rec prim = 
       fn (c, p) => 
@@ -783,7 +788,9 @@ struct
                    in res
                    end
 	         | MP.PBoolean r1    => logicOp (c, r1, M.TBoolean)
+                 | MP.PName r1       => nameOp (c, r1)
 	         | MP.PCString r1    => stringOp (c, r1)
+                 | MP.PPtrEq => mk21 (M.TRef, M.TRef, M.TBoolean)
          in
            res
          end

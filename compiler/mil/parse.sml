@@ -402,7 +402,7 @@ struct
    * and the naming conventions for them.
    *)
 
-  fun whiteChar c = c = Char.space orelse c = Char.newline orelse c = #"\t"
+  fun whiteChar c = c = Char.space orelse c = Char.newline orelse c = #"\t" orelse c = #"\r"
 
   val whiteF = P.satisfy whiteChar
 
@@ -741,17 +741,17 @@ struct
 
   fun typName (state : state, env : env) : string P.t = typNameF (state, env) || P.error "Expected type name"
 
-  val vectorDescriptorF : MP.vectorDescriptor P.t = 
-      PrimsParse.vectorDescriptor
+  fun vectorDescriptorF (state : state, env : env) : MP.vectorDescriptor P.t = 
+      PrimsParse.vectorDescriptor (getConfig env)
 
-  val vectorDescriptor : MP.vectorDescriptor P.t = 
-      PrimsParse.vectorDescriptor || P.error "Expected vector descriptor"
+  fun vectorDescriptor (state : state, env : env) : MP.vectorDescriptor P.t = 
+      vectorDescriptorF (state, env) || P.error "Expected vector descriptor"
       
-  val vectorSizeF : MP.vectorSize P.t = 
-      PrimsParse.vectorSize
+  fun vectorSizeF (state : state, env : env) : MP.vectorSize P.t = 
+      PrimsParse.vectorSize (getConfig env)
 
-  val vectorSize : MP.vectorSize P.t = 
-      PrimsParse.vectorSize || P.error "Expected vector size"
+  fun vectorSize (state : state, env : env) : MP.vectorSize P.t = 
+      vectorSizeF (state, env) || P.error "Expected vector size"
 
   fun typ (state : state, env : env) : M.typ P.t =
       let
@@ -777,7 +777,7 @@ struct
               | "Cont" => P.map (parenSeq (typ (state, env)), fn ts => M.TContinuation ts)
               | "CStr" => P.succeed M.TCString
               | "Idx" => P.succeed M.TIdx
-              | "Mask" => P.map (bracket vectorDescriptor, M.TViMask)
+              | "Mask" => P.map (bracket (vectorDescriptor (state, env)), M.TViMask)
               | "Name" => P.succeed M.TName
               | "Boolean" => P.succeed M.TBoolean
               | "None" => P.succeed M.TNone
@@ -789,11 +789,11 @@ struct
               | "PType" => P.map (paren (typ (state, env)), fn t => M.TPType {kind = M.TkI, over = t})
               | "Ref" => P.succeed M.TRef
               | "Thunk" => P.map (paren (typ (state, env)), M.TThunk)
-              | "Vec" => P.map (bracket vectorSize && angleBracket (P.$$ typ (state, env)),
+              | "Vec" => P.map (bracket (vectorSize (state, env)) && angleBracket (P.$$ typ (state, env)),
                                 (fn (vs, t) => M.TViVector {vectorSize = vs, elementTyp = t}))
               | _ => P.fail
         val idBased = P.bind identifierF doId
-        val tNumeric = syntax (P.map (PrimsParse.numericTyp, M.TNumeric))
+        val tNumeric = syntax (P.map (PrimsParse.numericTyp (getConfig env), M.TNumeric))
         val code =
             P.map (parenSemiCommaF (callConvF (state, env, typ), P.$$ typ (state, env))
                    && keywordS "->"
@@ -938,13 +938,14 @@ struct
               | "Dict" => P.succeed (M.CPok M.PokDict)
               | "Empty" => P.succeed M.COptionSetEmpty
               | "F" => P.map (paren float, M.CFloat)
+              | "False" => P.succeed (M.CBoolean false)
               | "Float" => P.succeed (M.CPok M.PokFloat)
               | "Fun" => P.succeed (M.CPok M.PokFunction)
               | "D" => P.map (paren double, M.CDouble)
               | "Double" => P.succeed (M.CPok M.PokDouble)
               | "I" => P.map (paren intInf, M.CInteger)
               | "M" =>
-                P.map (bracket vectorDescriptor && angleBracket bools,
+                P.map (bracket (vectorDescriptor (state, env)) && angleBracket bools,
                        fn (vd, bs) => M.CViMask {descriptor = vd, elts = bs})
               | "Name" => P.succeed (M.CPok M.PokName)
               | "None" => P.succeed (M.CPok M.PokNone)
@@ -958,6 +959,7 @@ struct
               | "Set" => P.succeed (M.CPok M.PokOptionSet)
               | "SP" => intArb (IntArb.Signed, Config.targetWordSize' (getConfig env))
               | "Tag" => P.succeed (M.CPok M.PokTagged)
+              | "True" => P.succeed (M.CBoolean true)
               | "Type" => P.succeed (M.CPok M.PokType)
               | "TypePH" => P.succeed M.CTypePH
               | "U8" => intArb (IntArb.Unsigned, IntArb.S8)
@@ -992,26 +994,23 @@ struct
               val fi = P.map (keywordLF "sf:" -&& decimal, M.FiFixed)
             in syntax fi
             end
-
         val fiVariable = 
             let
               val fv = P.map (keywordLF "sv:" -&& operand (state, env), M.FiVariable)
             in syntax fv
             end
-
         val fiVectorFixed = 
             let
               val mask = P.optional (keycharLF #"?" -&& operand (state, env))
-              val p = keywordLF "vf" -&& bracket vectorDescriptor &&- keycharLF #":" && decimal && mask
+              val p = keywordLF "vf" -&& bracket (vectorDescriptor (state, env)) &&- keycharLF #":" && decimal && mask
               val p = P.map (p, fn ((vd, i), mo) => M.FiVectorFixed {descriptor = vd, mask = mo, index = i})
             in syntax p
             end
-
         val fiVectorVariable = 
             let
               val mask = P.optional (keycharLF #"?" -&& operand (state, env))
               val base = P.optional (keycharLF #"^")
-              val vd = bracket vectorDescriptor 
+              val vd = bracket (vectorDescriptor (state, env))
               val vectorIndex = P.map (angleBracket (operand (state, env)), fn i => (M.VikVector, i))
               val stridedIndex = 
                   let
@@ -1030,7 +1029,6 @@ struct
                                                        kind = kind})
             in syntax p
             end
-
         val p = fiFixed || fiVariable || fiVectorFixed || fiVectorVariable || P.error "Expected field identifier"
       in p
       end
@@ -1122,7 +1120,7 @@ struct
         val const = P.map (constantF (state, env), fn c => M.RhsSimple (M.SConstant c))
         val primApp = 
             let
-              val p = PrimsParse.t && P.succeeds (bracketF (keycharLF #"T")) 
+              val p = PrimsParse.t (getConfig env) && P.succeeds (bracketF (keycharLF #"T")) 
                    && P.optional (braceSeqF (typ (state, env))) && parenSeq (operand (state, env))
             in P.map (p, fn (((prim, ct), typsO), args) => M.RhsPrim {prim = prim, 
                                                                       createThunks = ct,

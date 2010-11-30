@@ -470,6 +470,8 @@ struct
 
     val getLogicOpName = PU.ToString.logicOp
 
+    val getNameOpName = PU.ToString.nameOp
+
     val getStringOpName = PU.ToString.stringOp
 
     val getDataOpName = 
@@ -515,6 +517,8 @@ struct
      fn l =>
         "Boolean" ^ (getLogicOpName l)
 
+    fun getNameName no = "Name" ^ getNameOpName no
+
     val getCStringName = 
      fn s =>
         "CString" ^ (getStringOpName s)
@@ -528,7 +532,9 @@ struct
            | P.PNumConvert r          => getNumConvertName r
            | P.PBitwise r             => getBitwiseName r
            | P.PBoolean r             => getBooleanName r
-           | P.PCString r             => getCStringName r)
+           | P.PName r                => getNameName r
+           | P.PCString r             => getCStringName r
+           | P.PPtrEq                 => "PtrEq")
 
     val getRuntimeName = 
      fn (rt, t) => PU.ToString.runtime rt ^ thnk t

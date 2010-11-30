@@ -739,6 +739,15 @@ struct
        val out : ('a -> t Try.t) -> ('a -> t) = 
         fn f => fn args => Try.otherwise (f args, RrUnchanged)
 
+       fun ptrEq (c : Config.t, args : Mil.operand Vector.t, get : Mil.operand -> Operation.t) : t Try.t =
+           Try.try
+           (fn () =>
+               let
+                 val (o1, o2) = Try.V.doubleton args
+                 val () = Try.require (MU.Simple.eq (o1, o2))
+               in RrConstant (C.CBool true)
+               end)
+
        val prim : Config.t * Mil.Prims.prim * Mil.operand Vector.t * (Mil.operand -> Operation.t) -> t = 
         fn (c, p, args, get) => 
            (case p
@@ -748,7 +757,9 @@ struct
 	      | P.PNumConvert r1 => out NumConvert.reduce (c, r1, args, get)
 	      | P.PBitwise r1    => RrUnchanged
 	      | P.PBoolean r1    => RrUnchanged
-	      | P.PCString r1    => RrUnchanged)
+              | P.PName r1       => RrUnchanged
+	      | P.PCString r1    => RrUnchanged
+              | P.PPtrEq         => out ptrEq (c, args, get))
 
 
      end (* structure Reduce *)

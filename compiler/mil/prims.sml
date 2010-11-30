@@ -3,134 +3,7 @@
 
 (* The primitives we support *)
 
-signature MIL_PRIMS = 
-sig
-
-  type fieldSize 
-
-  datatype vectorSize = Vs64 | Vs128 | Vs256 | Vs512 | Vs1024 
-
-  datatype vectorDescriptor = Vd of {vectorSize : vectorSize, elementSize : fieldSize}
-
-  datatype floatPrecision = FpSingle | FpDouble
-
-  datatype intPrecision = IpArbitrary | IpFixed of IntArb.typ
-
-  datatype numericTyp = NtRat | NtInteger of intPrecision | NtFloat of floatPrecision
-
-  datatype divKind = DkT | DkF | DkE
-
-  datatype arithOp = 
-    (* Unary *)
-      AAbs | ANegate | ANegateSat
-    (* Binary *)
-    | ADivide | ADiv of divKind | AMax | AMin | AMinus | AMinusSat 
-    | AMod of divKind | APlus | APlusSat | ATimes | ATimesSat
-    (* Other *)
-    | ADivMod of divKind
-
-  datatype floatOp = 
-    (* Unary *)
-      FaACos | FaASin | FaCeil | FaCos | FaFloor | FaRcp | FaSin | FaSqrt | FaTan | FaTrunc 
-    (* Binary *)
-    | FaPow
-
-  datatype bitwiseOp = 
-    (* Unary *)
-      BNot
-    (* Binary *)
-    | BAnd | BOr | BRotL | BRotR | BShiftL | BShiftR | BXor
-
-  datatype logicOp = 
-    (* Unary *)
-      LNot
-    (* Binary *)
-    | LAnd | LOr | LXor | LEq
-
-  datatype compareOp = CEq | CNe | CLt | CLe
-
-  datatype stringOp = SAllocate | SDeallocate | SGetLen | SGetChar | SSetChar | SEqual
-
-  datatype prim =
-      PNumArith       of {typ : numericTyp, operator : arithOp}
-    | PFloatOp        of {typ : floatPrecision, operator : floatOp}
-    | PNumCompare     of {typ : numericTyp, operator : compareOp}
-    | PNumConvert     of {to : numericTyp, from : numericTyp}
-    | PBitwise        of {typ : intPrecision, operator : bitwiseOp}
-    | PBoolean        of logicOp
-    | PCString        of stringOp
-
-  datatype assoc = ALeft | ARight | AAny
-
-  datatype dataOp = 
-      DBroadcast 
-    | DVector
-    | DSub     of int
-    | DPermute of int Vector.t 
-    | DBlend 
-    | DSplit   (* Split in half *)
-    | DConcat  (* Args should have same vectorWidth, result is 2x vectorWidth *)
-
-  datatype vector = 
-    (* Pointwise across operands, makes sense for binary or unary ops *)
-    (* Boolean indicates takes a mask, when true *)
-      ViPointwise   of {descriptor : vectorDescriptor, masked: bool, operator : prim}
-    | ViConvert     of {to :   {descriptor : vectorDescriptor, typ : numericTyp}, 
-                        from : {descriptor : vectorDescriptor, typ : numericTyp}}
-    | ViCompare     of {descriptor : vectorDescriptor, typ : numericTyp, operator : compareOp}
-    (* Reduction across the vector with initial value.  Associativity is specified *)
-    (* Only makes sense for binary operations, which isn't captured by the syntax. *)
-    | ViReduction   of {descriptor : vectorDescriptor, associativity : assoc, operator : prim}
-    | ViData        of {descriptor : vectorDescriptor, operator : dataOp}
-    | ViMaskData    of {descriptor : vectorDescriptor, operator : dataOp}
-    | ViMaskBoolean of {descriptor : vectorDescriptor, operator : logicOp}
-    | ViMaskConvert of {to : vectorDescriptor, from : vectorDescriptor}
-
-  datatype runtime =
-      RtFloatMk
-    | RtWriteln
-    | RtReadln
-    | RtAssert
-    | RtError
-    | RtDebug
-    | RtOpenOut
-    | RtGetStdout
-    | RtOutputByte
-    | RtCloseOut
-    | RtOpenIn
-    | RtGetStdin
-    | RtInputByte
-    | RtInputString
-    | RtInputAll
-    | RtIsEOF
-    | RtCloseIn
-    | RtCommandLine
-    | RtStringToNat
-    | RtStringToFloat
-    | RtFloatToString
-    | RtFloatToStringI
-    | RtRatNumerator
-    | RtRatDenominator 
-    | RtEqual
-    | RtDom
-    | RtNub
-    | RtRatToUIntpChecked
-    | RtRatToString
-    | RtStringToRat
-    | RtResetTimer
-    | RtGetTimer
-    | RtVtuneAttach
-    | RtVtuneDetach
-    | RtArrayEval
-      
-  datatype t =
-      Prim    of prim
-    | Runtime of runtime
-    | Vector  of vector
-
-end (* signature MIL_PRIMS *)
-
-functor MilPrimsF(type fieldSize) :> MIL_PRIMS where type fieldSize = fieldSize = 
+functor MilPrimsF(type fieldSize) =
 struct
 
   type fieldSize = fieldSize
@@ -176,6 +49,8 @@ struct
 
   datatype compareOp = CEq | CNe | CLt | CLe
 
+  datatype nameOp = NGetString | NGetHash
+
   datatype stringOp = SAllocate | SDeallocate | SGetLen | SGetChar | SSetChar | SEqual
 
   datatype prim =
@@ -185,7 +60,9 @@ struct
     | PNumConvert     of {to : numericTyp, from : numericTyp}
     | PBitwise        of {typ : intPrecision, operator : bitwiseOp}
     | PBoolean        of logicOp
+    | PName           of nameOp
     | PCString        of stringOp
+    | PPtrEq
 
   datatype assoc = ALeft | ARight | AAny
 
@@ -446,95 +323,5 @@ ViMaskConvert {to, from}
         fs1 = #elementSize from
         size2 = #vectorSize to
         fs2 = #elementSize to
-
-*)
-
-
-(*  EVERYTHING BELOW HERE IS OUT OF DATE *)
-
-(*
-
-functor MilPrimsF (struct 
-                     type numericTyp
-                     type intPrecision
-                     type floatPrecision
-                   end) 
-        :> MIL_PRIMS where type numericTyp = numericTyp
-                       and type intPrecision = intPrecision
-                       and type floatPrecision = floatPrecision
-= struct (* The rest of this isn't up to date *)
-  fun typeOfByArity (c, arity, argt, rest, spec) => 
-      (case arity
-        of ArUnary _     => ([argt], t, [rest])
-         | ArBinary _    => ([argt, argt], t, [rest])
-         | ArSpecial sp  => spec sp)
-                                                      
-  fun typeOfByArityU (c, arity, typ, spec) = typeOfByArity (c, arity, typ, typ, spec)
-      
-      
-  fun typeOfPrim (c, p) =
-    case p
-     of PNumArith (nt, ar) => 
-        let
-          val spec = 
-           fn ADivMod => ([TNum nt, TNum nt], t, TNum nt)
-        in typeOfByArityU (c, ar, TNum nt, spec)
-        end
-      | PFloatOp (fp, fop) => typeOfByArityU (c, ar, TNumeric (NtFloat fp), fn () => Fail "BadPrim")
-      | PNumCompare (nt, cmp) => ([TNum nt, TNum nt], t, TBoolean)
-      | PNumConvert (nt1, nt2) => ([TNum nt1], t, TNum nt2)
-      | PBitwise (ip, bw) => typeOfByArityU (c, ar, TNumeric (NtInteger ip), fn () => Fail "BadPrim")
-      | PNumLogical  => typeOfByArityU (c, ar, TBoolean, fn () => Fail "BadPrim")
-      | PRatNumerator => 
-      | PRatDenominator =>
-      | PEqual => 
-      | PDom => 
-      | PNub => 
-      | PRatToUIntpChecked => 
-      | PCString SAllocate => 
-      | PCString SDeallocate => 
-      | PCString SGetLen =>
-      | PCString SGetChar => 
-      | PCString SSetChar =>
-
-
-  fun typeOfVector (c, p) =
-      (case p
-        of ViPointwise (vw, p) => 
-           let
-             val (argts, fx, rests) = typeOfPrim (c, p)
-             val build = fn t => TViVector {width = vw, elementType = t}
-             val argts = List.map (argts, build)
-             val rests = List.map (rests, build)
-           in (argts, t, rests)
-           end
-         | ViPointwiseMasked (vw, vs, p) => 
-           let
-             val (argts, fx, rests) = typeOfPrim (c, p)
-             val build = fn t => TViVector {width = vw, elementType = t}
-             val argts = List.map (argts, build)
-             val rests = List.map (rests, build)
-             val maskt = TViMask {width = wv, elementSize = vs}
-           in (maskt::argts, t, rests)
-           end
-         | ViReduction (vw, assoc, p) => 
-           let
-             val (argts, fx, rests) = typeOfPrim (c, p)
-             val build = fn t => TViVector {width = vw, elementType = t}
-             val argts = List.map (argts, build)
-           in (argts, t, rests)
-           end
-         | ViDataMovement (vw, vs, data) => (* mix of scalar, vector, mask arguments, need to write out individually*)
-         | ViMaskLogical (vw, vs, lg) => 
-           let
-             val mt = ViMask {width = vw, vs = vs}
-             val argts = 
-                 (case lg
-                   of Logic (ArUnary (LNot)) =>  [mt]
-                    | _ => [mt, mt]
-           in (argts, t, [mt])
-           end
-         | ViMaskSelect (vw, vs) => ([ViMask {width = vw, vs = vs}], t, TBoolean)
-end (* functor MilPrimsF *)
 
 *)

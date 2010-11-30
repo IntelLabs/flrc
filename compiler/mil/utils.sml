@@ -262,6 +262,7 @@ sig
     val toValueSize : t -> ValueSize.t
     val toString : t -> string
     val fromString : string -> t option
+    val intArbSz : IntArb.size -> t
     val intArb : IntArb.typ -> t
     val wordSize : Config.t -> t
     val ptrSize : Config.t -> t
@@ -1204,13 +1205,16 @@ struct
            | "S64" => SOME M.Fs64
            | _     => NONE)
 
+    fun intArbSz (sz : IntArb.size) : t =
+        case sz
+         of IntArb.S8   => M.Fs8
+          | IntArb.S16  => M.Fs16
+          | IntArb.S32  => M.Fs32
+          | IntArb.S64  => M.Fs64
+
     val intArb = 
      fn (IA.T (sz, _)) =>
-        (case sz
-          of IntArb.S8   => M.Fs8
-           | IntArb.S16  => M.Fs16
-           | IntArb.S32  => M.Fs32
-           | IntArb.S64  => M.Fs64)
+        intArbSz sz
 
     val ptrSize =
      fn config =>

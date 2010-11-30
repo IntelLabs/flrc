@@ -908,8 +908,7 @@ struct
           case Vector.length rts
            of 0 => Pil.T.void
             | 1 => genTyp (state, env, Vector.sub (rts,0))
-            | _ => fail ("genReturnType",
-                         "Single returns only")
+            | _ => fail ("genReturnType", "Single returns only")
   and genCodeType (state, env, (conv, ats, rts)) =
       let
         val rt = genReturnType (state, env, conv, rts)
@@ -917,8 +916,7 @@ struct
         val ats = 
             case conv
              of M.CcCode => ats
-              | M.CcClosure _ =>
-                notCoreMil (env, "genCodeType", "CcClosure")
+              | M.CcClosure _ => notCoreMil (env, "genCodeType", "CcClosure")
               | M.CcThunk {thunk, ...} => (genTyp (state, env, thunk))::ats
       in
         Pil.T.code (rt, ats)
@@ -1624,6 +1622,7 @@ struct
         fun isZero c =
             case c
              of M.CIntegral i => IntInf.isZero (IntArb.toIntInf i)
+              | M.CBoolean b => not b
               | _ => false
         fun doIf ((c, t1), t2) =
             let

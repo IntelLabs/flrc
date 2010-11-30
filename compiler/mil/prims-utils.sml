@@ -18,6 +18,7 @@ sig
     val bitwiseOp        : Mil.Prims.bitwiseOp t
     val logicOp          : Mil.Prims.logicOp t
     val compareOp        : Mil.Prims.compareOp t
+    val nameOp           : Mil.Prims.nameOp t
     val stringOp         : Mil.Prims.stringOp t
     val prim             : Mil.Prims.prim t
     val assoc            : Mil.Prims.assoc t
@@ -41,6 +42,7 @@ sig
     val bitwiseOp        : Mil.Prims.bitwiseOp t
     val logicOp          : Mil.Prims.logicOp t
     val compareOp        : Mil.Prims.compareOp t
+    val nameOp           : Mil.Prims.nameOp t
     val stringOp         : Mil.Prims.stringOp t
     val prim             : Mil.Prims.prim t
     val assoc            : Mil.Prims.assoc t
@@ -64,6 +66,7 @@ sig
     val bitwiseOp        : Mil.Prims.bitwiseOp t
     val logicOp          : Mil.Prims.logicOp t
     val compareOp        : Mil.Prims.compareOp t
+    val nameOp           : Mil.Prims.nameOp t
     val stringOp         : Mil.Prims.stringOp t
     val prim             : Mil.Prims.prim t
     val assoc            : Mil.Prims.assoc t
@@ -94,6 +97,7 @@ sig
     val bitwiseOp        : Mil.Prims.bitwiseOp t
     val logicOp          : Mil.Prims.logicOp t
     val compareOp        : Mil.Prims.compareOp t
+    val nameOp           : Mil.Prims.nameOp t
     val stringOp         : Mil.Prims.stringOp t
     val prim             : Mil.Prims.prim t
     val dataOp           : Mil.Prims.vectorDescriptor -> Mil.Prims.dataOp t
@@ -116,6 +120,7 @@ sig
     val bitwiseOp        : Mil.Prims.bitwiseOp t
     val logicOp          : Mil.Prims.logicOp t
     val compareOp        : Mil.Prims.compareOp t
+    val nameOp           : Mil.Prims.nameOp t
     val stringOp         : Mil.Prims.stringOp t
     val prim             : Mil.Prims.prim t
     val assoc            : Mil.Prims.assoc t
@@ -139,6 +144,7 @@ sig
     val bitwiseOp        : Mil.Prims.bitwiseOp t
     val logicOp          : Mil.Prims.logicOp t
     val compareOp        : Mil.Prims.compareOp t
+    val nameOp           : Mil.Prims.nameOp t
     val stringOp         : Mil.Prims.stringOp t
     val prim             : Mil.Prims.prim t
     val assoc            : Mil.Prims.assoc t
@@ -340,6 +346,19 @@ sig
     end (* structure Dec *)
   end (* structure CompareOp *)
 
+  structure NameOp :
+  sig
+    type t = Mil.Prims.nameOp
+    val compare : t Compare.t
+    val eq      : t Eq.t
+    val hash    : t Hash.t
+    structure Dec :
+    sig
+      val nGetString : t -> unit option
+      val nGetHash   : t -> unit option
+    end (* structure Dec *)
+  end (* structure NameOp *)
+
   structure StringOp : 
   sig
     type t = Mil.Prims.stringOp
@@ -371,7 +390,9 @@ sig
       val pNumConvert : t -> {to : Mil.Prims.numericTyp, from : Mil.Prims.numericTyp} option
       val pBitwise    : t -> {typ : Mil.Prims.intPrecision, operator : Mil.Prims.bitwiseOp} option
       val pBoolean    : t -> Mil.Prims.logicOp option
+      val pName       : t -> Mil.Prims.nameOp option
       val pCString    : t -> Mil.Prims.stringOp option
+      val pPtrEq      : t -> unit option
     end (* structure Dec *)
   end (* structure Prim *)
 
@@ -650,6 +671,12 @@ struct
           res
         end
 
+    val nameOp           : Mil.Prims.nameOp t =
+     fn p =>
+        case p
+         of Mil.Prims.NGetString => "GetString"
+          | Mil.Prims.NGetHash   => "GetHash"
+
     val stringOp         : Mil.Prims.stringOp t =
      fn p => 
         let
@@ -692,7 +719,9 @@ struct
 	        | Mil.Prims.PNumConvert r1 => numericTyp (#from r1) ^ "To" ^ numericTyp (#to r1)
 	        | Mil.Prims.PBitwise r1    => ipShort (#typ r1) ^ bitwiseOp (#operator r1)
 	        | Mil.Prims.PBoolean r1    => logicOp r1
+                | Mil.Prims.PName r1       => "Name" ^ nameOp r1
 	        | Mil.Prims.PCString r1    => "CString" ^ stringOp r1
+                | Mil.Prims.PPtrEq         => "PtrEq"
         in
           res
         end
@@ -855,6 +884,7 @@ struct
     val bitwiseOp        : Mil.Prims.bitwiseOp t        = Layout.str o ToString.bitwiseOp
     val logicOp          : Mil.Prims.logicOp t          = Layout.str o ToString.logicOp
     val compareOp        : Mil.Prims.compareOp t        = Layout.str o ToString.compareOp
+    val nameOp           : Mil.Prims.nameOp t           = Layout.str o ToString.nameOp
     val stringOp         : Mil.Prims.stringOp t         = Layout.str o ToString.stringOp
     val prim             : Mil.Prims.prim t             = Layout.str o ToString.prim
     val assoc            : Mil.Prims.assoc t            = Layout.str o ToString.assoc
@@ -1046,6 +1076,12 @@ struct
         in IFO.base o number
         end
 
+    val nameOp           : Mil.Prims.nameOp t =
+     fn no =>
+        IFO.base (case no
+                   of Prims.NGetString => 0
+                    | Prims.NGetHash   => 1)
+
     val stringOp         : Mil.Prims.stringOp t = 
         let
           val number = 
@@ -1071,7 +1107,9 @@ struct
                  | Prims.PNumConvert {to, from}      => IFO.shift (3, mkPair (numericTyp, numericTyp) (to, from))
                  | Prims.PBitwise {typ, operator}    => IFO.shift (4, mkPair (intPrecision, bitwiseOp) (typ, operator))
                  | Prims.PBoolean l                  => IFO.shift (5, logicOp l)
-                 | Prims.PCString s                  => IFO.shift (6, stringOp s))
+                 | Prims.PName n                     => IFO.shift (6, nameOp n)
+                 | Prims.PCString s                  => IFO.shift (7, stringOp s)
+                 | Prims.PPtrEq                      => IFO.base 8)
         in inject
         end
 
@@ -1200,6 +1238,7 @@ struct
     val bitwiseOp        : Mil.Prims.bitwiseOp t         = IFO.compare o (Utils.Function.apply2 Ord.bitwiseOp)
     val logicOp          : Mil.Prims.logicOp t           = IFO.compare o (Utils.Function.apply2 Ord.logicOp)
     val compareOp        : Mil.Prims.compareOp t         = IFO.compare o (Utils.Function.apply2 Ord.compareOp)
+    val nameOp           : Mil.Prims.nameOp t            = IFO.compare o (Utils.Function.apply2 Ord.nameOp)
     val stringOp         : Mil.Prims.stringOp t          = IFO.compare o (Utils.Function.apply2 Ord.stringOp)
     val prim             : Mil.Prims.prim t              = IFO.compare o (Utils.Function.apply2 Ord.prim)
     val assoc            : Mil.Prims.assoc t             = IFO.compare o (Utils.Function.apply2 Ord.assoc)
@@ -1223,6 +1262,7 @@ struct
     val bitwiseOp        : Mil.Prims.bitwiseOp t         = IFO.eq o (Utils.Function.apply2 Ord.bitwiseOp)
     val logicOp          : Mil.Prims.logicOp t           = IFO.eq o (Utils.Function.apply2 Ord.logicOp)
     val compareOp        : Mil.Prims.compareOp t         = IFO.eq o (Utils.Function.apply2 Ord.compareOp)
+    val nameOp           : Mil.Prims.nameOp t            = IFO.eq o (Utils.Function.apply2 Ord.nameOp)
     val stringOp         : Mil.Prims.stringOp t          = IFO.eq o (Utils.Function.apply2 Ord.stringOp)
     val prim             : Mil.Prims.prim t              = IFO.eq o (Utils.Function.apply2 Ord.prim)
     val assoc            : Mil.Prims.assoc t             = IFO.eq o (Utils.Function.apply2 Ord.assoc)
@@ -1246,6 +1286,7 @@ struct
     val bitwiseOp        : Mil.Prims.bitwiseOp t         = IFO.hash o Ord.bitwiseOp
     val logicOp          : Mil.Prims.logicOp t           = IFO.hash o Ord.logicOp
     val compareOp        : Mil.Prims.compareOp t         = IFO.hash o Ord.compareOp
+    val nameOp           : Mil.Prims.nameOp t            = IFO.hash o Ord.nameOp
     val stringOp         : Mil.Prims.stringOp t          = IFO.hash o Ord.stringOp
     val prim             : Mil.Prims.prim t              = IFO.hash o Ord.prim
     val assoc            : Mil.Prims.assoc t             = IFO.hash o Ord.assoc
@@ -1284,7 +1325,9 @@ struct
                      | Mil.Prims.PNumConvert {to, from}      => total
                      | Mil.Prims.PBitwise {typ, operator}    => total
                      | Mil.Prims.PBoolean l                  => total
-                     | Mil.Prims.PCString s                  => stringOp s)
+                     | Mil.Prims.PName n                     => total
+                     | Mil.Prims.PCString s                  => stringOp s
+                     | Mil.Prims.PPtrEq                      => total)
             in fx
             end)
 
@@ -1584,6 +1627,19 @@ struct
     end (* structure Dec *)
   end (* structure CompareOp *)
 
+  structure NameOp =
+  struct
+    type t = Mil.Prims.nameOp
+    val compare = Compare.nameOp
+    val eq      = Eq.nameOp
+    val hash    = Hash.nameOp
+    structure Dec =
+    struct
+      val nGetString = fn st => (case st of Mil.Prims.NGetString => SOME () | _ => NONE)
+      val nGetHash   = fn st => (case st of Mil.Prims.NGetHash   => SOME () | _ => NONE)
+    end (* structure Dec *)
+  end (* structure NameOp *)
+
   structure StringOp = 
   struct
     type t = Mil.Prims.stringOp
@@ -1615,7 +1671,9 @@ struct
       val pNumConvert = fn pr => (case pr of Mil.Prims.PNumConvert r => SOME r | _ => NONE)
       val pBitwise    = fn pr => (case pr of Mil.Prims.PBitwise r => SOME r | _ => NONE)
       val pBoolean    = fn pr => (case pr of Mil.Prims.PBoolean r => SOME r | _ => NONE)
+      val pName       = fn pr => (case pr of Mil.Prims.PName r => SOME r | _ => NONE)
       val pCString    = fn pr => (case pr of Mil.Prims.PCString r => SOME r | _ => NONE)
+      val pPtrEq      = fn pr => (case pr of Mil.Prims.PPtrEq => SOME () | _ => NONE)
     end (* structure Dec *)
   end (* structure Prim *)
 
@@ -1807,6 +1865,12 @@ struct
                | Prims.CLt => ArAAtoB
                | Prims.CLe => ArAAtoB))
 
+    val nameOp           : Mil.Prims.nameOp t =
+     fn no =>
+        case no
+         of Mil.Prims.NGetString => ArOther (1, 1)
+          | Mil.Prims.NGetHash => ArOther (1, 1)
+
     val stringOp         : Mil.Prims.stringOp t =
         (fn so => 
             (case so
@@ -1839,7 +1903,9 @@ struct
                | Mil.Prims.PNumConvert {to, from}      => ArOther (1, 1)
                | Mil.Prims.PBitwise {typ, operator}    => bitwiseOp operator
                | Mil.Prims.PBoolean l                  => logicOp l
-               | Mil.Prims.PCString s                  => stringOp s))
+               | Mil.Prims.PName n                     => nameOp n
+               | Mil.Prims.PCString s                  => stringOp s
+               | Mil.Prims.PPtrEq                      => ArAAtoB))
 
     val vector           : Mil.Prims.vector t =
         (fn v =>
