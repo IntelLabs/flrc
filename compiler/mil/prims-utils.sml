@@ -497,6 +497,7 @@ sig
       val rtVtuneAttach       : t -> unit option
       val rtVtuneDetach       : t -> unit option
       val rtArrayEval         : t -> unit option
+      val rtIntegerHash       : t -> unit option
     end (* structure Dec *)
   end (* structure Runtime *)
 
@@ -852,6 +853,7 @@ struct
 	        | Mil.Prims.RtVtuneAttach          => "PVTuneAttach"
 	        | Mil.Prims.RtVtuneDetach          => "PVTuneDetach"
 	        | Mil.Prims.RtArrayEval            => "PArrayEval"
+                | Mil.Prims.RtIntegerHash          => "PIntegerHash"
         in
           res
         end
@@ -1208,7 +1210,8 @@ struct
                  | Prims.RtGetTimer          => 31
                  | Prims.RtVtuneAttach       => 32
                  | Prims.RtVtuneDetach       => 33
-                 | Prims.RtArrayEval         => 34)
+                 | Prims.RtArrayEval         => 34
+                 | Prims.RtIntegerHash       => 35)
         in IFO.base o number
         end
 
@@ -1391,7 +1394,8 @@ struct
                      | Mil.Prims.RtGetTimer          => io
                      | Mil.Prims.RtVtuneAttach       => io
                      | Mil.Prims.RtVtuneDetach       => io
-                     | Mil.Prims.RtArrayEval         => any)
+                     | Mil.Prims.RtArrayEval         => any
+                     | Mil.Prims.RtIntegerHash       => total)
             in fx
             end)
 
@@ -1771,6 +1775,7 @@ struct
       val rtVtuneAttach       = fn ru => (case ru of Mil.Prims.RtVtuneAttach => SOME () | _ => NONE)
       val rtVtuneDetach       = fn ru => (case ru of Mil.Prims.RtVtuneDetach => SOME () | _ => NONE)
       val rtArrayEval         = fn ru => (case ru of Mil.Prims.RtArrayEval => SOME () | _ => NONE)
+      val rtIntegerHash       = fn ru => (case ru of Mil.Prims.RtIntegerHash => SOME () | _ => NONE)
     end (* structure Dec *)
   end (* structure Runtime *)
 
@@ -1956,7 +1961,8 @@ struct
 	         | Mil.Prims.RtGetTimer             => ArOther (1, 1)
 	         | Mil.Prims.RtVtuneAttach          => ArOther (0, 0)
 	         | Mil.Prims.RtVtuneDetach          => ArOther (0, 0)
-	         | Mil.Prims.RtArrayEval            => ArOther (1, 0)))
+	         | Mil.Prims.RtArrayEval            => ArOther (1, 0)
+                 | Mil.Prims.RtIntegerHash          => ArOther (1, 1)))
 
     val t                : Mil.Prims.t t =
         (fn t => 

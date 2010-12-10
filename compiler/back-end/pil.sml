@@ -84,7 +84,7 @@ signature PIL = sig
     val switch : E.t * (E.t * t) list * t option -> t
     val return : t
     val returnExpr : E.t -> t
-    val tailCall : Config.t * E.t * E.t list -> t
+    val tailCall : Config.t * bool (*void?*) * E.t * E.t list -> t
     val call : E.t * E.t list -> t
     val sequence : t list -> t
     val block : varDecInit list * t list -> t
@@ -456,10 +456,12 @@ struct
 
     fun returnExpr e = [addSemi (L.seq [L.str "return ", E.layout e])]
 
-    fun tailCall (config, e, es) =
-        [addSemi (L.mayAlign [L.str "TAILCALL",
-                              LU.indent (E.inPrec (e, 15)),
-                              LU.indent (E.callArgs es)])]
+    fun tailCall (config, v, e, es) =
+        let
+          val lcall = L.paren (L.mayAlign [E.inPrec (e, 15), E.callArgs es])
+          val l = addSemi (L.mayAlign [L.str (if v then "TAILCALLV" else "TAILCALL"), LU.indent lcall])
+        in [l]
+        end
 
     fun call (e, es) = expr (E.call (e, es))
 

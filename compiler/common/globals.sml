@@ -4,7 +4,7 @@
 signature GLOBALS = 
 sig
 
-  val cspToMil                     : Config.t -> bool
+  val cspToScheme                  : Config.t -> bool
   val disableOptimizedRationals    : Config.t -> bool
   val disableOptimizedIntegers     : Config.t -> bool
 
@@ -17,8 +17,8 @@ end;
 structure Globals :> GLOBALS = 
 struct
 
-  val (cspToMilF, cspToMil) =
-      Config.Feature.mk ("PPiler:csp-to-mil", "use Mil path for Core SP compilation")
+  val (cspToSchemeF, cspToScheme) =
+      Config.Feature.mk ("PPiler:csp-to-scheme", "use Scheme path for Core SP compilation")
 
   val (disableOptimizedRationalsF, disableOptimizedRationals) =
       Config.Feature.mk ("PPiler:disable-optimized-rationals",
@@ -28,7 +28,7 @@ struct
       Config.Feature.mk ("PPiler:disable-optimized-integers",
                          "disable optimized integer rep")
 
-  val features = [cspToMilF, disableOptimizedRationalsF, disableOptimizedIntegersF]
+  val features = [cspToSchemeF, disableOptimizedRationalsF, disableOptimizedIntegersF]
   val debugs = []
   val controls = []
 

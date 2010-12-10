@@ -45,6 +45,9 @@ sig
   val quot : t * t -> t
   val rem : t * t -> t
   val maxValue : typ -> IntInf.t
+  val minValue : typ -> IntInf.t
+  val maxValueT : typ -> t
+  val minValueT : typ -> t
   structure Signed :
   sig
     structure Dec :
@@ -170,15 +173,19 @@ struct
   fun range (t as (T (sz, signed))) =
       let
         val nb = bits sz
-        val nbw =
-            Word.fromInt (case signed of Signed => nb - 1 | Unsigned => nb)
+        val nbw = Word.fromInt (case signed of Signed => nb - 1 | Unsigned => nb)
         val upper = IntInf.<< (IntInf.one, nbw)
-        val lower =
-            case signed of Signed => IntInf.~ upper | Unsigned => IntInf.zero
+        val lower = case signed of Signed => IntInf.~ upper | Unsigned => IntInf.zero
       in (lower, upper)
       end
 
   fun maxValue t = IntInf.- (#2 (range t), IntInf.one)
+
+  fun minValue t = #1 (range t)
+
+  fun maxValueT t = X (t, maxValue t)
+
+  fun minValueT t = X (t, minValue t)
 
   fun fits (t, i) =
       let

@@ -1729,7 +1729,13 @@ struct
                        val rets = Pil.S.call (ret, [genVarE (state, env, t), vret])
                      in Pil.S.sequence [calls, rets]
                      end
-                   | NONE => Pil.S.tailCall (getConfig env, f, args))
+                   | NONE =>
+                     let
+                       val M.F {rtyps, ...} = getFunc env
+                       val void = Vector.length rtyps = 0
+                     in
+                       Pil.S.tailCall (getConfig env, void, f, args)
+                     end)
       in s
       end
 
@@ -1807,8 +1813,7 @@ struct
         case t
          of M.TGoto tg => genGoto (state, env, cb, src, tg)
           | M.TCase s => genCase (state, env, cb, src, s)
-          | M.TInterProc {callee, ret, ...} =>
-            genInterProc (state, env, cc, callee, ret)
+          | M.TInterProc {callee, ret, ...} => genInterProc (state, env, cc, callee, ret)
           | M.TReturn os =>
             (case Vector.length os
               of 0 => Pil.S.return

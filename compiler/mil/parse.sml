@@ -19,8 +19,10 @@ sig
     tupleDescriptors    : Mil.tupleDescriptor StringDict.t,
     metaDataDescriptors : Mil.metaDataDescriptor StringDict.t,
     constants           : Mil.constant StringDict.t,
+    fields              : Mil.fieldIdentifier StringDict.t,
     templates           : Template.t StringDict.t,
-    globals             : Mil.globals
+    globals             : Mil.globals,
+    globalVars          : Mil.variable StringDict.t
   }
 
   val templateFile : Config.t * string * Mil.symbolTableManager -> templateFile
@@ -495,6 +497,10 @@ struct
       P.sequenceV
         {left = keycharSF #"{", sep = keycharSF #",", right = keycharSF #"}", err = "Expected } or ,", item = pi}
 
+  fun angleBracketSeq (pi : 'a P.t) : 'a Vector.t P.t =
+      P.sequenceV
+        {left = keycharS #"<", sep = keycharSF #",", right = keycharSF #">", err = "Expected > or ,", item = pi}
+
   fun pair (p1 : 'a P.t, p2 : 'b P.t) : ('a * 'b) P.t =
       P.map (paren (p1 && keycharS #"," && p2), fn ((x, _), y) => (x, y))
 
@@ -587,12 +593,14 @@ struct
     tds       : M.tupleDescriptor SD.t ref,
     mdds      : M.metaDataDescriptor SD.t ref,
     consts    : M.constant SD.t ref,
+    fields    : M.fieldIdentifier SD.t ref,
     templates : Template.t SD.t ref
   }
 
   fun stateMk (stm : M.symbolTableManager) : state =
       S {stm = stm, gvars = ref SD.empty, lvars = ref SD.empty, labels = ref SD.empty, typs = ref SD.empty,
-         tds = ref SD.empty, mdds = ref SD.empty, consts = ref SD.empty, templates = ref SD.empty}
+         tds = ref SD.empty, mdds = ref SD.empty, consts = ref SD.empty, fields = ref SD.empty,
+         templates = ref SD.empty}
 
   fun getStm (S {stm, ...} : state) : M.symbolTableManager = stm
 
@@ -606,14 +614,16 @@ struct
           | SOME v => v
       end
 
+  fun getGlobalVars (S {gvars, ...} : state) : M.variable SD.t = !gvars
+
   fun getLabel (S {stm, labels, ...} : state, l : string) : M.label =
       case SD.lookup (!labels, l)
        of NONE => let val l' = IM.labelFresh stm val () = labels := SD.insert (!labels, l, l') in l' end
         | SOME l => l
 
-  fun forkLocal (S {stm, gvars, lvars, labels, typs, tds, mdds, consts, templates} : state) : state =
+  fun forkLocal (S {stm, gvars, lvars, labels, typs, tds, mdds, consts, fields, templates} : state) : state =
       S {stm = stm, gvars = gvars, lvars = ref SD.empty, labels = ref SD.empty, typs = typs, tds = tds, mdds = mdds,
-         consts = consts, templates = templates}
+         consts = consts, fields = fields, templates = templates}
 
   fun getNamedTyps (S {typs, ...} : state) : M.typ SD.t = !typs
 
@@ -639,6 +649,13 @@ struct
   fun getNamedConst (S {consts, ...} : state, s : string) : M.constant option = SD.lookup (!consts, s)
 
   fun addNamedConst (S {consts, ...} : state, s : string, c : M.constant) : unit = consts := SD.insert (!consts, s, c)
+
+  fun getNamedFields (S {fields, ...} : state) : M.fieldIdentifier SD.t = !fields
+
+  fun getNamedField (S {fields, ...} : state, s : string) : M.fieldIdentifier option = SD.lookup (!fields, s)
+
+  fun addNamedField (S {fields, ...} : state, s : string, fi : M.fieldIdentifier) : unit =
+      fields := SD.insert (!fields, s, fi)
 
   fun getTemplates (S {templates, ...} : state) : Template.t SD.t = !templates
 
@@ -819,11 +836,14 @@ struct
   fun binderF (state : state, env : env, k : M.variableKind) : M.variable P.t =
       let
         fun doIt ((v, _), t) =
-            let
-              val () = MU.SymbolTableManager.variableSetInfo (getStm state, v, t, k)
-            in v
-            end
-        val p = P.map (variableF (state, env) && keycharS #":" && typ (state, env), doIt)
+            if MU.SymbolTableManager.variableHasInfo (getStm state,v) then
+              P.error "Variable already bound"
+            else
+              let
+                val () = MU.SymbolTableManager.variableSetInfo (getStm state, v, t, k)
+              in P.succeed v
+              end
+        val p = P.bind (variableF (state, env) && keycharS #":" && typ (state, env)) doIt
       in p
       end
 
@@ -927,6 +947,7 @@ struct
 
   fun constantF (state : state, env : env) : M.constant P.t =
       let
+        val platSize = Config.targetWordSize' (getConfig env)
         fun intArb (sign, size) =
             P.map (paren intInf, fn i => M.CIntegral (IntArb.fromIntInf (IntArb.T (size, sign), i)))
         fun parseBool c = case c of #"0" => SOME false | #"1" => SOME true | _ => NONE
@@ -947,6 +968,9 @@ struct
               | "M" =>
                 P.map (bracket (vectorDescriptor (state, env)) && angleBracket bools,
                        fn (vd, bs) => M.CViMask {descriptor = vd, elts = bs})
+              | "MaxSIntp" => P.succeed (M.CIntegral (IntArb.maxValueT (IntArb.T (platSize, IntArb.Signed))))
+              | "MaxUIntp" => P.succeed (M.CIntegral (IntArb.maxValueT (IntArb.T (platSize, IntArb.Unsigned))))
+              | "MinSIntp" => P.succeed (M.CIntegral (IntArb.minValueT (IntArb.T (platSize, IntArb.Signed))))
               | "Name" => P.succeed (M.CPok M.PokName)
               | "None" => P.succeed (M.CPok M.PokNone)
               | "Ptr" => P.succeed (M.CPok M.PokPtr)
@@ -957,7 +981,7 @@ struct
               | "S32" => intArb (IntArb.Signed, IntArb.S32)
               | "S64" => intArb (IntArb.Signed, IntArb.S64)
               | "Set" => P.succeed (M.CPok M.PokOptionSet)
-              | "SP" => intArb (IntArb.Signed, Config.targetWordSize' (getConfig env))
+              | "SP" => intArb (IntArb.Signed, platSize)
               | "Tag" => P.succeed (M.CPok M.PokTagged)
               | "True" => P.succeed (M.CBoolean true)
               | "Type" => P.succeed (M.CPok M.PokType)
@@ -966,7 +990,7 @@ struct
               | "U16" => intArb (IntArb.Unsigned, IntArb.S16)
               | "U32" => intArb (IntArb.Unsigned, IntArb.S32)
               | "U64" => intArb (IntArb.Unsigned, IntArb.S64)
-              | "UP" => intArb (IntArb.Unsigned, Config.targetWordSize' (getConfig env))
+              | "UP" => intArb (IntArb.Unsigned, platSize)
               | _ => P.fail
         fun doNamed s =
             case getNamedConst (state, s)
@@ -986,6 +1010,13 @@ struct
   fun simple (state : state, env : env) : M.simple P.t = simpleF (state, env) || P.error "Expected simple"
 
   val operand : state * env -> M.operand P.t = simple
+
+  fun fieldNameF (state : state, env : env) : string P.t =
+      P.bind identifierF
+             (fn s => if String.length s >= 1 andalso String.sub (s, 0) = #"f" then P.succeed s else P.fail)
+
+  fun fieldName (state : state, env : env) : string P.t =
+      fieldNameF (state, env) || P.error "Expected field name"
 
   fun fieldIdentifier (state : state, env : env) : M.fieldIdentifier P.t =
       let
@@ -1029,7 +1060,13 @@ struct
                                                        kind = kind})
             in syntax p
             end
-        val p = fiFixed || fiVariable || fiVectorFixed || fiVectorVariable || P.error "Expected field identifier"
+        fun doNamed s =
+            case getNamedField (state, s)
+             of NONE => P.error ("Field " ^ s ^ " undefined")
+              | SOME c => P.succeed c
+        val named = P.bind (fieldNameF (state, env)) doNamed
+        val p =
+            fiFixed || fiVariable || fiVectorFixed || fiVectorVariable || named || P.error "Expected field identifier"
       in p
       end
 
@@ -1529,6 +1566,7 @@ struct
     | DTupleDescriptor of string * M.tupleDescriptor
     | DMetaDataDescriptor of string * M.metaDataDescriptor
     | DConstant of string * M.constant
+    | DFields of string Vector.t
     | DGlobal of M.variable * M.global
     | DTemplate of string * Template.t
 
@@ -1538,6 +1576,12 @@ struct
             let
               val () = addNamedConst (state, n, c)
             in DConstant (n, c)
+            end
+        fun doFields fs =
+            let
+              fun doOne (i, f) = addNamedField (state, f, M.FiFixed i)
+              val () = Vector.foreachi (fs, doOne)
+            in DFields fs
             end
         fun doMDD ((n, _), mdd) =
             let
@@ -1564,6 +1608,7 @@ struct
         fun doIt s =
             case s
              of "Constant" => P.map (constantName (state, env) && keycharS #"=" && constant (state, env), doConstant)
+              | "Fields" => P.map (angleBracketSeq (fieldName (state, env)), doFields)
               | "Global" => P.map (varGlobal (state, env), fn (v, d) => DGlobal (v, d))
               | "Include" => P.map (includeFile (state, env), DInclude)
               | "Metadata" =>
@@ -1583,8 +1628,10 @@ struct
     tupleDescriptors    : M.tupleDescriptor SD.t,
     metaDataDescriptors : M.metaDataDescriptor SD.t,
     constants           : M.constant SD.t,
+    fields              : M.fieldIdentifier SD.t,
     templates           : Template.t SD.t,
-    globals             : M.globals
+    globals             : M.globals,
+    globalVars          : M.variable SD.t
   }
 
   fun templateFile (config : Config.t, fname : string, stm : M.symbolTableManager) : templateFile =
@@ -1613,9 +1660,12 @@ struct
         val tds = getNamedTDs state
         val mdds = getNamedMDDs state
         val cs = getNamedConsts state
+        val fis = getNamedFields state
         val ts = getTemplates state
+        val gvs = getGlobalVars state
         val tf = TF {includes = Vector.fromList (List.rev is), typs = typs, tupleDescriptors = tds,
-                     metaDataDescriptors = mdds, constants = cs, templates = ts, globals = gs}
+                     metaDataDescriptors = mdds, constants = cs, fields = fis, templates = ts, globals = gs,
+                     globalVars = gvs}
       in tf
       end
 

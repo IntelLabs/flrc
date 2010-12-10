@@ -665,6 +665,7 @@ struct
 
      val tFloat = MUP.NumericTyp.tFloat
      val tRat = MUP.NumericTyp.tRat
+     val tInt = MUP.NumericTyp.tIntegerArbitrary
      val tPAny = M.TPAny
      val tSet = POM.OptionSet.typ
      val tArrayV = fn (c, t) => OA.varTyp (c, M.PokArray, t)
@@ -941,6 +942,7 @@ struct
 	         | MP.RtVtuneAttach          => mk00 ()
 	         | MP.RtVtuneDetach          => mk00 ()
 	         | MP.RtArrayEval            => mk10 (tArrayV (c, tPAny))
+                 | MP.RtIntegerHash          => mk11 (tInt, tUintp c)
          in
            res
          end

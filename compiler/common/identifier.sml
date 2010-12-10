@@ -269,6 +269,7 @@ sig
       val variableClone : 'a t * variable -> variable
       val variableRelated : 'a t * variable * string * 'a -> variable
       val variableRelatedNoInfo : 'a t * variable * string -> variable
+      val variableHasInfo : 'a t * variable -> bool
       val variableSetInfo : 'a t * variable * 'a -> unit
       val variableDelete : 'a t * variable -> unit
       val variablesList : 'a t -> variable list
@@ -655,6 +656,9 @@ struct
               val () = variableNames := VariableDict.insert (!variableNames, nv, nm)
             in nv
             end
+
+        fun variableHasInfo (M {variableInfo, ...}, v) =
+            VariableDict.contains (!variableInfo, v)
 
         fun variableSetInfo (M {variableNames, variableInfo, ...}, v, info) =
             case VariableDict.lookup (!variableNames, v)

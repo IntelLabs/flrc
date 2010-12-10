@@ -870,6 +870,7 @@ sig
     val variableClone : t * Mil.variable -> Mil.variable
     val variableRelated : t * Mil.variable * string * Typ.t * VariableKind.t -> Mil.variable
     val variableRelatedNoInfo : t * Mil.variable * string -> Mil.variable
+    val variableHasInfo : t * Mil.variable -> bool
     val variableSetInfo : t * Mil.variable * Typ.t * VariableKind.t -> unit
     val nameMake : t * string -> Mil.name
     val labelFresh : t -> Mil.label
@@ -4008,6 +4009,9 @@ struct
 
     fun variableRelatedNoInfo (stm, v, hint) =
         IM.variableRelatedNoInfo (stm, v, hint)
+
+    fun variableHasInfo (stm, v) =
+        IM.variableHasInfo (stm, v)
 
     fun variableSetInfo (stm, v, t, k) =
         IM.variableSetInfo (stm, v, M.VI {typ = t, kind = k})
