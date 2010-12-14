@@ -2043,7 +2043,7 @@ sig
   val get : elt t
   val satisfy : (elt -> bool) -> elt t 
   val satisfyMap : (elt -> 'a option) -> 'a t 
-  val atEnd : error -> unit t
+  val atEnd : unit t
   val zeroOrMore : 'a t -> 'a list t
   val oneOrMore : 'a t -> 'a list t
   val zeroOrMoreV : 'a t -> 'a Vector.t t
@@ -2138,10 +2138,10 @@ struct
   val satisfyMap : (elt -> 'a option) -> 'a t  = 
    fn f => bind get (fn c => case f c of SOME a => return a | NONE => fail)
 
-  fun atEnd (e : error) : unit t =
+  val atEnd : unit t =
    fn cs => (case next cs
               of NONE => Success (cs, ())
-               | SOME _ => Error (pos cs, e))
+               | SOME _ => Failure)
 
   val ignore : 'a t -> unit t = fn p => map (p, ignore)
 

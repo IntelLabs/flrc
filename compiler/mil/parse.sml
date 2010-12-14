@@ -404,6 +404,8 @@ struct
    * and the naming conventions for them.
    *)
 
+  fun atEnd (e : string) = P.atEnd || P.error e
+
   fun whiteChar c = c = Char.space orelse c = Char.newline orelse c = #"\t" orelse c = #"\r"
 
   val whiteF = P.satisfy whiteChar
@@ -1642,7 +1644,7 @@ struct
         val state = stateMk stm
         val env = envMk config
         val parser =
-            P.map (whitespace && P.zeroOrMore (declarationF (state, env)) && P.atEnd "Expected end of file",
+            P.map (whitespace && P.zeroOrMore (declarationF (state, env)) && atEnd "Expected end of file",
                    fn ((_, ds), _) => ds)
         val ds =
             case P.parse (parser, instrm)
@@ -1676,7 +1678,7 @@ struct
         val strm = Pervasive.TextIO.openIn f
         val instrm = Pervasive.TextIO.getInstream strm
         val instrm = InStreamWithPos.mk instrm
-        val parser = P.map (program config && P.atEnd "Expected end of file", #1)
+        val parser = P.map (program config && atEnd "Expected end of file", #1)
         val p =
             case P.parse (parser, instrm)
              of P.Success (_, p) => p
@@ -1689,7 +1691,7 @@ struct
   fun readFile (() : unit, pd : PassData.t, basename : Path.t) : M.t =
       let
         val config = PassData.getConfig pd
-        val basename = Path.toCygwinString basename
+        val basename = Config.pathToHostString (config, basename)
         val infile = basename ^ ".mil"
         fun cleanup () = ()
         val p = Exn.finally (fn () => parseFile (config, infile), cleanup)

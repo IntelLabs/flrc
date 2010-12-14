@@ -15,6 +15,7 @@ signature CONFIG = sig
 		   rootsInGlobals: bool,
 		   style: gcStyle,
 		   tagOnly: bool}
+  datatype os = OsCygwin | OsLinux | OsMinGW 
   datatype outputKind = OkC | OkPillar
   datatype parStyle = PNone | PAll | PAuto | PPar
   type passInfo = {enable: bool,
@@ -41,7 +42,8 @@ signature CONFIG = sig
 			  rootsInGlobals: bool,
 			  style: gcStyle,
 			  tagOnly: bool},
-		     home: Path.t,
+		     home : Path.t,
+                     host : os,
 		     keep: {cp: bool, obj: bool, pil: bool},
 		     linkStr: string list,
 		     logLev: verbosity,
@@ -80,7 +82,8 @@ signature CONFIG = sig
 	      rootsInGlobals: bool,
 	      style: gcStyle,
 	      tagOnly: bool}
-  val home: t -> Path.t
+  val home : t -> Path.t
+  val host : t -> os
   val keep: t * ({cp: bool, obj: bool, pil: bool} -> 'a) -> 'a
   val keepCp: t -> bool
   val keepObj: t -> bool
@@ -102,6 +105,7 @@ signature CONFIG = sig
   val passShowPre: t * string -> bool
   val passStatPost: t * string -> bool
   val passStatPre: t * string -> bool
+  val pathToHostString : t * Path.t -> string
   val pilDebug: t -> bool
   val pilOpt: t -> int
   val pilcStr: t -> string list
@@ -187,6 +191,8 @@ structure Config :> CONFIG = struct
 
     datatype gcStyle = GcsNone | GcsConservative | GcsAccurate
 
+    datatype os = OsCygwin | OsLinux | OsMinGW
+
     datatype agcProg = AgcGcMf | AgcTgc | AgcCgc
 
     (* tagOnly means generate vtables with only tags in them, no size or ref
@@ -247,6 +253,7 @@ structure Config :> CONFIG = struct
          feature_         : StringSet.t,
          gc               : gcConfig,
          home             : Path.t,
+         host             : os,
          keep             : {cp : bool, pil : bool, obj : bool},
          linkStr          : string list,
          logLev           : verbosity,
@@ -280,6 +287,7 @@ structure Config :> CONFIG = struct
     fun core c                        = get (c, #core)
     fun gc c                          = get (c, #gc)
     fun home c                        = get (c, #home)
+    fun host c                        = get (c, #host)
     fun linkStr c                     = get (c, #linkStr)
     fun output c                      = get (c, #output)
     fun parStyle c                    = get (c, #parStyle)
@@ -360,6 +368,12 @@ structure Config :> CONFIG = struct
     fun passStatPre (cfg, name)  = #statPre (passGet (cfg, name))
     fun passShowPost (cfg, name)  = #showPost (passGet (cfg, name))
     fun passStatPost (cfg, name)  = #statPost (passGet (cfg, name))
+
+    fun pathToHostString (cfg, path) = 
+        (case host cfg
+          of OsCygwin => Path.toCygwinString path
+           | OsLinux  => Path.toUnixString path
+           | OsMinGW  => Path.toWindowsString path)
 
     fun reportEnabled (C cfg, name) = StringSet.member (#report cfg, name)
 

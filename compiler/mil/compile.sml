@@ -124,7 +124,8 @@ struct
         and rec interleave1' : unit -> controlItem list Parse.t =
          fn () => delimited (lbrace, $pass', rbrace)
 
-        val pass = Parse.map ($pass' && Parse.atEnd "Expected end of string", #1)
+        val eof = Parse.atEnd || Parse.error "Expected end of string"
+        val pass = Parse.map ($pass' && eof, #1)
 
         val cis =
             case Parse.parse (pass, (s, 0))
@@ -219,9 +220,10 @@ struct
 
   fun writeToFile (pd : PassData.t, bn : Path.t, p : BothMil.t) : unit =
       let
+        val config = PassData.getConfig pd
         val p = BothMil.toMil (pd, p)
         val l = MilLayout.layoutParseable (PassData.getConfig pd, p)
-        val basename = Path.toCygwinString bn
+        val basename = Config.pathToHostString (config, bn)
         val outfile = basename ^ ".mil"
         val () = LU.writeLayout (l, outfile)
       in ()

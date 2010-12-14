@@ -26,7 +26,7 @@
  * Examples:
  *   If volume is C and the links are ["documents and settings", "lpeterse"], 
  *    then the reifications are:
- *    Windows:  C:\\documents and settings\lpeterse
+ *    Windows:  C:\documents and settings\lpeterse
  *    Unix: exception Path
  *    Cygwin: /cygdrive/c/documents and settings/lpeterse
  *
@@ -67,37 +67,93 @@ struct
 
   exception Path of string
 
+  structure SP = StringParser
+  val || = SP.||
+  val && = SP.&&
+
+  infix || &&
+  val isChar = fn c => SP.satisfy (fn c' => c = c')
+  val alpha = SP.satisfy Char.isAlpha
+  val ::: = fn (a, b) => SP.map (a && b, fn (a, b) => a ::b)
+  val -&& = fn (a, b) => SP.map (a && b, fn (a, b) => b)
+  val &&- = fn (a, b) => SP.map (a && b, fn (a, b) => a)
+  infixr 5 :::
+  infix -&& &&-
+
+  val parseRelative : (string SP.t * char SP.t) -> string List.t SP.t = 
+   fn (filename, sep) => 
+      let
+        val eof = SP.map (SP.atEnd, fn () => [])
+        val rec relative = 
+         fn () => (filename ::: (sep -&& (SP.$ relative))) ||
+                  (filename ::: (sep -&& eof)) ||
+                  (filename ::: eof)
+        val p = SP.map (SP.$ relative, List.rev)
+      in p
+      end
+
+  val parseWindowsStyle : t StringParser.t = 
+      let
+        val invalidFileChar = 
+         fn c => (Char.ord c < 32) orelse
+                 (c = #"<") orelse
+                 (c = #">") orelse
+                 (c = #":") orelse
+                 (c = #"\"") orelse
+                 (c = #"/") orelse
+                 (c = #"\\") orelse
+                 (c = #"|") orelse
+                 (c = #"?") orelse
+                 (c = #"*")
+
+        val validFileChar = not o invalidFileChar
+        val filename = SP.map (SP.oneOrMore (SP.satisfy validFileChar), String.implode)
+        val sep = (isChar #"\\")
+        val relative = parseRelative (filename, sep)
+        val volume = alpha &&- (isChar #":") &&- sep
+        val absolute = volume && relative
+
+        val p = (SP.map (absolute, fn (drive, s) => PAbs (Drive drive, s))) ||
+                (SP.map (relative, fn s => PRel s))
+      in p
+      end
+
+  val parseUnixStyle : t StringParser.t = 
+      let
+        val invalidFileChar = 
+         fn c => (Char.ord c = 0) orelse (c = #"/")
+        val validFileChar = not o invalidFileChar
+        val filename = SP.map (SP.oneOrMore (SP.satisfy validFileChar), String.implode)
+        val sep = (isChar #"/")
+        val relative = parseRelative (filename, sep)
+        val absolute = sep -&& relative
+
+        val p = (SP.map (absolute, fn s => PAbs (Root, s))) ||
+                (SP.map (relative, fn s => PRel s))
+      in p
+      end
+
+  val parsePath = parseWindowsStyle || parseUnixStyle
+
   val fromString : string -> t = 
    fn s => 
       let
-        val {isAbs, vol, arcs} = 
-            (OS.Path.fromString s) 
-            handle OS.Path.Path => raise (Path ("Bad path string: "^s))
+        val p = 
+            (case SP.parse (parsePath, (s, 0))
+              of SP.Success (_, p) => p
+               | _ => raise (Path ("Bad path string: " ^ s)))
         val path = 
-            if isAbs then
-              let
-                val (volume, arcs) = 
-                    if vol = "" then
-                      (case arcs
-                        of ("cygdrive"::vol::restArcs) => 
-                           if String.length vol = 1 then 
-                             (Drive (String.sub (vol, 0)), restArcs)
-                           else
-                             (Root, arcs)
-                         | _ => (Root, arcs))
-                    else
-                      (case String.sub (vol, 1)
-                        of #":" => (Drive (String.sub (vol, 0)), arcs)
-                         | _ => raise (Path ("Bad volume: "^vol)))
-                val arcs = List.rev arcs
-              in PAbs (volume, arcs)
-              end
-            else
-              if vol = "" then 
-                PRel (List.rev arcs)
-              else
-                raise (Path ("Relative path with volume"))
-      in path 
+            (case p
+              of PAbs (Root, arcs) => 
+                 (case List.rev arcs
+                   of ("cygdrive" :: vol :: arcs) => 
+                      if String.length vol = 1 then 
+                        PAbs (Drive (String.sub (vol, 0)), List.rev arcs)
+                      else
+                        p
+                    | _ => p)
+               | _ => p)
+      in path
       end
 
   val collapseArcs : string list * string -> string = 

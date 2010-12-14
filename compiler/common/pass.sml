@@ -342,7 +342,7 @@ struct
 
   fun run (config, logger, cmd, args) = 
       let
-        val cmd = Path.toCygwinString cmd
+        val cmd = Config.pathToHostString (config, cmd)
         val () = logger (config, String.concatWith (cmd::args, " "))
         val doit = fn () => Process.exec(cmd, args)
         fun silently doit = 
