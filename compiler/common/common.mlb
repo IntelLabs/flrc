@@ -25,6 +25,7 @@ local
           local
             $(SML_LIB)/basis/basis.mlb
           in
+            structure Posix
             structure PackWord32Little
             structure PackWord64Little
             structure PackReal32Little
@@ -49,7 +50,15 @@ local
         chat.sml
         locus.sml
         identifier.sml
-        pass.sml
+        local  
+          local
+            $(SML_LIB)/basis/basis.mlb
+          in
+            structure Posix
+          end
+        in
+          pass.sml
+        end
         rename.sml
         effect.sml
         vector-instruction.sml

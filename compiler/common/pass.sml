@@ -343,6 +343,39 @@ struct
   fun run (config, logger, cmd, args) = 
       let
         val cmd = Config.pathToHostString (config, cmd)
+        val (cmd, args) = 
+            (case Config.host config
+              of Config.OsMinGW => 
+                 let
+                   val quote = 
+                    fn s => "\"" ^ s ^ "\""
+                   val args = cmd::args
+                   val args = List.map (args, quote o String.escapeC)
+                   val cmd = String.concatWith (args, " ")
+                   val args = ["-c", cmd]
+                   val cmd = "sh"
+                 in (cmd, args)
+                 end
+               | _ => (cmd, args))
+        val () = logger (config, String.concatWith (cmd::args, " "))
+        val args = cmd::args
+        val doit = 
+         fn () => ((Process.wait (MLton.Process.spawnp {file = cmd, args = args}))
+                   handle any => Fail.fail ("Pass", "run", "Command could not be run: "^Exn.toString any))
+        fun silently doit = 
+            Out.ignore(Out.standard, 
+                       (fn () => 
+                           Out.ignore(Out.error, doit)))
+        val () = if Config.silent config then
+                   silently doit
+                 else
+                   doit ()
+      in ()
+      end
+(*
+  fun run (config, logger, cmd, args) = 
+      let
+        val cmd = Config.pathToHostString (config, cmd)
         val () = logger (config, String.concatWith (cmd::args, " "))
         val doit = fn () => Process.exec(cmd, args)
         fun silently doit = 
@@ -357,4 +390,25 @@ struct
       in ()
       end
 
+  fun run (config, logger, cmd, args) = 
+      let
+        val cmd = Config.pathToHostString (config, cmd)
+        val () = logger (config, String.concatWith (cmd::args, " "))
+        val out = if Config.silent config then MLton.Process.Param.null else MLton.Process.Param.self
+        val p = MLton.Process.create {path = cmd, args = args, 
+                                      env = NONE,
+		                      stderr = out,
+		                      stdin  = MLton.Process.Param.self,
+		                      stdout = out}
+        val () = case MLton.Process.reap p
+                  of Posix.Process.W_EXITED       => ()
+                   | Posix.Process.W_EXITSTATUS s => 
+                     Fail.fail ("Pass", "run", "Process exited with status " ^ Word8.toString s)
+                   | Posix.Process.W_SIGNALED _   => 
+                     Fail.fail ("Pass", "run", "Process killed by signal")
+                   | Posix.Process.W_STOPPED _    => 
+                     Fail.fail ("Pass", "run", "Process stopped by signal")
+      in ()
+      end
+*)
 end;

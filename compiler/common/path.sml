@@ -27,12 +27,12 @@
  *   If volume is C and the links are ["documents and settings", "lpeterse"], 
  *    then the reifications are:
  *    Windows:  C:\documents and settings\lpeterse
- *    Unix: exception Path
+ *    Unix: error
  *    Cygwin: /cygdrive/c/documents and settings/lpeterse
  *
  *   If volume is root and the links are ["usr", "lib"],
  *    then the reifications are:
- *    Windows:  exception Path
+ *    Windows:  error
  *    Unix: /usr/lib
  *    Cygwin: /usr/lib
  * 
@@ -42,11 +42,12 @@ signature PATH =
 sig
   type t 
   datatype volume = Root | Drive of char
-  exception Path of string
   val fromString : string -> t
   val toCygwinString : t -> string
   val toWindowsString : t -> string
   val toUnixString : t -> string
+  val toMinGWString : t -> string
+  val layout : t -> Layout.t
   (* must be relative *)
   val cons : string * t -> t
   val snoc : t * string -> t
@@ -65,7 +66,6 @@ struct
   datatype t = PRel of string list
              | PAbs of volume * (string list)
 
-  exception Path of string
 
   structure SP = StringParser
   val || = SP.||
@@ -141,7 +141,7 @@ struct
         val p = 
             (case SP.parse (parsePath, (s, 0))
               of SP.Success (_, p) => p
-               | _ => raise (Path ("Bad path string: " ^ s)))
+               | _ => Fail.fail ("Path", "fromString", "Bad path string: " ^ s))
         val path = 
             (case p
               of PAbs (Root, arcs) => 
@@ -169,7 +169,6 @@ struct
                    | PAbs (Root, arcs) => "/"^collapse arcs
                    | PAbs (Drive c, arcs) => 
                      "/cygdrive/"^(Char.toString c)^"/"^collapse arcs)
-            val s = OS.Path.mkCanonical s
           in s
           end)
 
@@ -180,9 +179,8 @@ struct
             val s = 
                 (case path
                   of PRel arcs => collapse arcs
-                   | PAbs (Root, arcs) => raise (Path ("Can't use root volume in windows"))
+                   | PAbs (Root, arcs) => Fail.fail ("Path", "toWindowsString", "Can't use root volume in windows")
                    | PAbs (Drive c, arcs) => (Char.toString c)^":\\"^collapse arcs)
-            val s = OS.Path.mkCanonical s
           in s
           end)
 
@@ -194,9 +192,37 @@ struct
                 (case path
                   of PRel arcs => collapse arcs
                    | PAbs (Root, arcs) => "/"^collapse arcs
-                   | PAbs (Drive c, arcs) => raise (Path ("Can't use Drive in windows")))
-            val s = OS.Path.mkCanonical s
+                   | PAbs (Drive c, arcs) => Fail.fail ("Path", "toUnixString", "Can't use Drive in windows"))
           in s
+          end)
+
+  val toMinGWString : t -> string = 
+      (fn path => 
+          let
+            val collapse = fn arcs => collapseArcs (arcs, "/")
+            val s = 
+                (case path
+                  of PRel arcs => collapse arcs
+                   | PAbs (Root, arcs) => "/"^collapse arcs
+                   | PAbs (Drive c, arcs) => 
+                     "/"^(Char.toString c)^"/"^collapse arcs)
+          in s
+          end)
+
+  val layout : t -> Layout.t = 
+      (fn path => 
+          let
+            val lArcs = List.layout Layout.str 
+            val l = 
+                (case path
+                  of PRel arcs            => Layout.seq [Layout.str "Relative: ", lArcs arcs]
+                   | PAbs (Root, arcs)    => Layout.seq [Layout.str "Rooted: ", lArcs arcs]
+                   | PAbs (Drive c, arcs) => 
+                     let
+                       val c = Char.toString c
+                     in Layout.seq [Layout.str "Drive ", Layout.str c, Layout.str ": ", lArcs arcs]
+                     end)
+          in l
           end)
 
   (* must be relative *)
@@ -204,7 +230,7 @@ struct
    fn (s, path) => 
       (case path 
         of PRel arcs => PRel (arcs @ [s])
-         | PAbs _ => raise (Path ("Can't cons to absolute path")))
+         | PAbs _ => Fail.fail ("Path", "cons", "Can't cons to absolute path"))
 
   val snoc : t * string -> t =
    fn (path, s) => 
@@ -218,7 +244,7 @@ struct
       (case (path1, path2)
         of (PRel arcs1, PRel arcs2) => PRel (arcs2 @ arcs1)
          | (PAbs (vol, arcs1), PRel arcs2) => PAbs (vol, arcs2 @ arcs1)
-         | _ => raise (Path ("Can't append absolute path")))
+         | _ => Fail.fail ("Path", "append", "Can't append absolute path"))
 
   val setVolume : t * volume -> t = 
    fn (path, vol) => 
