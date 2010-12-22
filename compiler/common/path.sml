@@ -16,12 +16,19 @@
  *
  * An absolute path is one which has a volume.
  *
- * Paths may be reifed as Windows, Cygwin, or Unix path
+ * We deviate from the standard path model in that
+ * we allow mixed seperators (that is, / \ in the same path).
+ * This means that some valid (but odd) paths will be incorrectly
+ * parsed (e.g. weird\file is a valid unix file name, but will be
+ * treated as a path).
+ *
+ * Paths may be reifed as MingGW, Windows, Cygwin, or Unix path
  * strings.  Relative paths are valid for all three.  
  * An absolute path is valid for:
- *   Windows if the volume is a drive letter
+ *   Windows always
  *   Unix if the volume is root
  *   Cygwin always
+ *   MinGW always
  * 
  * Examples:
  *   If volume is C and the links are ["documents and settings", "lpeterse"], 
@@ -29,12 +36,14 @@
  *    Windows:  C:\documents and settings\lpeterse
  *    Unix: error
  *    Cygwin: /cygdrive/c/documents and settings/lpeterse
+ *    MinGW: /c/documents and settings/lpeterse
  *
  *   If volume is root and the links are ["usr", "lib"],
  *    then the reifications are:
- *    Windows:  error
+ *    Windows: \usr\lib
  *    Unix: /usr/lib
  *    Cygwin: /usr/lib
+ *    MinGW: /usr/lib
  * 
  *)
 
@@ -42,14 +51,27 @@ signature PATH =
 sig
   type t 
   datatype volume = Root | Drive of char
+  (* fromString tries to parse a path from the string.  This is necessarily heuristic.
+   * For example, "C:\Documents and Settings" is technically a valid unix path (the relative
+   * path designating a file of that name), and is also a valid windows absolute path.
+   * The heuristic is simply to first try to parse the string as a windows path.  If this fails,
+   * we try to parse it as a unix style path.  If the leading directories of this path
+   * are /cygdrive/X for some character X, we treat X as the volume.  Otherwise we treat
+   * it as a rooted path.
+   *)
   val fromString : string -> t
+  val fromCygwinString : string -> t
+  val fromMinGWString : string -> t
+  val fromUnixString : string -> t
+  val fromWindowsString : string -> t
   val toCygwinString : t -> string
   val toWindowsString : t -> string
   val toUnixString : t -> string
   val toMinGWString : t -> string
   val layout : t -> Layout.t
-  (* must be relative *)
+  (* cons adds to the head (the root end). Path must be relative *)
   val cons : string * t -> t
+  (* snoc adds to the tail (the child end). *) 
   val snoc : t * string -> t
   (* second path must be relative *)
   val append : t * t -> t
@@ -108,23 +130,25 @@ struct
 
         val validFileChar = not o invalidFileChar
         val filename = SP.map (SP.oneOrMore (SP.satisfy validFileChar), String.implode)
-        val sep = (isChar #"\\")
+        val sep = (isChar #"\\") || (isChar #"/")
         val relative = parseRelative (filename, sep)
         val volume = alpha &&- (isChar #":") &&- sep
         val absolute = volume && relative
+        val rooted = sep -&& relative
 
         val p = (SP.map (absolute, fn (drive, s) => PAbs (Drive drive, s))) ||
+                (SP.map (rooted, fn s => PAbs (Root, s))) ||
                 (SP.map (relative, fn s => PRel s))
       in p
       end
 
   val parseUnixStyle : t StringParser.t = 
       let
-        val invalidFileChar = 
-         fn c => (Char.ord c = 0) orelse (c = #"/")
+        val invalidFileChar =  (* Disallow backslash to support mixed paths *)
+         fn c => (Char.ord c = 0) orelse (c = #"/") orelse (c = #"\\")  
         val validFileChar = not o invalidFileChar
         val filename = SP.map (SP.oneOrMore (SP.satisfy validFileChar), String.implode)
-        val sep = (isChar #"/")
+        val sep = (isChar #"/") || (isChar #"\\")
         val relative = parseRelative (filename, sep)
         val absolute = sep -&& relative
 
@@ -135,24 +159,66 @@ struct
 
   val parsePath = parseWindowsStyle || parseUnixStyle
 
+  val convertCygwinVolume = 
+   fn p => 
+      (case p
+        of PAbs (Root, arcs) => 
+           (case List.rev arcs
+             of ("cygdrive" :: vol :: arcs) => 
+                if String.length vol = 1 then 
+                  PAbs (Drive (String.sub (vol, 0)), List.rev arcs)
+                else
+                  p
+              | _ => p)
+         | _ => p)
+           
   val fromString : string -> t = 
    fn s => 
       let
-        val p = 
-            (case SP.parse (parsePath, (s, 0))
-              of SP.Success (_, p) => p
-               | _ => Fail.fail ("Path", "fromString", "Bad path string: " ^ s))
         val path = 
-            (case p
-              of PAbs (Root, arcs) => 
-                 (case List.rev arcs
-                   of ("cygdrive" :: vol :: arcs) => 
-                      if String.length vol = 1 then 
-                        PAbs (Drive (String.sub (vol, 0)), List.rev arcs)
-                      else
-                        p
-                    | _ => p)
-               | _ => p)
+            (case SP.parse (parsePath, (s, 0))
+              of SP.Success (_, p) => convertCygwinVolume p
+               | _ => Fail.fail ("Path", "fromString", "Can't parse path: "^s))
+      in path
+      end
+
+  val fromCygwinString : string -> t =
+   fn s => 
+      let
+        val path = 
+            (case SP.parse (parseUnixStyle, (s, 0))
+              of SP.Success (_, p) => convertCygwinVolume p
+               | _ => Fail.fail ("Path", "fromCygwinString", "Can't parse path: "^s))
+      in path
+      end
+
+  val fromMinGWString : string -> t = 
+   fn s => 
+      let
+        val path = 
+            (case SP.parse (parseUnixStyle, (s, 0))
+              of SP.Success (_, p) => p
+               | _ => Fail.fail ("Path", "fromMinGWString", "Can't parse path: "^s))
+      in path
+      end
+
+  val fromUnixString : string -> t = 
+   fn s => 
+      let
+        val path = 
+            (case SP.parse (parseUnixStyle, (s, 0))
+              of SP.Success (_, p) => p
+               | _ => Fail.fail ("Path", "fromUnixString", "Can't parse path: "^s))
+      in path
+      end
+
+  val fromWindowsString : string -> t = 
+   fn s => 
+      let
+        val path = 
+            (case SP.parse (parseWindowsStyle, (s, 0))
+              of SP.Success (_, p) => p
+               | _ => Fail.fail ("Path", "fromWindowsString", "Can't parse path: "^s))
       in path
       end
 
