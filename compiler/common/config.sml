@@ -25,7 +25,10 @@ signature CONFIG = sig
 		   statPre: bool}
   datatype stopPoint = SpCp | SpH | SpM | SpPil | SpO | SpExe
   datatype thunkScheme = TsEither | TsDirect | TsHybrid | TsTwoVersion
-  datatype toolset = Intel | Gnu
+  datatype toolset = TsIpc (* Intel Pillar Compiler *)
+                   | TsOpc (* Old Pillar Compiler *)
+                   | TsGcc (* Gcc *)
+                   | TsIcc (* Intel C compiler *)
   datatype verbosity = VSilent | VQuiet | VInfo | VTop
   datatype wordSize = Ws32 | Ws64
   datatype vectorSize = Vs128 | Vs256 | Vs512
@@ -179,7 +182,10 @@ structure Config :> CONFIG = struct
     val debug : bool = true
 
     datatype outputKind = OkC | OkPillar
-    datatype toolset = Intel  | Gnu
+    datatype toolset = TsIpc (* Intel Pillar Compiler *)
+                     | TsOpc (* Old Pillar Compiler *)
+                     | TsGcc (* Gcc *)
+                     | TsIcc (* Intel C compiler *)
     datatype parStyle = PNone | PAll | PAuto | PPar
 
     (* Thunk scheme: either means try direct and if it fails hybrid,
