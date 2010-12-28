@@ -132,6 +132,8 @@ structure Utils = struct
           (case opt
             of SOME a => Vector.new1 a
              | NONE => Vector.new0 ())
+      fun mapAndFoldi (xs : 'a vector, y : 'b, f : int * 'a * 'b -> 'c * 'b) : 'c vector * 'b =
+          Vector.mapAndFold (Vector.mapi (xs, fn x => x), y, fn ((i, x), y) => f (i, x, y))
     end (* structure Vector *)
 
     structure MltonList = List
