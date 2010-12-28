@@ -10,7 +10,8 @@
 version=$1
 lang=$2
 out=$3
-build="`date '+%F %R'` on `hostname`"
+# Windows hostname outputs a final carriage return
+build="`date '+%F %R'` on `hostname | tr -d '\r'`"
 
 rm -f $out
 

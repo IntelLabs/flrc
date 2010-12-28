@@ -14,7 +14,7 @@ structure Outputter :> OUTPUTTER = struct
 
   fun writeToFile (pd, path, mil) =
       let 
-        val fname = Path.toCygwinString path
+        val fname = Config.pathToHostString (PassData.getConfig pd, path)
         val l = MilToPil.program (pd, fname, mil)
         val suffix = ".c"
         val file = fname ^ suffix

@@ -222,18 +222,18 @@ struct
   datatype linker = LdGCC | LdICC | LdPillar
 
   val pathToCompilerArgString = 
-   fn compiler => 
+   fn (config, compiler, path) => 
       (case compiler
-        of CcGCC => Path.toCygwinString
-         | CcICC => Path.toWindowsString
-         | CcPillar => Path.toWindowsString)
+        of CcGCC => Config.pathToHostString (config, path)
+         | CcICC => Path.toWindowsString path
+         | CcPillar => Path.toWindowsString path)
 
   val pathToLinkerArgString = 
-   fn linker => 
+   fn (config, linker, path) => 
       (case linker
-        of LdGCC => Path.toCygwinString
-         | LdICC => Path.toWindowsString
-         | LdPillar => Path.toWindowsString)
+        of LdGCC => Config.pathToHostString (config, path)
+         | LdICC => Path.toWindowsString path
+         | LdPillar => Path.toWindowsString path)
 
   fun sourceFile (config, compiler, fname) = fname^".c"
 
@@ -265,7 +265,7 @@ struct
                  [pLibInclude (config, "gc-bdw"), runtimeDirectory config, pLibInclude (config, "prt")] @ mcrt
                | CcPillar => 
                  [runtimeDirectory config, pLibInclude (config, "prt"), pLibInclude (config, "pgc")] @ mcrt)
-        val fileToString = pathToCompilerArgString compiler 
+        val fileToString = fn path => pathToCompilerArgString (config, compiler, path)
         val flags = List.map (files, fn s => "-I" ^ (fileToString s))
       in flags
       end
@@ -425,7 +425,7 @@ struct
 
   fun compile (config : Config.t, ccTag, fname) = 
       let
-        val fname = pathToCompilerArgString ccTag fname
+        val fname = pathToCompilerArgString (config, ccTag, fname)
         val inFile = sourceFile (config, ccTag, fname)
         val outFile = objectFile (config, ccTag, fname)
         val cfg = (config, ccTag)
@@ -628,7 +628,7 @@ struct
 
   fun link (config, ccTag, ldTag, fname) = 
       let
-        val fileToString = pathToLinkerArgString ldTag
+        val fileToString = fn path => pathToLinkerArgString (config, ldTag, path)
         val fname = fileToString fname
         val inFile = objectFile (config, ccTag, fname)
         val outFile = exeFile (config, ldTag, fname)
