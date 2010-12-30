@@ -1957,7 +1957,7 @@ struct
                   val dec = declareAndDefine (v, t, ut)
                 in dec
                 end
-              | M.GSimple s => 
+              | M.GSimple s => (* This is supposed to be eliminated?  XXX -leaf *)
                 Pil.D.constantMacro (genVar (state, env, v), genSimple (state, env, s))
               | _ => fail ("genForward", "Unlowered global")
       in d
@@ -1979,7 +1979,7 @@ struct
             val ut = Pil.D.typDef (t, tv)
           in [ut]
           end
-        | M.GSimple s => 
+        | M.GSimple s => (* This is supposed to be eliminated?  XXX -leaf *)
           [Pil.D.constantMacro (genVar (state, env, v), genSimple (state, env, s))]
         | _ => []
 
@@ -2266,7 +2266,7 @@ struct
                    val d = Pil.D.sequence [thnk, d]
                  in d
                  end
-              | M.GSimple s => Pil.D.sequence []
+              | M.GSimple s => Pil.D.sequence []  (* This is supposed to be eliminated?  XXX -leaf *)
               | M.GClosure code => notCoreMil (env, "genGlobal", "GClosure")
               | M.GPSum _ => notCoreMil (env, "genGlobal", "GPSum")
               | M.GPSet _ => notCoreMil (env, "genGlobal", "GPSet")
