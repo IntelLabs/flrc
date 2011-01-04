@@ -60,7 +60,7 @@ struct
          | Config.PAll => true
          | Config.PPar => true
 
-  fun ifDebug (config, a, ad) = if Config.pilDebug config then ad else a
+  fun ifDebug (config, ad, a) = if Config.pilDebug config then ad else a
    
   val (gcWriteBarriersF, gcWriteBarriers) =
       Config.Feature.mk ("Plsr:gc-write-barriers",
@@ -131,11 +131,7 @@ struct
              of Config.OkPillar => ["P_USE_PILLAR", "WIN32"]
               | Config.OkC      => []
 
-        val debug = 
-            if Config.pilDebug config then
-              ["GC_DEBUG"]
-            else
-              ["NDEBUG"]
+        val debug = ifDebug (config, ["GC_DEBUG"], ["NDEBUG"])
 
         val futures = 
             if useFutures config then ["P_USE_PARALLEL_FUTURES"] else []
@@ -287,7 +283,7 @@ struct
 
     fun debug (config, compiler) =
         (case compiler
-          of CcGCC    => if Config.pilDebug config then ["-g"] else []
+          of CcGCC    => ifDebug (config, ["-g"], [])
            | CcICC    => ["-Zi", "-debug"]
            | CcPillar => ["-Zi", "-debug"]
            | CcP2c    => ["-Zi", "-debug"])
@@ -600,7 +596,6 @@ struct
   fun libraries (config, ldTag) = 
       let
         val mt = useFutures config
-        val debug = Config.pilDebug config
         val (prtBegin, prtEnd) = 
             (case ldTag
               of LdPillar => ([ifDebug (config, "crt_prtbegind.obj", "crt_prtbegin.obj")], 
