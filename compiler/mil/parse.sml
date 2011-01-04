@@ -378,13 +378,12 @@ struct
 
   val || = P.||
   val && = P.&&
+  infix 5 || &&
 
-  infix || &&
-
-  val -&& : unit P.t * 'b P.t -> 'b P.t = fn (p1, p2) => P.map (p1 && p2, fn (_, b) => b)
-  val &&- : 'a P.t * unit P.t -> 'a P.t = fn (p1, p2) => P.map (p1 && p2, fn (a, _) => a)
-
-  infix -&& &&-
+  val -&& = P.-&&
+  val &&- = P.&&-
+  infix  7 &&-
+  infixr 6 -&&
 
   (* Convention:
    *   With an F suffix, a parser should fail if the first lexical item does not look like the beginning of thing
@@ -392,7 +391,7 @@ struct
    *   completed.
    *   Without an F suffix, a parser should produce an error if it cannot parse something.
    *
-   * The rational between these conventions has to do with making choices between different forms and for combinators
+   * The rationale between these conventions has to do with making choices between different forms and for combinators
    * like zeroOrMore.  The || operator will try the second parser if the first parser fails.  Similar the zeroOrMore
    * combinator needs to iterated parser to fail when there are no longer any items.  Thus we need parsers that
    * fail when the current input does not look like the item we are trying to parse, but that once enough is seen
@@ -851,9 +850,6 @@ struct
 
   fun binder (state : state, env : env, k : M.variableKind) : M.variable P.t =
       binderF (state, env, k) || P.error "Expected variable binder"
-
-  fun fieldSize (state : state, env : env) : M.fieldSize P.t =
-      syntax (P.required (P.map (identifierF, MU.FieldSize.fromString), "Expected field size"))
 
   fun fieldKind (state : state, env : env) : M.fieldKind P.t =
       P.bind identifierF

@@ -2042,8 +2042,16 @@ sig
   val error : error -> 'a t
   val map : 'a t * ('a -> 'b) -> 'b t 
   val parse : 'a t * stream -> 'a result
+ (* infix 5 || &&*)
   val || : 'a t * 'a t -> 'a t
   val && : 'a t * 'b t -> ('a * 'b) t
+ (* infixr 6 -&& *)
+  val -&& : unit t * 'a t -> 'a t
+ (* infix 7 &&- *)
+  val &&- : 'a t * unit t -> 'a t
+ (*  infixr 5 *:: ::: *)
+  val -:: : unit t * 'a List.t t -> 'a List.t t
+  val ::: : 'a t * 'a List.t t -> 'a List.t t
   val any : 'a t list -> 'a t
   val all : 'a t list -> 'a list t
   val get : elt t
@@ -2161,6 +2169,12 @@ struct
 
   infix || &&
 
+  val -&& : unit t * 'a t -> 'a t = fn (p1, p2) => map (p1 && p2, fn (_, b) => b)
+  val &&- : 'a t * unit t -> 'a t = fn (p1, p2) => map (p1 && p2, fn (a, _) => a)
+
+  val -:: : unit t * 'a List.t t -> 'a List.t t = -&&
+  val ::: : 'a t * 'a List.t t -> 'a List.t t = fn (p1, p2) => map (p1 && p2, fn (a, l) => a::l)
+
   val rec any : 'a t list -> 'a t = 
    fn l => 
       (case l
@@ -2257,6 +2271,345 @@ structure FileParser =
           val pos = InStreamWithPos.pos
           fun next s = Option.map (InStreamWithPos.input1 s, Utils.flip2))
 
+
+structure UnParser : 
+  sig
+    type ('a, 'b) t
+    val return : 'b -> ('a, 'b) t 
+    val bind : ('a, 'b) t -> ('b -> ('a, 'c) t) -> ('a, 'c) t 
+    val base : ('a -> 'b) -> ('a, 'b) t
+    val try : ('a -> 'b option) -> ('a, 'b) t 
+    val run : ('a, 'b) t -> 'a -> 'b option 
+    val satisfy : ('a -> bool) -> ('a, 'a) t
+    val compose : ('a, 'b) t * ('b, 'c) t -> ('a, 'c) t 
+    val || : ('a, 'b) t * ('a, 'b) t -> ('a, 'b) t 
+    val && : ('a, 'b) t * ('a, 'c) t -> ('a, 'b * 'c) t 
+    val layout : ('a, 'b) t -> ('b -> 'c) -> ('a, 'c) t 
+    val tryLayout : ('a, 'b) t -> ('b -> 'c option) -> ('a, 'c) t
+    val pair : ('a, 'b) t * ('c, 'd) t -> ('a * 'c, 'b * 'd) t 
+    val pNil  : ('a list, unit) t 
+    val pCons : ('a list, 'a * ('a list)) t 
+    val $ : (unit -> ('a, 'b) t) -> ('a, 'b) t
+    val zeroOrMore : ('a, 'b) t -> ('a list, 'b list) t
+    val oneOrMore : ('a, 'b) t -> ('a list, 'b list) t
+  end =  
+struct
+
+  type ('a, 'b) t = 'a -> 'b option
+
+  val return : 'b -> ('a, 'b) t = 
+   fn b => fn a => SOME b
+
+  val base : ('a -> 'b) -> ('a, 'b) t = fn f => fn a => SOME (f a)
+  val try : ('a -> 'b option) -> ('a, 'b) t = fn f => fn a => f a
+
+  val run : ('a, 'b) t -> 'a -> 'b option = fn a => a
+  val put = SOME
+  val fail = NONE
+             
+  val satisfy : ('a -> bool) -> ('a, 'a) t = fn p => fn a => if p a then put a else fail
+
+  val bind : ('a, 'b) t -> ('b -> ('a, 'c) t) -> ('a, 'c) t = 
+   fn pp => 
+   fn f => 
+   fn a => (case pp a
+             of SOME b => f b a
+              | NONE => NONE)
+
+  val tryLayout : ('a, 'b) t -> ('b -> 'c option) -> ('a, 'c) t = 
+   fn pp => fn f => Utils.Option.compose (f, pp)
+
+  val compose : ('a, 'b) t * ('b, 'c) t -> ('a, 'c) t = 
+   fn (p1, p2) => 
+   fn a => 
+      (case p1 a
+        of SOME b => p2 b
+         | NONE => NONE)
+
+  val || : ('a, 'b) t * ('a, 'b) t -> ('a, 'b) t = 
+   fn (pp1, pp2) => 
+   fn a => (case pp1 a
+             of NONE => pp2 a
+              | success => success)
+
+  val && : ('a, 'b) t * ('a, 'c) t -> ('a, 'b * 'c) t = 
+   fn (pp1, pp2) => 
+      bind pp1 (fn b1 => bind pp2 (fn b2 => return (b1, b2)))
+      
+  val layout : ('a, 'b) t -> ('b -> 'c) -> ('a, 'c) t = 
+   fn pp => fn f => fn a => (case pp a
+                              of SOME l => SOME (f l)
+                               | NONE  => NONE)
+                            
+  val pair : ('a, 'b) t * ('c, 'd) t -> ('a * 'c, 'b * 'd) t = 
+   fn (p1, p2) => 
+   fn (a, c) => case p1 a
+                 of SOME b => (case p2 c
+                                of SOME d => SOME (b, d)
+                                 | NONE   => NONE)
+                  | NONE => NONE
+
+  val pNil  : ('a list, unit) t = fn l => case l of [] => put () | _ => fail
+
+  val pCons : ('a list, 'a * ('a list)) t = fn l => case l of a::aa => put (a, aa) | _ => fail
+
+  val $ : (unit -> ('a, 'b) t) -> ('a, 'b) t = fn f => fn a => f () a
+
+  fun zeroOrMore (p : ('a, 'b) t) : ('a list, 'b list) t =
+      let
+        val a : ('a list, 'b list ) t = $ (fn () => oneOrMore p )
+        val b : ('a list, 'b list) t = bind pNil (fn () => return [])
+        val c : ('a list, 'b list) t = || (a, b)
+      in c
+      end
+  and oneOrMore (p : ('a, 'b) t) : ('a list, 'b list) t =
+      let
+        val a : ('a * 'a list, 'b * 'b list) t = pair (p, $ (fn () => zeroOrMore p))
+        val b : ('a list, 'b * 'b list) t = compose (pCons, a)
+        val c : ('a list, 'b list) t = layout b (op ::)
+      in c
+      end
+      
+end (* UnParser *)
+
+signature PARSER_UN_PARSER = 
+sig
+  type ('env, 'a, 'b) t
+  structure Parser : PARSER
+  val getParser  : ('env, 'a, 'b) t -> 'env -> 'a Parser.t
+  val getLayout : ('env, 'a, 'b) t -> 'env -> ('a, 'b) UnParser.t
+  val satisfy : (Parser.elt -> bool) -> ('env, Parser.elt, Parser.elt) t
+  val layout : ('b -> 'c) -> ('env, 'a, 'b) t -> ('env, 'a, 'c) t 
+  val return : 'a * 'b -> ('env, 'a, 'b) t
+  val bind : ('env, 'a, 'b) t -> ('a -> 'a Parser.t) * ('b -> ('a, 'd) UnParser.t) -> ('env, 'a, 'd) t
+  val withEnv : ('env -> ('env, 'a, 'b) t) -> ('env, 'a, 'b) t
+  val || : ('env, 'a, 'b) t * ('env, 'a, 'b) t -> ('env, 'a, 'b) t 
+  val && : ('env, 'a, 'b) t * ('env, 'c, 'd) t -> ('env, 'a * 'c, 'b * 'd) t 
+  val zeroOrMore : ('env, 'a, 'b) t -> ('env, 'a list, 'b list) t 
+  val oneOrMore : ('env, 'a, 'b) t -> ('env, 'a list, 'b list) t 
+  val parserTry : ('a -> 'b option) -> 'a Parser.t -> 'b Parser.t 
+  val leftIsoPartialOut : ('a -> 'b) * ('b -> 'a option) -> ('env, 'a, 'c) t -> ('env, 'b, 'c) t 
+  val leftIsoPartialIn : ('a -> 'b option) * ('b -> 'a) -> ('env, 'a, 'c) t -> ('env, 'b, 'c) t 
+  val leftIsoPartial : ('a -> 'b option) * ('b -> 'a option) -> ('env, 'a, 'c) t -> ('env, 'b, 'c) t
+  val leftIso : ('a -> 'b) * ('b -> 'a) -> ('env, 'a, 'c) t -> ('env, 'b, 'c) t 
+  val rightIso : ('b -> 'c) -> ('env, 'a, 'b) t -> ('env, 'a, 'c) t
+  val rightIsoPartial : ('b -> 'c option) -> ('env, 'a, 'b) t -> ('env, 'a, 'c) t
+  val iso : ('a -> 'b) * ('b -> 'a) -> ('env, 'a, 'a) t -> ('env, 'b, 'b) t 
+  val isoPartial : ('a -> 'b option) * ('b -> 'a option) -> ('env, 'a, 'a) t -> ('env, 'b, 'b) t 
+  val isoPartialIn : ('a -> 'b option) * ('b -> 'a ) -> ('env, 'a, 'a) t -> ('env, 'b, 'b) t 
+  val isoPartialOut : ('a -> 'b) * ('b -> 'a option) -> ('env, 'a, 'a) t -> ('env, 'b, 'b) t 
+end (* signature PARSER_UN_PARSER *)
+
+functor ParserUnParserF(structure Parser : PARSER) 
+:> PARSER_UN_PARSER where type Parser.elt = Parser.elt
+                      and type Parser.stream = Parser.stream
+                      and type Parser.pos = Parser.pos
+                      and type Parser.error = Parser.error
+  =
+struct
+  structure UP = UnParser
+  structure Parser = Parser
+
+  type ('env, 'a, 'b) t = 'env -> {parse : 'a Parser.t, layout : ('a, 'b) UP.t}
+  val getParser : ('env, 'a, 'b) t -> 'env -> 'a Parser.t = fn p => fn s => #parse (p s)
+  val getLayout : ('env, 'a, 'b) t -> 'env -> ('a, 'b) UP.t = fn p => fn s => #layout (p s)
+  val satisfy : (Parser.elt -> bool) -> ('env, Parser.elt, Parser.elt) t = 
+   fn p => fn s => {parse = Parser.satisfy p,
+                    layout = UP.satisfy p}
+
+  val debugParser : ('env, 'a, 'b) t 
+                    * (Parser.pos -> unit)
+                    * (Parser.pos * 'a -> unit) 
+                    * (unit -> unit) 
+                    * (Parser.pos * Parser.error -> unit) -> ('env, 'a, 'b) t = 
+   fn (pup, fp, fs, ff, fe) => 
+   fn s => 
+      let
+        val {parse, layout} = pup s
+      in {parse = Parser.debug (parse, fp, fs, ff, fe),
+          layout = layout}
+      end
+
+  val layout : ('b -> 'c) -> ('env, 'a, 'b) t -> ('env, 'a, 'c) t = 
+   fn f => 
+   fn p => 
+   fn s => 
+      let
+        val {parse, layout} = p s
+      in {parse = parse, 
+          layout = UP.layout layout f}
+      end
+                                 
+  val return : 'a * 'b -> ('env, 'a, 'b) t = 
+   fn (a, b) => 
+   fn s => 
+      {parse = Parser.return a,
+       layout = UP.return b}
+
+  val bind : ('env, 'a, 'b) t -> ('a -> 'a Parser.t) * ('b -> ('a, 'd) UP.t) -> ('env, 'a, 'd) t = 
+   fn p => 
+   fn (f, g) => 
+   fn s => 
+      let 
+        val {parse, layout} = p s
+      in
+        {parse = Parser.bind parse f,
+         layout = UP.bind layout g}
+      end
+
+  val withEnv : ('env -> ('env, 'a, 'b) t) -> ('env, 'a, 'b) t = 
+   fn f => fn s => f s s
+
+  val || : ('env, 'a, 'b) t * ('env, 'a, 'b) t -> ('env, 'a, 'b) t = 
+   fn (pup1, pup2) => 
+   fn s => 
+      let
+        val {parse = p1, layout = l1} = pup1 s
+        val {parse = p2, layout = l2} = pup2 s
+      in
+        {parse = Parser.|| (p1, p2), layout = UP.|| (l1, l2)}
+      end
+      
+  val && : ('env, 'a, 'b) t * ('env, 'c, 'd) t -> ('env, 'a * 'c, 'b * 'd) t = 
+   fn (pup1, pup2) => 
+   fn s => 
+        let
+          val {parse = p1, layout = l1} = pup1 s
+          val {parse = p2, layout = l2} = pup2 s
+        in
+          {parse = Parser.&& (p1, p2),
+           layout = UP.pair (l1, l2)}
+        end
+
+  val zeroOrMore : ('env, 'a, 'b) t -> ('env, 'a list, 'b list) t = 
+   fn pup => 
+   fn s => 
+      let
+        val {parse, layout} = pup s
+      in {parse = Parser.zeroOrMore parse,
+          layout = UP.zeroOrMore layout}
+      end
+
+  val oneOrMore : ('env, 'a, 'b) t -> ('env, 'a list, 'b list) t = 
+   fn pup => 
+   fn s => 
+      let
+        val {parse, layout} = pup s
+      in {parse = Parser.oneOrMore parse,
+          layout = UP.oneOrMore layout}
+      end
+         
+
+  val parserTry : ('a -> 'b option) -> 'a Parser.t -> 'b Parser.t = 
+   fn fin => 
+   fn parse => 
+      Parser.bind parse (fn a => (case fin a of SOME b => Parser.return b | NONE => Parser.fail))
+
+  val leftIsoPartialOut : ('a -> 'b) * ('b -> 'a option) -> ('env, 'a, 'c) t -> ('env, 'b, 'c) t = 
+   fn (fin, fout) => 
+   fn pup => 
+   fn s => 
+      let
+        val {parse, layout} = pup s
+      in
+        {parse = Parser.map (parse, fin),
+         layout = UP.compose (UP.try fout, layout)}
+      end
+
+  val leftIsoPartialIn : ('a -> 'b option) * ('b -> 'a) -> ('env, 'a, 'c) t -> ('env, 'b, 'c) t = 
+   fn (fin, fout) => 
+   fn pup => 
+   fn s => 
+      let
+        val {parse, layout} = pup s
+      in 
+        {parse = parserTry fin parse,
+         layout = UP.compose (UP.base fout, layout)}
+      end
+
+  val leftIsoPartial : ('a -> 'b option) * ('b -> 'a option) -> ('env, 'a, 'c) t -> ('env, 'b, 'c) t = 
+   fn (fin, fout) => 
+   fn pup => 
+   fn s => 
+      let
+        val {parse, layout} = pup s
+      in 
+        {parse = parserTry fin parse,
+         layout = UP.compose (UP.try fout, layout)}
+      end
+
+  val leftIso : ('a -> 'b) * ('b -> 'a) -> ('env, 'a, 'c) t -> ('env, 'b, 'c) t = 
+   fn (fin, fout) => 
+   fn pup => 
+   fn s => 
+      let
+        val {parse, layout} = pup s 
+      in 
+        {parse =
+         let
+           val a : 'a Parser.t = parse 
+           val b : 'a -> 'b = fin
+           val c : 'b Parser.t = Parser.map (a, b)
+         in c
+         end,
+         layout = 
+         let
+           val f : 'b -> 'a = fout
+           val a : ('b, 'a) UP.t = UP.base f
+           val b : ('a, 'c) UP.t = layout
+           val c : ('b, 'c) UP.t = UP.compose (a, b)
+         in c
+         end}
+      end
+
+  val rightIso : ('b -> 'c) -> ('env, 'a, 'b) t -> ('env, 'a, 'c) t = layout
+
+  val rightIsoPartial : ('b -> 'c option) -> ('env, 'a, 'b) t -> ('env, 'a, 'c) t = 
+   fn f => 
+   fn pup => 
+   fn s => 
+      let
+        val {parse, layout} = pup s
+      in {parse = parse,
+          layout = UP.tryLayout layout f}
+      end
+
+  val iso : ('a -> 'b) * ('b -> 'a) -> ('env, 'a, 'a) t -> ('env, 'b, 'b) t = 
+   fn (fin, fout) => (rightIso fin) o (leftIso (fin, fout))
+                     
+  val isoPartial : ('a -> 'b option) * ('b -> 'a option) -> ('env, 'a, 'a) t -> ('env, 'b, 'b) t = 
+   fn (fin, fout) => 
+   fn pup => 
+   fn s => 
+      let
+        val {parse, layout} = pup s
+      in {parse = parserTry fin parse,
+          layout = UP.tryLayout (UP.compose (UP.try fout, layout)) fin}
+      end
+
+  val isoPartialIn : ('a -> 'b option) * ('b -> 'a ) -> ('env, 'a, 'a) t -> ('env, 'b, 'b) t = 
+   fn (fin, fout) => 
+   fn pup => 
+   fn s => 
+      let
+        val {parse, layout} = pup s
+      in  {parse = parserTry fin parse,
+           layout = UP.tryLayout (UP.compose (UP.base fout, layout)) fin}
+      end
+
+  val isoPartialOut : ('a -> 'b) * ('b -> 'a option) -> ('env, 'a, 'a) t -> ('env, 'b, 'b) t = 
+   fn (fin, fout) => 
+   fn pup => 
+   fn s =>
+      let
+        val {parse, layout} = pup s
+      in {parse = Parser.map (parse, fin),
+          layout = UP.layout (UP.compose (UP.try fout, layout)) fin}
+      end
+
+end (* ParserUnParserF *)
+
+structure FileParserUnParser = ParserUnParserF(structure Parser = FileParser);
 
 signature BIJECTION = 
 sig

@@ -20,16 +20,16 @@ functor MilAnalyseF (
   type env
   val config : env -> Config.t
   val indent : int
-  val variableBind : (state * env * Mil.variable -> env) option
-  val labelBind : (state * env * Mil.label -> env) option
-  val variableUse : (state * env * Mil.variable -> unit) option
-  val analyseJump : (state * env * Mil.label -> unit) option
-  val analyseCut : (state * env * Mil.label -> unit) option
-  val analyseConstant : (state * env * Mil.constant -> unit) option
+  val variableBind       : (state * env * Mil.variable -> env) option
+  val labelBind          : (state * env * Mil.label -> env) option
+  val variableUse        : (state * env * Mil.variable -> unit) option
+  val analyseJump        : (state * env * Mil.label -> unit) option
+  val analyseCut         : (state * env * Mil.label -> unit) option
+  val analyseConstant    : (state * env * Mil.constant -> unit) option
   val analyseInstruction : (state * env * Mil.instruction -> env) option
-  val analyseTransfer : (state * env * Mil.transfer -> env) option
-  val analyseBlock : (state * env * Mil.label * Mil.block -> env) option
-  val analyseGlobal : (state * env * Mil.variable * Mil.global -> env) option
+  val analyseTransfer    : (state * env * Mil.transfer -> env) option
+  val analyseBlock       : (state * env * Mil.label * Mil.block -> env) option
+  val analyseGlobal      : (state * env * Mil.variable * Mil.global -> env) option
 ) :> MilAnalyse where type state = state
                   and type env = env
 = struct
