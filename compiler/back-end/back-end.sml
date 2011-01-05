@@ -94,7 +94,83 @@ struct
       Config.Feature.mk ("Plsr:tagged-ints-assume-small",
                          "use 32 bit ints for tagged ints (unchecked)")
 
-  fun defines (config : Config.t) =
+  val pillarStack =   2097152  (* Decimal integer in bytes (  0x200000) *)
+  val smallStack  =  33554432  (* Decimal integer in bytes ( 0x2000000) *)
+  val largeStack  = 536870912  (* Decimal integer in bytes (0x20000000) *) 
+
+  fun stackSize (config : Config.t) = 
+      (case (Config.stack config, Config.output config)
+        of (SOME i, _) => i
+         | (NONE, Config.OkPillar) => pillarStack
+         | (NONE, Config.OkC) => smallStack)
+
+  fun stackStr (config : Config.t) = 
+      let
+        val i = stackSize config
+        val s = Int.toString i
+      in s
+      end
+
+  datatype compiler = CcGCC | CcICC | CcPillar | CcP2c
+  datatype linker = LdGCC | LdICC | LdPillar | LdP2c
+
+  val pathToCompilerArgString = 
+   fn (config, compiler, path) => 
+      (case compiler
+        of CcGCC    => Config.pathToHostString (config, path)
+         | CcICC    => Path.toWindowsString path
+         | CcPillar => Path.toWindowsString path
+         | CcP2c    => Path.toWindowsString path)
+
+  val pathToLinkerArgString = 
+   fn (config, linker, path) => 
+      (case linker
+        of LdGCC    => Config.pathToHostString (config, path)
+         | LdICC    => Path.toWindowsString path
+         | LdPillar => Path.toWindowsString path
+         | LdP2c    => Path.toWindowsString path)
+
+  fun sourceFile (config, compiler, fname) = fname^".c"
+
+  fun objectFile (config, compiler, fname) = 
+      (case compiler 
+        of CcGCC    => fname^".o"
+         | CcICC    => fname^".obj"
+         | CcPillar => fname^".obj"
+         | CcP2c    => fname^".obj")
+
+  fun exeFile (config, compiler, fname) = fname^".exe"
+
+  fun compiler (config, compiler) = 
+      (case compiler 
+        of CcGCC    => Path.fromString "gcc"
+         | CcICC    => Path.fromString "icl"
+         | CcPillar => pLibExe (config, "pilicl")
+         | CcP2c    => pLibExe (config, "pilicl"))
+      
+  fun includes (config, compiler) = 
+      let
+        val mcrt = 
+            if useFutures config then
+              [pLibInclude (config, "mcrt")]
+            else []
+        val files = 
+            (case compiler
+              of CcGCC => 
+                 [pLibInclude (config, "gc-bdw"), runtimeDirectory config, pLibInclude (config, "prt")] @ mcrt
+               | CcICC => 
+                 [pLibInclude (config, "gc-bdw"), runtimeDirectory config, pLibInclude (config, "prt")] @ mcrt
+               | CcPillar => 
+                 [runtimeDirectory config, pLibInclude (config, "prt"), pLibInclude (config, "pgc")] @ mcrt
+               | CcP2c => 
+                 [runtimeDirectory config, pLibInclude (config, "prt"), pLibInclude (config, "pgc")])
+
+        val fileToString = fn path => pathToCompilerArgString (config, compiler, path)
+        val flags = List.map (files, fn s => "-I" ^ (fileToString s))
+      in flags
+      end
+
+  fun defines (config : Config.t, compiler : compiler) =
       let
         val ws =
             case Config.targetWordSize config
@@ -177,6 +253,13 @@ struct
              else if MilToPil.assertSmallInts config then ["P_TAGGED_INT32_ASSERT_SMALL"]
              else [])
 
+        val backend = 
+            (case compiler
+              of CcGCC    => ["PPILER_BACKEND_GCC"]
+               | CcICC    => ["PPILER_BACKEND_ICC"]
+               | CcPillar => ["PPILER_BACKEND_OPC"]
+               | CcP2c    => ["PPILER_BACKEND_IPC"])
+
         val ds = 
             List.concat [vi, 
                          [ws], 
@@ -187,86 +270,10 @@ struct
                          instr, 
                          vtbChg,
                          va,
-                         numericDefines]
+                         numericDefines, 
+                         backend]
         val flags = 
             List.map (ds, fn s => "-D" ^ s)
-      in flags
-      end
-
-
-  val pillarStack =   2097152  (* Decimal integer in bytes (  0x200000) *)
-  val smallStack  =  33554432  (* Decimal integer in bytes ( 0x2000000) *)
-  val largeStack  = 536870912  (* Decimal integer in bytes (0x20000000) *) 
-
-  fun stackSize (config : Config.t) = 
-      (case (Config.stack config, Config.output config)
-        of (SOME i, _) => i
-         | (NONE, Config.OkPillar) => pillarStack
-         | (NONE, Config.OkC) => smallStack)
-
-  fun stackStr (config : Config.t) = 
-      let
-        val i = stackSize config
-        val s = Int.toString i
-      in s
-      end
-
-  datatype compiler = CcGCC | CcICC | CcPillar | CcP2c
-  datatype linker = LdGCC | LdICC | LdPillar | LdP2c
-
-  val pathToCompilerArgString = 
-   fn (config, compiler, path) => 
-      (case compiler
-        of CcGCC    => Config.pathToHostString (config, path)
-         | CcICC    => Path.toWindowsString path
-         | CcPillar => Path.toWindowsString path
-         | CcP2c    => Path.toWindowsString path)
-
-  val pathToLinkerArgString = 
-   fn (config, linker, path) => 
-      (case linker
-        of LdGCC    => Config.pathToHostString (config, path)
-         | LdICC    => Path.toWindowsString path
-         | LdPillar => Path.toWindowsString path
-         | LdP2c    => Path.toWindowsString path)
-
-  fun sourceFile (config, compiler, fname) = fname^".c"
-
-  fun objectFile (config, compiler, fname) = 
-      (case compiler 
-        of CcGCC    => fname^".o"
-         | CcICC    => fname^".obj"
-         | CcPillar => fname^".obj"
-         | CcP2c    => fname^".obj")
-
-  fun exeFile (config, compiler, fname) = fname^".exe"
-
-  fun compiler (config, compiler) = 
-      (case compiler 
-        of CcGCC    => Path.fromString "gcc"
-         | CcICC    => Path.fromString "icl"
-         | CcPillar => pLibExe (config, "pilicl")
-         | CcP2c    => pLibExe (config, "pilicl"))
-      
-  fun includes (config, compiler) = 
-      let
-        val mcrt = 
-            if useFutures config then
-              [pLibInclude (config, "mcrt")]
-            else []
-        val files = 
-            (case compiler
-              of CcGCC => 
-                 [pLibInclude (config, "gc-bdw"), runtimeDirectory config, pLibInclude (config, "prt")] @ mcrt
-               | CcICC => 
-                 [pLibInclude (config, "gc-bdw"), runtimeDirectory config, pLibInclude (config, "prt")] @ mcrt
-               | CcPillar => 
-                 [runtimeDirectory config, pLibInclude (config, "prt"), pLibInclude (config, "pgc")] @ mcrt
-               | CcP2c => 
-                 [runtimeDirectory config, pLibInclude (config, "prt"), pLibInclude (config, "pgc")])
-
-        val fileToString = fn path => pathToCompilerArgString (config, compiler, path)
-        val flags = List.map (files, fn s => "-I" ^ (fileToString s))
       in flags
       end
 
@@ -435,7 +442,7 @@ struct
              CcOptions.mt cfg
             ]
         val options = List.concat options
-        val defs = defines config
+        val defs = defines (config, ccTag)
         val incs = includes cfg
         val args = [options, defs, [inFile], incs, CcOptions.obj (cfg, outFile), Config.pilcStr config]
         val args = List.concat args
