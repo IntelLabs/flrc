@@ -303,6 +303,10 @@ structure Utils = struct
            of SOME vector' => SOME (MltonVector.fromList vector')
             | NONE => NONE
 
+      val ? : bool -> unit option =
+       fn b => if b then SOME () else NONE
+
+      val bool : 'a option -> bool = isSome
 
     end (* structure Option *)
 
