@@ -51,6 +51,7 @@ struct
   structure VI = VectorInstructions
   structure M = Mil
   structure MU = MilUtils
+  structure PU = MU.Prims.Utils
   structure MF = MilFragment
   structure MS = MilStream
   structure MP = Mil.Prims
@@ -760,13 +761,13 @@ struct
   fun typName (state : state, env : env) : string P.t = typNameF (state, env) || P.error "Expected type name"
 
   fun vectorDescriptorF (state : state, env : env) : MP.vectorDescriptor P.t = 
-      PrimsParse.vectorDescriptor (getConfig env)
+      PU.Parse.vectorDescriptor (getConfig env)
 
   fun vectorDescriptor (state : state, env : env) : MP.vectorDescriptor P.t = 
       vectorDescriptorF (state, env) || P.error "Expected vector descriptor"
       
   fun vectorSizeF (state : state, env : env) : MP.vectorSize P.t = 
-      PrimsParse.vectorSize (getConfig env)
+      PU.Parse.vectorSize (getConfig env)
 
   fun vectorSize (state : state, env : env) : MP.vectorSize P.t = 
       vectorSizeF (state, env) || P.error "Expected vector size"
@@ -811,7 +812,7 @@ struct
                                 (fn (vs, t) => M.TViVector {vectorSize = vs, elementTyp = t}))
               | _ => P.fail
         val idBased = P.bind identifierF doId
-        val tNumeric = syntax (P.map (PrimsParse.numericTyp (getConfig env), M.TNumeric))
+        val tNumeric = syntax (P.map (PU.Parse.numericTyp (getConfig env), M.TNumeric))
         val code =
             P.map (parenSemiCommaF (callConvF (state, env, typ), P.$$ typ (state, env))
                    && keywordS "->"
@@ -1155,7 +1156,7 @@ struct
         val const = P.map (constantF (state, env), fn c => M.RhsSimple (M.SConstant c))
         val primApp = 
             let
-              val p = PrimsParse.t (getConfig env) && P.succeeds (bracketF (keycharLF #"T")) 
+              val p = PU.Parse.t (getConfig env) && P.succeeds (bracketF (keycharLF #"T")) 
                    && P.optional (braceSeqF (typ (state, env))) && parenSeq (operand (state, env))
             in P.map (p, fn (((prim, ct), typsO), args) => M.RhsPrim {prim = prim, 
                                                                       createThunks = ct,

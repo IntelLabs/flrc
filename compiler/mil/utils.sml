@@ -184,7 +184,7 @@ sig
       | TsRef
       | TsNone
       | TsMask of Mil.Prims.vectorDescriptor
-    val toString : t -> string
+    val toString : Config.t * t -> string
     val traceabilityIsRef : traceability -> bool
     val traceability : t -> traceability option
     val valueSize : Config.t * t -> ValueSize.t option
@@ -2143,7 +2143,7 @@ struct
       | TsNone
       | TsMask of MP.vectorDescriptor
                   
-    fun toString ts =
+    fun toString (config, ts) =
         case ts
          of TsAny       => "Any"
           | TsAnyS vs   => "Any" ^ ValueSize.toString vs
@@ -2154,7 +2154,7 @@ struct
           | TsNonRefPtr => "NonRefPtr"
           | TsRef       => "Ref"
           | TsNone      => "None"
-          | TsMask vet  => "Mask(" ^ PrimsUtils.VectorDescriptor.toString vet ^ ")"
+          | TsMask vet  => "Mask(" ^ PrimsUtils.VectorDescriptor.toString (config, vet) ^ ")"
 
     fun traceabilityIsRef t =
         case t
@@ -2468,7 +2468,7 @@ struct
 
     fun fromTraceSize (c, ts) =
         let
-          fun err () = Fail.fail ("MilUtils.FieldKind", "fromTraceSize", "bad trace size " ^ (TS.toString ts))
+          fun err () = Fail.fail ("MilUtils.FieldKind", "fromTraceSize", "bad trace size " ^ (TS.toString (c, ts)))
         in
           case ts
            of TS.TsAny       => err ()

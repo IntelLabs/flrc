@@ -2376,8 +2376,7 @@ signature PARSER_UN_PARSER =
 sig
   type ('env, 'a, 'b) t
   structure Parser : PARSER
-  val getParser  : ('env, 'a, 'b) t -> 'env -> 'a Parser.t
-  val getLayout : ('env, 'a, 'b) t -> 'env -> ('a, 'b) UnParser.t
+  val get : ('env, 'a, 'b) t -> 'env -> {parse : 'a Parser.t, layout : ('a, 'b) UnParser.t}
   val satisfy : (Parser.elt -> bool) -> ('env, Parser.elt, Parser.elt) t
   val layout : ('b -> 'c) -> ('env, 'a, 'b) t -> ('env, 'a, 'c) t 
   val return : 'a * 'b -> ('env, 'a, 'b) t
@@ -2401,7 +2400,8 @@ sig
 end (* signature PARSER_UN_PARSER *)
 
 functor ParserUnParserF(structure Parser : PARSER) 
-:> PARSER_UN_PARSER where type Parser.elt = Parser.elt
+:> PARSER_UN_PARSER where type 'a Parser.t = 'a Parser.t
+                      and type Parser.elt = Parser.elt
                       and type Parser.stream = Parser.stream
                       and type Parser.pos = Parser.pos
                       and type Parser.error = Parser.error
@@ -2411,8 +2411,7 @@ struct
   structure Parser = Parser
 
   type ('env, 'a, 'b) t = 'env -> {parse : 'a Parser.t, layout : ('a, 'b) UP.t}
-  val getParser : ('env, 'a, 'b) t -> 'env -> 'a Parser.t = fn p => fn s => #parse (p s)
-  val getLayout : ('env, 'a, 'b) t -> 'env -> ('a, 'b) UP.t = fn p => fn s => #layout (p s)
+  val get = fn pup => pup
   val satisfy : (Parser.elt -> bool) -> ('env, Parser.elt, Parser.elt) t = 
    fn p => fn s => {parse = Parser.satisfy p,
                     layout = UP.satisfy p}

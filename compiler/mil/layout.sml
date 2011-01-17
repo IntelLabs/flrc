@@ -257,14 +257,14 @@ struct
          | M.TRef => L.str "Ref"
          | M.TBits vs => L.str ("Bits" ^ Int.toString (MU.ValueSize.numBits vs))
          | M.TNone => L.str "None"
-         | M.TNumeric nt => MPU.Layout.numericTyp nt
+         | M.TNumeric nt => MPU.Layout.numericTyp (getConfig env, nt)
          | M.TBoolean => L.str "Boolean"
          | M.TName => L.str "Name"
          | M.TViVector {vectorSize, elementTyp} => 
            L.seq [L.str "Vec", 
-                  LU.bracket (MPU.Layout.vectorSize vectorSize), 
+                  LU.bracket (MPU.Layout.vectorSize (getConfig env, vectorSize)), 
                   LU.angleBracket (layoutTyp (env, elementTyp))]
-         | M.TViMask vd => L.seq [L.str "Mask", LU.bracket (MPU.Layout.vectorDescriptor vd)]
+         | M.TViMask vd => L.seq [L.str "Mask", LU.bracket (MPU.Layout.vectorDescriptor (getConfig env, vd))]
          | M.TCode {cc, args, ress} =>
            let
              val args = layoutTyps (env, args)
@@ -430,7 +430,7 @@ struct
            end
          | M.CViMask {descriptor, elts} =>
            let
-             val desc = MPU.Layout.vectorDescriptor descriptor
+             val desc = MPU.Layout.vectorDescriptor (getConfig env, descriptor)
              val bs = L.seq (Vector.toListMap (elts, LU.layoutBool'))
              val l = L.seq [L.str "M", LU.bracket desc, LU.angleBracket bs]
            in l
@@ -465,7 +465,7 @@ struct
                  L.seq [L.str "sv:", layoutOperand (env, opnd)]
                | M.FiVectorFixed {descriptor, mask, index} => 
                  let
-                   val d = MPU.Layout.vectorDescriptor descriptor
+                   val d = MPU.Layout.vectorDescriptor (getConfig env, descriptor)
                    val m = case mask
                             of SOME oper => L.seq [L.str "?", layoutOperand (env, oper)]
                              | NONE      => L.empty
@@ -475,7 +475,7 @@ struct
                  end
                | M.FiVectorVariable {descriptor, base, mask, index, kind} =>
                  let
-                   val d = MPU.Layout.vectorDescriptor descriptor
+                   val d = MPU.Layout.vectorDescriptor (getConfig env, descriptor)
                    val m = case mask
                             of SOME oper => L.seq [L.str "?", layoutOperand (env, oper)]
                              | NONE      => L.empty
@@ -584,7 +584,7 @@ struct
        case rhs
         of M.RhsSimple s => layoutSimple (env, s)
          | M.RhsPrim {prim, createThunks, typs, args} =>
-           L.seq [L.seq [MPU.Layout.t prim, if createThunks then LU.bracket (L.str "T") else L.str ""],
+           L.seq [L.seq [MPU.Layout.t (getConfig env, prim), if createThunks then LU.bracket (L.str "T") else L.str ""],
                   if Vector.length typs > 0 then LU.braceSeq (layoutTyps (env, typs)) else L.empty,
                   LU.parenSeq (layoutOperands (env, args))]
          | M.RhsTuple {mdDesc, inits} => layoutTuple (env, mdDesc, inits)

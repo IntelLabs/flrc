@@ -124,20 +124,20 @@ sig
 
   structure Prims :
   sig
-    val vectorTyp : Mil.Prims.vectorSize * Mil.fieldKind -> Pil.T.t
-    val numericTyp : Mil.Prims.numericTyp -> Pil.T.t
-    (*         dests              prim          thnk?  typs                     args            call  *)
-    val call : Pil.E.t Vector.t * Mil.Prims.t * bool * Mil.fieldKind Vector.t * Pil.E.t list -> Pil.S.t
-    val vectorLoadF   : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
-    val vectorLoadVS  : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
-    val vectorLoadVI  : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
-    val vectorLoadVVS : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
-    val vectorLoadVVI : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
-    val vectorStoreF   : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
-    val vectorStoreVS  : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
-    val vectorStoreVI  : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
-    val vectorStoreVVS : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
-    val vectorStoreVVI : Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorTyp      : Config.t * Mil.Prims.vectorSize * Mil.fieldKind -> Pil.T.t
+    val numericTyp     : Config.t * Mil.Prims.numericTyp -> Pil.T.t
+    (*                    dests              prim          thnk?  typs                     args            call  *)
+    val call : Config.t * Pil.E.t Vector.t * Mil.Prims.t * bool * Mil.fieldKind Vector.t * Pil.E.t list -> Pil.S.t
+    val vectorLoadF    : Config.t * Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorLoadVS   : Config.t * Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorLoadVI   : Config.t * Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorLoadVVS  : Config.t * Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorLoadVVI  : Config.t * Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorStoreF   : Config.t * Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorStoreVS  : Config.t * Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorStoreVI  : Config.t * Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorStoreVVS : Config.t * Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorStoreVVI : Config.t * Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
 
   end
 
@@ -399,7 +399,7 @@ struct
     structure PU = MilUtils.Prims.Utils
 
     val getFieldKindName = 
-        fn fk => 
+        fn (config, fk) => 
            (case fk 
              of M.FkRef         => "Ref"
               | M.FkBits M.Fs8  => "B8"
@@ -409,15 +409,15 @@ struct
               | M.FkFloat       => "F32"
               | M.FkDouble      => "F64")
 
-    val getVectorSizeName : Mil.Prims.vectorSize -> string = PU.ToString.vectorSize 
-    val getVectorTypName : Mil.Prims.vectorSize -> string = 
-        fn vs => "PlsrVector" ^ getVectorSizeName vs
+    val getVectorSizeName : Config.t * Mil.Prims.vectorSize -> string = PU.ToString.vectorSize 
+    val getVectorTypName : Config.t * Mil.Prims.vectorSize -> string = 
+        fn (config, vs) => "PlsrVector" ^ getVectorSizeName (config, vs)
 
-    val vectorTyp : Mil.Prims.vectorSize * Mil.fieldKind -> Pil.T.t = 
-     fn (vs, fk) => Pil.T.named (Pil.identifier (getVectorTypName vs ^ getFieldKindName fk))
+    val vectorTyp : Config.t * Mil.Prims.vectorSize * Mil.fieldKind -> Pil.T.t = 
+     fn (config, vs, fk) => Pil.T.named (Pil.identifier (getVectorTypName (config, vs) ^ getFieldKindName (config, fk)))
 
-    val numericTyp : Mil.Prims.numericTyp -> Pil.T.t = 
-     fn nt => 
+    val numericTyp : Config.t * Mil.Prims.numericTyp -> Pil.T.t = 
+     fn (config, nt) => 
         (case nt
           of P.NtRat                                  => Pil.T.named T.rat
            | P.NtInteger ip                           => 
@@ -442,23 +442,23 @@ struct
     fun thnk t = if t then "T" else ""
 
     val getFloatPrecisionName = 
-     fn fp => 
+     fn (config, fp) => 
         (case fp
           of P.FpSingle => "Float32"
            | P.FpDouble => "Float64")
 
     val getIntPrecisionName = 
-        fn ip => 
+        fn (config, ip) => 
            (case ip
              of P.IpArbitrary => "Integer"
               | P.IpFixed t   => IntArb.stringOfTyp t)
 
     val getNumericTypName =
-     fn nt =>
+     fn (config, nt) =>
         (case nt
           of P.NtRat         => "Rational"
-           | P.NtInteger ip  => getIntPrecisionName ip
-           | P.NtFloat fp    => getFloatPrecisionName fp)
+           | P.NtInteger ip  => getIntPrecisionName (config, ip)
+           | P.NtFloat fp    => getFloatPrecisionName (config, fp))
 
     val getDivKindName = PU.ToString.divKind
 
@@ -475,10 +475,10 @@ struct
     val getStringOpName = PU.ToString.stringOp
 
     val getDataOpName = 
-     fn (d, typs) => 
+     fn (config, d, typs) => 
         let
-          val d = PU.ToString.dataOp d
-          val typs = Vector.map (typs, getFieldKindName)
+          val d = PU.ToString.dataOp (config, d)
+          val typs = Vector.map (typs, fn t => getFieldKindName (config, t))
           val typs = String.concatV typs
         in d ^ typs
         end
@@ -486,7 +486,7 @@ struct
     val getAssocName = PU.ToString.assoc
 
     val getCompareOpName =
-     fn c => 
+     fn (config, c) => 
         case c
          of P.CEq => "EQ"
           | P.CNe => "NE"
@@ -494,58 +494,58 @@ struct
           | P.CLe => "LE"
 
     val getNumArithName 
-      = fn {typ, operator} =>
-        (getNumericTypName typ) ^ (getArithOpName operator)
+      = fn (config, {typ, operator}) =>
+        (getNumericTypName (config, typ)) ^ (getArithOpName (config, operator))
 
     val getFloatOpName =
-     fn {typ, operator} =>
-        (getFloatPrecisionName typ) ^ (getFloatOpName operator)
+     fn (config, {typ, operator}) =>
+        (getFloatPrecisionName (config, typ)) ^ (getFloatOpName (config, operator))
 
     val getNumCompareName = 
-     fn {typ, operator} =>
-        (getNumericTypName typ) ^ (getCompareOpName operator)
+     fn (config, {typ, operator}) =>
+        (getNumericTypName (config, typ)) ^ (getCompareOpName (config, operator))
 
     val getNumConvertName = 
-     fn {to, from} =>
-        (getNumericTypName to) ^ "From" ^ (getNumericTypName from)
+     fn (config, {to, from}) =>
+        (getNumericTypName (config, to)) ^ "From" ^ (getNumericTypName (config, from))
 
     val getBitwiseName = 
-     fn {typ, operator} =>
-        (getIntPrecisionName typ) ^ (getBitwiseOpName operator)
+     fn (config, {typ, operator}) =>
+        (getIntPrecisionName (config, typ)) ^ (getBitwiseOpName (config, operator))
 
     val getBooleanName = 
-     fn l =>
-        "Boolean" ^ (getLogicOpName l)
+     fn (config, l) =>
+        "Boolean" ^ (getLogicOpName (config, l))
 
-    fun getNameName no = "Name" ^ getNameOpName no
+    fun getNameName (config, no) = "Name" ^ getNameOpName (config, no)
 
     val getCStringName = 
-     fn s =>
-        "CString" ^ (getStringOpName s)
+     fn (config, s) =>
+        "CString" ^ (getStringOpName (config, s))
 
     val getPrimName = 
-     fn p =>
+     fn (config, p) =>
         (case p
-          of P.PNumArith r            => getNumArithName r
-           | P.PFloatOp r             => getFloatOpName r
-           | P.PNumCompare r          => getNumCompareName r 
-           | P.PNumConvert r          => getNumConvertName r
-           | P.PBitwise r             => getBitwiseName r
-           | P.PBoolean r             => getBooleanName r
-           | P.PName r                => getNameName r
-           | P.PCString r             => getCStringName r
+          of P.PNumArith r            => getNumArithName(config, r)
+           | P.PFloatOp r             => getFloatOpName(config, r)
+           | P.PNumCompare r          => getNumCompareName(config, r) 
+           | P.PNumConvert r          => getNumConvertName(config, r)
+           | P.PBitwise r             => getBitwiseName(config, r)
+           | P.PBoolean r             => getBooleanName(config, r)
+           | P.PName r                => getNameName(config, r)
+           | P.PCString r             => getCStringName(config, r)
            | P.PPtrEq                 => "PtrEq")
 
     val getRuntimeName = 
-     fn (rt, t) => PU.ToString.runtime rt ^ thnk t
+     fn (config, rt, t) => PU.ToString.runtime (config, rt) ^ thnk t
 
     val getVectorName = 
-     fn (v, typs) => 
+     fn (config, v, typs) => 
         let
           val doOne = 
            fn (name, descriptor1, descriptor2O, operator) =>
               let
-                val vsName = fn desc => getVectorSizeName (PU.VectorDescriptor.vectorSize desc)
+                val vsName = fn desc => getVectorSizeName (config, PU.VectorDescriptor.vectorSize desc)
                 val sz1 = vsName descriptor1
                 val sz2 = case descriptor2O
                            of SOME descriptor2 => vsName descriptor2
@@ -557,47 +557,47 @@ struct
                 of P.ViPointwise {descriptor, masked, operator} =>
                    let
                      val name = if masked then "PointwiseM" else "Pointwise"
-                   in doOne (name, descriptor, NONE, getPrimName operator)
+                   in doOne (name, descriptor, NONE, getPrimName (config, operator))
                    end
 	         | Mil.Prims.ViConvert {to, from}     => 
                    let
                      val operator = Mil.Prims.PNumConvert {to = #typ to, from = #typ from}
-                   in doOne ("Convert", #descriptor to, SOME (#descriptor from), getPrimName operator)
+                   in doOne ("Convert", #descriptor to, SOME (#descriptor from), getPrimName (config, operator))
                    end
 	        | Mil.Prims.ViCompare {descriptor, typ, operator}     => 
                   let
                     val operator = Mil.Prims.PNumCompare {typ = typ, operator = operator}
-                  in doOne ("Compare", descriptor, NONE, getPrimName operator)
+                  in doOne ("Compare", descriptor, NONE, getPrimName (config, operator))
                   end
 	        | Mil.Prims.ViReduction {descriptor, associativity, operator}   => 
                   let
-                    val name = "Reduce" ^ getAssocName associativity
-                  in doOne (name, descriptor, NONE, getPrimName operator)
+                    val name = "Reduce" ^ getAssocName (config, associativity)
+                  in doOne (name, descriptor, NONE, getPrimName (config, operator))
                   end
 	        | Mil.Prims.ViData {descriptor, operator}        => 
-                  doOne ("Data", descriptor, NONE, getDataOpName (operator, typs))
+                  doOne ("Data", descriptor, NONE, getDataOpName (config, operator, typs))
 	        | Mil.Prims.ViMaskData {descriptor, operator}    => 
-                  doOne ("MaskData", descriptor, NONE, getDataOpName (operator, typs))
+                  doOne ("MaskData", descriptor, NONE, getDataOpName (config, operator, typs))
 	        | Mil.Prims.ViMaskBoolean {descriptor, operator} => 
-                  doOne ("MaskBool", descriptor, NONE, getLogicOpName operator)
+                  doOne ("MaskBool", descriptor, NONE, getLogicOpName (config, operator))
 	        | Mil.Prims.ViMaskConvert {to, from} => 
                   doOne ("MaskConvert", to, SOME from, ""))
         in res
         end
 
-    fun getName (p, t, typs) =
+    fun getName (config, p, t, typs) =
         let
           val s =
               case p
-               of P.Prim p     => "pLsrPrim" ^ getPrimName p
-                | P.Runtime rt => "pLsr" ^ getRuntimeName (rt, t)
-                | P.Vector p   => "pLsrVector" ^ getVectorName (p, typs)
+               of P.Prim p     => "pLsrPrim" ^ getPrimName (config, p)
+                | P.Runtime rt => "pLsr" ^ getRuntimeName (config, rt, t)
+                | P.Vector p   => "pLsrVector" ^ getVectorName (config, p, typs)
         in Pil.identifier s
         end
 
-    fun call (ds, p, t, typs, args) = 
+    fun call (config, ds, p, t, typs, args) = 
       let
-        val m = Pil.E.namedConstant (getName (p, t, typs))
+        val m = Pil.E.namedConstant (getName (config, p, t, typs))
         val e = 
             case (p, Vector.length ds)
              of (P.Prim _, _)   => Pil.E.call (m, (Vector.toList ds)@args)
@@ -609,12 +609,12 @@ struct
       in s
       end
 
-    val vectorLoadStoreHelp : string -> Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier = 
+    val vectorLoadStoreHelp : string -> Config.t * Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier = 
      fn name => 
-     fn (vd, fk) => 
+     fn (config, vd, fk) => 
         let
-          val vs = getVectorSizeName (PU.VectorDescriptor.vectorSize vd)
-          val fk = getFieldKindName fk
+          val vs = getVectorSizeName (config, PU.VectorDescriptor.vectorSize vd)
+          val fk = getFieldKindName (config, fk)
         in Pil.identifier ("pLsrVector" ^ vs ^ fk ^ name)
         end
         
