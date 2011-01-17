@@ -589,9 +589,9 @@ struct
         let
           val s =
               case p
-               of P.Prim p     => "pLsrPrim" ^ getPrimName (config, p)
-                | P.Runtime rt => "pLsr" ^ getRuntimeName (config, rt, t)
-                | P.Vector p   => "pLsrVector" ^ getVectorName (config, p, typs)
+               of P.Prim p     => "pLsrPrimP" ^ getPrimName (config, p)
+                | P.Runtime rt => "pLsrPrimR" ^ getRuntimeName (config, rt, t)
+                | P.Vector p   => "pLsrPrimV" ^ getVectorName (config, p, typs)
         in Pil.identifier s
         end
 

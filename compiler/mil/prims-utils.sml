@@ -871,8 +871,8 @@ struct
     structure FloatOp = 
     struct
       type t = Mil.Prims.floatOp
-      val faASin  = fn fl => (case fl of Mil.Prims.FaACos => SOME () | _ => NONE)
-      val faACos  = fn fl => (case fl of Mil.Prims.FaASin => SOME () | _ => NONE)
+      val faASin  = fn fl => (case fl of Mil.Prims.FaASin => SOME () | _ => NONE)
+      val faACos  = fn fl => (case fl of Mil.Prims.FaACos => SOME () | _ => NONE)
       val faCeil  = fn fl => (case fl of Mil.Prims.FaCeil => SOME () | _ => NONE)
       val faCos   = fn fl => (case fl of Mil.Prims.FaCos => SOME () | _ => NONE)
       val faFloor = fn fl => (case fl of Mil.Prims.FaFloor => SOME () | _ => NONE)
@@ -1335,7 +1335,7 @@ struct
 	  val aPlusSat   = base  (Mil.Prims.APlusSat, Dec.ArithOp.aPlusSat, "PlusSat")
 	  val aTimes     = base  (Mil.Prims.ATimes, Dec.ArithOp.aTimes, "Times")
 	  val aTimesSat  = base  (Mil.Prims.ATimesSat, Dec.ArithOp.aTimesSat, "TimesSat")
-          val aDivMod    = unary (Mil.Prims.ADivMod, Dec.ArithOp.aDivMod, literal "Divmod" -&& divKind)
+          val aDivMod    = unary (Mil.Prims.ADivMod, Dec.ArithOp.aDivMod, literal "DivMod" -&& divKind)
         in aAbs || aNegate || aNegateSat || aDivide || aDiv 
                 || aMax || aMinus || aMin || aMinusSat || aMod || aPlus || aPlusSat 
                 || aTimes || aTimesSat || aDivMod 
@@ -1591,8 +1591,8 @@ struct
           val rtStringToRat       = base  (Mil.Prims.RtStringToRat,  Dec.Runtime.rtStringToRat,  "StringToRat")
           val rtResetTimer        = base  (Mil.Prims.RtResetTimer,  Dec.Runtime.rtResetTimer,  "ResetTimer")
           val rtGetTimer          = base  (Mil.Prims.RtGetTimer,  Dec.Runtime.rtGetTimer,  "GetTimer")
-          val rtVtuneAttach       = base  (Mil.Prims.RtVtuneAttach,  Dec.Runtime.rtVtuneAttach,  "VtuneAttach")
-          val rtVtuneDetach       = base  (Mil.Prims.RtVtuneDetach,  Dec.Runtime.rtVtuneDetach,  "VtuneDetach")
+          val rtVtuneAttach       = base  (Mil.Prims.RtVtuneAttach,  Dec.Runtime.rtVtuneAttach,  "VTuneAttach")
+          val rtVtuneDetach       = base  (Mil.Prims.RtVtuneDetach,  Dec.Runtime.rtVtuneDetach,  "VTuneDetach")
           val rtArrayEval         = base  (Mil.Prims.RtArrayEval,  Dec.Runtime.rtArrayEval,  "ArrayEval")
           val rtIntegerHash       = base  (Mil.Prims.RtIntegerHash, Dec.Runtime.rtIntegerHash, "IntHash")
           val res = rtFloatMk 
