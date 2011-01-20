@@ -372,43 +372,5 @@ struct
                    doit ()
       in ()
       end
-(*
-  fun run (config, logger, cmd, args) = 
-      let
-        val cmd = Config.pathToHostString (config, cmd)
-        val () = logger (config, String.concatWith (cmd::args, " "))
-        val doit = fn () => Process.exec(cmd, args)
-        fun silently doit = 
-         fn () => 
-            Out.ignore(Out.standard, 
-                       (fn () => 
-                           Out.ignore(Out.error, doit)))
-        val () = if Config.silent config then
-                   Process.run (silently doit)
-                 else
-                   Process.run doit
-      in ()
-      end
 
-  fun run (config, logger, cmd, args) = 
-      let
-        val cmd = Config.pathToHostString (config, cmd)
-        val () = logger (config, String.concatWith (cmd::args, " "))
-        val out = if Config.silent config then MLton.Process.Param.null else MLton.Process.Param.self
-        val p = MLton.Process.create {path = cmd, args = args, 
-                                      env = NONE,
-		                      stderr = out,
-		                      stdin  = MLton.Process.Param.self,
-		                      stdout = out}
-        val () = case MLton.Process.reap p
-                  of Posix.Process.W_EXITED       => ()
-                   | Posix.Process.W_EXITSTATUS s => 
-                     Fail.fail ("Pass", "run", "Process exited with status " ^ Word8.toString s)
-                   | Posix.Process.W_SIGNALED _   => 
-                     Fail.fail ("Pass", "run", "Process killed by signal")
-                   | Posix.Process.W_STOPPED _    => 
-                     Fail.fail ("Pass", "run", "Process stopped by signal")
-      in ()
-      end
-*)
 end;

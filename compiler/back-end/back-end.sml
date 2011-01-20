@@ -60,7 +60,7 @@ struct
          | Config.PAll => true
          | Config.PPar => true
 
-  fun ifDebug (config, a, ad) = if Config.pilDebug config then ad else a
+  fun ifDebug (config, ad, a) = if Config.pilDebug config then ad else a
    
   val (gcWriteBarriersF, gcWriteBarriers) =
       Config.Feature.mk ("Plsr:gc-write-barriers",
@@ -93,110 +93,6 @@ struct
   val (assumeSmallIntsF, assumeSmallInts) = 
       Config.Feature.mk ("Plsr:tagged-ints-assume-small",
                          "use 32 bit ints for tagged ints (unchecked)")
-
-  fun defines (config : Config.t) =
-      let
-        val ws =
-            case Config.targetWordSize config
-             of Config.Ws32 => "P_WORD_SIZE=4"
-              | Config.Ws64 => "P_WORD_SIZE=8"
-
-        val gc =
-            case #style (Config.gc config)
-             of Config.GcsNone => []
-              | Config.GcsConservative => ["P_USE_CGC"]
-              | Config.GcsAccurate =>
-                ["P_USE_AGC",
-                 "P_AGC_LOCK_PARAM=" ^
-                 (case Config.agc config
-                   of Config.AgcGcMf => "0"
-                    | Config.AgcTgc  => "1"
-                    | Config.AgcCgc  => "1")]
-                @
-                (if Config.agc config = Config.AgcTgc orelse
-                    Config.agc config = Config.AgcCgc
-                 then ["P_USE_FAST_ALLOC"]
-                 else [])
-                @
-                (if gcWriteBarriers config
-                 then ["P_USE_GC_WRITE_BARRIERS"]
-                 else [])
-                @
-                (if gcAllBarriers config
-                 then ["P_ALL_BARRIERS"]
-                 else [])
-
-        val pbase = 
-            case Config.output config
-             of Config.OkPillar => ["P_USE_PILLAR", "WIN32"]
-              | Config.OkC      => []
-
-        val debug = 
-            if Config.pilDebug config then
-              ["GC_DEBUG"]
-            else
-              ["NDEBUG"]
-
-        val futures = 
-            if useFutures config then ["P_USE_PARALLEL_FUTURES"] else []
-
-        val vi = 
-            if Config.vi config then ["P_USE_VNI"] else []
-
-        val instr =
-            List.concat
-              [if instrumentAllocation config
-               then ["P_INSTRUMENT_ALLOCATION"]
-               else [],
-               if instrumentVtbAllocation config orelse
-                  instrumentAllocationSites config
-               then ["P_INSTRUMENT_VTB_ALC"]
-               else []]
-
-        val vtbChg =
-            if vtableChange config then ["P_DO_VTABLE_CHANGE"] else []
-
-        val va = 
-            case (Config.va config)
-             of Config.ViREF => ["P_USE_VI_REF"]
-              | Config.ViSSE => ["P_USE_VI_SSE"]
-              | Config.ViAVX => ["P_USE_VI_AVX"]
-              | Config.ViLRB => ["P_USE_VI_LRB"]
-
-        val numericDefines =
-            (if PObjectModelLow.Rat.useUnsafeIntegers config then 
-               ["P_PRAT_IS_SINTP"]
-             else 
-               []) @
-            (if Globals.disableOptimizedRationals config then
-               []
-             else  
-               ["P_USE_TAGGED_RATIONALS"]) @
-            (if Globals.disableOptimizedIntegers config then
-               []
-             else  
-               ["P_USE_TAGGED_INTEGERS"]) @
-            (if usePortableTaggedInts config then ["P_TAGGED_INT32_PORTABLE"] 
-             else if assumeSmallInts config then ["P_TAGGED_INT32_ASSUME_SMALL"] 
-             else if MilToPil.assertSmallInts config then ["P_TAGGED_INT32_ASSERT_SMALL"]
-             else [])
-
-        val ds = 
-            List.concat [vi, 
-                         [ws], 
-                         gc, 
-                         futures, 
-                         debug, 
-                         pbase, 
-                         instr, 
-                         vtbChg,
-                         va,
-                         numericDefines]
-        val flags = 
-            List.map (ds, fn s => "-D" ^ s)
-      in flags
-      end
-
 
   val pillarStack =   2097152  (* Decimal integer in bytes (  0x200000) *)
   val smallStack  =  33554432  (* Decimal integer in bytes ( 0x2000000) *)
@@ -274,6 +170,113 @@ struct
       in flags
       end
 
+  fun defines (config : Config.t, compiler : compiler) =
+      let
+        val ws =
+            case Config.targetWordSize config
+             of Config.Ws32 => "P_WORD_SIZE=4"
+              | Config.Ws64 => "P_WORD_SIZE=8"
+
+        val gc =
+            case #style (Config.gc config)
+             of Config.GcsNone => []
+              | Config.GcsConservative => ["P_USE_CGC"]
+              | Config.GcsAccurate =>
+                ["P_USE_AGC",
+                 "P_AGC_LOCK_PARAM=" ^
+                 (case Config.agc config
+                   of Config.AgcGcMf => "0"
+                    | Config.AgcTgc  => "1"
+                    | Config.AgcCgc  => "1")]
+                @
+                (if Config.agc config = Config.AgcTgc orelse
+                    Config.agc config = Config.AgcCgc
+                 then ["P_USE_FAST_ALLOC"]
+                 else [])
+                @
+                (if gcWriteBarriers config
+                 then ["P_USE_GC_WRITE_BARRIERS"]
+                 else [])
+                @
+                (if gcAllBarriers config
+                 then ["P_ALL_BARRIERS"]
+                 else [])
+
+        val pbase = 
+            case Config.output config
+             of Config.OkPillar => ["P_USE_PILLAR", "WIN32"]
+              | Config.OkC      => []
+
+        val debug = ifDebug (config, ["GC_DEBUG"], ["NDEBUG"])
+
+        val futures = 
+            if useFutures config then ["P_USE_PARALLEL_FUTURES"] else []
+
+        val vi = 
+            if Config.vi config then ["P_USE_VNI"] else []
+
+        val instr =
+            List.concat
+              [if instrumentAllocation config
+               then ["P_INSTRUMENT_ALLOCATION"]
+               else [],
+               if instrumentVtbAllocation config orelse
+                  instrumentAllocationSites config
+               then ["P_INSTRUMENT_VTB_ALC"]
+               else []]
+
+        val vtbChg =
+            if vtableChange config then ["P_DO_VTABLE_CHANGE"] else []
+
+        val va = 
+            case (Config.va config)
+             of Config.ViREF => ["P_USE_VI_REF"]
+              | Config.ViSSE => ["P_USE_VI_SSE"]
+              | Config.ViAVX => ["P_USE_VI_AVX"]
+              | Config.ViLRB => ["P_USE_VI_LRB"]
+
+        val numericDefines =
+            (if PObjectModelLow.Rat.useUnsafeIntegers config then 
+               ["P_PRAT_IS_SINTP"]
+             else 
+               []) @
+            (if Globals.disableOptimizedRationals config then
+               []
+             else  
+               ["P_USE_TAGGED_RATIONALS"]) @
+            (if Globals.disableOptimizedIntegers config then
+               []
+             else  
+               ["P_USE_TAGGED_INTEGERS"]) @
+            (if usePortableTaggedInts config then ["P_TAGGED_INT32_PORTABLE"] 
+             else if assumeSmallInts config then ["P_TAGGED_INT32_ASSUME_SMALL"] 
+             else if MilToPil.assertSmallInts config then ["P_TAGGED_INT32_ASSERT_SMALL"]
+             else [])
+
+        val backend = 
+            (case compiler
+              of CcGCC    => ["PPILER_BACKEND_GCC"]
+               | CcICC    => ["PPILER_BACKEND_ICC"]
+               | CcPillar => ["PPILER_BACKEND_OPC"]
+               | CcP2c    => ["PPILER_BACKEND_IPC"])
+
+        val ds = 
+            List.concat [vi, 
+                         [ws], 
+                         gc, 
+                         futures, 
+                         debug, 
+                         pbase, 
+                         instr, 
+                         vtbChg,
+                         va,
+                         numericDefines, 
+                         backend]
+        val flags = 
+            List.map (ds, fn s => "-D" ^ s)
+      in flags
+      end
+
   structure CcOptions =
   struct
     fun out (config, compiler) = ["-c"]
@@ -287,7 +290,7 @@ struct
 
     fun debug (config, compiler) =
         (case compiler
-          of CcGCC    => if Config.pilDebug config then ["-g"] else []
+          of CcGCC    => ifDebug (config, ["-g"], [])
            | CcICC    => ["-Zi", "-debug"]
            | CcPillar => ["-Zi", "-debug"]
            | CcP2c    => ["-Zi", "-debug"])
@@ -439,7 +442,7 @@ struct
              CcOptions.mt cfg
             ]
         val options = List.concat options
-        val defs = defines config
+        val defs = defines (config, ccTag)
         val incs = includes cfg
         val args = [options, defs, [inFile], incs, CcOptions.obj (cfg, outFile), Config.pilcStr config]
         val args = List.concat args
@@ -600,7 +603,6 @@ struct
   fun libraries (config, ldTag) = 
       let
         val mt = useFutures config
-        val debug = Config.pilDebug config
         val (prtBegin, prtEnd) = 
             (case ldTag
               of LdPillar => ([ifDebug (config, "crt_prtbegind.obj", "crt_prtbegin.obj")], 

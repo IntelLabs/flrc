@@ -13,8 +13,8 @@ end
 
 signature MIL_RENAME =
 sig
-  structure Var : RENAMER where type t = Rename.t 
-  structure Label : RENAMER where type t = Mil.label Identifier.LabelDict.t
+  structure Var      : RENAMER where type t = Rename.t 
+  structure Label    : RENAMER where type t = Mil.label Identifier.LabelDict.t
   structure VarLabel : RENAMER where type t = Rename.t * Mil.label Identifier.LabelDict.t
 end;
 

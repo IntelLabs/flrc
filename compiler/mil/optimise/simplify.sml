@@ -582,7 +582,7 @@ struct
 
        val reduce : Config.t * {to : P.numericTyp, from : P.numericTyp} 
                     * Mil.operand Vector.t * (Mil.operand -> Operation.t) 
-                    -> reduction Try.t =
+                    -> reduction option =
            identity or transitivity or fold
      end (* structure NumConvert *)
 
@@ -643,7 +643,7 @@ struct
 
        val reduce : Config.t * {typ : P.numericTyp, operator : P.compareOp} 
                     * Mil.operand Vector.t * (Mil.operand -> Operation.t) 
-                    -> reduction Try.t =
+                    -> reduction option =
            identity or fold
 
      end (* structure NumCompare *)
@@ -727,7 +727,7 @@ struct
                     
        val reduce : Config.t * {typ : P.numericTyp, operator : P.arithOp} 
                     * Mil.operand Vector.t * (Mil.operand -> Operation.t) 
-                    -> reduction Try.t =
+                    -> reduction option =
            fold or simplify
 
      end (* structure NumArith *)
@@ -736,10 +736,10 @@ struct
      struct
        datatype t = datatype reduction
 
-       val out : ('a -> t Try.t) -> ('a -> t) = 
-        fn f => fn args => Try.otherwise (f args, RrUnchanged)
+       val out : ('a -> t option) -> ('a -> t) = 
+        fn f => fn args => Utils.Option.get (f args, RrUnchanged)
 
-       fun ptrEq (c : Config.t, args : Mil.operand Vector.t, get : Mil.operand -> Operation.t) : t Try.t =
+       fun ptrEq (c : Config.t, args : Mil.operand Vector.t, get : Mil.operand -> Operation.t) : t option =
            Try.try
            (fn () =>
                let
@@ -1939,7 +1939,7 @@ struct
                       of M.RhsTuple {mdDesc, inits} =>
                          let
                            val () = Try.require (MU.MetaDataDescriptor.immutable mdDesc)
-                           val () = Try.not (MU.MetaDataDescriptor.hasArray mdDesc)
+                           val () = Try.require (not (MU.MetaDataDescriptor.hasArray mdDesc))
                            val () = Try.require (Vector.length inits = MU.MetaDataDescriptor.numFixed mdDesc)
                            val () = Try.require (Vector.forall (inits, const))
                            val v = Try.V.singleton dests
@@ -2637,7 +2637,7 @@ struct
         let
           val t = 
              case IInstr.getMil (imil, i)
-              of IMil.MDead       => Try.failure ()
+              of IMil.MDead       => NONE
                | IMil.MTransfer t => TransferR.reduce (s, (i, t))
                | IMil.MLabel l    => LabelR.reduce (s, (i, l))
                | IMil.MInstr mi   => InstructionR.reduce (s, (i, mi))

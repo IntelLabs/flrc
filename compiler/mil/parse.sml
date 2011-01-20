@@ -51,6 +51,7 @@ struct
   structure VI = VectorInstructions
   structure M = Mil
   structure MU = MilUtils
+  structure PU = MU.Prims.Utils
   structure MF = MilFragment
   structure MS = MilStream
   structure MP = Mil.Prims
@@ -378,13 +379,12 @@ struct
 
   val || = P.||
   val && = P.&&
+  infix 5 || &&
 
-  infix || &&
-
-  val -&& : unit P.t * 'b P.t -> 'b P.t = fn (p1, p2) => P.map (p1 && p2, fn (_, b) => b)
-  val &&- : 'a P.t * unit P.t -> 'a P.t = fn (p1, p2) => P.map (p1 && p2, fn (a, _) => a)
-
-  infix -&& &&-
+  val -&& = P.-&&
+  val &&- = P.&&-
+  infix  7 &&-
+  infixr 6 -&&
 
   (* Convention:
    *   With an F suffix, a parser should fail if the first lexical item does not look like the beginning of thing
@@ -392,7 +392,7 @@ struct
    *   completed.
    *   Without an F suffix, a parser should produce an error if it cannot parse something.
    *
-   * The rational between these conventions has to do with making choices between different forms and for combinators
+   * The rationale between these conventions has to do with making choices between different forms and for combinators
    * like zeroOrMore.  The || operator will try the second parser if the first parser fails.  Similar the zeroOrMore
    * combinator needs to iterated parser to fail when there are no longer any items.  Thus we need parsers that
    * fail when the current input does not look like the item we are trying to parse, but that once enough is seen
@@ -761,13 +761,13 @@ struct
   fun typName (state : state, env : env) : string P.t = typNameF (state, env) || P.error "Expected type name"
 
   fun vectorDescriptorF (state : state, env : env) : MP.vectorDescriptor P.t = 
-      PrimsParse.vectorDescriptor (getConfig env)
+      PU.Parse.vectorDescriptor (getConfig env)
 
   fun vectorDescriptor (state : state, env : env) : MP.vectorDescriptor P.t = 
       vectorDescriptorF (state, env) || P.error "Expected vector descriptor"
       
   fun vectorSizeF (state : state, env : env) : MP.vectorSize P.t = 
-      PrimsParse.vectorSize (getConfig env)
+      PU.Parse.vectorSize (getConfig env)
 
   fun vectorSize (state : state, env : env) : MP.vectorSize P.t = 
       vectorSizeF (state, env) || P.error "Expected vector size"
@@ -812,7 +812,7 @@ struct
                                 (fn (vs, t) => M.TViVector {vectorSize = vs, elementTyp = t}))
               | _ => P.fail
         val idBased = P.bind identifierF doId
-        val tNumeric = syntax (P.map (PrimsParse.numericTyp (getConfig env), M.TNumeric))
+        val tNumeric = syntax (P.map (PU.Parse.numericTyp (getConfig env), M.TNumeric))
         val code =
             P.map (parenSemiCommaF (callConvF (state, env, typ), P.$$ typ (state, env))
                    && keywordS "->"
@@ -851,9 +851,6 @@ struct
 
   fun binder (state : state, env : env, k : M.variableKind) : M.variable P.t =
       binderF (state, env, k) || P.error "Expected variable binder"
-
-  fun fieldSize (state : state, env : env) : M.fieldSize P.t =
-      syntax (P.required (P.map (identifierF, MU.FieldSize.fromString), "Expected field size"))
 
   fun fieldKind (state : state, env : env) : M.fieldKind P.t =
       P.bind identifierF
@@ -1159,7 +1156,7 @@ struct
         val const = P.map (constantF (state, env), fn c => M.RhsSimple (M.SConstant c))
         val primApp = 
             let
-              val p = PrimsParse.t (getConfig env) && P.succeeds (bracketF (keycharLF #"T")) 
+              val p = PU.Parse.t (getConfig env) && P.succeeds (bracketF (keycharLF #"T")) 
                    && P.optional (braceSeqF (typ (state, env))) && parenSeq (operand (state, env))
             in P.map (p, fn (((prim, ct), typsO), args) => M.RhsPrim {prim = prim, 
                                                                       createThunks = ct,

@@ -9,7 +9,6 @@ local
         mil.sml
         prims-utils.sml
         utils.sml
-        prims-parse-and-layout.sml
         layout.sml
         cfg.sml
         rewrite.sml
@@ -67,7 +66,6 @@ in
         structure MilFreeVars
         structure MilBoundVars
         structure MilLayout
-        structure PrimsLayout
         structure MilLoop
         structure MilNameSmallValues
         structure MilNumberInstructions

@@ -1,42 +1,69 @@
 (* The Intel P to C/Pillar Compiler *)
 (* Copyright (C) Intel Corporation *)
 
+(* This provides a syntactically lightweight analog to the failure (option) monad.
+ * We implement failure using a canonical exception, and provide combinators
+ * for mediating between failure via exception ('a t) and failure via the option 
+ * type ('a option).  
+ * The type 'a t is purely for documentation purposes.  It marks combinators 
+ * which may raise the failure exception instad of returning a value.
+ * 
+ * CODING CONVENTIONS
+ * This module provides syntactic convenience, at the expense of not preventing
+ * abusive uses.  For clarity of code, it is generally best to avoid propogating
+ * failure inter-procedurally.  The intended use is that failure via exception 
+ * ('a t) is used to escape from a function body, but that failure via the option
+ * type is used to communicate between functions.
+ * Another way of saying this is that the only user code with type 'a -> 'b t
+ * should occur syntactically as an argument to Try.try or one of the other
+ * combinators that wrap up failure via exception as failure via the option type.
+ *)
+
 signature TRY = 
 sig
-  type 'a t = 'a option
+  (* 'a t marks combinators or functions which may fail (may throw the failure exception).
+   *)
+  type 'a t = 'a
 
-  (* Constructors/combinators.  These create, but do not fail *)
-  val try  : (unit -> 'a) -> 'a t
-  val lift : ('a -> 'b) -> ('a -> 'b t)
-  val exec : (unit -> unit) -> unit
-  val ||   : ('a -> 'b) * ('a -> 'b) -> ('a -> 'b t) (* use infix 4 *)
-  val or   : ('a -> 'b t) * ('a -> 'b t) -> ('a -> 'b t) (* use infix 4 *)
-  val oo : ('b -> 'c t) * ('a -> 'b t) -> ('a -> 'c t)  (* use infix 3 *)
-  val om : ('b -> 'c) * ('a -> 'b t) -> ('a -> 'c t)  (* use infix 3 *)
-  val success : 'a -> 'a t
-  val failure : unit -> 'a t
-  val ? : bool -> unit t 
-  val otherwise : 'a t * 'a -> 'a
-  val bool : 'a t -> bool
-  val option : 'a t -> 'a option
+  (* This combinator takes a function which fails (via exceptions) and reifies the
+   * result into the option type by representing failure as NONE, and sucess with
+   * result A as SOME A.  All failing user code should be a syntactic argument
+   * to this combinator (or one of it's variants) 
+   *)
+  val lift : ('a -> 'b t) -> ('a -> 'b option)
+  (* try f == lift f () *)
+  val try  : (unit -> 'a t) -> 'a option
+  (* exec f = ignore (try f) *)
+  val exec : (unit -> unit t) -> unit
+
+  val ||   : ('a -> 'b t) * ('a -> 'b t) -> ('a -> 'b option) (* use infix 4 *)
+  val or   : ('a -> 'b option) * ('a -> 'b option) -> ('a -> 'b option) (* use infix 4 *)
+  val oo   : ('b -> 'c option) * ('a -> 'b option) -> ('a -> 'c option)  (* use infix 3 *)
+  val om   : ('b -> 'c t) * ('a -> 'b option) -> ('a -> 'c option)  (* use infix 3 *)
  
-
-  (* Destructors.  These all might fail *)
-  val fail : unit -> 'a
-  val <- : 'a t -> 'a
-  val <@ : ('a -> 'b t) -> 'a -> 'b 
-  val << : ('b -> 'c t) * ('a -> 'b t) -> ('a -> 'c)  (* use infix 3 *)
-  val <! : ('b -> 'c) * ('a -> 'b t) -> ('a -> 'c)  (* use infix 3 *)
-  val when : bool -> (unit -> 'a) -> 'a
-  val require : bool -> unit
-  val not : bool -> unit
+  (* Fail (via an exception) *)
+  val fail : unit -> 'a t
+  (* Reify the option type into failure *)
+  val <-   : 'a option -> 'a t
+  (* <@ f x == <- (f x) *)
+  val <@ : ('a -> 'b option) -> ('a -> 'b t)
+  (* f << g == (<@ f) o (<@ g) 
+   * (f << g) x == <- (f (<- (g x))) 
+   *)
+  val << : ('b -> 'c option) * ('a -> 'b option) -> ('a -> 'c t)  (* use infix 3 *)
+  (* f <! g == f o (<@ g) 
+   * (f <! g) x == (f (<- (g x)))
+   *)
+  val <! : ('b -> 'c t) * ('a -> 'b option) -> ('a -> 'c t)  (* use infix 3 *)
+  (* Fail when false *)
+  val require    : bool -> unit t
 
   structure V : sig
-    val sub : 'a Vector.t * int -> 'a
-    val singleton : 'a Vector.t -> 'a
-    val doubleton : 'a Vector.t -> 'a * 'a
-    val lenEq : 'a Vector.t * int -> unit
-    val isEmpty : 'a Vector.t -> unit
+    val sub : 'a Vector.t * int -> 'a t
+    val singleton : 'a Vector.t -> 'a t
+    val doubleton : 'a Vector.t -> ('a * 'a) t
+    val lenEq : 'a Vector.t * int -> unit t
+    val isEmpty : 'a Vector.t -> unit t
   end
 
 end
@@ -44,17 +71,18 @@ end
 structure Try :> TRY = 
 struct
 
-                 
-  type 'a t = 'a option
+  type 'a t = 'a
+
   exception Fail
 
-  fun try f = 
-      ((SOME (f())) handle Fail => NONE)
-
   val lift = 
-   fn f => fn a => try (fn () => f a)
+   fn f => fn a => (SOME (f a)) handle Fail => NONE
 
-  fun exec f = ignore (try(f))
+  val try =
+      fn f => lift f ()
+
+  val exec =
+      fn f => ignore (try f)
 
   fun || (f, g) =
    fn arg => 
@@ -83,14 +111,12 @@ struct
         of SOME y => SOME (f y)
          | NONE => NONE)
       
-  fun success a = SOME a
-  fun failure a = NONE
   fun fail () = raise Fail
   fun <- t = 
       (case t
         of SOME a => a
          | NONE => raise Fail)
-
+      
   val <@ = 
    fn f => 
    fn x => <- (f x)
@@ -100,17 +126,8 @@ struct
 
   val <! = fn (f, g) => f o <@ g
 
-  fun otherwise (at, a) = 
-      (case at
-        of SOME b => b
-         | NONE => a)
-
-  fun ? b = if b then SOME () else NONE
-  fun bool t = isSome t
-  fun option t = t
-  val require = <- o ?
-  val not = <- o ? o not
-  fun when b f = (require b;f())
+  val require = 
+   fn b => if b then () else fail ()
 
   structure V = 
   struct
