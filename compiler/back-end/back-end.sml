@@ -277,6 +277,19 @@ struct
       in flags
       end
 
+  fun libs (config : Config.t, linker : linker) : string list =
+      let
+        val pLibDir = pLibLibDirectory config
+        val libs = 
+            case linker
+             of LdGCC    => [pLibDir] (*[Path.snoc (pLibDir, "gcc")]*)
+              | LdICC    => [pLibDir]
+              | LdPillar => [pLibDir]
+              | LdP2c    => [pLibDir]
+        val libs = List.map (libs, fn l => pathToLinkerArgString (config, linker, l))
+      in libs
+      end
+
   structure CcOptions =
   struct
     fun out (config, compiler) = ["-c"]
@@ -620,13 +633,12 @@ struct
 
   fun link (config, ccTag, ldTag, fname) = 
       let
-        val fileToString = fn path => pathToLinkerArgString (config, ldTag, path)
-        val fname = fileToString fname
+        val fname = pathToLinkerArgString (config, ldTag, fname)
         val inFile = objectFile (config, ccTag, fname)
         val outFile = exeFile (config, ldTag, fname)
         val cfg = (config, ldTag)
         val ld = linker cfg
-        val pLibLibs = List.map ([pLibLibDirectory config], fileToString)
+        val pLibLibs = libs (config, ldTag)
         val pLibOptions = List.concatMap (pLibLibs, fn lib => LdOptions.libPath (cfg, lib))
         val options = List.concat [LdOptions.link cfg,
                                    pLibOptions,
