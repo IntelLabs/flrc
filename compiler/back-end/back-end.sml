@@ -94,6 +94,10 @@ struct
       Config.Feature.mk ("Plsr:tagged-ints-assume-small",
                          "use 32 bit ints for tagged ints (unchecked)")
 
+  val (disableTailCallF, disableTailCall) = 
+      Config.Feature.mk ("Plsr:disable-tail-call",
+                         "implement tail calls as ordinary calls")
+
   val pillarStack =   2097152  (* Decimal integer in bytes (  0x200000) *)
   val smallStack  =  33554432  (* Decimal integer in bytes ( 0x2000000) *)
   val largeStack  = 536870912  (* Decimal integer in bytes (0x20000000) *) 
@@ -225,6 +229,9 @@ struct
                then ["P_INSTRUMENT_VTB_ALC"]
                else []]
 
+        val tailcall = 
+            if disableTailCall config then ["PLSR_DISABLE_TAILCALL"] else []
+
         val vtbChg =
             if vtableChange config then ["P_DO_VTABLE_CHANGE"] else []
 
@@ -268,6 +275,7 @@ struct
                          debug, 
                          pbase, 
                          instr, 
+                         tailcall,
                          vtbChg,
                          va,
                          numericDefines, 
@@ -709,13 +717,14 @@ struct
                        stats       = []}
     val associates = {controls = [],
                       debugs = [],
-                      features = [gcWriteBarriersF, 
+                      features = [assumeSmallIntsF,
+                                  disableTailCallF,
+                                  gcWriteBarriersF, 
                                   gcAllBarriersF,
                                   instrumentAllocationF,
                                   instrumentVtbAllocationF,
                                   vtableChangeF,
-                                  usePortableTaggedIntsF,
-                                  assumeSmallIntsF],
+                                  usePortableTaggedIntsF],
                       subPasses = []}
     fun pilCompile ((), pd, basename) =
         compile (PassData.getConfig pd, basename)
