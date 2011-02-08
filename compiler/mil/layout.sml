@@ -1019,6 +1019,7 @@ struct
                                     L.str "U => show thunk free variable field kinds",
                                     L.str "v => show vector element types",
                                     L.str "w => set options for parsing",
+                                    L.str "% => show a reasonable subset of information (cfFktUv)",
                                     L.str "+ => show all of the above except suppress kinds and binary FP constants"]),
                 L.str "default is c"]
 
@@ -1070,6 +1071,18 @@ struct
                    val () = symbols    := false
                    val () = fullSymTab := false
                    val () = numbers    := false
+                 in true
+                 end
+               | #"%" =>
+                 let
+                   val () = codes := true 
+                   val () = pFunFvs := true 
+                   val () = fullSymTab := true 
+                   val () = symbols := true 
+                   val () = supVarKind := true 
+                   val () = tupDesc := true 
+                   val () = thunkFvs := true 
+                   val () = viElemType := true 
                  in true
                  end
                | #"+" =>
