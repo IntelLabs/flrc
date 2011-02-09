@@ -11,6 +11,7 @@ sig
   val analyseEval : state * env * Mil.eval ->  unit
   val analyseTransfer : state * env * Mil.transfer -> unit
   val analyseBlock : state * env * Mil.label * Mil.block -> unit
+  val analyseBlocks : state * env * Mil.block Mil.LD.t -> unit
   val analyseGlobal : state * env * Mil.variable * Mil.global -> unit
   val analyseProgram : state * env * Mil.t -> unit
 end;
@@ -353,10 +354,13 @@ functor MilAnalyseF (
       in ()
       end
 
+  fun analyseBlocks (s, e, blocks) = 
+      LD.foreach (blocks, fn (l, b) => analyseBlock (s, e, l, b)) 
+
   fun analyseCodeBody (s, e, M.CB {entry, blocks}) =
       let
         val () = analyseJump (s, e, entry)
-        val () = LD.foreach (blocks, fn (l, b) => analyseBlock (s, e, l, b))
+        val () = analyseBlocks (s, e, blocks)
       in ()
       end
 
