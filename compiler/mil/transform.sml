@@ -32,9 +32,9 @@ functor MilTransformF (
   * S.
   *)
   val label    : state * env * Mil.label * Mil.variable Vector.t -> env * MilStream.source option
-  val instr    : state * env * Mil.instruction -> env * MilStream.t option
-  val transfer : state * env * Mil.transfer -> env * MilStream.sink option
-  val global   : state * env * Mil.variable * Mil.global -> env * (Mil.variable * Mil.global) list option
+  val instr    : state * env * Mil.instruction                   -> env * MilStream.t option
+  val transfer : state * env * Mil.transfer                      -> env * MilStream.sink option
+  val global   : state * env * Mil.variable * Mil.global         -> env * (Mil.variable * Mil.global) list option
 ) :> MIL_TRANSFORM where type state = state
                      and type env = env 
 = struct

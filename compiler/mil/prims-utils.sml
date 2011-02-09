@@ -76,6 +76,245 @@ sig
     val t                : Mil.Prims.t t
   end (* structure Hash *)
 
+  structure Dec :
+  sig   
+    structure VectorSize : 
+    sig
+      type t = Mil.Prims.vectorSize
+      val vs64   : t -> unit option
+      val vs128  : t -> unit option
+      val vs256  : t -> unit option
+      val vs512  : t -> unit option
+      val vs1024 : t -> unit option
+    end (* structure VectorSize *)
+
+    structure VectorDescriptor : 
+    sig
+      type t = Mil.Prims.vectorDescriptor
+      val vd : t -> {vectorSize : Mil.Prims.vectorSize, elementSize : Mil.fieldSize} option
+    end (* structure VectorDescriptor *)
+  
+    structure FloatPrecision : 
+    sig
+      type t = Mil.Prims.floatPrecision
+      val fpSingle : t -> unit option
+      val fpDouble : t -> unit option
+    end (* structure FloatPrecision *)
+
+    structure IntPrecision : 
+    sig
+      type t = Mil.Prims.intPrecision
+      val ipArbitrary : t -> unit option
+      val ipFixed     : t -> IntArb.typ option
+    end (* structure IntPrecision *)
+  
+    structure NumericTyp : 
+    sig
+      type t = Mil.Prims.numericTyp
+      val ntRat     : t -> unit option
+      val ntInteger : t -> Mil.Prims.intPrecision option
+      val ntFloat   : t -> Mil.Prims.floatPrecision option
+    end (* structure NumericTyp *)
+
+    structure DivKind : 
+    sig
+      type t = Mil.Prims.divKind
+      val dkT : t -> unit option
+      val dkF : t -> unit option
+      val dkE : t -> unit option
+    end (* structure DivKind *)
+
+    structure ArithOp : 
+    sig
+      type t = Mil.Prims.arithOp
+      val aAbs       : t -> unit option
+      val aNegate    : t -> unit option
+      val aNegateSat : t -> unit option
+      val aDivide    : t -> unit option
+      val aDiv       : t -> Mil.Prims.divKind option
+      val aMax       : t -> unit option
+      val aMin       : t -> unit option
+      val aMinus     : t -> unit option
+      val aMinusSat  : t -> unit option
+      val aMod       : t -> Mil.Prims.divKind option
+      val aPlus      : t -> unit option
+      val aPlusSat   : t -> unit option
+      val aTimes     : t -> unit option
+      val aTimesSat  : t -> unit option
+      val aDivMod    : t -> Mil.Prims.divKind option
+    end (* structure ArithOp *)
+
+    structure FloatOp : 
+    sig
+      type t = Mil.Prims.floatOp
+      val faACos  : t -> unit option
+      val faASin  : t -> unit option
+      val faCeil  : t -> unit option
+      val faCos   : t -> unit option
+      val faFloor : t -> unit option
+      val faRcp   : t -> unit option
+      val faSin   : t -> unit option
+      val faSqrt  : t -> unit option
+      val faTan   : t -> unit option
+      val faTrunc : t -> unit option
+      val faPow   : t -> unit option
+    end (* structure FloatOp *)
+
+    structure BitwiseOp : 
+    sig
+      type t = Mil.Prims.bitwiseOp
+      val bNot    : t -> unit option
+      val bAnd    : t -> unit option
+      val bOr     : t -> unit option
+      val bRotL   : t -> unit option
+      val bRotR   : t -> unit option
+      val bShiftL : t -> unit option
+      val bShiftR : t -> unit option
+      val bXor    : t -> unit option
+    end (* structure BitwiseOp *)
+
+    structure LogicOp : 
+    sig
+      type t = Mil.Prims.logicOp
+      val lNot : t -> unit option
+      val lAnd : t -> unit option
+      val lOr  : t -> unit option
+      val lXor : t -> unit option
+      val lEq  : t -> unit option
+    end (* structure LogicOp *)
+
+    structure CompareOp : 
+    sig
+      type t = Mil.Prims.compareOp
+      val cEq : t -> unit option
+      val cNe : t -> unit option
+      val cLt : t -> unit option
+      val cLe : t -> unit option
+    end (* structure CompareOp *)
+
+    structure NameOp :
+    sig
+      type t = Mil.Prims.nameOp
+      val nGetString : t -> unit option
+      val nGetHash   : t -> unit option
+    end (* structure NameOp *)
+
+    structure StringOp : 
+    sig
+      type t = Mil.Prims.stringOp
+      val sAllocate   : t -> unit option
+      val sDeallocate : t -> unit option
+      val sGetLen     : t -> unit option
+      val sGetChar    : t -> unit option
+      val sSetChar    : t -> unit option
+      val sEqual      : t -> unit option
+    end (* structure StringOp *)
+
+    structure Prim : 
+    sig
+      type t = Mil.Prims.prim
+      val pNumArith   : t -> {typ : Mil.Prims.numericTyp, operator : Mil.Prims.arithOp} option
+      val pFloatOp    : t -> {typ : Mil.Prims.floatPrecision, operator : Mil.Prims.floatOp} option
+      val pNumCompare : t -> {typ : Mil.Prims.numericTyp, operator : Mil.Prims.compareOp} option
+      val pNumConvert : t -> {to : Mil.Prims.numericTyp, from : Mil.Prims.numericTyp} option
+      val pBitwise    : t -> {typ : Mil.Prims.intPrecision, operator : Mil.Prims.bitwiseOp} option
+      val pBoolean    : t -> Mil.Prims.logicOp option
+      val pName       : t -> Mil.Prims.nameOp option
+      val pCString    : t -> Mil.Prims.stringOp option
+      val pPtrEq      : t -> unit option
+    end (* structure Prim *)
+
+    structure Assoc : 
+    sig
+      type t = Mil.Prims.assoc
+      val aLeft  : t -> unit option
+      val aRight : t -> unit option
+      val aAny   : t -> unit option
+    end (* structure Assoc *)
+
+    structure DataOp : 
+    sig
+      type t = Mil.Prims.dataOp
+      val dBroadcast : t -> unit option
+      val dVector    : t -> unit option
+      val dSub       : t -> int option
+      val dPermute   : t -> int Vector.t option
+      val dBlend     : t -> unit option
+      val dSplit     : t -> unit option
+      val dConcat    : t -> unit option
+    end (* structure DataOp *)
+
+    structure Vector : 
+    sig
+      type t = Mil.Prims.vector
+      val viPointwise   : t -> {descriptor : Mil.Prims.vectorDescriptor, masked: bool, operator : Mil.Prims.prim} option
+      val viConvert     : t
+                          ->
+                          {to :   {descriptor : Mil.Prims.vectorDescriptor, typ : Mil.Prims.numericTyp}, 
+                           from : {descriptor : Mil.Prims.vectorDescriptor, typ : Mil.Prims.numericTyp}} option
+      val viCompare     : t -> {descriptor : Mil.Prims.vectorDescriptor, 
+                                typ : Mil.Prims.numericTyp, 
+                                operator : Mil.Prims.compareOp} option
+      val viReduction   : t -> {descriptor : Mil.Prims.vectorDescriptor, 
+                                associativity : Mil.Prims.assoc, 
+                                operator : Mil.Prims.prim} option
+      val viData        : t -> {descriptor : Mil.Prims.vectorDescriptor, operator : Mil.Prims.dataOp} option
+      val viMaskData    : t -> {descriptor : Mil.Prims.vectorDescriptor, operator : Mil.Prims.dataOp} option
+      val viMaskBoolean : t -> {descriptor : Mil.Prims.vectorDescriptor, operator : Mil.Prims.logicOp} option
+      val viMaskConvert : t -> {to : Mil.Prims.vectorDescriptor, from : Mil.Prims.vectorDescriptor} option
+    end (* structure Vector *)
+
+    structure Runtime : 
+    sig
+      type t = Mil.Prims.runtime
+      val rtFloatMk           : t -> unit option
+      val rtWriteln           : t -> unit option
+      val rtReadln            : t -> unit option
+      val rtAssert            : t -> unit option
+      val rtError             : t -> unit option
+      val rtDebug             : t -> unit option
+      val rtOpenOut           : t -> unit option
+      val rtGetStdout         : t -> unit option
+      val rtOutputByte        : t -> unit option
+      val rtCloseOut          : t -> unit option
+      val rtOpenIn            : t -> unit option
+      val rtGetStdin          : t -> unit option
+      val rtInputByte         : t -> unit option
+      val rtInputString       : t -> unit option
+      val rtInputAll          : t -> unit option
+      val rtIsEOF             : t -> unit option
+      val rtCloseIn           : t -> unit option
+      val rtCommandLine       : t -> unit option
+      val rtStringToNat       : t -> unit option
+      val rtStringToFloat     : t -> unit option
+      val rtFloatToString     : t -> unit option
+      val rtFloatToStringI    : t -> unit option
+      val rtRatNumerator      : t -> unit option
+      val rtRatDenominator    : t -> unit option
+      val rtEqual             : t -> unit option
+      val rtDom               : t -> unit option
+      val rtNub               : t -> unit option
+      val rtRatToUIntpChecked : t -> unit option
+      val rtRatToString       : t -> unit option
+      val rtStringToRat       : t -> unit option
+      val rtResetTimer        : t -> unit option
+      val rtGetTimer          : t -> unit option
+      val rtVtuneAttach       : t -> unit option
+      val rtVtuneDetach       : t -> unit option
+      val rtArrayEval         : t -> unit option
+      val rtIntegerHash       : t -> unit option
+    end (* structure Runtime *)
+
+    structure T : 
+    sig
+      type t = Mil.Prims.t
+      val prim    : t -> Mil.Prims.prim option
+      val runtime : t -> Mil.Prims.runtime option
+      val vector  : t -> Mil.Prims.vector option
+    end (* structure T *)
+  end (* structure Dec *)
+
+
   structure Effects : 
   sig
     type 'a t = 'a -> Effect.set
@@ -106,9 +345,55 @@ sig
     val t                : Mil.Prims.t t
   end (* structure Arity *)
 
+  structure Layout : 
+  sig
+    type 'a t = Config.t * 'a -> Layout.t
+    val vectorSize       : Mil.Prims.vectorSize t
+    val vectorDescriptor : Mil.Prims.vectorDescriptor t
+    val floatPrecision   : Mil.Prims.floatPrecision t
+    val intPrecision     : Mil.Prims.intPrecision t
+    val numericTyp       : Mil.Prims.numericTyp t
+    val divKind          : Mil.Prims.divKind t
+    val arithOp          : Mil.Prims.arithOp t
+    val floatOp          : Mil.Prims.floatOp t
+    val bitwiseOp        : Mil.Prims.bitwiseOp t
+    val logicOp          : Mil.Prims.logicOp t
+    val compareOp        : Mil.Prims.compareOp t
+    val stringOp         : Mil.Prims.stringOp t
+    val prim             : Mil.Prims.prim t
+    val assoc            : Mil.Prims.assoc t
+    val dataOp           : Mil.Prims.dataOp t
+    val vector           : Mil.Prims.vector t
+    val runtime          : Mil.Prims.runtime t
+    val t                : Mil.Prims.t t
+  end (* structure Layout *)
+
+  structure Parse :
+  sig
+    type 'a t = 'a FileParser.t
+    val vectorSize       : Config.t -> Mil.Prims.vectorSize t
+    val vectorDescriptor : Config.t -> Mil.Prims.vectorDescriptor t
+    val floatPrecision   : Config.t -> Mil.Prims.floatPrecision t
+    val intPrecision     : Config.t -> Mil.Prims.intPrecision t
+    val numericTyp       : Config.t -> Mil.Prims.numericTyp t
+    val divKind          : Config.t -> Mil.Prims.divKind t
+    val arithOp          : Config.t -> Mil.Prims.arithOp t
+    val floatOp          : Config.t -> Mil.Prims.floatOp t
+    val bitwiseOp        : Config.t -> Mil.Prims.bitwiseOp t
+    val logicOp          : Config.t -> Mil.Prims.logicOp t
+    val compareOp        : Config.t -> Mil.Prims.compareOp t
+    val stringOp         : Config.t -> Mil.Prims.stringOp t
+    val prim             : Config.t -> Mil.Prims.prim t
+    val assoc            : Config.t -> Mil.Prims.assoc t
+    val dataOp           : Config.t -> Mil.Prims.dataOp t
+    val vector           : Config.t -> Mil.Prims.vector t
+    val runtime          : Config.t -> Mil.Prims.runtime t
+    val t                : Config.t -> Mil.Prims.t t
+  end (* signature Parse *)
+
   structure ToString : 
   sig
-    type 'a t = 'a -> string
+    type 'a t = Config.t * 'a -> string
     val vectorSize       : Mil.Prims.vectorSize t
     val vectorDescriptor : Mil.Prims.vectorDescriptor t
     val floatPrecision   : Mil.Prims.floatPrecision t
@@ -130,37 +415,13 @@ sig
     val t                : Mil.Prims.t t
   end (* structure ToString *)
 
-  structure Layout : 
-  sig
-    type 'a t = 'a -> Layout.t
-    val vectorSize       : Mil.Prims.vectorSize t
-    val vectorDescriptor : Mil.Prims.vectorDescriptor t
-    val floatPrecision   : Mil.Prims.floatPrecision t
-    val intPrecision     : Mil.Prims.intPrecision t
-    val numericTyp       : Mil.Prims.numericTyp t
-    val divKind          : Mil.Prims.divKind t
-    val arithOp          : Mil.Prims.arithOp t
-    val floatOp          : Mil.Prims.floatOp t
-    val bitwiseOp        : Mil.Prims.bitwiseOp t
-    val logicOp          : Mil.Prims.logicOp t
-    val compareOp        : Mil.Prims.compareOp t
-    val nameOp           : Mil.Prims.nameOp t
-    val stringOp         : Mil.Prims.stringOp t
-    val prim             : Mil.Prims.prim t
-    val assoc            : Mil.Prims.assoc t
-    val dataOp           : Mil.Prims.dataOp t
-    val vector           : Mil.Prims.vector t
-    val runtime          : Mil.Prims.runtime t
-    val t                : Mil.Prims.t t
-  end (* structure Layout *)
-
   structure VectorSize : 
   sig
     type t = Mil.Prims.vectorSize
     val compare : t Compare.t
     val eq      : t Eq.t
     val hash    : t Hash.t
-    val toString : t -> string
+    val toString : Config.t * t -> string
     val numBits : t -> int
     val fromBits : int -> t option
     val toValueSize : t -> Mil.valueSize
@@ -183,7 +444,7 @@ sig
     val compare : t Compare.t
     val eq      : t Eq.t
     val hash    : t Hash.t
-    val toString : t -> string
+    val toString : Config.t * t -> string
     val numBits : t -> int
     val elementCount : t -> int
     val vectorSize : t -> VectorSize.t
@@ -524,6 +785,14 @@ functor PrimsUtilsF (structure FieldSize :
                         val compare : t Compare.t
                         val toString : t -> string
                         val numBits : t -> int
+                        val intArbSz : IntArb.size -> t
+                        structure Dec :
+                        sig
+                          val fs8  : t -> unit option
+                          val fs16 : t -> unit option
+                          val fs32 : t -> unit option
+                          val fs64 : t -> unit option
+                        end (* structure Dec *)
                       end) :> PRIMS_UTILS =
 struct
 
@@ -531,370 +800,944 @@ struct
 
   structure IFO = IntFiniteOrdinal
 
-  structure ToString =
+  structure Dec = 
   struct
-    type 'a t = 'a -> string
+    structure VectorSize = 
+    struct
+      type t = Mil.Prims.vectorSize
+      val vs64   = fn ve => (case ve of Mil.Prims.Vs64 => SOME () | _ => NONE)
+      val vs128  = fn ve => (case ve of Mil.Prims.Vs128 => SOME () | _ => NONE)
+      val vs256  = fn ve => (case ve of Mil.Prims.Vs256 => SOME () | _ => NONE)
+      val vs512  = fn ve => (case ve of Mil.Prims.Vs512 => SOME () | _ => NONE)
+      val vs1024 = fn ve => (case ve of Mil.Prims.Vs1024 => SOME () | _ => NONE)
+    end (* structure VectorSize *)
 
-    val vectorSize       : Mil.Prims.vectorSize t = 
-     fn vs => 
-        (case vs
-          of Mil.Prims.Vs64   => "64"
-           | Mil.Prims.Vs128  => "128"
-           | Mil.Prims.Vs256  => "256"
-           | Mil.Prims.Vs512  => "512"
-           | Mil.Prims.Vs1024 => "1024")
+    structure VectorDescriptor = 
+    struct
+      type t = Mil.Prims.vectorDescriptor
+      val vd = fn ve => (case ve of Mil.Prims.Vd r => SOME r)
+    end (* structure VectorDescriptor *)
 
-    val vectorDescriptor : Mil.Prims.vectorDescriptor t =
-     fn (Mil.Prims.Vd {vectorSize = vs, elementSize}) => 
-        vectorSize vs ^ "x" ^ FieldSize.toString elementSize
+    structure FloatPrecision = 
+    struct
+      type t = Mil.Prims.floatPrecision
+      val fpSingle = fn fl => (case fl of Mil.Prims.FpSingle => SOME () | _ => NONE)
+      val fpDouble = fn fl => (case fl of Mil.Prims.FpDouble => SOME () | _ => NONE)
+    end (* structure FloatPrecision *)
 
-    val floatPrecision   : Mil.Prims.floatPrecision t = 
-     fn fp => 
-        (case fp
-          of Mil.Prims.FpSingle => "Float"
-           | Mil.Prims.FpDouble => "Double")
+    structure IntPrecision = 
+    struct
+      type t = Mil.Prims.intPrecision
+      val ipArbitrary = fn ip => (case ip of Mil.Prims.IpArbitrary => SOME () | _ => NONE)
+      val ipFixed     = fn ip => (case ip of Mil.Prims.IpFixed r => SOME r | _ => NONE)
+    end (* structure IntPrecision *)
 
-    val intPrecision     : Mil.Prims.intPrecision t = 
-     fn ip => 
-        (case ip
-          of Mil.Prims.IpArbitrary => "Int"
-           | Mil.Prims.IpFixed ia  => IntArb.stringOfTyp ia)
+    structure NumericTyp = 
+    struct
+      type t = Mil.Prims.numericTyp
+      val ntRat     = fn nu => (case nu of Mil.Prims.NtRat => SOME () | _ => NONE)
+      val ntInteger = fn nu => (case nu of Mil.Prims.NtInteger r => SOME r | _ => NONE)
+      val ntFloat   = fn nu => (case nu of Mil.Prims.NtFloat r => SOME r | _ => NONE)
+    end (* structure NumericTyp *)
 
-    val numericTyp       : Mil.Prims.numericTyp t = 
-     fn p => 
-        let
-          val res = 
-	      case p
-	       of Mil.Prims.NtRat        => "Rat"
-	        | Mil.Prims.NtInteger r1 => intPrecision r1
-	        | Mil.Prims.NtFloat r1   => floatPrecision r1
-        in
-          res
-        end
- 
-    val divKind          : Mil.Prims.divKind t =
-     fn p => 
-        let
-          val res = 
-	      case p
-	       of Mil.Prims.DkT    => "T"
-	        | Mil.Prims.DkF    => "F"
-	        | Mil.Prims.DkE    => "E"
-        in
-          res
-        end
- 
-    val arithOp          : Mil.Prims.arithOp t =
-     fn p => 
-        let
-          val res = 
-	      case p
-	       of Mil.Prims.AAbs          => "Abs"
-	        | Mil.Prims.ANegate       => "Negate"
-	        | Mil.Prims.ANegateSat    => "NegateSat"
-	        | Mil.Prims.ADivide       => "Divide"
-	        | Mil.Prims.ADiv r1       => "Div" ^ divKind r1
-	        | Mil.Prims.AMax          => "Max"
-	        | Mil.Prims.AMin          => "Min"
-	        | Mil.Prims.AMinus        => "Minus"
-	        | Mil.Prims.AMinusSat     => "MinusSat"
-	        | Mil.Prims.AMod r1       => "Mod" ^ divKind r1
-	        | Mil.Prims.APlus         => "Plus"
-	        | Mil.Prims.APlusSat      => "PlusSat"
-	        | Mil.Prims.ATimes        => "Times"
-	        | Mil.Prims.ATimesSat     => "TimesSat"
-	        | Mil.Prims.ADivMod r1    => "DivMod" ^ divKind r1
-        in
-          res
-        end
- 
-    val floatOp          : Mil.Prims.floatOp t =
-     fn p => 
-        let
-          val res = 
-	      case p
-	       of Mil.Prims.FaACos     => "ACos"
-	        | Mil.Prims.FaASin     => "ASin"
-                | Mil.Prims.FaCeil     => "Ceil"
-	        | Mil.Prims.FaCos      => "Cos"
-	        | Mil.Prims.FaFloor    => "Floor"
-	        | Mil.Prims.FaRcp      => "Rcp"
-	        | Mil.Prims.FaSin      => "Sin"
-	        | Mil.Prims.FaSqrt     => "Sqrt"
-	        | Mil.Prims.FaTan      => "Tan"
-	        | Mil.Prims.FaTrunc    => "Trunc"
-	        | Mil.Prims.FaPow      => "Pow"
-        in
-          res
-        end
+    structure DivKind = 
+    struct
+      type t = Mil.Prims.divKind
+      val dkT = fn di => (case di of Mil.Prims.DkT => SOME () | _ => NONE)
+      val dkF = fn di => (case di of Mil.Prims.DkF => SOME () | _ => NONE)
+      val dkE = fn di => (case di of Mil.Prims.DkE => SOME () | _ => NONE)
+    end (* structure DivKind *)
 
-    val bitwiseOp        : Mil.Prims.bitwiseOp t =
-     fn p => 
-        let
-          val res = 
-	      case p
-	       of Mil.Prims.BNot       => "BNot"
-	        | Mil.Prims.BAnd       => "BAnd"
-	        | Mil.Prims.BOr        => "BOr"
-	        | Mil.Prims.BRotL      => "BRotL"
-	        | Mil.Prims.BRotR      => "BRotR"
-	        | Mil.Prims.BShiftL    => "BShiftL"
-	        | Mil.Prims.BShiftR    => "BShiftR"
-	        | Mil.Prims.BXor       => "BXor"
-        in
-          res
-        end
-        
-    val logicOp          : Mil.Prims.logicOp t =
-     fn p => 
-        let
-          val res = 
-	      case p
-	       of Mil.Prims.LNot    => "Not"
-	        | Mil.Prims.LAnd    => "And"
-	        | Mil.Prims.LOr     => "Or"
-	        | Mil.Prims.LXor    => "Xor"
-	        | Mil.Prims.LEq     => "Eq"
-        in
-          res
-        end
-        
-    val compareOp        : Mil.Prims.compareOp t =
-     fn p => 
-        let
-          val res = 
-	      case p
-	       of Mil.Prims.CEq    => "Eq"
-	        | Mil.Prims.CNe    => "Ne"
-	        | Mil.Prims.CLt    => "Lt"
-	        | Mil.Prims.CLe    => "Le"
-        in
-          res
-        end
+    structure ArithOp = 
+    struct
+      type t = Mil.Prims.arithOp
+      val aAbs       = fn ar => (case ar of Mil.Prims.AAbs => SOME () | _ => NONE)
+      val aNegate    = fn ar => (case ar of Mil.Prims.ANegate => SOME () | _ => NONE)
+      val aNegateSat = fn ar => (case ar of Mil.Prims.ANegateSat => SOME () | _ => NONE)
+      val aDivide    = fn ar => (case ar of Mil.Prims.ADivide => SOME () | _ => NONE)
+      val aDiv       = fn ar => (case ar of Mil.Prims.ADiv r => SOME r | _ => NONE)
+      val aMax       = fn ar => (case ar of Mil.Prims.AMax => SOME () | _ => NONE)
+      val aMin       = fn ar => (case ar of Mil.Prims.AMin => SOME () | _ => NONE)
+      val aMinus     = fn ar => (case ar of Mil.Prims.AMinus => SOME () | _ => NONE)
+      val aMinusSat  = fn ar => (case ar of Mil.Prims.AMinusSat => SOME () | _ => NONE)
+      val aMod       = fn ar => (case ar of Mil.Prims.AMod r => SOME r | _ => NONE)
+      val aPlus      = fn ar => (case ar of Mil.Prims.APlus => SOME () | _ => NONE)
+      val aPlusSat   = fn ar => (case ar of Mil.Prims.APlusSat => SOME () | _ => NONE)
+      val aTimes     = fn ar => (case ar of Mil.Prims.ATimes => SOME () | _ => NONE)
+      val aTimesSat  = fn ar => (case ar of Mil.Prims.ATimesSat => SOME () | _ => NONE)
+      val aDivMod    = fn ar => (case ar of Mil.Prims.ADivMod r => SOME r | _ => NONE)
+    end (* structure ArithOp *)
 
-    val nameOp           : Mil.Prims.nameOp t =
+    structure FloatOp = 
+    struct
+      type t = Mil.Prims.floatOp
+      val faASin  = fn fl => (case fl of Mil.Prims.FaASin => SOME () | _ => NONE)
+      val faACos  = fn fl => (case fl of Mil.Prims.FaACos => SOME () | _ => NONE)
+      val faCeil  = fn fl => (case fl of Mil.Prims.FaCeil => SOME () | _ => NONE)
+      val faCos   = fn fl => (case fl of Mil.Prims.FaCos => SOME () | _ => NONE)
+      val faFloor = fn fl => (case fl of Mil.Prims.FaFloor => SOME () | _ => NONE)
+      val faRcp   = fn fl => (case fl of Mil.Prims.FaRcp => SOME () | _ => NONE)
+      val faSin   = fn fl => (case fl of Mil.Prims.FaSin => SOME () | _ => NONE)
+      val faSqrt  = fn fl => (case fl of Mil.Prims.FaSqrt => SOME () | _ => NONE)
+      val faTan   = fn fl => (case fl of Mil.Prims.FaTan => SOME () | _ => NONE)
+      val faTrunc = fn fl => (case fl of Mil.Prims.FaTrunc => SOME () | _ => NONE)
+      val faPow   = fn fl => (case fl of Mil.Prims.FaPow => SOME () | _ => NONE)
+    end (* structure FloatOp *)
+
+    structure BitwiseOp = 
+    struct
+      type t = Mil.Prims.bitwiseOp
+      val bNot    = fn bi => (case bi of Mil.Prims.BNot => SOME () | _ => NONE)
+      val bAnd    = fn bi => (case bi of Mil.Prims.BAnd => SOME () | _ => NONE)
+      val bOr     = fn bi => (case bi of Mil.Prims.BOr => SOME () | _ => NONE)
+      val bRotL   = fn bi => (case bi of Mil.Prims.BRotL => SOME () | _ => NONE)
+      val bRotR   = fn bi => (case bi of Mil.Prims.BRotR => SOME () | _ => NONE)
+      val bShiftL = fn bi => (case bi of Mil.Prims.BShiftL => SOME () | _ => NONE)
+      val bShiftR = fn bi => (case bi of Mil.Prims.BShiftR => SOME () | _ => NONE)
+      val bXor    = fn bi => (case bi of Mil.Prims.BXor => SOME () | _ => NONE)
+    end (* structure BitwiseOp *)
+
+    structure LogicOp = 
+    struct
+      type t = Mil.Prims.logicOp
+      val lNot = fn lo => (case lo of Mil.Prims.LNot => SOME () | _ => NONE)
+      val lAnd = fn lo => (case lo of Mil.Prims.LAnd => SOME () | _ => NONE)
+      val lOr  = fn lo => (case lo of Mil.Prims.LOr => SOME () | _ => NONE)
+      val lXor = fn lo => (case lo of Mil.Prims.LXor => SOME () | _ => NONE)
+      val lEq  = fn lo => (case lo of Mil.Prims.LEq => SOME () | _ => NONE)
+    end (* structure LogicOp *)
+
+    structure CompareOp = 
+    struct
+      type t = Mil.Prims.compareOp
+      val cEq = fn co => (case co of Mil.Prims.CEq => SOME () | _ => NONE)
+      val cNe = fn co => (case co of Mil.Prims.CNe => SOME () | _ => NONE)
+      val cLt = fn co => (case co of Mil.Prims.CLt => SOME () | _ => NONE)
+      val cLe = fn co => (case co of Mil.Prims.CLe => SOME () | _ => NONE)
+    end (* structure CompareOp *)
+
+    structure NameOp =
+    struct
+      type t = Mil.Prims.nameOp
+      val nGetString = fn st => (case st of Mil.Prims.NGetString => SOME () | _ => NONE)
+      val nGetHash   = fn st => (case st of Mil.Prims.NGetHash   => SOME () | _ => NONE)
+    end (* structure NameOp *)
+
+    structure StringOp = 
+    struct
+      type t = Mil.Prims.stringOp
+      val sAllocate   = fn st => (case st of Mil.Prims.SAllocate => SOME () | _ => NONE)
+      val sDeallocate = fn st => (case st of Mil.Prims.SDeallocate => SOME () | _ => NONE)
+      val sGetLen     = fn st => (case st of Mil.Prims.SGetLen => SOME () | _ => NONE)
+      val sGetChar    = fn st => (case st of Mil.Prims.SGetChar => SOME () | _ => NONE)
+      val sSetChar    = fn st => (case st of Mil.Prims.SSetChar => SOME () | _ => NONE)
+      val sEqual      = fn st => (case st of Mil.Prims.SEqual => SOME () | _ => NONE)
+    end (* structure StringOp *)
+
+    structure Prim = 
+    struct
+      type t = Mil.Prims.prim
+      val pNumArith   = fn pr => (case pr of Mil.Prims.PNumArith r => SOME r | _ => NONE)
+      val pFloatOp    = fn pr => (case pr of Mil.Prims.PFloatOp r => SOME r | _ => NONE)
+      val pNumCompare = fn pr => (case pr of Mil.Prims.PNumCompare r => SOME r | _ => NONE)
+      val pNumConvert = fn pr => (case pr of Mil.Prims.PNumConvert r => SOME r | _ => NONE)
+      val pBitwise    = fn pr => (case pr of Mil.Prims.PBitwise r => SOME r | _ => NONE)
+      val pBoolean    = fn pr => (case pr of Mil.Prims.PBoolean r => SOME r | _ => NONE)
+      val pName       = fn pr => (case pr of Mil.Prims.PName r => SOME r | _ => NONE)
+      val pCString    = fn pr => (case pr of Mil.Prims.PCString r => SOME r | _ => NONE)
+      val pPtrEq      = fn pr => (case pr of Mil.Prims.PPtrEq => SOME () | _ => NONE)
+    end (* structure Prim *)
+
+    structure Assoc = 
+    struct
+      type t = Mil.Prims.assoc
+      val aLeft  = fn a => (case a of Mil.Prims.ALeft => SOME () | _ => NONE)
+      val aRight = fn a => (case a of Mil.Prims.ARight => SOME () | _ => NONE)
+      val aAny   = fn a => (case a of Mil.Prims.AAny => SOME () | _ => NONE)
+    end (* structure Assoc *)
+
+    structure DataOp = 
+    struct
+      type t = Mil.Prims.dataOp
+      val dBroadcast = fn da => (case da of Mil.Prims.DBroadcast => SOME () | _ => NONE)
+      val dVector    = fn da => (case da of Mil.Prims.DVector => SOME () | _ => NONE)
+      val dSub       = fn da => (case da of Mil.Prims.DSub r => SOME r | _ => NONE)
+      val dPermute   = fn da => (case da of Mil.Prims.DPermute r => SOME r | _ => NONE)
+      val dBlend     = fn da => (case da of Mil.Prims.DBlend => SOME () | _ => NONE)
+      val dSplit     = fn da => (case da of Mil.Prims.DSplit => SOME () | _ => NONE)
+      val dConcat    = fn da => (case da of Mil.Prims.DConcat => SOME () | _ => NONE)
+    end (* structure DataOp *)
+
+    structure Vector = 
+    struct
+      type t = Mil.Prims.vector
+      val viPointwise   = fn ve => (case ve of Mil.Prims.ViPointwise r => SOME r | _ => NONE)
+      val viConvert     = fn ve => (case ve of Mil.Prims.ViConvert r => SOME r | _ => NONE)
+      val viCompare     = fn ve => (case ve of Mil.Prims.ViCompare r => SOME r | _ => NONE)
+      val viReduction   = fn ve => (case ve of Mil.Prims.ViReduction r => SOME r | _ => NONE)
+      val viData        = fn ve => (case ve of Mil.Prims.ViData r => SOME r | _ => NONE)
+      val viMaskData    = fn ve => (case ve of Mil.Prims.ViMaskData r => SOME r | _ => NONE)
+      val viMaskBoolean = fn ve => (case ve of Mil.Prims.ViMaskBoolean r => SOME r | _ => NONE)
+      val viMaskConvert = fn ve => (case ve of Mil.Prims.ViMaskConvert r => SOME r | _ => NONE)
+    end (* structure Vector *)
+
+    structure Runtime = 
+    struct
+      type t = Mil.Prims.runtime
+      val rtFloatMk           = fn ru => (case ru of Mil.Prims.RtFloatMk => SOME () | _ => NONE)
+      val rtWriteln           = fn ru => (case ru of Mil.Prims.RtWriteln => SOME () | _ => NONE)
+      val rtReadln            = fn ru => (case ru of Mil.Prims.RtReadln => SOME () | _ => NONE)
+      val rtAssert            = fn ru => (case ru of Mil.Prims.RtAssert => SOME () | _ => NONE)
+      val rtError             = fn ru => (case ru of Mil.Prims.RtError => SOME () | _ => NONE)
+      val rtDebug             = fn ru => (case ru of Mil.Prims.RtDebug => SOME () | _ => NONE)
+      val rtOpenOut           = fn ru => (case ru of Mil.Prims.RtOpenOut => SOME () | _ => NONE)
+      val rtGetStdout         = fn ru => (case ru of Mil.Prims.RtGetStdout => SOME () | _ => NONE)
+      val rtOutputByte        = fn ru => (case ru of Mil.Prims.RtOutputByte => SOME () | _ => NONE)
+      val rtCloseOut          = fn ru => (case ru of Mil.Prims.RtCloseOut => SOME () | _ => NONE)
+      val rtOpenIn            = fn ru => (case ru of Mil.Prims.RtOpenIn => SOME () | _ => NONE)
+      val rtGetStdin          = fn ru => (case ru of Mil.Prims.RtGetStdin => SOME () | _ => NONE)
+      val rtInputByte         = fn ru => (case ru of Mil.Prims.RtInputByte => SOME () | _ => NONE)
+      val rtInputString       = fn ru => (case ru of Mil.Prims.RtInputString => SOME () | _ => NONE)
+      val rtInputAll          = fn ru => (case ru of Mil.Prims.RtInputAll => SOME () | _ => NONE)
+      val rtIsEOF             = fn ru => (case ru of Mil.Prims.RtIsEOF => SOME () | _ => NONE)
+      val rtCloseIn           = fn ru => (case ru of Mil.Prims.RtCloseIn => SOME () | _ => NONE)
+      val rtCommandLine       = fn ru => (case ru of Mil.Prims.RtCommandLine => SOME () | _ => NONE)
+      val rtStringToNat       = fn ru => (case ru of Mil.Prims.RtStringToNat => SOME () | _ => NONE)
+      val rtStringToFloat     = fn ru => (case ru of Mil.Prims.RtStringToFloat => SOME () | _ => NONE)
+      val rtFloatToString     = fn ru => (case ru of Mil.Prims.RtFloatToString => SOME () | _ => NONE)
+      val rtFloatToStringI    = fn ru => (case ru of Mil.Prims.RtFloatToStringI => SOME () | _ => NONE)
+      val rtRatNumerator      = fn ru => (case ru of Mil.Prims.RtRatNumerator => SOME () | _ => NONE)
+      val rtRatDenominator    = fn ru => (case ru of Mil.Prims.RtRatDenominator => SOME () | _ => NONE)
+      val rtEqual             = fn ru => (case ru of Mil.Prims.RtEqual => SOME () | _ => NONE)
+      val rtDom               = fn ru => (case ru of Mil.Prims.RtDom => SOME () | _ => NONE)
+      val rtNub               = fn ru => (case ru of Mil.Prims.RtNub => SOME () | _ => NONE)
+      val rtRatToUIntpChecked = fn ru => (case ru of Mil.Prims.RtRatToUIntpChecked => SOME () | _ => NONE)
+      val rtRatToString       = fn ru => (case ru of Mil.Prims.RtRatToString => SOME () | _ => NONE)
+      val rtStringToRat       = fn ru => (case ru of Mil.Prims.RtStringToRat => SOME () | _ => NONE)
+      val rtResetTimer        = fn ru => (case ru of Mil.Prims.RtResetTimer => SOME () | _ => NONE)
+      val rtGetTimer          = fn ru => (case ru of Mil.Prims.RtGetTimer => SOME () | _ => NONE)
+      val rtVtuneAttach       = fn ru => (case ru of Mil.Prims.RtVtuneAttach => SOME () | _ => NONE)
+      val rtVtuneDetach       = fn ru => (case ru of Mil.Prims.RtVtuneDetach => SOME () | _ => NONE)
+      val rtArrayEval         = fn ru => (case ru of Mil.Prims.RtArrayEval => SOME () | _ => NONE)
+      val rtIntegerHash       = fn ru => (case ru of Mil.Prims.RtIntegerHash => SOME () | _ => NONE)
+    end (* structure Runtime *)
+
+    structure T = 
+    struct
+      type t = Mil.Prims.t
+      val prim    = fn t => (case t of Mil.Prims.Prim r => SOME r | _ => NONE)
+      val runtime = fn t => (case t of Mil.Prims.Runtime r => SOME r | _ => NONE)
+      val vector  = fn t => (case t of Mil.Prims.Vector r => SOME r | _ => NONE)
+    end (* structure T *)
+  end (* structure Dec *) 
+
+  structure ParserUnParser =
+  struct
+
+    structure L = Layout
+    structure Parser = FileParser
+
+    structure PUP = FileParserUnParser
+
+    val && = PUP.&&
+    val || = PUP.||
+    infix 7 || &&
+
+    val exactly : char -> (Config.t, char, char) PUP.t = fn a => PUP.satisfy (fn a' => a = a')
+
+    val rec exactlyL : char list-> (Config.t, char list, char list) PUP.t = 
+     fn l => (case l
+               of [] => PUP.return ([], [])
+                | (a::aa) => 
+                  let 
+                    val p1 = exactly a
+                    val p2 = exactlyL aa
+                    val p = p1 && p2
+                    val p = PUP.isoPartialOut (op ::, Utils.List.dec) p
+                  in p
+                  end)
+
+    val charsToString : (Config.t, char List.t, char List.t) PUP.t -> (Config.t, string, string) PUP.t = 
+        PUP.iso (String.implode, String.explode)
+    val alpha : (Config.t, char, char) PUP.t = PUP.satisfy Char.isAlpha
+    val alphaNum : (Config.t, char, char) PUP.t = PUP.satisfy Char.isAlphaNum
+    val alphaNums : (Config.t, char List.t, char List.t) PUP.t = PUP.zeroOrMore alphaNum
+    val stringAlphaNums : (Config.t, string, string) PUP.t = charsToString alphaNums
+    val exactlyC : char -> (Config.t, char, char) PUP.t = fn c => PUP.satisfy (fn c' => c' = c)
+    val exactlyCs : char list -> (Config.t, char list, char list) PUP.t = exactlyL
+    val exactlyS : string -> (Config.t, string, string) PUP.t = charsToString o exactlyCs o String.explode
+
+    val digit : (Config.t, char, char) PUP.t = PUP.satisfy Char.isDigit
+    val atLeastOneDigit : (Config.t, char List.t, char List.t) PUP.t = PUP.oneOrMore digit
+    val atLeastOneDigitS : (Config.t, string, string) PUP.t = charsToString atLeastOneDigit
+
+    val atLeastOneAlpha : (Config.t, char List.t, char List.t) PUP.t = PUP.oneOrMore alphaNum
+    val atLeastOneAlphaS : (Config.t, string, string) PUP.t = charsToString atLeastOneAlpha
+
+    val whiteDigit : (Config.t, char, char) PUP.t = 
+        PUP.satisfy (fn c => c = Char.space orelse c = Char.newline orelse c = #"\t" orelse c = #"\r")
+    val whiteSpace : (Config.t, char List.t, char List.t) PUP.t = PUP.zeroOrMore whiteDigit
+
+    val eatWhiteSpace : (Config.t, unit, unit) PUP.t = PUP.iso (fn _ => (), fn () => []) whiteSpace
+
+    val eatWhiteSpaceAfter : (Config.t, 'a, 'b) PUP.t -> (Config.t, 'a, 'b) PUP.t =
      fn p =>
-        case p
-         of Mil.Prims.NGetString => "GetString"
-          | Mil.Prims.NGetHash   => "GetHash"
+        let
+          val p : (Config.t, 'a * unit, 'b * unit) PUP.t = p && eatWhiteSpace
+          val p : (Config.t, 'a * unit, 'b) PUP.t = PUP.layout (fn (a, ()) => a) p
+          val p : (Config.t, 'a, 'b) PUP.t = PUP.leftIso (fn (a, ()) => a, fn a => (a, ())) p
+        in p 
+        end
+    val eatWhiteSpaceBefore : (Config.t, 'a, 'b) PUP.t -> (Config.t, 'a, 'b) PUP.t =
+     fn p =>
+        let
+          val p : (Config.t, unit * 'a, unit * 'b) PUP.t = eatWhiteSpace && p
+          val p : (Config.t, unit * 'a, 'b) PUP.t = PUP.layout (fn ((), a) => a) p
+          val p : (Config.t, 'a, 'b) PUP.t = PUP.leftIso (fn ((), a) => a, fn a => ((), a)) p
+        in p 
+        end
 
-    val stringOp         : Mil.Prims.stringOp t =
-     fn p => 
+    val eatWhiteSpaceAround : (Config.t, 'a, 'b) PUP.t -> (Config.t, 'a, 'b) PUP.t = 
+     fn p => eatWhiteSpaceAfter (eatWhiteSpaceBefore  p)
+
+    type 'a u = (Config.t, 'a, Layout.t) PUP.t
+
+    val -&& : unit u * 'a u -> 'a u = 
+     fn (a, b) => 
         let
-          val res = 
-	      case p
-	       of Mil.Prims.SAllocate      => "Allocate"
-	        | Mil.Prims.SDeallocate    => "Deallocate"
-	        | Mil.Prims.SGetLen        => "GetLen"
-	        | Mil.Prims.SGetChar       => "GetChar"
-	        | Mil.Prims.SSetChar       => "SetChar"
-	        | Mil.Prims.SEqual         => "Equal"
-        in
-          res
+          val p : (Config.t, unit * 'a, Layout.t * Layout.t) PUP.t = a && b
+          val p : (Config.t, 'a, Layout.t * Layout.t) PUP.t = PUP.leftIso (fn ((), a) => a, fn a => ((), a)) p
+          val p : 'a u = PUP.layout (fn (a, b) => L.seq [a, b]) p
+        in p
         end
- 
-    val prim             : Mil.Prims.prim t =
-     fn p => 
+
+    val &&- : 'a u * unit u -> 'a u = 
+     fn (a, b) => 
         let
-          val ipShort = 
-           fn ip =>
-              (case ip
-                of Mil.Prims.IpArbitrary => "I"
-                 | Mil.Prims.IpFixed ia  => IntArb.stringOfTypShort ia)
-          val fpShort = 
-           fn fp => 
-              (case fp
-                of Mil.Prims.FpSingle => "F"
-                 | Mil.Prims.FpDouble => "D")
-          val ntShort = 
-           fn nt => 
-              (case nt
-                of Mil.Prims.NtRat          => "R"
-                 | Mil.Prims.NtInteger ip   => ipShort ip
-                 | Mil.Prims.NtFloat fp     => fpShort fp)
-          val res = 
-	      case p
-	       of Mil.Prims.PNumArith r1   => ntShort (#typ r1) ^ arithOp (#operator r1)
-	        | Mil.Prims.PFloatOp r1    => fpShort (#typ r1) ^ floatOp (#operator r1)
-	        | Mil.Prims.PNumCompare r1 => ntShort (#typ r1) ^ compareOp (#operator r1)
-	        | Mil.Prims.PNumConvert r1 => numericTyp (#from r1) ^ "To" ^ numericTyp (#to r1)
-	        | Mil.Prims.PBitwise r1    => ipShort (#typ r1) ^ bitwiseOp (#operator r1)
-	        | Mil.Prims.PBoolean r1    => logicOp r1
-                | Mil.Prims.PName r1       => "Name" ^ nameOp r1
-	        | Mil.Prims.PCString r1    => "CString" ^ stringOp r1
-                | Mil.Prims.PPtrEq         => "PtrEq"
-        in
-          res
+          val p : (Config.t, 'a * unit, Layout.t * Layout.t) PUP.t = a && b
+          val p : (Config.t, 'a, Layout.t * Layout.t) PUP.t = PUP.leftIso (fn (a, ()) => a, fn a => (a, ())) p
+          val p : 'a u = PUP.layout (fn (a, b) => L.seq [a, b]) p
+        in p
         end
- 
-    val assoc            : Mil.Prims.assoc t = 
-     fn p => 
+
+    val &&& : 'a u * 'b u -> ('a * 'b) u = 
+     fn (a, b) => 
         let
-          val res = 
-	      case p
-	       of Mil.Prims.ALeft     => "L"
-	        | Mil.Prims.ARight    => "R"
-	        | Mil.Prims.AAny      => "A"
-        in
-          res
+          val p : (Config.t, 'a * 'b, Layout.t * Layout.t) PUP.t = a && b
+          val p : ('a * 'b) u = PUP.layout (fn (a, b) => L.seq [a, b]) p
+        in p
         end
- 
-    val dataOp           : Mil.Prims.dataOp t =
+
+    infix  6 &&- &&&
+    infixr 5 -&&
+
+    val !! : (Config.t, unit, L.t list) PUP.t = PUP.return ((), [])
+
+    val *:: : unit u * (Config.t, 'a, L.t list) PUP.t -> (Config.t, 'a, L.t list) PUP.t = 
+     fn (a, b) => 
+        let
+          val p : (Config.t, unit * 'a, Layout.t * (Layout.t list)) PUP.t = a && b
+          val p : (Config.t, 'a, Layout.t * (Layout.t list)) PUP.t = PUP.leftIso (fn ((), a) => a, fn a => ((), a)) p
+          val p : (Config.t, 'a, Layout.t list) PUP.t = PUP.layout (op ::) p
+        in p
+        end
+
+    val ::: : 'a u * (Config.t, 'b, L.t list) PUP.t -> (Config.t, 'a * 'b, L.t list) PUP.t = 
+     fn (a, b) => 
+        let
+          val p : (Config.t, 'a * 'b, Layout.t * Layout.t list) PUP.t = a && b
+          val p : (Config.t, 'a * 'b, Layout.t list) PUP.t = PUP.layout (op ::) p
+        in p
+        end
+
+    val seq : (Config.t, 'a, L.t list) PUP.t -> 'a u = fn p => PUP.layout L.seq p
+
+    infixr 5 *:: :::
+
+    val identifier : (Config.t, string, string) PUP.t = 
+        PUP.isoPartialOut (String.implode o (op::), Utils.List.dec o String.explode) (alpha && alphaNums)
+
+    val fromStrToStr : (string -> 'a option) * ('a -> string) -> (Config.t, string, string) PUP.t -> 'a u = 
+     fn (from, to) => fn p => PUP.leftIsoPartialIn (from, to) (PUP.layout L.str p)
+
+                                                   (* literal s is a unit parse/unparse pair that parses exactly s to produce (), 
+                                                    * and lays out () as L.str s.
+                                                    * Note: matches prefixes of words
+                                                    *)
+    val literal : string -> unit u = 
+     fn s => PUP.leftIso (fn s => (), fn () => s) (PUP.layout L.str (exactlyS s) )
+
+                         
+                         (* keyword s is a unit parse/unparse pair that parses an alphabetic string
+                          * s to produce (), and layouts out () as s.  A maximal alphabetic string
+                          * is parsed.
+                          *)
+    val keyword : string -> unit u = 
+     fn s => 
+        let
+          val p : string u = PUP.layout L.str atLeastOneAlphaS
+          val p : unit u = 
+              PUP.leftIsoPartial (fn s' => if s = s' then SOME () else NONE, 
+                                  fn () => SOME s)  p
+        in p
+        end
+
+    val base : ('a * ('a -> unit option) * string) -> 'a u = 
+     fn (con, dec, s) => 
+        let
+          val p = PUP.leftIsoPartialOut (fn () => con, dec) (literal s)
+                                        (*        val p = debugParser (p, 
+                                                                       (fn {line, col} => print ("Trying to parse "^s^" at line "^Int.toString line^" and col "^Int.toString col^"\n")),
+                                                                       (fn _ => print ("Succeed in parsing "^s^"\n")),
+                                                                       (fn _ => print ("Failed to parse "^s^"\n")),
+                                                                       (fn _ => print ("Error when parsing "^s^"\n"))) *)
+        in p
+        end
+
+    val unary : ('a -> 'b) * ('b -> 'a option) * 'a u -> 'b u = 
+     fn (f1, f2, p) => PUP.leftIsoPartialOut (f1, f2) p
+
+    val rec2 : ('a * 'b -> 'rec) * ('rec -> 'a * 'b) -> ('a * 'b) u -> 'rec u = PUP.leftIso
+    val rec3 = PUP.leftIso
+    val rec4 = PUP.leftIso
+
+    val pair = rec2
+
+    val nonNegativeInt : int u = PUP.layout Int.layout (PUP.isoPartialIn (Int.fromString, Int.toString) atLeastOneDigitS)
+
+    val booleanOptionalLiteral : string -> bool u = 
+     fn s => 
+        let
+          val t = PUP.leftIsoPartialOut (fn () => true, fn b => if b then SOME () else NONE) (literal s)
+          val f = PUP.leftIsoPartialOut (fn () => false, fn b => if b then SOME () else NONE) (literal "")
+        in t || f
+        end
+
+    val commaWSSeparatedList : 'a u -> ('a List.t) u =
      fn p => 
         let
-          val intVector = 
-           fn iv => 
+          val p = eatWhiteSpaceAround p
+          val p' = literal "," -&& p
+          val tail : (Config.t, 'a List.t, L.t List.t) PUP.t = PUP.zeroOrMore p'
+          val ps : (Config.t, 'a * ('a List.t), L.t * (L.t List.t)) PUP.t = p && tail
+          val ps = PUP.layout (fn (a, b) => L.seq (a::b)) ps
+          val nonEmptyList = PUP.leftIsoPartialOut (op ::, Utils.List.dec) ps
+          val emptyList = PUP.return ([], L.str "")
+        in nonEmptyList || emptyList
+        end
+
+    val commaWSSeparatedVector : 'a u -> ('a vector) u = 
+     fn p => PUP.leftIso (Vector.fromList, Vector.toList) (commaWSSeparatedList p)
+
+    val platform : (IntArb.size -> 'a) * string -> 'a u =
+     fn (con, s) => 
+        let
+          val f = 
+           fn config => 
+              PUP.leftIsoPartialOut (fn () => con (Config.targetWordSize' config), fn _ => NONE) (literal s)
+        in PUP.withEnv f
+        end
+
+    val fieldSize        : Mil.fieldSize u = 
+        let
+          val fs8  = base (Mil.Fs8,  FieldSize.Dec.fs8, "8")
+          val fs16 = base (Mil.Fs16, FieldSize.Dec.fs16, "16")
+          val fs32 = base (Mil.Fs32, FieldSize.Dec.fs32, "32")
+          val fs64 = base (Mil.Fs64, FieldSize.Dec.fs64, "64")
+          val fsp = platform (FieldSize.intArbSz, "p")
+        in fs8 || fs16 || fs32 || fs64 || fsp
+        end
+
+    val intArbTyp : IntArb.typ u = 
+        let
+          val signed = 
               let
-                val l = LayoutUtils.angleSeq (Vector.toListMap (iv, Int.layout))
-                val s = Layout.toString l
-              in s
+                val s = base (IntArb.Signed, IntArb.Signed.Dec.signed, "S")
+                val u = base (IntArb.Unsigned, IntArb.Signed.Dec.unsigned, "U")
+              in s || u
               end
-          val res = 
-	      case p
-	       of Mil.Prims.DBroadcast    => "Broadcast"
-	        | Mil.Prims.DVector       => "Vector"
-	        | Mil.Prims.DSub r1       => "Sub" ^ Int.toString r1
-	        | Mil.Prims.DPermute r1   => "Permute" ^ intVector r1
-	        | Mil.Prims.DBlend        => "Blend"
-	        | Mil.Prims.DSplit        => "Split"
-	        | Mil.Prims.DConcat       => "Concat"
+          val size = 
+              let
+                val s8  = base (IntArb.S8, IntArb.Size.Dec.s8, "8")
+                val s16 = base (IntArb.S16, IntArb.Size.Dec.s16, "16")
+                val s32 = base (IntArb.S32, IntArb.Size.Dec.s32, "32")
+                val s64 = base (IntArb.S64, IntArb.Size.Dec.s64, "64")
+                val sp = platform (fn sz => sz, "p")
+              in s8 || s16 || s32 || s64 || sp
+              end
+          val p = signed &&- literal "Int" &&& size
+          val p = pair (fn (sgn, sz) => IntArb.T (sz, sgn), fn (IntArb.T (sz, sgn)) => (sgn, sz)) p
+        in p
+        end
+
+    val vectorSize       : Mil.Prims.vectorSize u = 
+        let
+          val vs64   = base (Mil.Prims.Vs64,   Dec.VectorSize.vs64,   "64")
+          val vs128  = base (Mil.Prims.Vs128,  Dec.VectorSize.vs128,  "128")
+          val vs256  = base (Mil.Prims.Vs256,  Dec.VectorSize.vs256,  "256")
+          val vs512  = base (Mil.Prims.Vs512,  Dec.VectorSize.vs512,  "512")
+          val vs1024 = base (Mil.Prims.Vs1024, Dec.VectorSize.vs1024, "1024")
+        in vs64 || vs128 || vs256 || vs512 || vs1024
+        end
+
+    val vectorDescriptor : Mil.Prims.vectorDescriptor u =
+        let
+          val r2t = fn (Mil.Prims.Vd {vectorSize, elementSize}) => (vectorSize, elementSize)
+          val t2r = fn (v, e) => Mil.Prims.Vd {vectorSize = v, elementSize = e}
+        in rec2 (t2r, r2t) (vectorSize &&- literal "x" &&& fieldSize)
+        end
+
+
+    val floatPrecision   : Mil.Prims.floatPrecision u = 
+        let
+          val fpSingle = base (Mil.Prims.FpSingle, Dec.FloatPrecision.fpSingle, "Float32")
+          val fpDouble = base (Mil.Prims.FpDouble, Dec.FloatPrecision.fpDouble, "Float64")
+        in fpSingle || fpDouble
+        end
+
+
+    val intPrecision     : Mil.Prims.intPrecision u = 
+        let
+          val ipArbitrary = base  (Mil.Prims.IpArbitrary, Dec.IntPrecision.ipArbitrary, "Int") 
+          val ipFixed     = unary (Mil.Prims.IpFixed, Dec.IntPrecision.ipFixed, intArbTyp)
+        in ipArbitrary || ipFixed
+        end
+
+    val numericTyp       : Mil.Prims.numericTyp u = 
+        let
+          val ntRat     = base (Mil.Prims.NtRat, Dec.NumericTyp.ntRat, "Rat")
+          val ntInteger = unary (Mil.Prims.NtInteger, Dec.NumericTyp.ntInteger, intPrecision)
+          val ntFloat   = unary (Mil.Prims.NtFloat, Dec.NumericTyp.ntFloat, floatPrecision)
+        in ntRat || ntInteger || ntFloat
+        end
+        
+    val divKind          : Mil.Prims.divKind u =
+        let
+          val dkT = base (Mil.Prims.DkT, Dec.DivKind.dkT, "T")
+          val dkF = base (Mil.Prims.DkF, Dec.DivKind.dkF, "F")
+          val dkE = base (Mil.Prims.DkE, Dec.DivKind.dkE, "E")
+        in dkT || dkF || dkE
+        end
+
+    val arithOp          : Mil.Prims.arithOp u =
+        let
+          val aAbs       = base  (Mil.Prims.AAbs, Dec.ArithOp.aAbs, "Abs")
+	  val aNegate    = base  (Mil.Prims.ANegate, Dec.ArithOp.aNegate, "Negate")
+	  val aNegateSat = base  (Mil.Prims.ANegateSat, Dec.ArithOp.aNegateSat, "NegateSat")
+	  val aDivide    = base  (Mil.Prims.ADivide, Dec.ArithOp.aDivide, "Divide")
+	  val aDiv       = unary (Mil.Prims.ADiv, Dec.ArithOp.aDiv, literal "Div" -&& divKind)
+	  val aMax       = base  (Mil.Prims.AMax, Dec.ArithOp.aMax, "Max")
+	  val aMin       = base  (Mil.Prims.AMin, Dec.ArithOp.aMin, "Min")
+	  val aMinus     = base  (Mil.Prims.AMinus, Dec.ArithOp.aMinus, "Minus")
+	  val aMinusSat  = base  (Mil.Prims.AMinusSat, Dec.ArithOp.aMinusSat, "MinusSat")
+          val aMod       = unary (Mil.Prims.AMod, Dec.ArithOp.aMod, literal "Mod" -&& divKind)
+	  val aPlus      = base  (Mil.Prims.APlus, Dec.ArithOp.aPlus, "Plus")
+	  val aPlusSat   = base  (Mil.Prims.APlusSat, Dec.ArithOp.aPlusSat, "PlusSat")
+	  val aTimes     = base  (Mil.Prims.ATimes, Dec.ArithOp.aTimes, "Times")
+	  val aTimesSat  = base  (Mil.Prims.ATimesSat, Dec.ArithOp.aTimesSat, "TimesSat")
+          val aDivMod    = unary (Mil.Prims.ADivMod, Dec.ArithOp.aDivMod, literal "DivMod" -&& divKind)
+        in aAbs || aNegate || aNegateSat || aDivide || aDiv 
+                || aMax || aMinus || aMin || aMinusSat || aMod || aPlus || aPlusSat 
+                || aTimes || aTimesSat || aDivMod 
+        end
+        
+    val floatOp          : Mil.Prims.floatOp u =
+        let
+          val faACos  = base  (Mil.Prims.FaACos,  Dec.FloatOp.faACos,  "ACos")
+          val faASin  = base  (Mil.Prims.FaASin,  Dec.FloatOp.faASin,  "ASin")
+          val faCeil  = base  (Mil.Prims.FaCeil,  Dec.FloatOp.faCeil,  "Ceil")
+          val faCos   = base  (Mil.Prims.FaCos,  Dec.FloatOp.faCos,  "Cos")
+          val faFloor = base  (Mil.Prims.FaFloor,  Dec.FloatOp.faFloor,  "Floor")
+          val faRcp   = base  (Mil.Prims.FaRcp,  Dec.FloatOp.faRcp,  "Rcp")
+          val faSin   = base  (Mil.Prims.FaSin,  Dec.FloatOp.faSin,  "Sin")
+          val faSqrt  = base  (Mil.Prims.FaSqrt,  Dec.FloatOp.faSqrt,  "Sqrt")
+          val faTan   = base  (Mil.Prims.FaTan,  Dec.FloatOp.faTan,  "Tan")
+          val faTrunc = base  (Mil.Prims.FaTrunc,  Dec.FloatOp.faTrunc,  "Trunc")
+          val faPow   = base  (Mil.Prims.FaPow,  Dec.FloatOp.faPow,  "Pow")
+          val res = faACos 
+                      || faASin 
+                      || faCeil 
+                      || faCos 
+                      || faFloor 
+                      || faRcp 
+                      || faSin 
+                      || faSqrt 
+                      || faTan 
+                      || faTrunc 
+                      || faPow
+        in
+          res
+        end
+
+    val bitwiseOp        : Mil.Prims.bitwiseOp u =
+        let
+          val bNot    = base  (Mil.Prims.BNot,  Dec.BitwiseOp.bNot,  "BNot")
+          val bAnd    = base  (Mil.Prims.BAnd,  Dec.BitwiseOp.bAnd,  "BAnd")
+          val bOr     = base  (Mil.Prims.BOr,  Dec.BitwiseOp.bOr,  "BOr")
+          val bRotL   = base  (Mil.Prims.BRotL,  Dec.BitwiseOp.bRotL,  "BRotL")
+          val bRotR   = base  (Mil.Prims.BRotR,  Dec.BitwiseOp.bRotR,  "BRotR")
+          val bShiftL = base  (Mil.Prims.BShiftL,  Dec.BitwiseOp.bShiftL,  "BShiftL")
+          val bShiftR = base  (Mil.Prims.BShiftR,  Dec.BitwiseOp.bShiftR,  "BShiftR")
+          val bXor    = base  (Mil.Prims.BXor,  Dec.BitwiseOp.bXor,  "BXor")
+          val res = bNot || bAnd || bOr || bRotL || bRotR || bShiftL || bShiftR || bXor
+        in
+          res
+        end
+
+    val logicOp          : Mil.Prims.logicOp u =
+        let
+          val lNot = base  (Mil.Prims.LNot,  Dec.LogicOp.lNot,  "Not")
+          val lAnd = base  (Mil.Prims.LAnd,  Dec.LogicOp.lAnd,  "And")
+          val lOr  = base  (Mil.Prims.LOr,  Dec.LogicOp.lOr,  "Or")
+          val lXor = base  (Mil.Prims.LXor,  Dec.LogicOp.lXor,  "Xor")
+          val lEq  = base  (Mil.Prims.LEq,  Dec.LogicOp.lEq,  "Eq")
+          val res = lNot || lAnd || lOr || lXor || lEq
+        in
+          res
+        end
+
+    val compareOp        : Mil.Prims.compareOp u =
+        let
+          val cEq = base  (Mil.Prims.CEq,  Dec.CompareOp.cEq,  "Eq")
+          val cNe = base  (Mil.Prims.CNe,  Dec.CompareOp.cNe,  "Ne")
+          val cLt = base  (Mil.Prims.CLt,  Dec.CompareOp.cLt,  "Lt")
+          val cLe = base  (Mil.Prims.CLe,  Dec.CompareOp.cLe,  "Le")
+          val res = cEq || cNe || cLt || cLe
+        in
+          res
+        end
+
+    val nameOp           : Mil.Prims.nameOp u =
+        let
+          val nGetString = base (Mil.Prims.NGetString, Dec.NameOp.nGetString, "GetString")
+          val nGetHash   = base (Mil.Prims.NGetHash,   Dec.NameOp.nGetHash,   "GetHash")
+          val res = nGetString || nGetHash
+        in res
+        end
+
+    val stringOp         : Mil.Prims.stringOp u =
+        let
+          val sAllocate   = base  (Mil.Prims.SAllocate,  Dec.StringOp.sAllocate,  "Allocate")
+          val sDeallocate = base  (Mil.Prims.SDeallocate,  Dec.StringOp.sDeallocate,  "Deallocate")
+          val sGetLen     = base  (Mil.Prims.SGetLen,  Dec.StringOp.sGetLen,  "GetLen")
+          val sGetChar    = base  (Mil.Prims.SGetChar,  Dec.StringOp.sGetChar,  "GetChar")
+          val sSetChar    = base  (Mil.Prims.SSetChar,  Dec.StringOp.sSetChar,  "SetChar")
+          val sEqual      = base  (Mil.Prims.SEqual,  Dec.StringOp.sEqual,  "Equal")
+          val res = sAllocate || sDeallocate || sGetLen || sGetChar || sSetChar || sEqual
+        in
+          res
+        end
+
+        
+    val prim             : Mil.Prims.prim u =
+        let
+          val r2t : {typ : 'a, operator : 'b} -> ('a * 'b) = fn {typ, operator} => (typ, operator)
+          val t2r : ('a * 'b) -> {typ : 'a, operator : 'b} = fn (typ, operator) => {typ = typ, operator = operator}
+          val doR = fn p => rec2 (t2r, r2t) p
+          val pNumArith   = unary (Mil.Prims.PNumArith,  Dec.Prim.pNumArith,  doR (numericTyp &&& arithOp))
+          val pFloatOp    = unary (Mil.Prims.PFloatOp,  Dec.Prim.pFloatOp,  doR (floatPrecision &&& floatOp))
+          val pNumCompare = unary (Mil.Prims.PNumCompare, Dec.Prim.pNumCompare, doR (numericTyp &&& compareOp))
+          val pNumConvert = 
+              let
+                val r2t = fn {from, to} => (from, to)
+                val t2r = fn (from ,to) => {to = to, from = from}
+                val doR = fn p => rec2 (t2r, r2t) p
+                val r = doR (numericTyp &&- literal "To" &&& numericTyp)
+              in unary (Mil.Prims.PNumConvert,  Dec.Prim.pNumConvert, r)
+              end  
+          val pBitwise    = unary (Mil.Prims.PBitwise,  Dec.Prim.pBitwise,  doR (intPrecision &&& bitwiseOp))
+          val pBoolean    = unary (Mil.Prims.PBoolean,  Dec.Prim.pBoolean,  logicOp)
+          val pName       = unary (Mil.Prims.PName,     Dec.Prim.pName,     literal "Name" -&& nameOp)
+          val pCString    = unary (Mil.Prims.PCString,  Dec.Prim.pCString,  literal "CString" -&& stringOp)
+          val pPtrEq      = base  (Mil.Prims.PPtrEq,    Dec.Prim.pPtrEq,    "PtrEq")
+          val res =
+              pNumArith || pFloatOp || pNumCompare || pNumConvert || pBitwise || pBoolean || pName || pCString || pPtrEq
+        in
+          res
+        end
+
+
+    val assoc            : Mil.Prims.assoc u = 
+        let
+          val aLeft  = base  (Mil.Prims.ALeft,  Dec.Assoc.aLeft,  "L")
+          val aRight = base  (Mil.Prims.ARight,  Dec.Assoc.aRight,  "R")
+          val aAny   = base  (Mil.Prims.AAny,  Dec.Assoc.aAny,  "A")
+          val res = aLeft || aRight || aAny
         in
           res
         end
         
-    val vector           : Mil.Prims.vector t =
-     fn p => 
+    val dataOp           : Mil.Prims.dataOp u =
         let
-          val angle = fn s => Layout.toString (LayoutUtils.angleBracket (Layout.str s))
-          val square = fn s => Layout.toString (LayoutUtils.bracket (Layout.str s))
-          val doOne = 
-              fn (prefix, src, tgtO, operator) =>
-                 let
-                   val from = square (vectorDescriptor src)
-                   val to = case tgtO
-                             of SOME tgt => square (vectorDescriptor tgt)
-                              | NONE => ""
-                   val oper = angle operator
-                 in prefix ^ from ^ to ^ oper
-                 end
-
-          val res = 
-	      case p
-	       of Mil.Prims.ViPointwise r1   => 
-                  let
-                    val prefix = if #masked r1 then
-                                   "VPointwiseM"
-                                 else
-                                   "VPointwise"
-                  in doOne (prefix, #descriptor r1, NONE, prim (#operator r1))
-                  end
-	        | Mil.Prims.ViConvert r1     => 
-                  let
-                    val to = #to r1
-                    val from = #from r1
-                    val oper = prim (Mil.Prims.PNumConvert {to = #typ to, from = #typ from})
-                  in doOne ("VConvert", #descriptor from, SOME (#descriptor to), oper)
-                  end
-	        | Mil.Prims.ViCompare r1     => 
-                  let
-                    val oper = prim (Mil.Prims.PNumCompare {typ = #typ r1, operator = #operator r1})
-                  in doOne ("VCompare", #descriptor r1, NONE, oper)
-                  end
-	        | Mil.Prims.ViReduction r1   => 
-                  let
-                    val prefix = "VReduce" ^ assoc (#associativity r1)
-                  in doOne (prefix, #descriptor r1, NONE, prim (#operator r1))
-                  end
-	        | Mil.Prims.ViData r1        => doOne ("VData", #descriptor r1, NONE, dataOp (#operator r1))
-	        | Mil.Prims.ViMaskData r1    => doOne ("VMaskData", #descriptor r1, NONE, dataOp (#operator r1))
-	        | Mil.Prims.ViMaskBoolean r1 => doOne ("VMaskBool", #descriptor r1, NONE, logicOp (#operator r1))
-	        | Mil.Prims.ViMaskConvert r1 => doOne ("VMaskConvert", #to r1, SOME (#from r1), "")
+          val dBroadcast = base  (Mil.Prims.DBroadcast,  Dec.DataOp.dBroadcast,  "Broadcast")
+          val dVector    = base  (Mil.Prims.DVector,  Dec.DataOp.dVector,  "Vector")
+          val dSub       = unary (Mil.Prims.DSub,  Dec.DataOp.dSub,  nonNegativeInt)
+          val dPermute   = 
+              let
+                val doVector = literal "<" -&& commaWSSeparatedVector nonNegativeInt &&- literal ">"
+              in unary (Mil.Prims.DPermute,  Dec.DataOp.dPermute,  doVector)
+              end
+          val dBlend     = base  (Mil.Prims.DBlend,  Dec.DataOp.dBlend,  "Blend")
+          val dSplit     = base  (Mil.Prims.DSplit,  Dec.DataOp.dSplit,  "Split")
+          val dConcat    = base  (Mil.Prims.DConcat,  Dec.DataOp.dConcat,  "Concat")
+          val res = dBroadcast || dVector || dSub || dPermute || dBlend || dSplit || dConcat
         in
           res
         end
 
-    val runtime          : Mil.Prims.runtime t =
-     fn p => 
+    val vector           : Mil.Prims.vector u =
         let
-          val res = 
-	      case p
-	       of Mil.Prims.RtFloatMk              => "PFloatMk"
-	        | Mil.Prims.RtWriteln              => "PWriteln"
-	        | Mil.Prims.RtReadln               => "PReadln"
-	        | Mil.Prims.RtAssert               => "PAssert"
-	        | Mil.Prims.RtError                => "PError"
-	        | Mil.Prims.RtDebug                => "PDebug"
-	        | Mil.Prims.RtOpenOut              => "POpenOut"
-	        | Mil.Prims.RtGetStdout            => "PGetStdout"
-	        | Mil.Prims.RtOutputByte           => "POutputByte"
-	        | Mil.Prims.RtCloseOut             => "PCloseOut"
-	        | Mil.Prims.RtOpenIn               => "POpenIn"
-	        | Mil.Prims.RtGetStdin             => "PGetStdin"
-	        | Mil.Prims.RtInputByte            => "PInputByte"
-	        | Mil.Prims.RtInputString          => "PInputString"
-	        | Mil.Prims.RtInputAll             => "PInputAll"
-	        | Mil.Prims.RtIsEOF                => "PIsEOF"
-	        | Mil.Prims.RtCloseIn              => "PCloseIn"
-	        | Mil.Prims.RtCommandLine          => "PCommandLine"
-	        | Mil.Prims.RtStringToNat          => "PStringToNat"
-	        | Mil.Prims.RtStringToFloat        => "PStringToFloat"
-	        | Mil.Prims.RtFloatToString        => "PFloatToString"
-	        | Mil.Prims.RtFloatToStringI       => "PFloatToStringI"
-	        | Mil.Prims.RtRatNumerator         => "PRatNumerator"
-	        | Mil.Prims.RtRatDenominator       => "PRatDenominator"
-	        | Mil.Prims.RtEqual                => "PEqual"
-	        | Mil.Prims.RtDom                  => "PDom"
-	        | Mil.Prims.RtNub                  => "PNub"
-	        | Mil.Prims.RtRatToUIntpChecked    => "PRatToUIntpChecked"
-	        | Mil.Prims.RtRatToString          => "PRatToString"
-	        | Mil.Prims.RtStringToRat          => "PStringToRat"
-	        | Mil.Prims.RtResetTimer           => "PResetTimer"
-	        | Mil.Prims.RtGetTimer             => "PGetTimer"
-	        | Mil.Prims.RtVtuneAttach          => "PVTuneAttach"
-	        | Mil.Prims.RtVtuneDetach          => "PVTuneDetach"
-	        | Mil.Prims.RtArrayEval            => "PArrayEval"
-                | Mil.Prims.RtIntegerHash          => "PIntegerHash"
-        in
-          res
-        end
- 
-    val t                : Mil.Prims.t t = 
-     fn p => 
-        let
-          val res = 
-	      case p
-	       of Mil.Prims.Prim r1    => prim r1
-	        | Mil.Prims.Runtime r1 => runtime r1
-	        | Mil.Prims.Vector r1  => vector r1
+          val angle : 'a u -> 'a u = fn p => literal "<" -&& p &&- literal ">"
+          val square : 'a u -> 'a u = fn p => literal "[" -&& p &&- literal "]"
+
+          val viPointwise   = 
+              let
+                val r2t = fn {descriptor, masked, operator} => ((masked, descriptor), operator)
+                val t2r = fn ((masked, descriptor), operator) => 
+                             {descriptor = descriptor, masked = masked, operator = operator}
+                val masked = booleanOptionalLiteral "?"
+                val p = literal "VPointWise" -&& masked &&& square vectorDescriptor &&& angle prim
+              in unary (Mil.Prims.ViPointwise, Dec.Vector.viPointwise, rec2 (t2r, r2t) p)
+              end
+          val viConvert     = 
+              let 
+                val r2t = 
+                 fn {from = {descriptor = d1, typ = t1}, to = {descriptor = d2, typ = t2}} => ((d1, d2), (t1, t2))
+                val t2r = 
+                 fn ((d1, d2), (t1, t2)) => {from = {descriptor = d1, typ = t1}, to = {descriptor = d2, typ = t2}}
+                val p = literal "VConvert" -&& square vectorDescriptor &&& square vectorDescriptor &&& 
+                                angle (numericTyp &&- literal "To" &&& numericTyp)
+              in unary (Mil.Prims.ViConvert, Dec.Vector.viConvert, rec3 (t2r, r2t) p)
+              end
+
+          val viCompare     = 
+              let
+                val r2t = fn {descriptor = d1, typ = t1, operator = op1} => (d1, (t1, op1))
+                val t2r = fn (d1, (t1, op1)) => {descriptor = d1, typ = t1, operator = op1} 
+                val p = literal "VCompare" -&& square vectorDescriptor &&& angle (numericTyp &&& compareOp)
+              in unary (Mil.Prims.ViCompare, Dec.Vector.viCompare, rec2 (t2r, r2t) p)
+              end
+
+          val viReduction   = 
+              let
+                val r2t = fn {descriptor = d1, associativity = a1, operator = p1} => ((a1, d1), p1)
+                val t2r = fn ((a1, d1), p1) => {descriptor = d1, associativity = a1, operator = p1}
+                val p = literal "VReduction" -&& assoc &&& square vectorDescriptor &&& prim
+              in unary (Mil.Prims.ViReduction, Dec.Vector.viReduction, rec2 (t2r, r2t) p)
+              end
+
+          val mk = 
+           fn (name, operator) => 
+              let
+                val r2t = fn {descriptor = d1, operator = op1} => (d1, op1)
+                val t2r = fn (d1, op1) => {descriptor = d1, operator = op1} 
+                val p = literal name -&& square vectorDescriptor &&& angle operator
+              in rec2 (t2r, r2t) p
+              end
+          val viData        = unary (Mil.Prims.ViData, Dec.Vector.viData, mk ("VData", dataOp))
+          val viMaskData    = unary (Mil.Prims.ViMaskData, Dec.Vector.viMaskData, mk ("VMaskData", dataOp))
+          val viMaskBoolean = unary (Mil.Prims.ViMaskBoolean, Dec.Vector.viMaskBoolean, mk ("VMaskBoolean", logicOp))
+          val viMaskConvert = 
+              let 
+                val r2t = fn {from = f1, to = t1} => (f1, t1)
+                val t2r = fn (f1, t1) => {from = f1, to = t1} 
+                val p = literal "VMaskConvert" -&& square vectorDescriptor &&& square vectorDescriptor &&- literal "<>"
+              in unary (Mil.Prims.ViMaskConvert, Dec.Vector.viMaskConvert, rec2 (t2r, r2t) p)
+              end
+
+          val res = viPointwise 
+                      || viConvert 
+                      || viCompare 
+                      || viReduction 
+                      || viData 
+                      || viMaskData 
+                      || viMaskBoolean 
+                      || viMaskConvert
         in
           res
         end
 
-  end (* structure ToString *)
+    val runtime          : Mil.Prims.runtime u =
+        let
+          val rtFloatMk           = base  (Mil.Prims.RtFloatMk,  Dec.Runtime.rtFloatMk,  "FloatMk")
+          val rtWriteln           = base  (Mil.Prims.RtWriteln,  Dec.Runtime.rtWriteln,  "Writeln")
+          val rtReadln            = base  (Mil.Prims.RtReadln,  Dec.Runtime.rtReadln,  "Readln")
+          val rtAssert            = base  (Mil.Prims.RtAssert,  Dec.Runtime.rtAssert,  "Assert")
+          val rtError             = base  (Mil.Prims.RtError,  Dec.Runtime.rtError,  "Error")
+          val rtDebug             = base  (Mil.Prims.RtDebug,  Dec.Runtime.rtDebug,  "Debug")
+          val rtOpenOut           = base  (Mil.Prims.RtOpenOut,  Dec.Runtime.rtOpenOut,  "OpenOut")
+          val rtGetStdout         = base  (Mil.Prims.RtGetStdout,  Dec.Runtime.rtGetStdout,  "GetStdout")
+          val rtOutputByte        = base  (Mil.Prims.RtOutputByte,  Dec.Runtime.rtOutputByte,  "OutputByte")
+          val rtCloseOut          = base  (Mil.Prims.RtCloseOut,  Dec.Runtime.rtCloseOut,  "CloseOut")
+          val rtOpenIn            = base  (Mil.Prims.RtOpenIn,  Dec.Runtime.rtOpenIn,  "OpenIn")
+          val rtGetStdin          = base  (Mil.Prims.RtGetStdin,  Dec.Runtime.rtGetStdin,  "GetStdin")
+          val rtInputByte         = base  (Mil.Prims.RtInputByte,  Dec.Runtime.rtInputByte,  "InputByte")
+          val rtInputString       = base  (Mil.Prims.RtInputString,  Dec.Runtime.rtInputString,  "InputString")
+          val rtInputAll          = base  (Mil.Prims.RtInputAll,  Dec.Runtime.rtInputAll,  "InputAll")
+          val rtIsEOF             = base  (Mil.Prims.RtIsEOF,  Dec.Runtime.rtIsEOF,  "IsEOF")
+          val rtCloseIn           = base  (Mil.Prims.RtCloseIn,  Dec.Runtime.rtCloseIn,  "CloseIn")
+          val rtCommandLine       = base  (Mil.Prims.RtCommandLine,  Dec.Runtime.rtCommandLine,  "CommandLine")
+          val rtStringToNat       = base  (Mil.Prims.RtStringToNat,  Dec.Runtime.rtStringToNat,  "StringToNat")
+          val rtStringToFloat     = base  (Mil.Prims.RtStringToFloat,  Dec.Runtime.rtStringToFloat,  "StringToFloat")
+          val rtFloatToString     = base  (Mil.Prims.RtFloatToString,  Dec.Runtime.rtFloatToString,  "FloatToString")
+          val rtFloatToStringI    = base  (Mil.Prims.RtFloatToStringI,  Dec.Runtime.rtFloatToStringI,  "FloatToStringI")
+          val rtRatNumerator      = base  (Mil.Prims.RtRatNumerator,  Dec.Runtime.rtRatNumerator,  "RatNumerator")
+          val rtRatDenominator    = base  (Mil.Prims.RtRatDenominator,  Dec.Runtime.rtRatDenominator,  "RatDenominator")
+          val rtEqual             = base  (Mil.Prims.RtEqual,  Dec.Runtime.rtEqual,  "Equal")
+          val rtDom               = base  (Mil.Prims.RtDom,  Dec.Runtime.rtDom,  "Dom")
+          val rtNub               = base  (Mil.Prims.RtNub,  Dec.Runtime.rtNub,  "Nub")
+          val rtRatToUIntpChecked = base  (Mil.Prims.RtRatToUIntpChecked, Dec.Runtime.rtRatToUIntpChecked, "RatToUIntpChecked")
+          val rtRatToString       = base  (Mil.Prims.RtRatToString,  Dec.Runtime.rtRatToString,  "RatToString")
+          val rtStringToRat       = base  (Mil.Prims.RtStringToRat,  Dec.Runtime.rtStringToRat,  "StringToRat")
+          val rtResetTimer        = base  (Mil.Prims.RtResetTimer,  Dec.Runtime.rtResetTimer,  "ResetTimer")
+          val rtGetTimer          = base  (Mil.Prims.RtGetTimer,  Dec.Runtime.rtGetTimer,  "GetTimer")
+          val rtVtuneAttach       = base  (Mil.Prims.RtVtuneAttach,  Dec.Runtime.rtVtuneAttach,  "VTuneAttach")
+          val rtVtuneDetach       = base  (Mil.Prims.RtVtuneDetach,  Dec.Runtime.rtVtuneDetach,  "VTuneDetach")
+          val rtArrayEval         = base  (Mil.Prims.RtArrayEval,  Dec.Runtime.rtArrayEval,  "ArrayEval")
+          val rtIntegerHash       = base  (Mil.Prims.RtIntegerHash, Dec.Runtime.rtIntegerHash, "IntHash")
+          val res = rtFloatMk 
+                      || rtWriteln 
+                      || rtReadln 
+                      || rtAssert 
+                      || rtError 
+                      || rtDebug 
+                      || rtOpenOut 
+                      || rtGetStdout 
+                      || rtOutputByte 
+                      || rtCloseOut 
+                      || rtOpenIn 
+                      || rtGetStdin 
+                      || rtInputByte 
+                      || rtInputString 
+                      || rtInputAll 
+                      || rtIsEOF 
+                      || rtCloseIn 
+                      || rtCommandLine 
+                      || rtStringToNat 
+                      || rtStringToFloat 
+                      || rtFloatToString 
+                      || rtFloatToStringI 
+                      || rtRatNumerator 
+                      || rtRatDenominator 
+                      || rtEqual 
+                      || rtDom 
+                      || rtNub 
+                      || rtRatToUIntpChecked 
+                      || rtRatToString 
+                      || rtStringToRat 
+                      || rtResetTimer 
+                      || rtGetTimer 
+                      || rtVtuneAttach 
+                      || rtVtuneDetach 
+                      || rtArrayEval
+                      || rtIntegerHash
+        in
+          res
+        end
 
-  structure Layout =
-  struct
-    type 'a t = 'a -> Layout.t
-    val vectorSize       : Mil.Prims.vectorSize t       = Layout.str o ToString.vectorSize
-    val vectorDescriptor : Mil.Prims.vectorDescriptor t = Layout.str o ToString.vectorDescriptor
-    val floatPrecision   : Mil.Prims.floatPrecision t   = Layout.str o ToString.floatPrecision
-    val intPrecision     : Mil.Prims.intPrecision t     = Layout.str o ToString.intPrecision
-    val numericTyp       : Mil.Prims.numericTyp t       = Layout.str o ToString.numericTyp
-    val divKind          : Mil.Prims.divKind t          = Layout.str o ToString.divKind
-    val arithOp          : Mil.Prims.arithOp t          = Layout.str o ToString.arithOp
-    val floatOp          : Mil.Prims.floatOp t          = Layout.str o ToString.floatOp
-    val bitwiseOp        : Mil.Prims.bitwiseOp t        = Layout.str o ToString.bitwiseOp
-    val logicOp          : Mil.Prims.logicOp t          = Layout.str o ToString.logicOp
-    val compareOp        : Mil.Prims.compareOp t        = Layout.str o ToString.compareOp
-    val nameOp           : Mil.Prims.nameOp t           = Layout.str o ToString.nameOp
-    val stringOp         : Mil.Prims.stringOp t         = Layout.str o ToString.stringOp
-    val prim             : Mil.Prims.prim t             = Layout.str o ToString.prim
-    val assoc            : Mil.Prims.assoc t            = Layout.str o ToString.assoc
-    val dataOp           : Mil.Prims.dataOp t           = Layout.str o ToString.dataOp
-    val vector           : Mil.Prims.vector t           = Layout.str o ToString.vector
-    val runtime          : Mil.Prims.runtime t          = Layout.str o ToString.runtime
-    val t                : Mil.Prims.t t                = Layout.str o ToString.t
-  end (* structure Layout *)
+    val t                : Mil.Prims.t u = 
+        let
+          val prim    = unary (Mil.Prims.Prim,  Dec.T.prim,  prim)
+          val runtime = unary (Mil.Prims.Runtime,  Dec.T.runtime,  runtime)
+          val vector  = unary (Mil.Prims.Vector,  Dec.T.vector,  vector)
+          val res = prim || runtime || vector
+        in
+          res
+        end
+
+    structure Layout = 
+    struct
+      type 'a t = Config.t * 'a -> Layout.t
+      val lift = 
+       fn f => 
+       fn (config, a) => 
+          let
+            val {parse, layout} = FileParserUnParser.get f config
+            val g = UnParser.run layout
+          in case g a
+              of SOME l => l
+               | NONE   => Fail.fail ("PrimsLayout", "lift", "Layout failed")
+          end
+      val vectorSize       : Mil.Prims.vectorSize t       = lift vectorSize
+      val vectorDescriptor : Mil.Prims.vectorDescriptor t = lift vectorDescriptor
+      val floatPrecision   : Mil.Prims.floatPrecision t   = lift floatPrecision
+      val intPrecision     : Mil.Prims.intPrecision t     = lift intPrecision
+      val numericTyp       : Mil.Prims.numericTyp t       = lift numericTyp
+      val divKind          : Mil.Prims.divKind t          = lift divKind
+      val arithOp          : Mil.Prims.arithOp t          = lift arithOp
+      val floatOp          : Mil.Prims.floatOp t          = lift floatOp
+      val bitwiseOp        : Mil.Prims.bitwiseOp t        = lift bitwiseOp
+      val logicOp          : Mil.Prims.logicOp t          = lift logicOp
+      val compareOp        : Mil.Prims.compareOp t        = lift compareOp
+      val nameOp           : Mil.Prims.nameOp t           = lift nameOp
+      val stringOp         : Mil.Prims.stringOp t         = lift stringOp
+      val prim             : Mil.Prims.prim t             = lift prim
+      val assoc            : Mil.Prims.assoc t            = lift assoc
+      val dataOp           : Mil.Prims.dataOp t           = lift dataOp
+      val vector           : Mil.Prims.vector t           = lift vector
+      val runtime          : Mil.Prims.runtime t          = lift runtime
+      val t                : Mil.Prims.t t                = lift t
+    end (* structure Layout *)
+
+    structure ToString = 
+    struct
+      type 'a t = Config.t * 'a -> string
+      val lift = 
+       fn f => fn (config, a) => L.toString (f (config, a))
+      val vectorSize       : Mil.Prims.vectorSize t       = lift Layout.vectorSize
+      val vectorDescriptor : Mil.Prims.vectorDescriptor t = lift Layout.vectorDescriptor
+      val floatPrecision   : Mil.Prims.floatPrecision t   = lift Layout.floatPrecision
+      val intPrecision     : Mil.Prims.intPrecision t     = lift Layout.intPrecision
+      val numericTyp       : Mil.Prims.numericTyp t       = lift Layout.numericTyp
+      val divKind          : Mil.Prims.divKind t          = lift Layout.divKind
+      val arithOp          : Mil.Prims.arithOp t          = lift Layout.arithOp
+      val floatOp          : Mil.Prims.floatOp t          = lift Layout.floatOp
+      val bitwiseOp        : Mil.Prims.bitwiseOp t        = lift Layout.bitwiseOp
+      val logicOp          : Mil.Prims.logicOp t          = lift Layout.logicOp
+      val compareOp        : Mil.Prims.compareOp t        = lift Layout.compareOp
+      val nameOp           : Mil.Prims.nameOp t           = lift Layout.nameOp
+      val stringOp         : Mil.Prims.stringOp t         = lift Layout.stringOp
+      val prim             : Mil.Prims.prim t             = lift Layout.prim
+      val assoc            : Mil.Prims.assoc t            = lift Layout.assoc
+      val dataOp           : Mil.Prims.dataOp t           = lift Layout.dataOp
+      val vector           : Mil.Prims.vector t           = lift Layout.vector
+      val runtime          : Mil.Prims.runtime t          = lift Layout.runtime
+      val t                : Mil.Prims.t t                = lift Layout.t
+    end (* structure ToString *)
+
+    structure Parse = 
+    struct
+      type 'a t = 'a FileParser.t
+      structure PUP = FileParserUnParser
+      val lift = fn p => #parse o (PUP.get p)
+      val vectorSize       : Config.t -> Mil.Prims.vectorSize t       = lift vectorSize
+      val vectorDescriptor : Config.t -> Mil.Prims.vectorDescriptor t = lift vectorDescriptor
+      val floatPrecision   : Config.t -> Mil.Prims.floatPrecision t   = lift floatPrecision
+      val intPrecision     : Config.t -> Mil.Prims.intPrecision t     = lift intPrecision
+      val numericTyp       : Config.t -> Mil.Prims.numericTyp t       = lift numericTyp
+      val divKind          : Config.t -> Mil.Prims.divKind t          = lift divKind
+      val arithOp          : Config.t -> Mil.Prims.arithOp t          = lift arithOp
+      val floatOp          : Config.t -> Mil.Prims.floatOp t          = lift floatOp
+      val bitwiseOp        : Config.t -> Mil.Prims.bitwiseOp t        = lift bitwiseOp
+      val logicOp          : Config.t -> Mil.Prims.logicOp t          = lift logicOp
+      val compareOp        : Config.t -> Mil.Prims.compareOp t        = lift compareOp
+      val nameOp           : Config.t -> Mil.Prims.nameOp t           = lift nameOp
+      val stringOp         : Config.t -> Mil.Prims.stringOp t         = lift stringOp
+      val prim             : Config.t -> Mil.Prims.prim t             = lift prim
+      val assoc            : Config.t -> Mil.Prims.assoc t            = lift assoc
+      val dataOp           : Config.t -> Mil.Prims.dataOp t           = lift dataOp
+      val vector           : Config.t -> Mil.Prims.vector t           = lift vector
+      val runtime          : Config.t -> Mil.Prims.runtime t          = lift runtime
+      val t                : Config.t -> Mil.Prims.t t                = lift t
+    end (* structure Parse *)
+
+  end (* structure ParserUnParser *)
+
+  structure Layout = ParserUnParser.Layout
+
+  structure Parse = ParserUnParser.Parse
+
+  structure ToString = ParserUnParser.ToString
 
   structure Ord =
   struct
@@ -1447,14 +2290,7 @@ struct
           of Config.Vs128 => Mil.Prims.Vs128
            | Config.Vs256 => Mil.Prims.Vs256
            | Config.Vs512 => Mil.Prims.Vs512)
-    structure Dec = 
-    struct
-      val vs64   = fn ve => (case ve of Mil.Prims.Vs64 => SOME () | _ => NONE)
-      val vs128  = fn ve => (case ve of Mil.Prims.Vs128 => SOME () | _ => NONE)
-      val vs256  = fn ve => (case ve of Mil.Prims.Vs256 => SOME () | _ => NONE)
-      val vs512  = fn ve => (case ve of Mil.Prims.Vs512 => SOME () | _ => NONE)
-      val vs1024 = fn ve => (case ve of Mil.Prims.Vs1024 => SOME () | _ => NONE)
-    end (* structure Dec *)
+    structure Dec = Dec.VectorSize
   end (* structure VectorSize *)
 
   structure VectorDescriptor = 
@@ -1472,10 +2308,7 @@ struct
      fn (Mil.Prims.Vd {vectorSize, elementSize}) => vectorSize
     val elementSize : t -> Mil.fieldSize = 
      fn (Mil.Prims.Vd {vectorSize, elementSize}) => elementSize
-    structure Dec = 
-    struct
-      val vd = fn ve => (case ve of Mil.Prims.Vd r => SOME r)
-    end (* structure Dec *)
+    structure Dec = Dec.VectorDescriptor
   end (* structure VectorDescriptor *)
 
   structure FloatPrecision = 
@@ -1484,11 +2317,7 @@ struct
     val compare = Compare.floatPrecision
     val eq      = Eq.floatPrecision
     val hash    = Hash.floatPrecision
-    structure Dec = 
-    struct
-      val fpSingle = fn fl => (case fl of Mil.Prims.FpSingle => SOME () | _ => NONE)
-      val fpDouble = fn fl => (case fl of Mil.Prims.FpDouble => SOME () | _ => NONE)
-    end (* structure Dec *)
+    structure Dec = Dec.FloatPrecision
   end (* structure FloatPrecision *)
 
   structure IntPrecision = 
@@ -1497,11 +2326,7 @@ struct
     val compare = Compare.intPrecision
     val eq      = Eq.intPrecision
     val hash    = Hash.intPrecision
-    structure Dec = 
-    struct
-      val ipArbitrary = fn ip => (case ip of Mil.Prims.IpArbitrary => SOME () | _ => NONE)
-      val ipFixed     = fn ip => (case ip of Mil.Prims.IpFixed r => SOME r | _ => NONE)
-    end (* structure Dec *)
+    structure Dec = Dec.IntPrecision
   end (* structure IntPrecision *)
 
   structure NumericTyp = 
@@ -1511,12 +2336,7 @@ struct
     val eq      = Eq.numericTyp
     val hash    = Hash.numericTyp
                      
-    structure Dec = 
-    struct
-      val ntRat     = fn nu => (case nu of Mil.Prims.NtRat => SOME () | _ => NONE)
-      val ntInteger = fn nu => (case nu of Mil.Prims.NtInteger r => SOME r | _ => NONE)
-      val ntFloat   = fn nu => (case nu of Mil.Prims.NtFloat r => SOME r | _ => NONE)
-    end (* structure Dec *)
+    structure Dec = Dec.NumericTyp
   end (* structure NumericTyp *)
 
   structure DivKind = 
@@ -1525,12 +2345,7 @@ struct
     val compare = Compare.divKind
     val eq      = Eq.divKind
     val hash    = Hash.divKind
-    structure Dec = 
-    struct
-      val dkT = fn di => (case di of Mil.Prims.DkT => SOME () | _ => NONE)
-      val dkF = fn di => (case di of Mil.Prims.DkF => SOME () | _ => NONE)
-      val dkE = fn di => (case di of Mil.Prims.DkE => SOME () | _ => NONE)
-    end (* structure Dec *)
+    structure Dec = Dec.DivKind
   end (* structure DivKind *)
 
   structure ArithOp = 
@@ -1539,24 +2354,7 @@ struct
     val compare = Compare.arithOp
     val eq      = Eq.arithOp
     val hash    = Hash.arithOp
-    structure Dec = 
-    struct
-      val aAbs       = fn ar => (case ar of Mil.Prims.AAbs => SOME () | _ => NONE)
-      val aNegate    = fn ar => (case ar of Mil.Prims.ANegate => SOME () | _ => NONE)
-      val aNegateSat = fn ar => (case ar of Mil.Prims.ANegateSat => SOME () | _ => NONE)
-      val aDivide    = fn ar => (case ar of Mil.Prims.ADivide => SOME () | _ => NONE)
-      val aDiv       = fn ar => (case ar of Mil.Prims.ADiv r => SOME r | _ => NONE)
-      val aMax       = fn ar => (case ar of Mil.Prims.AMax => SOME () | _ => NONE)
-      val aMin       = fn ar => (case ar of Mil.Prims.AMin => SOME () | _ => NONE)
-      val aMinus     = fn ar => (case ar of Mil.Prims.AMinus => SOME () | _ => NONE)
-      val aMinusSat  = fn ar => (case ar of Mil.Prims.AMinusSat => SOME () | _ => NONE)
-      val aMod       = fn ar => (case ar of Mil.Prims.AMod r => SOME r | _ => NONE)
-      val aPlus      = fn ar => (case ar of Mil.Prims.APlus => SOME () | _ => NONE)
-      val aPlusSat   = fn ar => (case ar of Mil.Prims.APlusSat => SOME () | _ => NONE)
-      val aTimes     = fn ar => (case ar of Mil.Prims.ATimes => SOME () | _ => NONE)
-      val aTimesSat  = fn ar => (case ar of Mil.Prims.ATimesSat => SOME () | _ => NONE)
-      val aDivMod    = fn ar => (case ar of Mil.Prims.ADivMod r => SOME r | _ => NONE)
-    end (* structure Dec *)
+    structure Dec = Dec.ArithOp
   end (* structure ArithOp *)
 
   structure FloatOp = 
@@ -1565,20 +2363,7 @@ struct
     val compare = Compare.floatOp
     val eq      = Eq.floatOp
     val hash    = Hash.floatOp
-    structure Dec = 
-    struct
-      val faASin  = fn fl => (case fl of Mil.Prims.FaACos => SOME () | _ => NONE)
-      val faACos  = fn fl => (case fl of Mil.Prims.FaASin => SOME () | _ => NONE)
-      val faCeil  = fn fl => (case fl of Mil.Prims.FaCeil => SOME () | _ => NONE)
-      val faCos   = fn fl => (case fl of Mil.Prims.FaCos => SOME () | _ => NONE)
-      val faFloor = fn fl => (case fl of Mil.Prims.FaFloor => SOME () | _ => NONE)
-      val faRcp   = fn fl => (case fl of Mil.Prims.FaRcp => SOME () | _ => NONE)
-      val faSin   = fn fl => (case fl of Mil.Prims.FaSin => SOME () | _ => NONE)
-      val faSqrt  = fn fl => (case fl of Mil.Prims.FaSqrt => SOME () | _ => NONE)
-      val faTan   = fn fl => (case fl of Mil.Prims.FaTan => SOME () | _ => NONE)
-      val faTrunc = fn fl => (case fl of Mil.Prims.FaTrunc => SOME () | _ => NONE)
-      val faPow   = fn fl => (case fl of Mil.Prims.FaPow => SOME () | _ => NONE)
-    end (* structure Dec *)
+    structure Dec = Dec.FloatOp
   end (* structure FloatOp *)
 
   structure BitwiseOp = 
@@ -1587,17 +2372,7 @@ struct
     val compare = Compare.bitwiseOp
     val eq      = Eq.bitwiseOp
     val hash    = Hash.bitwiseOp
-    structure Dec = 
-    struct
-      val bNot    = fn bi => (case bi of Mil.Prims.BNot => SOME () | _ => NONE)
-      val bAnd    = fn bi => (case bi of Mil.Prims.BAnd => SOME () | _ => NONE)
-      val bOr     = fn bi => (case bi of Mil.Prims.BOr => SOME () | _ => NONE)
-      val bRotL   = fn bi => (case bi of Mil.Prims.BRotL => SOME () | _ => NONE)
-      val bRotR   = fn bi => (case bi of Mil.Prims.BRotR => SOME () | _ => NONE)
-      val bShiftL = fn bi => (case bi of Mil.Prims.BShiftL => SOME () | _ => NONE)
-      val bShiftR = fn bi => (case bi of Mil.Prims.BShiftR => SOME () | _ => NONE)
-      val bXor    = fn bi => (case bi of Mil.Prims.BXor => SOME () | _ => NONE)
-    end (* structure Dec *)
+    structure Dec = Dec.BitwiseOp
   end (* structure BitwiseOp *)
 
   structure LogicOp = 
@@ -1606,14 +2381,7 @@ struct
     val compare = Compare.logicOp
     val eq      = Eq.logicOp
     val hash    = Hash.logicOp
-    structure Dec = 
-    struct
-      val lNot = fn lo => (case lo of Mil.Prims.LNot => SOME () | _ => NONE)
-      val lAnd = fn lo => (case lo of Mil.Prims.LAnd => SOME () | _ => NONE)
-      val lOr  = fn lo => (case lo of Mil.Prims.LOr => SOME () | _ => NONE)
-      val lXor = fn lo => (case lo of Mil.Prims.LXor => SOME () | _ => NONE)
-      val lEq  = fn lo => (case lo of Mil.Prims.LEq => SOME () | _ => NONE)
-    end (* structure Dec *)
+    structure Dec = Dec.LogicOp
   end (* structure LogicOp *)
 
   structure CompareOp = 
@@ -1622,13 +2390,7 @@ struct
     val compare = Compare.compareOp
     val eq      = Eq.compareOp
     val hash    = Hash.compareOp
-    structure Dec = 
-    struct
-      val cEq = fn co => (case co of Mil.Prims.CEq => SOME () | _ => NONE)
-      val cNe = fn co => (case co of Mil.Prims.CNe => SOME () | _ => NONE)
-      val cLt = fn co => (case co of Mil.Prims.CLt => SOME () | _ => NONE)
-      val cLe = fn co => (case co of Mil.Prims.CLe => SOME () | _ => NONE)
-    end (* structure Dec *)
+    structure Dec = Dec.CompareOp
   end (* structure CompareOp *)
 
   structure NameOp =
@@ -1637,11 +2399,7 @@ struct
     val compare = Compare.nameOp
     val eq      = Eq.nameOp
     val hash    = Hash.nameOp
-    structure Dec =
-    struct
-      val nGetString = fn st => (case st of Mil.Prims.NGetString => SOME () | _ => NONE)
-      val nGetHash   = fn st => (case st of Mil.Prims.NGetHash   => SOME () | _ => NONE)
-    end (* structure Dec *)
+    structure Dec = Dec.NameOp
   end (* structure NameOp *)
 
   structure StringOp = 
@@ -1650,15 +2408,7 @@ struct
     val compare = Compare.stringOp
     val eq      = Eq.stringOp
     val hash    = Hash.stringOp
-    structure Dec = 
-    struct
-      val sAllocate   = fn st => (case st of Mil.Prims.SAllocate => SOME () | _ => NONE)
-      val sDeallocate = fn st => (case st of Mil.Prims.SDeallocate => SOME () | _ => NONE)
-      val sGetLen     = fn st => (case st of Mil.Prims.SGetLen => SOME () | _ => NONE)
-      val sGetChar    = fn st => (case st of Mil.Prims.SGetChar => SOME () | _ => NONE)
-      val sSetChar    = fn st => (case st of Mil.Prims.SSetChar => SOME () | _ => NONE)
-      val sEqual      = fn st => (case st of Mil.Prims.SEqual => SOME () | _ => NONE)
-    end (* structure Dec *)
+    structure Dec = Dec.StringOp
   end (* structure StringOp *)
 
   structure Prim = 
@@ -1667,18 +2417,7 @@ struct
     val compare = Compare.prim
     val eq      = Eq.prim
     val hash    = Hash.prim
-    structure Dec = 
-    struct
-      val pNumArith   = fn pr => (case pr of Mil.Prims.PNumArith r => SOME r | _ => NONE)
-      val pFloatOp    = fn pr => (case pr of Mil.Prims.PFloatOp r => SOME r | _ => NONE)
-      val pNumCompare = fn pr => (case pr of Mil.Prims.PNumCompare r => SOME r | _ => NONE)
-      val pNumConvert = fn pr => (case pr of Mil.Prims.PNumConvert r => SOME r | _ => NONE)
-      val pBitwise    = fn pr => (case pr of Mil.Prims.PBitwise r => SOME r | _ => NONE)
-      val pBoolean    = fn pr => (case pr of Mil.Prims.PBoolean r => SOME r | _ => NONE)
-      val pName       = fn pr => (case pr of Mil.Prims.PName r => SOME r | _ => NONE)
-      val pCString    = fn pr => (case pr of Mil.Prims.PCString r => SOME r | _ => NONE)
-      val pPtrEq      = fn pr => (case pr of Mil.Prims.PPtrEq => SOME () | _ => NONE)
-    end (* structure Dec *)
+    structure Dec = Dec.Prim
   end (* structure Prim *)
 
   structure Assoc = 
@@ -1687,12 +2426,7 @@ struct
     val compare = Compare.assoc
     val eq      = Eq.assoc
     val hash    = Hash.assoc
-    structure Dec = 
-    struct
-      val aLeft  = fn a => (case a of Mil.Prims.ALeft => SOME () | _ => NONE)
-      val aRight = fn a => (case a of Mil.Prims.ARight => SOME () | _ => NONE)
-      val aAny   = fn a => (case a of Mil.Prims.AAny => SOME () | _ => NONE)
-    end (* structure Dec *)
+    structure Dec = Dec.Assoc
   end (* structure Assoc *)
 
   structure DataOp = 
@@ -1701,16 +2435,7 @@ struct
     val compare = Compare.dataOp
     val eq      = Eq.dataOp
     val hash    = Hash.dataOp
-    structure Dec = 
-    struct
-      val dBroadcast = fn da => (case da of Mil.Prims.DBroadcast => SOME () | _ => NONE)
-      val dVector    = fn da => (case da of Mil.Prims.DVector => SOME () | _ => NONE)
-      val dSub       = fn da => (case da of Mil.Prims.DSub r => SOME r | _ => NONE)
-      val dPermute   = fn da => (case da of Mil.Prims.DPermute r => SOME r | _ => NONE)
-      val dBlend     = fn da => (case da of Mil.Prims.DBlend => SOME () | _ => NONE)
-      val dSplit     = fn da => (case da of Mil.Prims.DSplit => SOME () | _ => NONE)
-      val dConcat    = fn da => (case da of Mil.Prims.DConcat => SOME () | _ => NONE)
-    end (* structure Dec *)
+    structure Dec = Dec.DataOp
   end (* structure DataOp *)
 
   structure Vector = 
@@ -1719,17 +2444,7 @@ struct
     val compare = Compare.vector
     val eq      = Eq.vector
     val hash    = Hash.vector
-    structure Dec = 
-    struct
-      val viPointwise   = fn ve => (case ve of Mil.Prims.ViPointwise r => SOME r | _ => NONE)
-      val viConvert     = fn ve => (case ve of Mil.Prims.ViConvert r => SOME r | _ => NONE)
-      val viCompare     = fn ve => (case ve of Mil.Prims.ViCompare r => SOME r | _ => NONE)
-      val viReduction   = fn ve => (case ve of Mil.Prims.ViReduction r => SOME r | _ => NONE)
-      val viData        = fn ve => (case ve of Mil.Prims.ViData r => SOME r | _ => NONE)
-      val viMaskData    = fn ve => (case ve of Mil.Prims.ViMaskData r => SOME r | _ => NONE)
-      val viMaskBoolean = fn ve => (case ve of Mil.Prims.ViMaskBoolean r => SOME r | _ => NONE)
-      val viMaskConvert = fn ve => (case ve of Mil.Prims.ViMaskConvert r => SOME r | _ => NONE)
-    end (* structure Dec *)
+    structure Dec = Dec.Vector
   end (* structure Vector *)
 
   structure Runtime = 
@@ -1738,45 +2453,7 @@ struct
     val compare = Compare.runtime
     val eq      = Eq.runtime
     val hash    = Hash.runtime
-    structure Dec = 
-    struct
-      val rtFloatMk           = fn ru => (case ru of Mil.Prims.RtFloatMk => SOME () | _ => NONE)
-      val rtWriteln           = fn ru => (case ru of Mil.Prims.RtWriteln => SOME () | _ => NONE)
-      val rtReadln            = fn ru => (case ru of Mil.Prims.RtReadln => SOME () | _ => NONE)
-      val rtAssert            = fn ru => (case ru of Mil.Prims.RtAssert => SOME () | _ => NONE)
-      val rtError             = fn ru => (case ru of Mil.Prims.RtError => SOME () | _ => NONE)
-      val rtDebug             = fn ru => (case ru of Mil.Prims.RtDebug => SOME () | _ => NONE)
-      val rtOpenOut           = fn ru => (case ru of Mil.Prims.RtOpenOut => SOME () | _ => NONE)
-      val rtGetStdout         = fn ru => (case ru of Mil.Prims.RtGetStdout => SOME () | _ => NONE)
-      val rtOutputByte        = fn ru => (case ru of Mil.Prims.RtOutputByte => SOME () | _ => NONE)
-      val rtCloseOut          = fn ru => (case ru of Mil.Prims.RtCloseOut => SOME () | _ => NONE)
-      val rtOpenIn            = fn ru => (case ru of Mil.Prims.RtOpenIn => SOME () | _ => NONE)
-      val rtGetStdin          = fn ru => (case ru of Mil.Prims.RtGetStdin => SOME () | _ => NONE)
-      val rtInputByte         = fn ru => (case ru of Mil.Prims.RtInputByte => SOME () | _ => NONE)
-      val rtInputString       = fn ru => (case ru of Mil.Prims.RtInputString => SOME () | _ => NONE)
-      val rtInputAll          = fn ru => (case ru of Mil.Prims.RtInputAll => SOME () | _ => NONE)
-      val rtIsEOF             = fn ru => (case ru of Mil.Prims.RtIsEOF => SOME () | _ => NONE)
-      val rtCloseIn           = fn ru => (case ru of Mil.Prims.RtCloseIn => SOME () | _ => NONE)
-      val rtCommandLine       = fn ru => (case ru of Mil.Prims.RtCommandLine => SOME () | _ => NONE)
-      val rtStringToNat       = fn ru => (case ru of Mil.Prims.RtStringToNat => SOME () | _ => NONE)
-      val rtStringToFloat     = fn ru => (case ru of Mil.Prims.RtStringToFloat => SOME () | _ => NONE)
-      val rtFloatToString     = fn ru => (case ru of Mil.Prims.RtFloatToString => SOME () | _ => NONE)
-      val rtFloatToStringI    = fn ru => (case ru of Mil.Prims.RtFloatToStringI => SOME () | _ => NONE)
-      val rtRatNumerator      = fn ru => (case ru of Mil.Prims.RtRatNumerator => SOME () | _ => NONE)
-      val rtRatDenominator    = fn ru => (case ru of Mil.Prims.RtRatDenominator => SOME () | _ => NONE)
-      val rtEqual             = fn ru => (case ru of Mil.Prims.RtEqual => SOME () | _ => NONE)
-      val rtDom               = fn ru => (case ru of Mil.Prims.RtDom => SOME () | _ => NONE)
-      val rtNub               = fn ru => (case ru of Mil.Prims.RtNub => SOME () | _ => NONE)
-      val rtRatToUIntpChecked = fn ru => (case ru of Mil.Prims.RtRatToUIntpChecked => SOME () | _ => NONE)
-      val rtRatToString       = fn ru => (case ru of Mil.Prims.RtRatToString => SOME () | _ => NONE)
-      val rtStringToRat       = fn ru => (case ru of Mil.Prims.RtStringToRat => SOME () | _ => NONE)
-      val rtResetTimer        = fn ru => (case ru of Mil.Prims.RtResetTimer => SOME () | _ => NONE)
-      val rtGetTimer          = fn ru => (case ru of Mil.Prims.RtGetTimer => SOME () | _ => NONE)
-      val rtVtuneAttach       = fn ru => (case ru of Mil.Prims.RtVtuneAttach => SOME () | _ => NONE)
-      val rtVtuneDetach       = fn ru => (case ru of Mil.Prims.RtVtuneDetach => SOME () | _ => NONE)
-      val rtArrayEval         = fn ru => (case ru of Mil.Prims.RtArrayEval => SOME () | _ => NONE)
-      val rtIntegerHash       = fn ru => (case ru of Mil.Prims.RtIntegerHash => SOME () | _ => NONE)
-    end (* structure Dec *)
+    structure Dec = Dec.Runtime
   end (* structure Runtime *)
 
   structure T = 
@@ -1785,12 +2462,7 @@ struct
     val compare = Compare.t
     val eq      = Eq.t
     val hash    = Hash.t
-    structure Dec = 
-    struct
-      val prim    = fn t => (case t of Mil.Prims.Prim r => SOME r | _ => NONE)
-      val runtime = fn t => (case t of Mil.Prims.Runtime r => SOME r | _ => NONE)
-      val vector  = fn t => (case t of Mil.Prims.Vector r => SOME r | _ => NONE)
-    end (* structure Dec *)
+    structure Dec = Dec.T
   end (* structure T *)
 
   structure Arity =

@@ -528,6 +528,15 @@ struct
 
      structure O = Operation
      structure C = Constant
+
+     val decIntegral =
+      fn t => 
+         Try.lift (fn c => 
+                      let
+                        val ia = <@ C.Dec.cIntegral c
+                        val () = Try.require (IntArb.isTyp (ia, t))
+                      in ia
+                      end)
                         
      structure NumConvert = 
      struct
@@ -582,7 +591,7 @@ struct
 
        val reduce : Config.t * {to : P.numericTyp, from : P.numericTyp} 
                     * Mil.operand Vector.t * (Mil.operand -> Operation.t) 
-                    -> reduction Try.t =
+                    -> reduction option =
            identity or transitivity or fold
      end (* structure NumConvert *)
 
@@ -632,18 +641,23 @@ struct
                   val r2 = <@ Operation.Dec.oConstant (get r2)
                   val doIt = 
                       (case typ
-                        of P.NtRat                    => doCompare (C.Dec.cRat,         Rat.equals,    Rat.<,    Rat.<=)
-                         | P.NtInteger (P.IpFixed ia) => doCompare (C.Dec.cIntegral, IntArb.equals, IntArb.<, IntArb.<=)
-                         | P.NtInteger P.IpArbitrary  => doCompare (C.Dec.cInteger,  IntInf.equals, IntInf.<, IntInf.<=)
-                         | P.NtFloat P.FpSingle       => doCompare (C.Dec.cFloat,    Real32.equals, Real32.<, Real32.<=)
-                         | P.NtFloat P.FpDouble       => doCompare (C.Dec.cDouble,   Real64.equals, Real64.<, Real64.<=))
+                        of P.NtRat                    => doCompare 
+                                                           (C.Dec.cRat,      Rat.equals,    Rat.<,    Rat.<=)
+                         | P.NtInteger (P.IpFixed ia) => doCompare 
+                                                           (decIntegral ia,  IntArb.equalsNumeric, IntArb.<, IntArb.<=)
+                         | P.NtInteger P.IpArbitrary  => doCompare 
+                                                           (C.Dec.cInteger,  IntInf.equals, IntInf.<, IntInf.<=)
+                         | P.NtFloat P.FpSingle       => doCompare 
+                                                           (C.Dec.cFloat,    Real32.equals, Real32.<, Real32.<=)
+                         | P.NtFloat P.FpDouble       => doCompare 
+                                                           (C.Dec.cDouble,   Real64.equals, Real64.<, Real64.<=))
                   val r = <@ doIt (r1, operator, r2)
                 in RrConstant r
                 end)
 
        val reduce : Config.t * {typ : P.numericTyp, operator : P.compareOp} 
                     * Mil.operand Vector.t * (Mil.operand -> Operation.t) 
-                    -> reduction Try.t =
+                    -> reduction option =
            identity or fold
 
      end (* structure NumCompare *)
@@ -678,7 +692,7 @@ struct
                     (case typ
                       of P.NtRat                    => doArith (C.Dec.cRat,      C.CRat, 
                                                                 Rat.+, Rat.~, Rat.-, Rat.*, SOME Rat./)
-                       | P.NtInteger (P.IpFixed ia) => doArith (C.Dec.cIntegral, C.CIntegral,
+                       | P.NtInteger (P.IpFixed ia) => doArith (decIntegral ia, C.CIntegral,
                                                                 IntArb.+, IntArb.~, IntArb.-, IntArb.*, NONE)
                        | P.NtInteger P.IpArbitrary  => doArith (C.Dec.cInteger, C.CInteger,
                                                                 IntInf.+, IntInf.~, IntInf.-, IntInf.*, NONE)
@@ -727,7 +741,7 @@ struct
                     
        val reduce : Config.t * {typ : P.numericTyp, operator : P.arithOp} 
                     * Mil.operand Vector.t * (Mil.operand -> Operation.t) 
-                    -> reduction Try.t =
+                    -> reduction option =
            fold or simplify
 
      end (* structure NumArith *)
@@ -736,10 +750,10 @@ struct
      struct
        datatype t = datatype reduction
 
-       val out : ('a -> t Try.t) -> ('a -> t) = 
-        fn f => fn args => Try.otherwise (f args, RrUnchanged)
+       val out : ('a -> t option) -> ('a -> t) = 
+        fn f => fn args => Utils.Option.get (f args, RrUnchanged)
 
-       fun ptrEq (c : Config.t, args : Mil.operand Vector.t, get : Mil.operand -> Operation.t) : t Try.t =
+       fun ptrEq (c : Config.t, args : Mil.operand Vector.t, get : Mil.operand -> Operation.t) : t option =
            Try.try
            (fn () =>
                let
@@ -1939,7 +1953,7 @@ struct
                       of M.RhsTuple {mdDesc, inits} =>
                          let
                            val () = Try.require (MU.MetaDataDescriptor.immutable mdDesc)
-                           val () = Try.not (MU.MetaDataDescriptor.hasArray mdDesc)
+                           val () = Try.require (not (MU.MetaDataDescriptor.hasArray mdDesc))
                            val () = Try.require (Vector.length inits = MU.MetaDataDescriptor.numFixed mdDesc)
                            val () = Try.require (Vector.forall (inits, const))
                            val v = Try.V.singleton dests
@@ -2172,8 +2186,7 @@ struct
                                  | (Constant.CRat _,       _                    ) => false
                                  | (Constant.CInteger i1,  Constant.CInteger i2 ) => IntInf.equals (i1, i2)
                                  | (Constant.CInteger _,   _                    ) => false
-                                 | (Constant.CIntegral i1, Constant.CIntegral i2) => IntArb.sameTyps (i1, i2) andalso
-                                                                                     IntArb.equals (i1, i2)
+                                 | (Constant.CIntegral i1, Constant.CIntegral i2) => IntArb.equalsSyntactic (i1, i2)
                                  | (Constant.CIntegral _,  _                    ) => false
                                  | (Constant.CFloat f1,    Constant.CFloat f2   ) => Real32.equals (f1, f2)
                                  | (Constant.CFloat _,     _                    ) => false
@@ -2637,7 +2650,7 @@ struct
         let
           val t = 
              case IInstr.getMil (imil, i)
-              of IMil.MDead       => Try.failure ()
+              of IMil.MDead       => NONE
                | IMil.MTransfer t => TransferR.reduce (s, (i, t))
                | IMil.MLabel l    => LabelR.reduce (s, (i, l))
                | IMil.MInstr mi   => InstructionR.reduce (s, (i, mi))

@@ -228,12 +228,20 @@ struct
 
   fun getVariable (P {vars, ...}, v) =
       case VD.lookup (vars, v)
-       of NONE   => fail ("getVariable", "variable not in FMil")
+       of NONE   => 
+          let
+            val s = Layout.toString (Identifier.layoutVariable' v)
+          in fail ("getVariable", "variable not in FMil: " ^ s)
+          end
         | SOME d => d
 
   fun getLabel (P {labs, ...}, l) =
       case LD.lookup (labs, l)
-       of NONE   => fail ("getLabel", "label not in FMil")
+       of NONE   => 
+          let
+            val s = Layout.toString (Identifier.layoutLabel l)
+          in fail ("getLabel", "label not in FMil: " ^ s)
+          end
         | SOME d => d
 
   fun getInstruction (P {instrs, ...}, i) = 

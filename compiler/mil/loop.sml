@@ -190,6 +190,7 @@ struct
   structure P = Mil.Prims
   structure M = Mil
   structure MU = MilUtils
+  structure PU = MilUtils.Prims.Utils
   structure MSTM = MU.SymbolTableManager
   structure Cfg = MilCfg
   structure L = Layout
@@ -1339,7 +1340,7 @@ struct
                         Rat.layout c]
         val bound = MilLayout.layoutOperand (cg, si, bound)
         val (o1, o2) = if flip2 then (bound, iv) else (iv, bound)
-        val cmp = PrimsLayout.compareOp comparison
+        val cmp = PU.Layout.compareOp (cg, comparison)
         val cmp = if flip1 then L.seq [L.str "not", cmp] else cmp
         val test = L.seq [cmp, LU.parenSeq [o1, o2]]
         val i = L.seq [MilLayout.layoutVariable (cg, si, cond), L.str " = ", test]

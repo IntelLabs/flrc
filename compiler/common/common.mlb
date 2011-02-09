@@ -83,6 +83,7 @@ in
         functor LatticeVectorLatticeFn
         functor OptionLatticeFn
         functor ParserF
+        functor ParserUnParserF
         functor RecLatticeFn
         functor SetF
 
@@ -96,6 +97,7 @@ in
         structure EquivalenceClass
         structure Fail
         structure FileParser
+        structure FileParserUnParser
         structure FunctionalUpdate
         structure Globals
         structure Identifier
@@ -127,6 +129,7 @@ in
         structure StringDict
         structure StringSet
         structure Try
+        structure UnParser
         structure Utils
         structure VectorInstructions
         structure Word32
