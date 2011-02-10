@@ -1464,7 +1464,7 @@ struct
             | (M.CName n1,        M.CName n2       ) => name (n1, n2)
             | (M.CName _,         _                ) => LESS
             | (_,                 M.CName _        ) => GREATER
-            | (M.CIntegral i1,    M.CIntegral i2   ) => IntArb.compare (i1, i2)
+            | (M.CIntegral i1,    M.CIntegral i2   ) => IntArb.compareSyntactic (i1, i2)
             | (M.CIntegral _,     _                ) => LESS
             | (_,                 M.CIntegral _    ) => GREATER
             | (M.CFloat f1,       M.CFloat f2      ) => Real32.compare (f1, f2)

@@ -34,8 +34,15 @@ sig
   val fromIntInf : typ * IntInf.t -> t (* truncates arg to fit *)
   val toIntInf : t -> IntInf.t
   val convert : t * typ -> t
-  val equals : t * t -> bool
-  val compare : t * t -> order
+  val equalsSyntactic : t * t -> bool
+  val compareSyntactic : t * t -> order
+  (* All of the following binary functions are defined only on integers of 
+   * the same size and sign.  Calling them on integers of different precision
+   * will result in an exception.  The caller is responsible for verifying
+   * that the operands are appropriate.
+   *)
+  val equalsNumeric : t * t -> bool
+  val compareNumeric : t * t -> order
   val < : t * t -> bool
   val <= : t * t -> bool
   val + : t * t -> t
@@ -138,13 +145,19 @@ struct
 
   fun typOf (X (t, _)) = t
 
-  fun equals (X (t1, i1), X (t2, i2)) =
+  fun equalsSyntactic (X (t1, i1), X (t2, i2)) =
+      equalTyps (t1, t2) andalso IntInf.equals (i1, i2)
+
+  fun compareSyntactic (X p1, X p2) =
+      Compare.pair (compareTyps, IntInf.compare) (p1, p2)
+
+  fun equalsNumeric (X (t1, i1), X (t2, i2)) =
       if equalTyps (t1, t2) then
         IntInf.equals (i1, i2)
       else
         Fail.fail ("IntArb", "equals", "mismatched types")
 
-  fun compare (X (t1, i1), X (t2, i2)) =
+  fun compareNumeric (X (t1, i1), X (t2, i2)) =
       if equalTyps (t1, t2) then
         IntInf.compare (i1, i2)
       else
