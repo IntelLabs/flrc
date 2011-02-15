@@ -13,6 +13,8 @@ sig
   val getLevel : t -> int
   val click : t * string -> unit
   val clickN : t * string * int -> unit
+  val clicker : {stats : (string * string) List.t, passname : string, name : string, desc : string} 
+                -> {stats : (string * string) List.t, click : t -> unit}
   val mk : Config.t * (string * string) list -> t
   val push : t -> t
   val report : t * string -> unit
@@ -30,6 +32,18 @@ struct
   fun click (d, s) = Stats.incStat (getStats d, s)
 
   fun clickN (d, s, n) = Stats.addToStat (getStats d, s, n)
+
+  fun clicker {stats, passname, name, desc} =
+      let
+        val globalNm = passname ^ ":" ^ name
+        val stats = 
+            if List.exists (stats, fn (nm, _) => nm = globalNm) then
+              Fail.fail ("PassData", "clicker", "Duplicate stat")
+            else
+              (globalNm, desc) :: stats
+        val click = fn pd => click (pd, globalNm)
+      in {stats = stats, click = click}
+      end
 
   fun mk (config, stats) =
       let
