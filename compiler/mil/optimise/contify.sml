@@ -69,8 +69,6 @@ struct
 
     fun getFMil (E {fmil, ...}) = fmil
 
-    fun getGlobal (e, v) = FMil.getGlobal (getFMil e, v)
-
     fun layoutVariable (env, v) = MilLayout.layoutVariable (getConfig env, getSi env, v)
 
     (* Compute the globals codes that are reachable from the entry point *)
@@ -81,21 +79,24 @@ struct
               case wl
                of [] => r
                 | v::wl =>
-                  let
-                    val g = getGlobal (env, v)
-                    val r =
-                        case g
-                         of M.GCode _ => VS.insert (r, v)
-                          | _ => r
-                    val fvs = MFV.global (getConfig env, v, g)
-                    fun doOne (v, (wl, p)) =
-                        if VS.member (p, v) then
-                          (wl, p)
-                        else
-                          (v::wl, VS.insert (p, v))
-                    val (wl, p) = VS.fold (fvs, (wl, p), doOne)
-                  in loop (wl, r, p)
-                  end
+                  (case FMil.getVariable (getFMil env, v)
+                    of FMil.VdGlobal g => 
+                       let
+                         val r =
+                             case g
+                              of M.GCode _ => VS.insert (r, v)
+                               | _ => r
+                         val fvs = MFV.global (getConfig env, v, g)
+                         fun doOne (v, (wl, p)) =
+                             if VS.member (p, v) then
+                               (wl, p)
+                             else
+                               (v::wl, VS.insert (p, v))
+                         val (wl, p) = VS.fold (fvs, (wl, p), doOne)
+                       in loop (wl, r, p)
+                       end
+                     | _ => loop (wl, r, p))
+
         in loop ([entry], VS.empty, VS.singleton entry)
         end
 

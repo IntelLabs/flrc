@@ -10,12 +10,14 @@ sig
   type instructionId = int
   type transferId = blockId
   type globalId = Mil.variable
+  type externId = Mil.variable
 
   datatype paramId = PiArg of int | PiCls | PiThunk | PiFreeVar of int
 
   datatype varDef =
-      VdGlobal of Mil.global
+      VdExtern of externId 
     | VdFunParam of globalId * paramId
+    | VdGlobal of Mil.global
     | VdLabParam of blockId * int
     | VdInstr of instructionId * Mil.rhs
     | VdRetVar of transferId * int
@@ -53,7 +55,8 @@ struct
   fun assert (f, m, b) = if b then fail (f, m) else ()
 
   structure I = Identifier
-  structure VD = I.VariableDict
+  structure VD = I.VariableDict  
+  structure VS = I.VariableSet
   structure LD = I.LabelDict
   structure M = Mil
   structure MU = MilUtils
@@ -64,12 +67,14 @@ struct
   type instructionId = int
   type transferId = blockId
   type globalId = Mil.variable
+  type externId = Mil.variable
 
   datatype paramId = PiArg of int | PiCls | PiThunk | PiFreeVar of int
 
   datatype varDef =
-      VdGlobal of Mil.global
+      VdExtern of externId 
     | VdFunParam of globalId * paramId
+    | VdGlobal of Mil.global
     | VdLabParam of blockId * int
     | VdInstr of instructionId * Mil.rhs
     | VdRetVar of transferId * int
@@ -183,6 +188,14 @@ struct
   fun analyseGlobals (s, e, globals) =
       VD.foreach (globals, fn (x, g) => analyseGlobal (s, e, x, g))
 
+  fun analyseExtern (s, e, x) = addVarDef (s, x, VdExtern x)
+
+  fun analyseExterns (s, e, externs) = VS.foreach (externs, fn x => analyseExtern (s, e, x))
+
+  fun analyseInclude (s, e, M.IF {externs, ...}) = analyseExterns (s, e, externs)
+
+  fun analyseIncludes (s, e, includes) = Vector.foreach (includes, fn i => analyseInclude (s, e, i))
+
   datatype t = P of {vars : varDef VD.t, instrs : Mil.instruction ID.t, labs : labDef LD.t}
 
   fun mkFMil (s, e) =
@@ -206,7 +219,16 @@ struct
   fun code' (c, si, f, code) = mk (c, si, analyseCode, (f, code))
 
   fun program' (c, M.P {includes, externs, symbolTable, globals, entry}) = 
-      mk (c, I.SymbolInfo.SiTable symbolTable, analyseGlobals, globals)
+      let
+        fun f (state, env, (includes, externs, globals)) =
+            let
+              val () = analyseIncludes (state, env, includes)
+              val () = analyseExterns (state, env, externs)
+              val () = analyseGlobals (state, env, globals)
+            in ()
+            end
+      in  mk (c, I.SymbolInfo.SiTable symbolTable, f, (includes, externs, globals))
+      end
 
   fun codeBody (c, si, f, cb) =
       let
