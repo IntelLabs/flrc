@@ -161,13 +161,13 @@ struct
         val files = 
             (case compiler
               of CcGCC => 
-                 [pLibInclude (config, "gc-bdw"), runtimeDirectory config, pLibInclude (config, "prt")] @ mcrt
+                 [pLibInclude (config, "gc-bdw"), runtimeDirectory config, pLibInclude (config, "prt-pthreads")] @ mcrt
                | CcICC => 
-                 [pLibInclude (config, "gc-bdw"), runtimeDirectory config, pLibInclude (config, "prt")] @ mcrt
+                 [pLibInclude (config, "gc-bdw"), runtimeDirectory config, pLibInclude (config, "prt-pthreads")] @ mcrt
                | CcPillar => 
                  [runtimeDirectory config, pLibInclude (config, "prt"), pLibInclude (config, "pgc")] @ mcrt
                | CcP2c => 
-                 [runtimeDirectory config, pLibInclude (config, "prt"), pLibInclude (config, "pgc")])
+                 [runtimeDirectory config, pLibInclude (config, "prt-pthreads"), pLibInclude (config, "pgc")])
 
         val fileToString = fn path => pathToCompilerArgString (config, compiler, path)
         val flags = List.map (files, fn s => "-I" ^ (fileToString s))
