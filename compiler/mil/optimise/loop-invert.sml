@@ -107,6 +107,7 @@ struct
   structure V    = Vector
   structure O    = Option
   structure UO   = Utils.Option
+  structure UF   = Utils.Function
   structure PD   = PassData
   structure L    = Layout
   structure LU   = LayoutUtils
@@ -156,6 +157,9 @@ struct
   fun treeBlocks   (Tree.T ((_,b,_), _) : domTree) = b
   fun treeFrontier (Tree.T ((_,_,f), _) : domTree) = f
   fun treeChildrenLabels t = vmap (treeChildren t, treeLabel)
+  fun treeContainsLabel t l = 
+      (treeLabel t = l) orelse 
+      V.exists (treeChildren t, fn c => treeContainsLabel c l) 
 
   fun rename func (config, blks, dict) =
       LD.map (blks, fn (l, blk) => #2 (func (config, dict, l, blk)))
@@ -173,15 +177,15 @@ struct
 
     fun printLayout (config, l) = if debug config then LU.printLayout l else ()
 
-    fun layoutNode (label,blks,{blocks,exits}) =
-        L.seq [ L.str "(",
+    fun layoutTree (Tree.T ((label,blks,{blocks,exits}), children)) =
+        L.align [
+          L.seq [ L.str "(",
                 I.layoutLabel label,
                 L.str " => ",
                 L.sequence ("{","}",",") (map I.layoutLabel (LS.toList blocks)),
                 LU.layoutBool exits,
-                L.str ")" ]
-
-    fun layoutDom (node) = Tree.layout (node, layoutNode)
+                L.str ")"],
+          LU.indent (L.align (map layoutTree (V.toList children)))]
 
     fun layoutBlocks (config, sm, blks) =
       let
@@ -210,74 +214,83 @@ struct
    * 2. Rename afresh the given set of argument names in
    *    this region.
    *
-   * 3. Replace all block transfer to the entry to this
-   *    region found in the affected region.
-   *
-   * Step 3 is done by returning an adjustment function.
+   * 3. Return the new entry label, the modified blocks,
+   *    and the renamer to the given set of arguments.
    *)
   val closeRegion : Config.t * M.symbolTableManager * M.label * blocks * I.variable V.t
-                    -> blocks * (blocks -> blocks option) =
+                    -> M.label * blocks * Rename.t =
     fn (config, sm, entrylabel, blks, arguments) =>
-       let
-         (* Get the original parameters *)
-         val M.B {parameters, ...} = <- (LD.lookup (blks, entrylabel)) (* never fail *)
-         (* Map them into fresh names *)
-         val parameters    = V.map (parameters, fn v => IM.variableClone (sm, v))
-         (* Map the additional arguments into fresh names *)
-         val newarguments  = V.map (arguments, fn v => IM.variableClone (sm, v))
-         (* Make a new parameter list for the new entry block *)
-         val newparameters = V.concat [parameters, newarguments]
-         (* Rename all occurrances of the additional arguments *)
-         val renamedict    = V.fold (V.zip (arguments, newarguments),
-                               Rename.none, fn ((m, n), d) => Rename.renameTo (d, m, n))
-         val blks = renameVars (config, blks, renamedict)
-         (* Add an entry block that jumps to the old entry block *)
-         val trans = M.TGoto (M.T { block = entrylabel
-                                  , arguments = V.map (parameters, M.SVariable) })
-         val newentry = IM.labelFresh sm
-         val blks = LD.insert (blks, newentry,
-                      M.B { parameters = newparameters
-                          , instructions = vempty ()
-                          , transfer = trans })
-         (*
-          * Prepare for the adjust function that replaces all jumps to
-          * the old entry with the new one.
-          *)
-         fun replaceT (target as M.T { block = label, arguments = args }) =
-             if label = entrylabel
-               then M.T { block = newentry
-                        , arguments = V.concat [args,
-                                      V.map (arguments, M.SVariable)]}
-               else target
-         fun replaceS ({ on, cases, default }) =
-                       { on = on
-                       , cases = V.map (cases, fn (x, t) => (x, replaceT t))
-                       , default = fmap replaceT default }
-         fun replaceTr (M.TGoto t) = SOME (M.TGoto (replaceT t))
-           | replaceTr (M.TCase s) = SOME (M.TCase (replaceS s))
-           | replaceTr (M.TPSumCase s) = SOME (M.TPSumCase (replaceS s))
-           (* if there are calls returning to the entrylabel, we fail! *)
-           | replaceTr (x as M.TInterProc { ret = M.RNormal { block, ... }, ...  }) =
-             if block = entrylabel then NONE else SOME x
-           (* if there are cuts to the entrylabel, we fail! *)
-           | replaceTr (x as M.TCut { cuts = M.C { targets, ... }, ... }) =
-             if LS.member (targets, entrylabel) then NONE else SOME x
-           | replaceTr x = SOME x
-         fun adjust blks = try (fn () =>
-             LD.map (blks, fn (_, M.B { parameters, instructions, transfer }) =>
-                              M.B { parameters = parameters,
-                                    instructions = instructions,
-                                    transfer = <- (replaceTr transfer)}))
-       in
-          (blks, adjust)
-       end
+       if V.isEmpty arguments 
+         then (entrylabel, blks, Rename.none) 
+         else
+           let
+             (* Get the original parameters *)
+             val M.B {parameters, ...} = <- (LD.lookup (blks, entrylabel)) (* never fail *)
+             (* Map them into fresh names *)
+             val parameters    = V.map (parameters, fn v => IM.variableClone (sm, v))
+             (* Map the additional arguments into fresh names *)
+             val newarguments  = V.map (arguments, fn v => IM.variableClone (sm, v))
+             (* Make a new parameter list for the new entry block *)
+             val newparameters = V.concat [parameters, newarguments]
+             (* Rename all occurrances of the additional arguments *)
+             val renamedict    = V.fold (V.zip (arguments, newarguments),
+                                   Rename.none, fn ((m, n), d) => Rename.renameTo (d, m, n))
+             val blks = renameVars (config, blks, renamedict)
+             (* Add an entry block that jumps to the old entry block *)
+             val trans = M.TGoto (M.T { block = entrylabel
+                                      , arguments = V.map (parameters, M.SVariable) })
+             val newentry = IM.labelFresh sm
+             val blks = LD.insert (blks, newentry,
+                          M.B { parameters = newparameters
+                              , instructions = vempty ()
+                              , transfer = trans })
+           in (newentry, blks, renamedict)
+           end
+
+  (*
+   * Replace all target transfer to the targetlabel with the
+   * newlabel and append additional arguments to the end.
+   *
+   * This may fail when the targetlabel is the return target
+   * of a function call, or a cut.
+   *)
+  val adjustTarget : M.label * M.label * blocks * I.variable V.t ->
+                     blocks option =
+    fn (targetlabel, newlabel, blks, args) =>
+      let
+        fun replaceT (target as M.T { block, arguments }) =
+            if block = targetlabel
+              then M.T { block = newlabel
+                       , arguments = V.concat [arguments,
+                                     V.map (args, M.SVariable)]}
+              else target
+        fun replaceS ({ on, cases, default }) =
+                      { on = on
+                      , cases = V.map (cases, fn (x, t) => (x, replaceT t))
+                      , default = fmap replaceT default }
+        fun replaceTr (M.TGoto t) = SOME (M.TGoto (replaceT t))
+          | replaceTr (M.TCase s) = SOME (M.TCase (replaceS s))
+          | replaceTr (M.TPSumCase s) = SOME (M.TPSumCase (replaceS s))
+          (* if there are calls returning to the targetlabel, we fail! *)
+          | replaceTr (x as M.TInterProc { ret = M.RNormal { block, ... }, ...  }) =
+            if block = targetlabel then NONE else SOME x
+          (* if there are cuts to the targetlabel, we fail! *)
+          | replaceTr (x as M.TCut { cuts = M.C { targets, ... }, ... }) =
+            if LS.member (targets, targetlabel) then NONE else SOME x
+          | replaceTr x = SOME x
+      in try (fn () => LD.map (blks, 
+                fn (_, M.B { parameters, instructions, transfer }) =>
+                       M.B { parameters = parameters,
+                             instructions = instructions,
+                             transfer = <- (replaceTr transfer)}))
+      end
 
   (*
    * Clone a region by refresh all its bounded labels and
    * variables, return a new entry label together with the
    * blocks including both old and new.
    *)
-   val cloneRegion : Config.t * M.symbolTableManager * M.label * blocks
+  val cloneRegion : Config.t * M.symbolTableManager * M.label * blocks
                      -> M.label * blocks =
      fn (config, sm, entrylabel, blks) =>
        let
@@ -368,8 +381,11 @@ struct
          * but not to anything internal (except RC). The parameter
          * max shall always be the set consisting of only loop
          * header and RC label.
+         *
+         * Note that when RC is NONE, we also allow nodes external
+         * to the loop tree to be in R2's frontier.
          *)
-        fun findR2 (max) : domTree option =
+        fun findR2 (rc, max) : domTree option =
             let
               fun find (internal, self) =
                   let
@@ -377,8 +393,9 @@ struct
                     val labels   = LS.fromVector (treeChildrenLabels self)
                     val internal = LS.union (internal, labels)
                     fun verify n = LS.member (#blocks (treeFrontier n), headerlabel)
-                    fun found  n = LS.isSubset (LS.intersection
-                                      (#blocks (treeFrontier n), internal), max)
+                    val red = UO.dispatch (rc, fn _ => UF.id, 
+                                               fn _ => UF.curry LS.intersection internal) 
+                    fun found n = LS.isSubset (red (#blocks (treeFrontier n)), max)
                   in
                     case keepAll (children, verify)
                        of [r2] => if found r2 then SOME r2 else find (internal, r2)
@@ -472,7 +489,7 @@ struct
                                            fn (x,y) => LD.union (x,y,#3))
              val concatTreeBlks = concatBlks o map treeBlocks
 
-             fun process r =
+             fun boundedVarsInUse r =
                  let
                    val label = treeLabel r
                    (* Find spine blocks to node r *)
@@ -480,36 +497,47 @@ struct
                    (* Turn r into blocks *)
                    val r = treeBlocks (collapse r)
                    (* Find variables bound on the spine, and free in r *)
-                   fun intersect (s, t) = (VS.toVector o VS.intersection)
-                                          (MBV.blocks (config, s), MFV.blocks (config, t))
+                   fun intersect (s, t) = 
+                       VS.intersection (MBV.blocks (config, s), MFV.blocks (config, t))
                    val rv = intersect (toR, r)
-                   val _ = printList ("Set of var: ", map I.layoutVariable' (V.toList rv))
-                   val (r, adjust) = closeRegion (config, sm, label, r, rv)
-                   val _ = printRegion ("After closing: ", r)
-               in (r, adjust)
+                   val _ = printList ("Set of var: ", map I.layoutVariable' (VS.toList rv))
+               in (label, r, rv)
                end
 
              (* Turn R1 into blocks *)
              val r1 = concatTreeBlks r1
 
+             (* find bounded vars and turn R2 into blocks *)
+             val (r2l, r2, r2v) = boundedVarsInUse r2
+             (* same for RC, but lifted through option type *)
+             fun inject (l, r, v) = (SOME l, r, v)
+             val (rcl, rc, rcv) = UO.dispatch (rc, inject o boundedVarsInUse, 
+                                               fn _ => (NONE, LD.empty, VS.empty))
+             val rvs = (VS.toVector o VS.union) (r2v, rcv)
+
              (* Process R2 *)
              val _ = Debug.prints (config, "Closing R2\n")
-             val (r2, adjust) = process r2
-             val r1 = <- (adjust r1)
+             val (r2n, r2, r2dict) = closeRegion (config, sm, r2l, r2, rvs)
+             val _ = printRegion ("After closing: ", r2)
+             val r1 = <- (adjustTarget (r2l, r2n, r1, rvs))
              val _ = printRegion ("Adjusted R1: ", r1)
 
              (* Process RC *)
-             val (r1, r2, rc) = UO.dispatch (rc,
-                         fn rc => let
-                                    val _ = Debug.prints (config, "Closing RC\n")
-                                    val (rc, adjust) = process rc
-                                    val r1 = <- (adjust r1)
-                                    val _ = printRegion ("Adjusted R1: ", r1)
-                                    val r2 = <- (adjust r2)
-                                    val _ = printRegion ("Adjusted R2: ", r2)
-                                  in (r1, r2, rc)
-                                  end,
-                         fn () => (r1, r2, LD.empty))
+             val (r1, r2, rc) = 
+                 UO.dispatch (rcl,
+                   fn rcl => 
+                     let
+                       val _ = Debug.prints (config, "Closing RC\n")
+                       val (rcn, rc, _) = closeRegion (config, sm, rcl, rc, rvs)
+                       val _ = printRegion ("After closing: ", rc)
+                       val r1 = <- (adjustTarget (rcl, rcn, r1, rvs))
+                       val _ = printRegion ("Adjusted R1: ", r1)
+                       val rvs = V.map (rvs, UF.curry Rename.use r2dict)
+                       val r2 = <- (adjustTarget (rcl, rcn, r2, rvs))
+                       val _ = printRegion ("Adjusted R2: ", r2)
+                     in (r1, r2, rc)
+                     end,
+                   fn () => (r1, r2, rc))
 
              (* Clone R1 *)
              val (newlabel, r1) = cloneRegion (config, sm, headerlabel, r1)
@@ -525,7 +553,9 @@ struct
                   val rc = findRC ()
                   val rclabels = map treeLabel (UO.toList rc)
                   val _ = printList ("Found RC: ", map I.layoutLabel rclabels)
-                  val r2 = <- (findR2 (LS.fromList (headerlabel :: rclabels)))
+                  val r2 = <- (findR2 (rc, LS.fromList (headerlabel :: rclabels)))
+                  (* reject when RC is not a subtree of R2 *)
+                  val _ = map (require o not o treeContainsLabel r2) rclabels
                   val _ = printLayout ("Found R2: ", I.layoutLabel (treeLabel r2))
                   val r2 = <- (adjustR2 r2)
                   val r2label = treeLabel r2
@@ -534,11 +564,12 @@ struct
                   val _ = require (sanityCheck r1)
                   val _ = printList ("Found R1: ", map (I.layoutLabel o treeLabel) r1)
                   val header = <- (invertLoop (r1, r2, rc))
-                in
+                in 
                   header
                 end),
            fn () => collapse header)
       end
+
 
   (*
    * Traverse an annotated dominator tree, locate loops from
@@ -555,6 +586,7 @@ struct
       in
         if LS.member (#blocks frontier, label)
           then let val _ = Debug.prints (config, "Loop header: " ^ I.labelString label ^ "\n")
+                   val _ = Debug.printLayout (config, Debug.layoutTree self)
                in tryInvertLoop (config, sm, self)
                end
           else self
