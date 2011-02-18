@@ -186,12 +186,10 @@ struct
              of Config.GcsNone => []
               | Config.GcsConservative => ["P_USE_CGC"]
               | Config.GcsAccurate =>
-                ["P_USE_AGC",
-                 "P_AGC_LOCK_PARAM=" ^
-                 (case Config.agc config
-                   of Config.AgcGcMf => "0"
-                    | Config.AgcTgc  => "1"
-                    | Config.AgcCgc  => "1")]
+                (case Config.agc config
+                  of Config.AgcGcMf => ["P_AGC_LOCK_PARAM=0", "P_USE_AGC=PlsrAKMf"]
+                   | Config.AgcTgc  => ["P_AGC_LOCK_PARAM=1", "P_USE_AGC=PlsrAKTgc"]
+                   | Config.AgcCgc  => ["P_AGC_LOCK_PARAM=1", "P_USE_AGC=PlsrAKCgc"])
                 @
                 (if Config.agc config = Config.AgcTgc orelse
                     Config.agc config = Config.AgcCgc
