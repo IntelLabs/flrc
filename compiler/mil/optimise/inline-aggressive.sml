@@ -41,7 +41,7 @@ struct
         "call sites inlined (Aggressive inliner)")]
 
   (* Budget ratio is used to calculate the budgetSize limit. *)
-  val budgetRatio = 0.20 (* 20% *)
+  val budgetRatio = 0.30 (* 30% *)
   (* Extra size limit. *)
   val budgetSize = ref 0
 
@@ -190,7 +190,7 @@ struct
         val func = ref NONE
         val size = ref 0
         fun selectCheapest (f, c, sz) = 
-            if (*sz < budget andalso*) (Option.isNone (!func) orelse sz < !size) then
+            if sz < budget andalso (Option.isNone (!func) orelse sz < !size) then
               (func := SOME (f, c); size := sz)
             else
               ()
