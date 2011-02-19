@@ -630,7 +630,7 @@ struct
         val threads =
             (case (ldTag, useFutures config)
               of (LdOpc, _)    => mcrtLib
-               | (LdIpc,    _) => ["pillar2c_pthread.asm.o", "Ws2_32.lib", 
+               | (LdIpc,    _) => [(*XXX temp removed to work with old pilicl "pillar2c_pthread.asm.o", *)"Ws2_32.lib",
                                    ifDebug (config, "pthreadVC2d.lib", "pthreadVC2.lib")]
                | (LdGCC, true) => fail ("unmanagedLibraries", "gcc does not link with mcrt")
                | (_,     true) => mcrtLib
