@@ -645,8 +645,8 @@ struct
             (case ldTag
               of LdOpc    => ([ifDebug (config, "crt_prtbegind.obj", "crt_prtbegin.obj")], 
                               [ifDebug (config, "crt_prtendd.obj", "crt_prtend.obj")])
-               | LdIpc    => ([ifDebug (config, "pillar2c_crt_prtbegind.obj", "pillar2c_crt_prtbegin.obj")], 
-                              [ifDebug (config, "pillar2c_crt_prtendd.obj", "pillar2c_crt_prtend.obj")])
+               | LdIpc    => ([ifDebug (config, "pillar2c_crt_begind.obj", "pillar2c_crt_begin.obj")], 
+                              [ifDebug (config, "pillar2c_crt_endd.obj", "pillar2c_crt_end.obj")])
                | _        => ([], []))
         val gcLibs = gcLibraries (config, ldTag)
         val futureLibs = futureLibraries (config, ldTag)
