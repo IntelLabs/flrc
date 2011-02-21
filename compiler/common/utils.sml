@@ -134,6 +134,8 @@ structure Utils = struct
              | NONE => Vector.new0 ())
       fun mapAndFoldi (xs : 'a vector, y : 'b, f : int * 'a * 'b -> 'c * 'b) : 'c vector * 'b =
           Vector.mapAndFold (Vector.mapi (xs, fn x => x), y, fn ((i, x), y) => f (i, x, y))
+      val mapSecond : ('a * 'b) Vector.t * ('b -> 'c) -> ('a * 'c) Vector.t =
+       fn (v, f) => Vector.map (v, fn (a, b) => (a, f b))
     end (* structure Vector *)
 
     structure MltonList = List

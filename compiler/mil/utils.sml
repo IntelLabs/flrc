@@ -1227,7 +1227,7 @@ struct
 
     val compare = fn (fs1, fs2) => Compare.fromOrd ord (fs1, fs2)
 
-    val eq = Compare.equal compare
+    val eq = Equality.fromCompare compare
 
     val fromValueSize =
      fn vs =>
@@ -1840,46 +1840,46 @@ struct
   structure Eq =
   struct
     type 'a t = 'a * 'a -> bool
-    val variable           : Mil.variable t = Compare.C.equal Compare.variable
-    val name               : Mil.name t = Compare.C.equal Compare.name
-    val label              : Mil.label t = Compare.C.equal Compare.label
-    val effects            : Mil.effects t = Compare.C.equal Compare.effects
+    val variable           : Mil.variable t = Equality.fromCompare Compare.variable
+    val name               : Mil.name t = Equality.fromCompare Compare.name
+    val label              : Mil.label t = Equality.fromCompare Compare.label
+    val effects            : Mil.effects t = Equality.fromCompare Compare.effects
     val callConv           : 'a t -> 'a Mil.callConv t = 
-     fn eqA => Compare.C.equal (Compare.callConv (fn (a, b) => if eqA (a, b) then EQUAL else LESS))
-    val typKind            : Mil.typKind t = Compare.C.equal Compare.typKind
-    val pObjKind           : Mil.pObjKind t = Compare.C.equal Compare.pObjKind
-    val valueSize          : Mil.valueSize t = Compare.C.equal Compare.valueSize
-    val fieldVariance      : Mil.fieldVariance t = Compare.C.equal Compare.fieldVariance
+     fn eqA => Equality.fromCompare (Compare.callConv (fn (a, b) => if eqA (a, b) then EQUAL else LESS))
+    val typKind            : Mil.typKind t = Equality.fromCompare Compare.typKind
+    val pObjKind           : Mil.pObjKind t = Equality.fromCompare Compare.pObjKind
+    val valueSize          : Mil.valueSize t = Equality.fromCompare Compare.valueSize
+    val fieldVariance      : Mil.fieldVariance t = Equality.fromCompare Compare.fieldVariance
     val fieldSize          : Mil.fieldSize t = FieldSize.eq
-    val typ                : Mil.typ t = Compare.C.equal Compare.typ
-    val typs               : Mil.typ Vector.t t = Compare.C.equal Compare.typs
-    val fieldKind          : Mil.fieldKind t = Compare.C.equal Compare.fieldKind
-    val fieldDescriptor    : Mil.fieldDescriptor t = Compare.C.equal Compare.fieldDescriptor
-    val tupleDescriptor    : Mil.tupleDescriptor t = Compare.C.equal Compare.tupleDescriptor
-    val metaDataDescriptor : Mil.metaDataDescriptor t = Compare.C.equal Compare.metaDataDescriptor
-    val constant           : Mil.constant t = Compare.C.equal Compare.constant
-    val simple             : Mil.simple t = Compare.C.equal Compare.simple
-    val operand            : Mil.operand t = Compare.C.equal Compare.operand
-    val tupleBase          : Mil.tupleBase t = Compare.C.equal Compare.tupleBase
-    val vectorIndexKind    : Mil.vectorIndexKind t = Compare.C.equal Compare.vectorIndexKind
-    val fieldIdentifier    : Mil.fieldIdentifier t = Compare.C.equal Compare.fieldIdentifier
-    val tupleField         : Mil.tupleField t = Compare.C.equal Compare.tupleField
-    val rhs                : Mil.rhs t = Compare.C.equal Compare.rhs
-    val instruction        : Mil.instruction t = Compare.C.equal Compare.instruction
-    val target             : Mil.target t = Compare.C.equal Compare.target
+    val typ                : Mil.typ t = Equality.fromCompare Compare.typ
+    val typs               : Mil.typ Vector.t t = Equality.fromCompare Compare.typs
+    val fieldKind          : Mil.fieldKind t = Equality.fromCompare Compare.fieldKind
+    val fieldDescriptor    : Mil.fieldDescriptor t = Equality.fromCompare Compare.fieldDescriptor
+    val tupleDescriptor    : Mil.tupleDescriptor t = Equality.fromCompare Compare.tupleDescriptor
+    val metaDataDescriptor : Mil.metaDataDescriptor t = Equality.fromCompare Compare.metaDataDescriptor
+    val constant           : Mil.constant t = Equality.fromCompare Compare.constant
+    val simple             : Mil.simple t = Equality.fromCompare Compare.simple
+    val operand            : Mil.operand t = Equality.fromCompare Compare.operand
+    val tupleBase          : Mil.tupleBase t = Equality.fromCompare Compare.tupleBase
+    val vectorIndexKind    : Mil.vectorIndexKind t = Equality.fromCompare Compare.vectorIndexKind
+    val fieldIdentifier    : Mil.fieldIdentifier t = Equality.fromCompare Compare.fieldIdentifier
+    val tupleField         : Mil.tupleField t = Equality.fromCompare Compare.tupleField
+    val rhs                : Mil.rhs t = Equality.fromCompare Compare.rhs
+    val instruction        : Mil.instruction t = Equality.fromCompare Compare.instruction
+    val target             : Mil.target t = Equality.fromCompare Compare.target
     val switch             : 'a t -> 'a Mil.switch t = 
-     fn eqA => Compare.C.equal (Compare.switch (fn (a, b) => if eqA (a, b) then EQUAL else LESS))
-    val codes              : Mil.codes t = Compare.C.equal Compare.codes
-    val call               : Mil.call t = Compare.C.equal Compare.call
-    val eval               : Mil.eval t = Compare.C.equal Compare.eval
-    val interProc          : Mil.interProc t = Compare.C.equal Compare.interProc
-    val cuts               : Mil.cuts t = Compare.C.equal Compare.cuts
-    val return             : Mil.return t = Compare.C.equal Compare.return
-    val transfer           : Mil.transfer t = Compare.C.equal Compare.transfer
-    val block              : Mil.block t = Compare.C.equal Compare.block
-    val codeBody           : Mil.codeBody t = Compare.C.equal Compare.codeBody
-    val code               : Mil.code t = Compare.C.equal Compare.code
-    val global             : Mil.global t = Compare.C.equal Compare.global
+     fn eqA => Equality.fromCompare (Compare.switch (fn (a, b) => if eqA (a, b) then EQUAL else LESS))
+    val codes              : Mil.codes t = Equality.fromCompare Compare.codes
+    val call               : Mil.call t = Equality.fromCompare Compare.call
+    val eval               : Mil.eval t = Equality.fromCompare Compare.eval
+    val interProc          : Mil.interProc t = Equality.fromCompare Compare.interProc
+    val cuts               : Mil.cuts t = Equality.fromCompare Compare.cuts
+    val return             : Mil.return t = Equality.fromCompare Compare.return
+    val transfer           : Mil.transfer t = Equality.fromCompare Compare.transfer
+    val block              : Mil.block t = Equality.fromCompare Compare.block
+    val codeBody           : Mil.codeBody t = Equality.fromCompare Compare.codeBody
+    val code               : Mil.code t = Equality.fromCompare Compare.code
+    val global             : Mil.global t = Equality.fromCompare Compare.global
   end
 
   structure CallConv =
@@ -4527,7 +4527,7 @@ struct
            | (_, T _) => LESS
            | (G v1, G v2) => Compare.variable (v1, v2))
 
-    val eq = Compare.C.equal compare
+    val eq = Equality.fromCompare compare
 
     structure L = Layout
 

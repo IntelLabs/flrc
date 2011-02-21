@@ -199,7 +199,8 @@ struct
          ("PSetGet",          "SetGet ops reduced"             ),
          ("PSetNewEta",       "SetNew ops eta reduced"         ),
          ("PSetQuery",        "SetQuery ops reduced"           ),
-         ("PSumProj",         "Sum projections reduced"        ),
+         ("PSumEta",          "Sum injections eta reduced"     ),
+         ("PSumProjBeta",     "Sum projections reduced"        ),
          ("PrimPrim",         "Primitives reduced"             ),
          ("PrimToLen",        "P Nom/Dub -> length reductions" ),
          ("PruneCuts",        "Cut sets pruned"                ),
@@ -279,7 +280,8 @@ struct
     val pSetGet = clicker  "PSetGet"
     val pSetNewEta = clicker "PSetNewEta"
     val pSetQuery = clicker  "PSetQuery"
-    val pSumProj = clicker  "PSumProj"
+    val pSumEta = clicker  "PSumEta"
+    val pSumProjBeta = clicker  "PSumProjBeta"
     val primPrim = clicker "PrimPrim"
     val primToLen = clicker "PrimToLen"
     val pruneCuts = clicker "PruneCuts"
@@ -2590,21 +2592,40 @@ struct
         in try (Click.pSetQuery, f)
         end
 
-    val pSum = fn (state, (i, dests, r)) => NONE
+    val pSumEta = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dests, {tag, typ, ofVal})) => 
+              let
+                val s = <@ MU.Operand.Dec.sVariable ofVal
+                val {typ = typP, sum, tag = tagP} = <@ MU.Rhs.Dec.rhsPSumProj <! Def.toRhs o Def.get @@ (imil, s)
+                val v = Try.V.singleton dests
+                val () = Try.require (tagP = tag)
+                val () = Try.require (MU.FieldKind.eq (typ, typP))
+                val () = Use.replaceUses (imil, v, M.SVariable sum)
+                val () = IInstr.delete (imil, i)
+              in []
+              end
+        in try (Click.pSumEta, f)
+        end
 
-    val pSumProj = 
+    val pSum = pSumEta 
+
+    val pSumProjBeta = 
         let
           val f = 
            fn ((d, imil, ws), (i, dests, {typ, sum, tag})) => 
               let
+                val {ofVal, ...} = <@ MU.Def.Out.pSum <! Def.toMilDef o Def.get @@ (imil, sum)
                 val v = Try.V.singleton dests
-                val {ofVal, ...} = <@ MU.Def.Out.pSum <! Def.toMilDef o Def.get @@ (imil, v)
                 val () = Use.replaceUses (imil, v, ofVal)
                 val () = IInstr.delete (imil, i)
               in []
               end
-        in try (Click.pSumProj, f)
+        in try (Click.pSumProjBeta, f)
         end
+
+    val pSumProj = pSumProjBeta
 
     val simplify = 
      fn (state, (i, M.I {dests, n, rhs})) =>

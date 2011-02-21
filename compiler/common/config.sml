@@ -428,36 +428,55 @@ structure Config :> CONFIG = struct
       datatype debug = D of string * string
 
       fun mk (name, description) =
-          let
-            fun enabled c = StringSet.member (get (c, #debug_), name)
-            val d = D (name, description)
-          in (d, enabled)
-          end
+          if debug then 
+            let
+              fun enabled c = StringSet.member (get (c, #debug_), name)
+              val d = D (name, description)
+            in (d, enabled)
+            end
+          else
+            let
+              fun enabled c = false
+              val d = D (name, description)
+            in (d, enabled)
+            end
 
       fun mks l =
-          let
-            fun doOne (D (n, d)) = (n, d)
-            val debugs = StringDict.fromList (List.map (l, doOne))
-          in (debugs, ref StringSet.empty)
-          end
+          if debug then
+            let
+              fun doOne (D (n, d)) = (n, d)
+              val debugs = StringDict.fromList (List.map (l, doOne))
+            in (debugs, ref StringSet.empty)
+            end
+          else
+            let
+              val debugs = StringDict.fromList []
+            in (debugs, ref StringSet.empty)
+            end
 
       fun add ((debugs, ds), d) =
-          if StringDict.contains (debugs, d) then
-            let
-              val () = ds := StringSet.insert (!ds, d)
-            in true
-            end
+          if debug then
+            if StringDict.contains (debugs, d) then
+              let
+                val () = ds := StringSet.insert (!ds, d)
+              in true
+              end
+            else
+              false
           else
             false
 
       fun usage (debugs, _) =
-          let
-            val l = StringDict.toList debugs
-            fun doOne (n, d) = "  " ^ n ^ ": " ^ d ^ "\n"
-            val ss = List.map (l, doOne)
-            val s = String.concat ss
-          in s
-          end
+          if debug then
+            let
+              val l = StringDict.toList debugs
+              fun doOne (n, d) = "  " ^ n ^ ": " ^ d ^ "\n"
+              val ss = List.map (l, doOne)
+              val s = String.concat ss
+            in s
+            end
+          else
+            "Debug flags not available in release mode"
 
       fun finalise (_, ds) = !ds
 
