@@ -1844,7 +1844,8 @@ struct
                       {on = a, 
                        cases = Vector.map2 (arms', arms, rewriteArm),
                        default = case (dflt', dflt)
-                                  of (_, NONE) => NONE
+                                  of (NONE, NONE)    => NONE
+                                   | (SOME tg, NONE) => SOME tg
                                    | (SOME tg, SOME objects) => 
                                      SOME (rewriteTarget (tg, objects))
                                    | _ => fail ("rewriteCase", "Bad switch default")}
