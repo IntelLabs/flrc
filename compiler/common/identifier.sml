@@ -188,7 +188,7 @@ sig
      * 
      * Note: if x is in f(v), but x is not in l, then x will be ignored.
      *)
-    val variableToposort : (variable * 'a) list * (variable * 'a -> VariableSet.t) -> (variable * 'a) list list
+    val variableTopoSort : (variable * 'a) list * (variable * 'a -> VariableSet.t) -> (variable * 'a) list list
 
     (** Names **)
     val nameExists : 'a symbolTable * name -> bool
@@ -456,30 +456,12 @@ struct
     fun variableString' v = "v" ^ (Int.toString (variableNumber v))
 
     local
-      structure PLG = PolyLabeledGraph
-      structure VD = VariableDict
+      structure TopoSort = TopoSortF (struct
+                                        structure Dict = VariableDict
+                                        structure Set = VariableSet
+                                      end)
     in
-    fun variableToposort (nodes, df) =
-        let
-          fun node ((v, _), n, map) = VD.insert (map, v, n)
-          fun edges map =
-              let
-                fun doNode (v, x) =
-                    let
-                      val n = Option.valOf (VD.lookup (map, v))
-                      val deps = VariableSet.toList (df (v, x))
-                      fun doOne v = Option.map (VD.lookup (map, v), fn n' => (n', n, ()))
-                      val es = List.keepAllMap (deps, doOne)
-                    in es
-                    end
-                val es = List.concat (List.map (nodes, doNode))
-              in es
-              end
-          val (g, _) = PLG.new {nodes = nodes, init = VD.empty, node = node, edges = edges}
-          val scc = PLG.scc g
-          val scc = List.map (scc, fn l => List.map (l, PLG.Node.getLabel))
-        in scc
-        end
+      val variableTopoSort = TopoSort.sort
     end
 
     fun nameExists (S {names, ...}, n) = NameDict.contains (names, n)

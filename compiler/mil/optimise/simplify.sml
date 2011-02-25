@@ -46,6 +46,7 @@ struct
   structure VS = M.VS
   structure LU = LayoutUtils
   structure L = Layout
+  structure MEL = MilExtendedLayout
 
   structure Chat = ChatF (struct 
                             type env = PD.t
@@ -2766,7 +2767,7 @@ struct
    fn (d, imil) => 
       let
         val () = if checkIr d then IMil.T.check imil else ()
-        val () = if showIr d then MilLayout.printGlobalsOnly (PD.getConfig d, IMil.T.unBuild imil) else ()
+        val () = if showIr d then LU.printLayout (MEL.layout (PD.getConfig d, IMil.T.unBuild imil)) else ()
         val () = if showIMil d then LU.printLayout (IMil.Layout.t imil) else ()
       in ()
       end
@@ -2916,7 +2917,7 @@ struct
       let
         val () = if statPhases d then Stats.report (PD.getStats d) else ()
         val () = if checkPhases d then IMil.T.check imil else ()
-        val () = if showPhases d then MilLayout.printGlobalsOnly (PD.getConfig d, IMil.T.unBuild imil) else ()
+        val () = if showPhases d then LU.printLayout (MEL.layout (PD.getConfig d, IMil.T.unBuild imil)) else ()
       in ()
       end
 

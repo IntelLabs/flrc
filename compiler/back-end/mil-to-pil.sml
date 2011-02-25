@@ -1576,7 +1576,7 @@ struct
          * before anything that it reads from does.  For parameters involved in 
          * a strongly connected component, add temporaries.
          *)
-        val scc = I.variableToposort (pi, depsOf)
+        val scc = I.variableTopoSort (pi, depsOf)
         fun doOne vis =
             case vis
              of [(p, i)] =>
@@ -2292,7 +2292,7 @@ struct
         val () = Chat.log2 (env, "Computing SCCs")
         val c = getConfig env
         fun depsOf (v, g) = MFV.global (c, v, g)
-        val scc = I.variableToposort (VD.toList gs, depsOf)
+        val scc = I.variableTopoSort (VD.toList gs, depsOf)
         val () = Chat.log2 (env, "Emitting globals")
         (* Process each strongly connected component *)
         fun doOneScc scc =

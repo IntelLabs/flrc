@@ -94,11 +94,10 @@ sig
 
       type 'a layout = Config.t * Mil.symbolInfo * Helpers.t * 'a -> Layout.t
 
-      val layoutCodeBody : Mil.codeBody layout
-      val layoutCode     : Mil.code layout
-      val layoutGlobal   : (Mil.variable * Mil.global) layout
-      val layoutProgram  : Config.t * Helpers.t * Mil.t -> Layout.t
-
+      val layoutCodeBody  : Mil.codeBody layout
+      val layoutCode      : Mil.code layout
+      val layoutGlobal    : (Mil.variable * Mil.global) layout
+      val layout          : Config.t * Helpers.t * Mil.t -> Layout.t
     end
 
 end;
@@ -1157,7 +1156,7 @@ struct
      val layoutGlobal   = wrap layoutGlobal
      val layoutGlobals  = wrap layoutGlobals
      
-     val layoutProgram = layoutProgram
+     val layout         = layoutProgram
 
    end
 

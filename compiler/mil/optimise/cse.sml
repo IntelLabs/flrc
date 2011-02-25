@@ -133,7 +133,7 @@ struct
       let
         val config = envGetConfig env
         fun depsOf (v, g) = FV.global (config, v, g)
-        val scc = I.variableToposort (VD.toList gd, depsOf)
+        val scc = I.variableTopoSort (VD.toList gd, depsOf)
         val () =
             debugDo (env, 
                  fn () => 

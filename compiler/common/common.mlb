@@ -39,6 +39,7 @@ local
         end
         path.sml
         graph.sml
+        topo-sort.sml
         dominance.sml
         rat.sml
         int-arb.sml
@@ -129,6 +130,7 @@ in
         structure Stats
         structure StringDict
         structure StringSet
+        functor TopoSortF
         structure Try
         structure UnParser
         structure Utils

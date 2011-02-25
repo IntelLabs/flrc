@@ -149,7 +149,7 @@ struct
          val config = getConfig env
          val help = fn (i, l) => Vector.fold (MUI.dests i, l, fn (v, l) => (v, i) :: l)
          val vis = Vector.fold (invInstrs, [], help)
-         val components = I.variableToposort (vis, fn (_, i) => FV.instruction (config, i))
+         val components = I.variableTopoSort (vis, fn (_, i) => FV.instruction (config, i))
          fun extract c =
              case c
               of [(_, i)] => i
