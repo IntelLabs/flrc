@@ -760,7 +760,8 @@ struct
               end
         and getVarValueA v =
             case FMil.getVariable (fmil, v)
-             of FMil.VdGlobal g       => getGlobalValue g
+             of FMil.VdExtern _       => NONE
+              | FMil.VdGlobal g       => getGlobalValue g
               | FMil.VdFunParam _     => NONE
               | FMil.VdLabParam _     => NONE
               | FMil.VdInstr (_, rhs) => getRhsValue rhs
