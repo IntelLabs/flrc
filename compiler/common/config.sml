@@ -379,7 +379,7 @@ structure Config :> CONFIG = struct
         (case host cfg
           of OsCygwin => Path.toCygwinString path
            | OsLinux  => Path.toUnixString path
-           | OsMinGW  => Path.toMinGWString path)
+           | OsMinGW  => Path.toWindowsString path)
 
     fun reportEnabled (C cfg, name) = StringSet.member (#report cfg, name)
 

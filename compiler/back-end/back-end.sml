@@ -118,22 +118,6 @@ struct
   datatype compiler = CcGCC | CcICC | CcOpc | CcIpc
   datatype linker = LdGCC | LdICC | LdOpc | LdIpc
 
-  val pathToCompilerArgString = 
-   fn (config, compiler, path) => 
-      (case compiler
-        of CcGCC    => Config.pathToHostString (config, path)
-         | CcICC    => Path.toWindowsString path
-         | CcOpc    => Path.toWindowsString path
-         | CcIpc    => Path.toWindowsString path)
-
-  val pathToLinkerArgString = 
-   fn (config, linker, path) => 
-      (case linker
-        of LdGCC    => Config.pathToHostString (config, path)
-         | LdICC    => Path.toWindowsString path
-         | LdOpc    => Path.toWindowsString path
-         | LdIpc    => Path.toWindowsString path)
-
   fun sourceFile (config, compiler, fname) = fname^".c"
 
   fun objectFile (config, compiler, fname) = 
@@ -147,10 +131,10 @@ struct
 
   fun compiler (config, compiler) = 
       (case compiler 
-        of CcGCC    => Path.fromString "gcc"
-         | CcICC    => Path.fromString "icl"
-         | CcOpc    => pLibExe (config, "pilicl")
-         | CcIpc    => pLibExe (config, "pilicl"))
+        of CcGCC    => (Pass.run, Path.fromString "gcc")
+         | CcICC    => (Pass.run, Path.fromString "icl")
+         | CcOpc    => (Pass.runWithSh, pLibExe (config, "pilicl"))
+         | CcIpc    => (Pass.runWithSh, pLibExe (config, "pilicl")))
       
   fun includes (config, compiler) = 
       let
@@ -169,8 +153,7 @@ struct
                | CcIpc => 
                  [runtimeDirectory config, pLibInclude (config, "prt-pthreads"), pLibInclude (config, "pgc")])
 
-        val fileToString = fn path => pathToCompilerArgString (config, compiler, path)
-        val flags = List.map (files, fn s => "-I" ^ (fileToString s))
+        val flags = List.map (files, fn s => "-I" ^ Config.pathToHostString (config, s))
       in flags
       end
 
@@ -292,7 +275,7 @@ struct
               | LdICC    => [pLibDir]
               | LdOpc    => [pLibDir]
               | LdIpc    => [pLibDir, Path.snoc (pLibDir, "vs2010")]
-        val libs = List.map (libs, fn l => pathToLinkerArgString (config, linker, l))
+        val libs = List.map (libs, fn l => Config.pathToHostString(config, l))
       in libs
       end
 
@@ -448,7 +431,7 @@ struct
 
   fun compile (config : Config.t, ccTag, fname) = 
       let
-        val fname = pathToCompilerArgString (config, ccTag, fname)
+        val fname = Config.pathToHostString (config, fname)
         val inFile = sourceFile (config, ccTag, fname)
         val outFile = objectFile (config, ccTag, fname)
         val cfg = (config, ccTag)
@@ -479,10 +462,10 @@ struct
 
   fun linker (config, ld) = 
       (case ld
-        of LdGCC    => Path.fromString "gcc"
-         | LdICC    => Path.fromString "icl"
-         | LdOpc    => pLibExe (config, "pilink")
-         | LdIpc    => pLibExe (config, "pilink"))
+        of LdGCC    => (Pass.run, Path.fromString "gcc")
+         | LdICC    => (Pass.run, Path.fromString "icl")
+         | LdOpc    => (Pass.runWithSh, pLibExe (config, "pilink"))
+         | LdIpc    => (Pass.runWithSh, pLibExe (config, "pilink")))
       
   structure LdOptions =
   struct
@@ -658,7 +641,7 @@ struct
 
   fun link (config, ccTag, ldTag, fname) = 
       let
-        val fname = pathToLinkerArgString (config, ldTag, fname)
+        val fname = Config.pathToHostString (config, fname)
         val inFile = objectFile (config, ccTag, fname)
         val outFile = exeFile (config, ldTag, fname)
         val cfg = (config, ldTag)
@@ -697,10 +680,10 @@ struct
                | Config.TsOpc => CcOpc
                | Config.TsIpc => CcIpc)
 
-        val (c, args, cleanup) = compile (config, ccTag, fname)
+        val ((run, cmd), args, cleanup) = compile (config, ccTag, fname)
 
         val () = 
-            Exn.finally (fn () => Pass.run (config, Chat.log0, c, args),
+            Exn.finally (fn () => run (config, Chat.log0, cmd, args),
                          cleanup)
       in ()
       end
@@ -716,10 +699,10 @@ struct
                | Config.TsOpc => (CcOpc, LdOpc)
                | Config.TsIpc => (CcIpc, LdIpc))
 
-        val (c, args, cleanup) = link (config, ccTag, ldTag, fname)
+        val ((run, cmd), args, cleanup) = link (config, ccTag, ldTag, fname)
 
         val () = 
-            Exn.finally (fn () => Pass.run (config, Chat.log0, c, args),
+            Exn.finally (fn () => run (config, Chat.log0, cmd, args),
                          cleanup)
       in 
         ()

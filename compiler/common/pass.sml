@@ -129,6 +129,8 @@ sig
   val doPassPart : Config.t * string * (unit -> 'a) -> 'a
   val run :
       Config.t * (Config.t * string -> unit) * Path.t * string list -> unit
+  val runWithSh :
+      Config.t * (Config.t * string -> unit) * Path.t * string list -> unit
 end;
 
 structure Pass :> PASS =
@@ -357,20 +359,6 @@ struct
   fun run (config, logger, cmd, args) = 
       let
         val cmd = Config.pathToHostString (config, cmd)
-        val (cmd, args) = 
-            (case Config.host config
-              of Config.OsMinGW => 
-                 let
-                   val quote = 
-                    fn s => "\"" ^ s ^ "\""
-                   val args = cmd::args
-                   val args = List.map (args, quote o String.escapeC)
-                   val cmd = String.concatWith (args, " ")
-                   val args = ["-c", cmd]
-                   val cmd = "sh"
-                 in (cmd, args)
-                 end
-               | _ => (cmd, args))
         val () = logger (config, String.concatWith (cmd::args, " "))
         val args = cmd::args
         val doit = 
@@ -386,5 +374,13 @@ struct
                    doit ()
       in ()
       end
+
+  fun runWithSh (config, logger, cmd, args) =
+    let 
+      val cmd = Config.pathToHostString (config, cmd)
+      val cmd = "'" ^ cmd ^ "'"
+      val args = cmd::args
+    in run (config, logger, Path.fromString "sh", args)
+    end
 
 end;
