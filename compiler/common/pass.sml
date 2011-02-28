@@ -376,11 +376,6 @@ struct
       end
 
   fun runWithSh (config, logger, cmd, args) =
-    let 
-      val cmd = Config.pathToHostString (config, cmd)
-      val cmd = "'" ^ cmd ^ "'"
-      val args = cmd::args
-    in run (config, logger, Path.fromString "sh", args)
-    end
+      run (config, logger, Path.fromString "sh", Config.pathToHostString (config, cmd) :: args)
 
 end;

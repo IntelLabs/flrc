@@ -377,7 +377,7 @@ structure Config :> CONFIG = struct
 
     fun pathToHostString (cfg, path) = 
         (case host cfg
-          of OsCygwin => Path.toCygwinString path
+          of OsCygwin => Path.toWindowsString path
            | OsLinux  => Path.toUnixString path
            | OsMinGW  => Path.toWindowsString path)
 
