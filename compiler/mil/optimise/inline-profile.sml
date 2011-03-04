@@ -759,20 +759,18 @@ struct
           val oldFreq = !tgtFunFreq
           val inlinedCSFreq = getFreq (inlinedCS)
           val newFreq = oldFreq - inlinedCSFreq
-          val redFactor = Real.fromIntInf (newFreq) / Real.fromIntInf (oldFreq)
-          fun updateCSFreq redFactor (blk, csInfo) = 
-              let
-                val I {freq, ...} = csInfo
-                val newFreq = Real.fromIntInf (!freq) * redFactor
-              in 
-                freq := Real.toIntInf (Real.realRound newFreq)
-              end
+          (* freq * newFreq/oldFreq *)
+          fun updateCSFreq1 (blk, I {freq as ref f, ...}) = 
+              freq := (if oldFreq > 0 then (f * newFreq) div oldFreq else 0)
+          (* freq * (1 - newFreq/oldFreq *)
+          fun updateCSFreq2 (blk, I {freq as ref f, ...}) = 
+              freq := (if oldFreq > 0 then f - ((f * newFreq) div oldFreq) else f)
           (* - For every call site in tgtFun
            *    callSite Freq = callSite Freq * redFactor *)
-          val () = LD.foreach (orgCallSites, updateCSFreq redFactor)
+          val () = LD.foreach (orgCallSites, updateCSFreq1)
           (* - For every call site in newCallSites
            *    callSite Freq = callSite Freq * (1 - redFactor) *)
-          val () = LD.foreach (newCallSites, updateCSFreq (1.0 - redFactor))
+          val () = LD.foreach (newCallSites, updateCSFreq2)
           (* Insert the new call sites into the source function. *)
           val () = addCallSites (d, callSitesInfo, srcFun, 
                                  LD.toList newCallSites)
