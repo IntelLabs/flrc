@@ -347,7 +347,9 @@ struct
                      val opts = 
                          oLevel @[ "-Ob0", (* disable inlining*)
                                    "-mP2OPT_pre=false", (* disable PRE *)
-                                   "-mCG_opt_mask=0xfffe"]
+                                   "-mCG_opt_mask=0xfffe",
+                                   "-mP3OPT_pcg_ra_region_picking=0" (* Prevents shrink wrapping *)
+                                 ]
                    in opts
                    end
                  | CcIpc => 
