@@ -559,7 +559,7 @@ struct
 
     val ofValIndex = B.ofValIndex
 
-    fun nulConst c = MU.Uintp.zero c
+    fun nulConst c = M.CRef (MU.HeapModel.null c)
 
     fun empty c =
         let

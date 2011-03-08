@@ -175,6 +175,7 @@ struct
             | M.CViMask _ => c
             | M.CPok _ => c
             | M.COptionSetEmpty => c
+            | M.CRef _ => c
             | M.CTypePH => c
 
       fun simple (nm : t, s : M.simple) : M.simple =
@@ -975,6 +976,7 @@ struct
               | "Ptr" => P.succeed (M.CPok M.PokPtr)
               | "R" => P.map (paren intInf, M.CRat)
               | "Rat" => P.succeed (M.CPok M.PokRat)
+              | "Ref" => P.map (paren intInf, M.CRef)
               | "S8" => intArb (IntArb.Signed, IntArb.S8)
               | "S16" => intArb (IntArb.Signed, IntArb.S16)
               | "S32" => intArb (IntArb.Signed, IntArb.S32)

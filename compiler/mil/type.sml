@@ -998,6 +998,7 @@ struct
            | M.CViMask x       => M.TViMask (#descriptor x)
            | M.CPok _          => MU.Uintp.t config
            | M.COptionSetEmpty => M.TPType {kind = M.TkE, over = M.TNone}
+           | M.CRef _          => M.TRef
            | M.CTypePH         => M.TPType {kind = M.TkI, over = M.TNone}
 
      fun simple (config, si, s) =

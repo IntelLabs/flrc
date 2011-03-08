@@ -435,6 +435,7 @@ struct
            in l
            end
          | M.CPok pok => layoutPObjKind (env, pok)
+         | M.CRef i   => L.seq [L.str "Ref", L.paren (IntInf.layout i)]
          | M.COptionSetEmpty => L.str "Empty"
          | M.CTypePH => L.str "TypePH"
    and layoutConstants (env, cs) = layoutVector (env, layoutConstant, cs)

@@ -427,6 +427,7 @@ struct
               | Mil.CDouble d       => SOME (CDouble d)
               | Mil.CViMask _       => NONE
               | Mil.CPok _          => NONE
+              | Mil.CRef _          => NONE
               | Mil.COptionSetEmpty => NONE
               | Mil.CTypePH         => NONE)
 
