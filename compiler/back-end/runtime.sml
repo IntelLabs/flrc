@@ -208,6 +208,7 @@ sig
 
   val exit      : Pil.identifier 
   val halt      : Pil.identifier
+  val haltV     : Pil.identifier
   val pmain     : Pil.identifier 
   val gErrorVal : Pil.identifier 
 
@@ -717,7 +718,8 @@ struct
   end
 
   val exit = Pil.identifier "pLsrExit"
-  val halt = Pil.identifier "pLsrHalt"
+  val halt  = Pil.identifier "pLsrHalt"
+  val haltV = Pil.identifier "pLsrHaltV"
   val pmain = Pil.identifier "__pmain"
   val gErrorVal = Pil.identifier "pLsrErrorVal"
 

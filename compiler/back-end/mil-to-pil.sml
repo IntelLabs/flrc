@@ -1854,7 +1854,13 @@ struct
               val cut = Pil.S.contCutTo (getConfig env, genVarE (state, env, cont), args, cuts)
             in cut
             end
-          | M.THalt opnd => Pil.S.call (Pil.E.namedConstant RT.halt, [genOperand (state, env, opnd)])
+          | M.THalt opnd => 
+            let
+              val M.F {rtyps, ...} = getFunc env
+              val void = Vector.length rtyps = 0
+              val halt = if void then RT.haltV else RT.halt
+            in Pil.S.call (Pil.E.namedConstant halt, [genOperand (state, env, opnd)])
+            end
           | M.TPSumCase _ => notCoreMil (env, "genTransfer", "TPSumCase")
        end
 
