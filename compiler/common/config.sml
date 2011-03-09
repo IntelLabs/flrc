@@ -23,7 +23,7 @@ signature CONFIG = sig
 		   showPre: bool,
 		   statPost: bool,
 		   statPre: bool}
-  datatype stopPoint = SpCp | SpH | SpM | SpPil | SpO | SpExe
+  datatype stopPoint = SpCp | SpH | SpM | SpPil | SpHsc | SpO | SpExe
   datatype thunkScheme = TsEither | TsDirect | TsHybrid | TsTwoVersion
   datatype toolset = TsIpc (* Intel Pillar Compiler *)
                    | TsOpc (* Old Pillar Compiler *)
@@ -230,7 +230,7 @@ structure Config :> CONFIG = struct
          statPost : bool
     }
 
-    datatype stopPoint = SpCp | SpH | SpM | SpPil | SpO | SpExe
+    datatype stopPoint = SpCp | SpH | SpM | SpPil | SpHsc | SpO | SpExe
 
     fun stopLt (sp1, sp2) =
         case (sp1, sp2)

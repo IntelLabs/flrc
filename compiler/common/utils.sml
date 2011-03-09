@@ -2071,12 +2071,105 @@ sig
   val sequence : {left : unit t, sep : unit t, right : unit t, err : error, item : 'a t} -> 'a list t
   val sequenceV : {left : unit t, sep : unit t, right : unit t, err : error, item : 'a t} -> 'a Vector.t t
   val optional : 'a t -> 'a option t
+  val optionalWith : 'a -> 'a t -> 'a t
   val required : 'a option t * error -> 'a t
   val succeeds : 'a t -> bool t
   val ignore : 'a t -> unit t
   val $ : (unit -> 'a t) -> 'a t 
   val $$ : ('a -> 'b t) -> 'a -> 'b t
+  val between : 'a t -> 'b t -> 'c t -> 'c t
+  val sepBy1 : 'a t -> 'b t -> 'a list t
+  val sepBy : 'a t -> 'b t -> 'a list t
+  val notFollowedBy : 'a t -> unit t
+  val skipMany : 'a t -> unit t
+  val skipMany1 : 'a t -> unit t
 end (* signature PARSER *)
+
+signature CHAR_PARSER = 
+sig
+  type stream
+  type pos
+  type 'a t
+  datatype 'a result = Success of stream * 'a | Failure | Error of pos * string 
+
+  val return : 'a -> 'a t
+  val bind : 'a t -> ('a -> ('b t)) -> 'b t
+  val debug : 'a t * (pos -> unit) * (pos * 'a -> unit) * (unit -> unit) * (pos * string -> unit) -> 'a t 
+  val succeed : 'a -> 'a t
+  val fail : 'a t
+  val error : string -> 'a t
+  val map : 'a t * ('a -> 'b) -> 'b t 
+  val parse : 'a t * stream -> 'a result
+ (* infix 5 || &&*)
+  val || : 'a t * 'a t -> 'a t
+  val && : 'a t * 'b t -> ('a * 'b) t
+ (* infixr 6 -&& *)
+  val -&& : unit t * 'a t -> 'a t
+ (* infix 7 &&- *)
+  val &&- : 'a t * unit t -> 'a t
+ (*  infixr 5 *:: ::: *)
+  val -:: : unit t * 'a List.t t -> 'a List.t t
+  val ::: : 'a t * 'a List.t t -> 'a List.t t
+  val any : 'a t list -> 'a t
+  val all : 'a t list -> 'a list t
+  val get : char t
+  val satisfy : (char -> bool) -> char t 
+  val satisfyMap : (char -> 'a option) -> 'a t 
+  val atEnd : unit t
+  val zeroOrMore : 'a t -> 'a list t
+  val oneOrMore : 'a t -> 'a list t
+  val zeroOrMoreV : 'a t -> 'a Vector.t t
+  val oneOrMoreV : 'a t -> 'a Vector.t t
+  val seqSep : 'a t * unit t -> 'a list t
+  val seqSepV : 'a t * unit t -> 'a Vector.t t
+  (* sep & right should succeed or fail to match the separator or closer *)
+  (* error is an appropriate error to indicate expecting sep or right *)
+  val sequence : {left : unit t, sep : unit t, right : unit t, err : string, item : 'a t} -> 'a list t
+  val sequenceV : {left : unit t, sep : unit t, right : unit t, err : string, item : 'a t} -> 'a Vector.t t
+  val optional : 'a t -> 'a option t
+  val optionalWith : 'a -> 'a t -> 'a t
+  val required : 'a option t * string -> 'a t
+  val succeeds : 'a t -> bool t
+  val ignore : 'a t -> unit t
+  val $ : (unit -> 'a t) -> 'a t 
+  val $$ : ('a -> 'b t) -> 'a -> 'b t
+  val between : 'a t -> 'b t -> 'c t -> 'c t
+  val sepBy1 : 'a t -> 'b t -> 'a list t
+  val sepBy : 'a t -> 'b t -> 'a list t
+  val notFollowedBy : 'a t -> unit t
+  val skipMany : 'a t -> unit t
+  val skipMany1 : 'a t -> unit t
+end (* signature CHAR_PARSER *)
+
+functor CharParserF (structure CharParser : CHAR_PARSER) =
+struct
+  open CharParser
+
+  val >> = fn (f, g) => bind f (fn _ => g)
+  val >>= = fn (f, g) => bind f g
+
+  infix 5 ||
+  infixr 0 >>
+  infixr 0 >>=
+
+  fun elem c cs = List.exists (cs, fn d => c = d)
+  fun noneOf cs = satisfy (fn c => not (elem c cs))
+  fun oneOf  cs = satisfy (fn c => elem c cs)
+
+  fun oneChar c = satisfy (fn d => c = d)
+  fun oneList []        = return ()
+    | oneList (c :: cs) = oneChar c >> oneList cs
+  fun oneString s = oneList (explode s) >> return s
+
+  val space = satisfy Char.isSpace
+  val lower = satisfy Char.isLower
+  val upper = satisfy Char.isUpper
+  val digit = satisfy Char.isDigit
+  val octDigit = satisfy (fn c => c >= #"0" andalso c <= #"7")
+  val hexDigit = satisfy Char.isHexDigit
+  val newline = satisfy (fn c => c = Char.newline)
+
+end
 
 (* Simple infinite lookahead parser combinators 
  *)
@@ -2228,6 +2321,22 @@ struct
 
   fun sequenceV x : 'a Vector.t t = map (sequence x, Vector.fromList)
 
+  fun between openP closeP p = 
+      bind openP  (fn _ => 
+      bind p      (fn v => 
+      bind closeP (fn _ => return v)))
+
+  fun optionalWith v p = p || return v
+
+  fun sepBy1 p sep = 
+      bind p (fn x => 
+      bind (zeroOrMore (bind sep (fn _ => p))) (fn rest => 
+      return (x::rest)))
+  fun sepBy p sep  = sepBy1 p sep || return []
+
+  fun notFollowedBy p = (bind p (fn _ => fail)) || return ()
+  fun skipMany p  = (bind p (fn _ => skipMany p)) || return ()
+  fun skipMany1 p = bind p (fn _ => skipMany p)
 end (* functor ParserF *)
 
 structure StringParser = 
@@ -2741,5 +2850,278 @@ structure IntFiniteOrdinal = FiniteOrdinalF(structure Base =
                                               val compare : t Compare.t = Int32.compare
                                               val eq      : t * t -> bool = Int32.equals
                                               val hash    : t -> Word32.word = Word32.fromInt
-                                            end)
+                                            end);
+
+signature LANGUAGE_DEF =
+sig
+  structure Parser : CHAR_PARSER
+  val commentStart    : string
+  val commentEnd      : string
+  val commentLine     : string
+  val nestedComments  : bool
+  val identStart      : char Parser.t
+  val identLetter     : char Parser.t
+  val opStart         : char Parser.t
+  val opLetter        : char Parser.t
+  val reservedNames   : string list
+  val reservedOpNames : string list
+  val caseSensitive   : bool
+end;
+
+signature TOKEN_PARSER =
+sig
+  type 'a t
+  val identifier       : string t
+  val reserved         : string -> unit t 
+  val operator         : string t 
+  val reservedOp       : string -> unit t 
+        
+  val charLiteral      : char t 
+  val stringLiteral    : string t 
+  val natural          : IntInf.t t 
+  val integer          : IntInf.t t 
+  val float            : Rat.t t 
+  val naturalOrFloat   : (IntInf.t, Rat.t) Utils.oneof t 
+  val decimal          : IntInf.t t 
+  val hexadecimal      : IntInf.t t 
+  val octal            : IntInf.t t 
+
+  val symbol           : string -> string t 
+  val lexeme           : 'a t -> 'a t 
+  val whiteSpace       : unit t 
+
+  val parens           : 'a t -> 'a t 
+  val braces           : 'a t -> 'a t
+  val angles           : 'a t -> 'a t
+  val brackets         : 'a t -> 'a t
+
+  val semi             : string t
+  val comma            : string t
+  val colon            : string t
+  val dot              : string t
+  val semiSep          : 'a t -> ('a list) t
+  val semiSep1         : 'a t -> ('a list) t
+  val commaSep         : 'a t -> ('a list) t
+  val commaSep1        : 'a t -> ('a list) t                
+end;
+
+functor TokenParserF (structure LanguageDef : LANGUAGE_DEF) 
+  :> TOKEN_PARSER where type 'a t = 'a LanguageDef.Parser.t =
+struct
+  structure U = Utils
+  structure I = IntInf
+  structure R = Rat
+  structure L = LanguageDef
+  structure P = CharParserF (structure CharParser = L.Parser)
+  structure UF = Utils.Function
+  open P
+  infix  5 ||
+  infixr 0 >>
+  infixr 0 >>=
+
+  fun digitToInt c = I.fromInt (ord c - ord #"0")
+
+  val zero    = I.fromInt 0
+  val one     = I.fromInt 1
+  val ten     = I.fromInt 10
+  val eight   = I.fromInt 8 
+  val sixteen = I.fromInt 16
+  
+  fun invert r = let val (n, d) = R.toInts r in R.rat (d, n) end
+
+  val escMap = List.zip (explode "abfnrtv\\\"'", explode "\^A\^B\^F\n\r\t\^V\\\"'")
+
+  val oneLineComment = 
+      oneString L.commentLine                   >> 
+      P.skipMany (P.satisfy (fn c => c <> #"\n")) >>
+      return ()
+  val startEnd = explode (L.commentEnd ^ L.commentStart)
+
+  fun inCommentMulti () = 
+      (oneString L.commentEnd >> return ()) ||
+      (multiLineComment () >> inCommentMulti ()) ||
+      (P.skipMany1 (noneOf startEnd) >> inCommentMulti ()) ||
+      (oneOf startEnd >> inCommentMulti ())
+  and inCommentSingle () =
+      (oneString L.commentEnd >> return ()) ||
+      (P.skipMany1 (noneOf startEnd) >> inCommentSingle ()) ||
+      (oneOf startEnd >> inCommentSingle ())
+  and inComment () = if L.nestedComments then inCommentMulti () else inCommentSingle ()
+  and multiLineComment () = oneString L.commentStart >> inComment ()
+
+  val simpleSpace = P.skipMany1 (P.satisfy Char.isSpace)
+  val whiteSpace = 
+      let 
+        val noLine  = String.isEmpty L.commentLine
+        val noMulti = String.isEmpty L.commentStart
+      in case (noLine, noMulti)
+           of (true, true) => P.skipMany simpleSpace
+            | (true,    _) => P.skipMany (simpleSpace || multiLineComment ())
+            | (_,    true) => P.skipMany (simpleSpace || oneLineComment)
+            | (_,       _) => P.skipMany (simpleSpace || oneLineComment || multiLineComment ())
+      end
+
+  fun lexeme p = p >>= (fn x => whiteSpace >> return x)
+  fun symbol name = lexeme (oneString name)
+
+  val theReservedNames = 
+      if L.caseSensitive
+        then L.reservedNames
+        else List.map (L.reservedNames, String.toLower)
+
+  val ident = 
+      L.identStart               >>= (fn c =>
+      P.zeroOrMore L.identLetter >>= (fn cs => 
+      return (implode (c :: cs))))
+
+  fun isReserved names name = List.exists (names, fn n => n = name)
+  fun isReservedName name = 
+      let val caseName = if L.caseSensitive then name
+                           else String.toLower name 
+      in isReserved theReservedNames caseName
+      end
+
+  val identifier = 
+      lexeme (ident >>= (fn name =>
+              if isReservedName name
+                then P.error ("reserved word " ^ name)
+                else return name))
+
+  fun caseString name = 
+      if L.caseSensitive 
+        then oneString name
+        else let
+               fun caseChar c = 
+                   if Char.isAlpha c 
+                     then oneChar (Char.toLower c) || oneChar (Char.toUpper c)
+                     else oneChar c
+               fun walk []        = return () 
+                 | walk (c :: cs) = caseChar c >> walk cs
+             in 
+               walk (explode name) >> return name
+             end
+                                          
+  fun reserved name = lexeme (caseString name >> notFollowedBy (L.identLetter))
+
+  val oper = 
+      L.opStart               >>= (fn c =>
+      P.zeroOrMore L.opLetter >>= (fn cs =>
+      return (implode (c :: cs))))
+
+  fun isReservedOp name = isReserved L.reservedOpNames name
+
+  val operator = 
+      lexeme (oper >>= (fn name => 
+              if isReservedOp name
+                then P.error ("reserved operator " ^ name)
+                else return name))
+
+  fun reservedOp name = lexeme (oneString name >> notFollowedBy L.opLetter)
+                                    
+  fun number base baseDigit = 
+      P.oneOrMore baseDigit >>= (fn digits => 
+      return (List.foldr (digits, zero,
+              fn (d, x) => (I.+ (I.* (base, x), digitToInt d)))))
+
+  val decimal = number ten digit
+  val hexadecimal = (oneChar #"x" || oneChar #"X") >> number sixteen hexDigit
+  val octal = (oneChar #"o" || oneChar #"O") >> number eight octDigit
+
+  val charEsc = 
+      let fun parseEsc (c, code) = oneChar c >> return code
+      in P.any (List.map (escMap, parseEsc))
+      end
+  val charNum = 
+      (decimal || 
+       (oneChar #"o" >> number eight octDigit) ||
+       (oneChar #"x" >> number sixteen hexDigit)) >>=
+      (return o chr o I.toInt)
+  val charControl = oneChar #"^" >> upper >>= (fn c => return (chr (ord c - ord #"A")))
+  val escapeCode = charEsc || charNum || charControl (* || charAscii *)
+
+  val charLetter = P.satisfy (fn c => (c <> #"'" andalso c <> #"\\" andalso ord c > 22))
+  val charEscape = oneChar #"\\" >> escapeCode
+  val characterChar = charLetter || charEscape 
+  val charLiteral = lexeme (P.between (oneChar #"'") (oneChar #"'") characterChar) 
+
+  val escapeEmpty = oneChar #"&"
+  val escapeGap = P.oneOrMore space >> oneChar #"\\"
+  val stringEscape = 
+      oneChar #"\\" >> 
+      ((escapeGap   >> return NONE) || 
+       (escapeEmpty >> return NONE) ||
+       (escapeCode  >>= return o SOME))
+  val stringLetter = P.satisfy (fn c => c <> #"\"" andalso c <> #"\\" andalso ord c > 22)
+  val stringChar = (stringLetter >>= return o SOME) || stringEscape
+  val stringLiteral = 
+      lexeme (P.between (oneChar #"\"") (oneChar #"\"") 
+                      (P.zeroOrMore stringChar)          >>= (fn str => 
+              return (String.implode (List.keepAllMap (str, UF.id)))))
+
+  val zeroNumber = oneChar #"0" >> (hexadecimal || octal || decimal || return 0)
+  val nat = zeroNumber || decimal
+  val natural = lexeme nat
+  val sign = 
+      (oneChar #"-" >> return I.~)   ||
+      (oneChar #"+" >> return UF.id) ||
+      return UF.id
+  val intnum = 
+      lexeme sign >>= (fn f =>
+      nat         >>= (fn n =>
+      return (f n)))
+  val integer = lexeme intnum
+
+  val exponent = 
+      let fun power e = 
+              let fun pow n e = if e = zero
+                                  then n
+                                  else pow (I.* (ten, n)) (I.- (e, 1))
+              in if e < 0 then invert (power (I.~ e))
+                          else R.rat (pow one e, one)
+              end
+      in (oneChar #"e" || oneChar #"E") >>
+         sign                           >>= (fn f =>
+         decimal                        >>= (fn e =>
+         return (power (f e))))
+      end
+
+  val fraction = 
+      let fun opr (d, f) = R./ (R.+ (f, R.fromIntInf (digitToInt d)), R.fromInt 10)
+      in oneChar #"."      >> 
+         P.oneOrMore digit >>= (fn digits => 
+         return (List.foldr (digits, R.zero, opr)))
+      end
+  fun fractExponent n = 
+      (fraction                    >>= (fn fract => 
+       optionalWith R.one exponent >>= (fn expo  =>
+       return (R.* (R.+ (n, fract), expo))))) ||
+      (exponent                    >>= (fn expo  => 
+       return (R.* (n, expo))))
+  fun fractFloat n = fractExponent (R.fromIntInf n) >>= (return o U.Inr)
+  val decimalFloat = decimal >>= (fn n => optionalWith (U.Inl n) (fractFloat n))
+  val zeroNumFloat = 
+      ((hexadecimal || octal) >>= return o U.Inl) ||
+      decimalFloat                                ||
+      fractFloat zero                             ||
+      return (U.Inl 0)
+  val natFloat = (oneChar #"0" >> zeroNumFloat) || decimalFloat
+  val naturalOrFloat = lexeme natFloat
+  val floating = decimal >>= fractExponent o R.fromIntInf
+  val float = lexeme floating
+
+  fun parens   p = P.between (symbol "(") (symbol ")") p
+  fun braces   p = P.between (symbol "{") (symbol "}") p
+  fun angles   p = P.between (symbol "<") (symbol ">") p
+  fun brackets p = P.between (symbol "[") (symbol "]") p
+
+  val semi  = symbol ";"
+  val comma = symbol ","
+  val colon = symbol ":"
+  val dot   = symbol "."
+
+  fun semiSep   p = P.sepBy  p semi
+  fun semiSep1  p = P.sepBy1 p semi
+  fun commaSep  p = P.sepBy  p comma
+  fun commaSep1 p = P.sepBy1 p comma
+end
 

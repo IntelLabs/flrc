@@ -10,6 +10,7 @@ local
         try.sml
         lub.sml
         compare.sml
+        rat.sml
 
         local
           local
@@ -41,7 +42,6 @@ local
         graph.sml
         topo-sort.sml
         dominance.sml
-        rat.sml
         int-arb.sml
         intr.sml
 
@@ -73,6 +73,7 @@ in
         signature LATTICE
         signature ORD
         signature SET
+        signature LANGUAGE_DEF
 
         functor ChatF
         functor DictF
@@ -87,6 +88,8 @@ in
         functor ParserUnParserF
         functor RecLatticeFn
         functor SetF
+        functor CharParserF
+        functor TokenParserF
 
         structure BackPatch
         structure Bijection
