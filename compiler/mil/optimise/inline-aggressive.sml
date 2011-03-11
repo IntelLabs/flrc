@@ -233,7 +233,8 @@ struct
         val calls = case func
                      of SOME (f, cfg) => #1 (getInlineableCalls (d, f, cfg, imil))
                       | NONE => nil
-        val () = budgetSize := !budgetSize - codeSize
+        val count = List.length calls
+        val () = budgetSize := !budgetSize - (count * codeSize)
         val () = dbgLayout (d, L.seq [L.str "Policy selected ",
                                       Int.layout (List.length (calls)),
                                       L.str " call sites to inline."])
