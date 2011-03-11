@@ -2,7 +2,91 @@
 (* Copyright (C) Intel Corporation, January 2009 *)
 
 (*
- * loop inversion, transform while loop to do while loop
+ * Loop inversion: transform while-do loop to do-while loop.
+ *
+ * The control flow graph of a while-do loop looks like this,
+ * where R1, R2, RC are code regions.
+ *
+ *         |
+ *         v
+ *     --> R1
+ *     |   | \
+ *     |   |  \
+ *     |   v   v
+ *     ---R2   RC
+
+ * The goal is to duplicate R1 to R1', and re-wire the program
+ * as follows:
+ *
+ *         |
+ *         v
+ *         R1-
+ *         |  \
+ *         |   \
+ *         v    v
+ *     --->R2   RC
+ *     |   |    ^
+ *     |   |   /
+ *     ---R1'-/
+ *
+ * This is a a pre-step for loop invariant code motion, where
+ * invariants can be safely moved out of a do-while loop.
+ *
+ * Another advantage is that RC can now be arranged to immediately
+ * follow the code block of R1' so that there is no more jump
+ * when the runtime execution exit the loop body (compared
+ * to the original diagram, where there are two jumps when
+ * we exit the loop, namely R2 -> R1 and R1 -> RC).
+ *
+ * To maintain SSA property, we must ensure that variables defined
+ * in R1 are renamed in R1', and R2 and RC must receive these
+ * variables as block parameters (and hence also renamed accordingly).
+ *
+ * Our actual algorithm works on the dominator tree structure.
+ * At the moment, it only handles while loops where:
+ *
+ *   1. there is exactly one R2 (s.t. it is a while-do loop);
+ *   2. there is one or no RC;
+ *   2. R2 and RC have only one entry;
+ *   4. R1 contains no loop.
+ *
+ * We make use of an important property of dominator tree, i.e.,
+ * that all leaves either
+ *
+ *   1. return, or
+ *   2. exit to an ancestor (thus forming a loop), or
+ *   3. exit to a child of an ancestor.
+ *
+ * We first annotate all nodes in the dominator tree with a set
+ * of its dominance frontiers, S(L), by the following formula:
+ *
+ *  S(L) = successors_in_CFG(L) + union of S(children(L)) - children(L)
+ *
+ * If an L itself is in S(L), then it's loop header.
+ *
+ * The we do a post-order traversal of the annotated tree, and
+ * for each loop we must check whether it's a qualifying while-do
+ * loop by first locating its RC region.
+ *
+ * We start from the loop header, and check its children:
+ *
+ *   1. if S(L) for a child L has something not in the sub-tree of
+        the loop header (i.e., either returns or exits to something
+        outside the loop tree), then it becomes a RC candidate.
+ *
+ *   2. if there are more than one RC candidates, we fail.
+ *
+ *   3. if there is only one RC candidate, and:
+ *      a. if it only returns or exits to outside, we've found RC.
+ *      b. otherwise, the RC candidate is an ancestor to the actual
+ *         RC, and we iterate down its children from Step 1.
+ *
+ * After we find RC, we then identify R1 and R2:
+ *   R2 = the only subtree that exits to loop header
+ *   R1 = loop body - R2
+ *
+ * We need a sanity check before duplicating R1, e.g., R1 shall not
+ * contain nested loops.
  *)
 
 signature MIL_LOOP_INVERT =
@@ -20,581 +104,537 @@ struct
   fun assert (f, m, b) = if b then fail (f, m) else ()
 
   structure M    = Mil
+  structure V    = Vector
+  structure O    = Option
+  structure UO   = Utils.Option
+  structure UF   = Utils.Function
   structure PD   = PassData
   structure L    = Layout
   structure LU   = LayoutUtils
   structure I    = Identifier
+  structure IM   = Identifier.Manager
   structure LD   = I.LabelDict
   structure VD   = I.VariableDict
   structure LS   = I.LabelSet
   structure VS   = I.VariableSet
-  structure LDOM = MilCfg.LabelDominance
   structure MU   = MilUtils
   structure ML   = MilLayout
-  structure TextIO = Pervasive.TextIO
-  structure PD    = PassData
+  structure MBV  = MilBoundVars
+  structure MFV  = MilFreeVars
+  structure MR   = MilRename
 
-  fun getLabel (p, b) = #1 (IMil.IBlock.getLabel' (p, b))
-  fun labelString (p, b) = I.labelString(getLabel(p, b))
+  val <- = Try.<-
+  val try = Try.try
+  val require = Try.require
+  fun fmap f v = case v of SOME x => SOME (f x) | NONE => NONE
+
+  (*
+   * The domTree type represents the main DOM tree of interest.
+   * It differs from the DOM type in CFG in its annotated frontier
+   * and block representation.
+   *
+   * Whenever we finish inverting a while loop, we collapse its
+   * entire sub-tree into a single leaf node. So a leaf node has
+   * to keep track a set of blocks instead of just one.
+   *)
+  type blocks   = M.block LD.t
+  type frontier = { blocks : LS.t, exits : bool }
+  type domTree  = (M.label * blocks * frontier) Tree.t
+
+  (*
+   * A few helper functions.
+   *)
+  val vempty = V.new0
+  val vmap  = Tree.Seq.map
+  val vfold = Tree.Seq.fold
+  fun keepAll (v, f) = vfold (v, [], fn (x, l) => if f x then x :: l else l)
+
+  fun unionFrontiers (m : frontier, n : frontier) =
+      { blocks = LS.union (#blocks m, #blocks n)
+      , exits  = (#exits m) orelse (#exits n) }
+  fun treeChildren (Tree.T (_,       c) : domTree) = c
+  fun treeLabel    (Tree.T ((l,_,_), _) : domTree) = l
+  fun treeBlocks   (Tree.T ((_,b,_), _) : domTree) = b
+  fun treeFrontier (Tree.T ((_,_,f), _) : domTree) = f
+  fun treeChildrenLabels t = vmap (treeChildren t, treeLabel)
+  fun treeContainsLabel t l = 
+      (treeLabel t = l) orelse 
+      V.exists (treeChildren t, fn c => treeContainsLabel c l) 
+
+  fun rename func (config, blks, dict) =
+      LD.map (blks, fn (l, blk) => #2 (func (config, dict, l, blk)))
+  val renameLabels = rename MR.Label.block
+  val renameVars   = rename MR.Var.block
+  val renameBoth   = rename MR.VarLabel.block
 
   structure Debug =
   struct
     val (debugPassD, debugPass) = Config.Debug.mk (passname, "debug the Mil loop invert")
 
-    fun prints (d, s) = if Config.debug andalso debugPass (PD.getConfig d) then print s else ()
+    fun debug config = Config.debug andalso debugPass config
 
-    fun printLayout (config, l) = if Config.debug andalso debugPass (config) then LU.printLayout l
-                                  else ()
+    fun prints (config, s) = if debug config then print s else ()
 
-    fun layoutLoop (miloop, loop as MilLoop.L {header, blocks, ...}) =
-        let
-          fun layoutBlocks blks = L.sequence ("{", "}", ",") (List.map (LD.toList blks, fn (l, _) => I.layoutLabel l))
-        in
-          L.seq [L.str "Header: ", 
-                 I.layoutLabel header,
-                 L.str " Blocks: ",
-                 layoutBlocks blocks,
-                 L.str " Exits: ", 
-                 LS.layout(MilLoop.getExits(miloop, header), fn x => I.layoutLabel x)]
-        end
+    fun printLayout (config, l) = if debug config then LU.printLayout l else ()
 
-    fun layoutWhileLoop (miloop, loop, r1, blocksNotInR1, isWhileLoop) =
-        L.seq [L.str "isWhileLoop: ", 
-               layoutLoop ( miloop, loop),
-               L.str " R1:",
-               LS.layout (r1, fn x => I.layoutLabel x),
-               L.str " blocksNotInR1:",
-               LS.layout (blocksNotInR1, fn x => I.layoutLabel x),
-               (if isWhileLoop then L.str " is while loop" else L.str " is not while loop")]
+    fun layoutTree (Tree.T ((label,blks,{blocks,exits}), children)) =
+        L.align [
+          L.seq [ L.str "(",
+                I.layoutLabel label,
+                L.str " => ",
+                L.sequence ("{","}",",") (map I.layoutLabel (LS.toList blocks)),
+                LU.layoutBool exits,
+                L.str ")"],
+          LU.indent (L.align (map layoutTree (V.toList children)))]
 
-    fun layoutMap map =
-        LD.layout (map, fn (ol, nl) => Layout.seq [ I.layoutLabel ol,
-                                                    Layout.str " -> ",
-                                                    I.layoutLabel nl])
+    fun layoutBlocks (config, sm, blks) =
+      let
+        val si = I.SymbolInfo.SiManager sm
+        fun layoutBlock (l, b) = ML.layoutBlock (config, si, (l, b))
+      in
+        L.sequence ("","","\n") (List.map (LD.toList blks, layoutBlock))
+      end
   end
 
-  fun getMappedVar (vvMap, var) =
-      (case VD.lookup (!vvMap, var) 
-        of SOME newv => newv 
-         | _ => var)
+  (*
+   * Collapse a tree into a leaf
+   *)
+  fun collapse (Tree.T ((label, blks, frontier), children)) : domTree =
+      Tree.T ((label, vfold (vmap (children, treeBlocks o collapse), blks,
+                             fn (b,d) => LD.union (b,d,#3)), frontier), vempty ())
 
-  fun getMappedOpnd (vvMap, opnd) =
-      (case opnd 
-        of Mil.SVariable var => Mil.SVariable (getMappedVar (vvMap, var)) 
-         | Mil.SConstant c => opnd)
+  (*
+   * Close a region (set of blocks) with respect to a given
+   * set of arguments. This is done in the following steps:
+   *
+   * 1. Add a new entry block that takes the given set of
+   *    arguments in addition to those found in the old
+   *    entry block.
+   *
+   * 2. Rename afresh the given set of argument names in
+   *    this region.
+   *
+   * 3. Return the new entry label, the modified blocks,
+   *    and the renamer to the given set of arguments.
+   *)
+  val closeRegion : Config.t * M.symbolTableManager * M.label * blocks * I.variable V.t
+                    -> M.label * blocks * Rename.t =
+    fn (config, sm, entrylabel, blks, arguments) =>
+       if V.isEmpty arguments 
+         then (entrylabel, blks, Rename.none) 
+         else
+           let
+             (* Get the original parameters *)
+             val M.B {parameters, ...} = <- (LD.lookup (blks, entrylabel)) (* never fail *)
+             (* Map them into fresh names *)
+             val parameters    = V.map (parameters, fn v => IM.variableClone (sm, v))
+             (* Map the additional arguments into fresh names *)
+             val newarguments  = V.map (arguments, fn v => IM.variableClone (sm, v))
+             (* Make a new parameter list for the new entry block *)
+             val newparameters = V.concat [parameters, newarguments]
+             (* Rename all occurrances of the additional arguments *)
+             val renamedict    = V.fold (V.zip (arguments, newarguments),
+                                   Rename.none, fn ((m, n), d) => Rename.renameTo (d, m, n))
+             val blks = renameVars (config, blks, renamedict)
+             (* Add an entry block that jumps to the old entry block *)
+             val trans = M.TGoto (M.T { block = entrylabel
+                                      , arguments = V.map (parameters, M.SVariable) })
+             val newentry = IM.labelFresh sm
+             val blks = LD.insert (blks, newentry,
+                          M.B { parameters = newparameters
+                              , instructions = vempty ()
+                              , transfer = trans })
+           in (newentry, blks, renamedict)
+           end
 
-  (* clone a variable, insert it in the dict, and return the new variable *)
-  fun newVar (p, vvMap, oldv) =
-      let  
-        val newv = IMil.Var.clone (p, oldv)
-        val () = vvMap := VD.insert (!vvMap, oldv, newv)
-      in newv
-      end
-
-  (* get out edges' target blocks' label *)
-  fun getOutLabels(p, ifunc, l) =
+  (*
+   * Replace all target transfer to the targetlabel with the
+   * newlabel and append additional arguments to the end.
+   *
+   * This may fail when the targetlabel is the return target
+   * of a function call, or a cut.
+   *)
+  val adjustTarget : M.label * M.label * blocks * I.variable V.t ->
+                     blocks option =
+    fn (targetlabel, newlabel, blks, args) =>
       let
-        val b = IMil.IFunc.getBlockByLabel (p, ifunc, l)
-      in List.map (IMil.IBlock.outEdges (p, b), fn (srcb, tgtb) => getLabel (p, tgtb))
-      end
-
-  fun appendArgs (vec, v) =
-      Vector.fromList (List.append(Vector.toList(vec), [Mil.SVariable v]))
-
-  fun isInRegion (l, r) = LS.exists (r, fn x => MU.Compare.label (x, l) = EQUAL)
-
-  fun notR1 (l, r1) = not (isInRegion (l, r1))
-
-  fun isCut (p, func, l) =
-      let
-        val b = IMil.IFunc.getBlockByLabel (p, func, l)
-      in case IMil.IBlock.getTransfer' (p, b)
-          of Mil.TCut _ => true
-           | _ => false
+        fun replaceT (target as M.T { block, arguments }) =
+            if block = targetlabel
+              then M.T { block = newlabel
+                       , arguments = V.concat [arguments,
+                                     V.map (args, M.SVariable)]}
+              else target
+        fun replaceS ({ on, cases, default }) =
+                      { on = on
+                      , cases = V.map (cases, fn (x, t) => (x, replaceT t))
+                      , default = fmap replaceT default }
+        fun replaceTr (M.TGoto t) = SOME (M.TGoto (replaceT t))
+          | replaceTr (M.TCase s) = SOME (M.TCase (replaceS s))
+          | replaceTr (M.TPSumCase s) = SOME (M.TPSumCase (replaceS s))
+          (* if there are calls returning to the targetlabel, we fail! *)
+          | replaceTr (x as M.TInterProc { ret = M.RNormal { block, ... }, ...  }) =
+            if block = targetlabel then NONE else SOME x
+          (* if there are cuts to the targetlabel, we fail! *)
+          | replaceTr (x as M.TCut { cuts = M.C { targets, ... }, ... }) =
+            if LS.member (targets, targetlabel) then NONE else SOME x
+          | replaceTr x = SOME x
+      in try (fn () => LD.map (blks, 
+                fn (_, M.B { parameters, instructions, transfer }) =>
+                       M.B { parameters = parameters,
+                             instructions = instructions,
+                             transfer = <- (replaceTr transfer)}))
       end
 
   (*
-   * get duplicate block if it exists, otherwise return the original
+   * Clone a region by refresh all its bounded labels and
+   * variables, return a new entry label together with the
+   * blocks including both old and new.
    *)
-  fun getR1' (x, r1Map) = (case LD.lookup (!r1Map, x)
-                            of SOME y => y
-                             | _ => x)
+  val cloneRegion : Config.t * M.symbolTableManager * M.label * blocks
+                     -> M.label * blocks =
+     fn (config, sm, entrylabel, blks) =>
+       let
+         val vars   = MBV.blocks (config, blks)
+         val vdict  = VS.fold (vars, Rename.none,
+                           fn (v, d) => Rename.renameTo (d, v, IM.variableClone (sm, v)))
+         val ldict  = LD.map (blks, fn _ => IM.labelFresh sm)
+         val newentry = <- (LD.lookup (ldict, entrylabel)) (* never fail *)
+         val newblks = renameBoth (config, blks, (vdict, ldict))
+         (* the following is not the same as union, since we need
+          * to assign new labels to newblks *)
+         val newblks = LD.fold (newblks, blks,
+                         fn (l, b, m) =>
+                            let val l' = <- (LD.lookup (ldict, l)) (* never fail *)
+                            in LD.insert (m, l', b)
+                            end)
+       in
+        (newentry, newblks)
+       end
 
-  fun toNewBlock (p, ifunc, bl, ol, nl) =
+  (*
+   * Map a dominator tree to a new tree by annotating each node
+   * with its dominance frontier.
+   *
+   *  annotateFrontier : (label * block) Tree.t -> domTree
+   *)
+  fun annotateFrontier (Tree.T ((label, block), children)) : domTree =
       let
-        fun getNew block =
-            if (MU.Compare.label (block, ol) = EQUAL) 
-            then nl
-            else block
+        val children = vmap (children, annotateFrontier)
+        val labels = LS.fromVector (vmap (children, treeLabel))
+        val successors = MU.Block.successors block
+        fun gather (t, e) = unionFrontiers (treeFrontier t, e)
+        val childrenFrontiers = vfold (children, successors, gather)
+        val blocks = LS.difference (#blocks childrenFrontiers, labels)
+      in
+        Tree.T ((label, LD.singleton (label, block),
+                 { blocks = blocks, exits  = #exits childrenFrontiers}),
+                children)
+      end
 
-        fun newCase (on, cases, default, tCase) =
+  (*
+   * Verify if a loop is indeed a while loop that exits to a
+   * single RC region. If so, invert this loop.
+   *
+   * Always return a collapsed domTree.
+   *)
+  val tryInvertLoop : Config.t * M.symbolTableManager * domTree -> domTree =
+    fn (config, sm, header) =>
+      let
+        fun printLayout (m, l) = Debug.printLayout (config, L.seq [L.str m, l])
+        fun printList   (m, l) = printLayout (m, L.sequence ("{","}",",") l)
+        fun printRegion (m, r) = printLayout (m, Debug.layoutBlocks (config, sm, r))
+
+        val headerlabel = treeLabel header
+        (*
+         * RC is the only (and max) child that only returns or exits to
+         * external.  We use "internal" to track possible exits within a
+         * tree using a set of all ancecstors (from the header) and their
+         * children.
+         * We reject invalide cases (multiple RC candidates) by failing,
+         * or return SOME rc when a single RC is found, or return NONE
+         * when there is no RC to be found.
+         *)
+        fun findRC () : domTree option =
             let
-              fun doOne (c, Mil.T {block, arguments}) = (c, Mil.T {block = getNew block, arguments=arguments})
-              val newbranches = Vector.map(cases, doOne)
-              val newdefault =
-                  case default
-                   of SOME (Mil.T {block, arguments}) => SOME (Mil.T {block = getNew block, arguments=arguments})
-                    | NONE => NONE
-            in
-              tCase {on = on, cases = newbranches, default = newdefault}
-            end
-            
-        fun newTInterProc (callee, ret, fx) =
-            let
-              val nret = case ret
-                          of Mil.RNormal {rets, block, cuts as Mil.C {exits, targets}} => 
-                             let
-                               val nblock = getNew block
-                               val ncuts = Mil.C {exits = exits, 
-                                                  targets = LS.fromList(List.map(LS.toList(targets), 
-                                                                              fn x => getNew x ))}
-                             in Mil.RNormal {rets = rets, block = nblock, cuts = ncuts}
-                             end
-                           | Mil.RTail _ => ret
-            in Mil.TInterProc {callee = callee, ret = nret, fx = fx}
-            end
-
-        val b = IMil.IFunc.getBlockByLabel (p, ifunc, bl)
-        val transfer = IMil.IBlock.getTransfer' (p, b)
-        val nt =
-            case transfer
-             of Mil.TGoto (Mil.T {block, arguments}) => Mil.TGoto (Mil.T {block = getNew block, 
-                                                                          arguments = arguments})
-              | Mil.TCase {on, cases, default} => newCase (on, cases, default, Mil.TCase)
-              | Mil.TReturn ret => Mil.TReturn (ret)
-              | Mil.TInterProc {callee, ret, fx} => newTInterProc (callee, ret, fx)
-              | Mil.TCut _ => fail ("toNewLoopHeader", "TCut")
-              | Mil.THalt _ => fail ("toNewLoopHeader", "THalt")
-              | Mil.TPSumCase {on, cases, default} => newCase (on, cases, default, Mil.TPSumCase)
-        val () = IMil.IBlock.replaceTransfer (p, b, nt)
-      in ()
-      end
-
-  (*
-   * redirect the block's transfer taget to new loop header
-   *)
-  fun toNewLoopHeader (p, ifunc, miloop, loop as MilLoop.L {header, blocks, ...}, r1Map, bl) =
-      toNewBlock (p, ifunc, bl, header, getR1' (header, r1Map))
-
-  (*
-   * Have all the edges into the loop (that is edges to H that are not from loop blocks) 
-   *       goto the duplicated H instead of the original.
-   *)
-  fun linkToNewLoopHeader (p, ifunc, miloop, loop as MilLoop.L {header, blocks, ...}, r1Map) =
-      let
-        val preds = IMil.IBlock.preds (p, IMil.IFunc.getBlockByLabel(p, ifunc, header))
-        val predsLabel = List.map (preds, fn x => getLabel(p, x))
-
-        val loopBlocks = List.map (LD.toList(blocks), fn (l, _) => l)
-        fun isLoopBlocks x = List.exists (loopBlocks, fn y => (MU.Compare.label(x, y) = EQUAL))
-        val nonLoopBlocks = List.removeAll (predsLabel, isLoopBlocks)
-
-        val duplicatedBlocks = List.map(LD.toList (!r1Map), fn (_, l) => l)
-        fun isDuplicatedBlock x = List.exists (duplicatedBlocks, fn y => (MU.Compare.label(x, y) = EQUAL))
-        val nonDuplicatedBlock = List.removeAll (nonLoopBlocks, isDuplicatedBlock)
-
-        val () = List.foreach (nonDuplicatedBlock, fn l => toNewLoopHeader (p, ifunc, miloop, loop, r1Map, l))
-      in ()
-      end
-
-  (* 
-   * duplicate all the blocks in R1 
-   *)
-  fun dupR1 (p, ifunc, r1Map, r1, header, exit) =
-      let
-        fun mapBlks (b, nb) = r1Map := LD.insert (!r1Map, getLabel (p, b), getLabel (p, nb))
-        val blks = List.map (LS.toList r1, fn l => (l, IMil.IFunc.getBlockByLabel (p, ifunc, l)))
-        val newBlks = IMil.IFunc.duplicateBlocks (p, ifunc, blks, SOME mapBlks)
-        val header' = getR1' (header, r1Map)
-        val exit' = getR1' (exit, r1Map)
-        val () = toNewBlock (p, ifunc, exit', header', header)
-      in ()
-      end
-
-  (* find those edges out r1 region *)
-  fun findR1OutEdges (p, ifunc, r1, exit) =
-      let
-        val b = IMil.IFunc.getBlockByLabel (p, ifunc, exit)
-        val outEdges = List.map (IMil.IBlock.outEdges (p, b), fn (bx, by) => ((getLabel(p, bx), bx), (getLabel(p, by), by)))
-      in List.keepAll (outEdges, fn ((lx, bx), (ly, by)) => notR1(ly, r1))
-      end
-
-  (*
-   * Given a region of code, find all variables (maybe just the ones live out variables) defined in that region.
-   * 1. On all edges out of the region, add those variables as arguments to the gotos on those edges (could fail for cut edges).
-   * 2. On all the other end of those edges, add parameters for those variables 
-   *    and then rename all uses of those variables appropriately.
-   * 3. Then the region can be duplicated without concern 
-   *    (must clone all the binders and rename the uses of those, but those uses are all in that region).
-   * 4. Other optimisations will clean this up.
-   *)
-  fun findLiveOutVar (p, ifunc, r1) =
-      let
-        val config = IMil.T.getConfig p
-        fun findDefinedVar (p, ifunc, r1) =
-            let
-              (* itereate all instrs to get the dest variables *)
-              fun findDefVarInstrs (io, vars) =
-                  (case io
-                    of SOME i => 
-                       let
-                         val nvars = VS.fromVector (IMil.IInstr.variablesDefined (p, i))
-                       in
-                         findDefVarInstrs (IMil.IInstr.next (p, i), VS.union (vars, nvars))
-                       end  
-                     | NONE => vars)
-
-              (* find defined vars in block *)
-              fun findDefinedVarBlock l =
+              fun find (internal, self) =
                   let
-                    val b = IMil.IFunc.getBlockByLabel (p, ifunc, l)
-                    (* take parameters as defined variables *)
-                    val pvars = VS.fromVector (IMil.IInstr.variablesDefined (p, IMil.IBlock.getLabel(p, b)))
-                    (* get defined vars from instruction *)
-                    val ivars = findDefVarInstrs (IMil.IBlock.getFirst (p, b), VS.empty)
-                    (* get defined vars from transfer *)
-                    val tvars = VS.fromVector (IMil.IInstr.variablesDefined (p, IMil.IBlock.getTransfer (p, b)))
-                  in VS.union (VS.union (pvars, ivars), tvars)
+                    val children = treeChildren self
+                    val labels   = LS.fromVector (treeChildrenLabels self)
+                    val internal = LS.union (internal, labels)
+                    fun verify n =
+                        let val f = treeFrontier n
+                        in  #exits f orelse
+                            (not o LS.isEmpty o LS.difference) (#blocks f, internal)
+                        end
+                    fun found n  = (LS.isEmpty o LS.intersection)
+                                   (#blocks (treeFrontier n), internal)
+                  in
+                    case keepAll (children, verify)
+                      of [rc] => if found rc then SOME rc else find (internal, rc)
+                       | []   => NONE
+                       | _    => Try.fail ()
                   end
-            in LS.fold (r1, VS.empty, fn (l, vs) => VS.union (vs, findDefinedVarBlock l))
+            in find (LS.singleton headerlabel, header)
             end
-
         (*
-         * get rest blocks, which doesn't belong to r1
+         * R2 is the only (and max) child that exits to loop header
+         * but not to anything internal (except RC). The parameter
+         * max shall always be the set consisting of only loop
+         * header and RC label.
+         *
+         * Note that when RC is NONE, we also allow nodes external
+         * to the loop tree to be in R2's frontier.
          *)
-        fun getR1Rest (p, ifunc, r1) =
+        fun findR2 (rc, max) : domTree option =
             let
-              val blocks = IMil.IFunc.getBlocks (p, ifunc)
-              val r1Blocks = List.map (LS.toList(r1), fn x => IMil.IFunc.getBlockByLabel (p, ifunc, x))
-              val rest = List.removeAll (blocks, fn x => List.exists(r1Blocks, fn y => x = y))
-              val rest = List.map (rest, fn x => getLabel (p, x))
-            in rest
+              fun find (internal, self) =
+                  let
+                    val children = treeChildren self
+                    val labels   = LS.fromVector (treeChildrenLabels self)
+                    val internal = LS.union (internal, labels)
+                    fun verify n = LS.member (#blocks (treeFrontier n), headerlabel)
+                    val red = UO.dispatch (rc, fn _ => UF.id, 
+                                               fn _ => UF.curry LS.intersection internal) 
+                    fun found n = LS.isSubset (red (#blocks (treeFrontier n)), max)
+                  in
+                    case keepAll (children, verify)
+                       of [r2] => if found r2 then SOME r2 else find (internal, r2)
+                       |  _    => NONE
+                  end
+            in find (LS.singleton headerlabel, header)
             end
-
         (*
-         * get the used variables in the block
+         * Adjust for the situation where the root of R2 itself exits
+         * the loop and it has only one child that qualify as R2.
+         * In this case, we choose its child to be R2.
          *)
-        fun getUsedVar (p, ifunc, l) =
-            IMil.IBlock.freeVars (p, IMil.IFunc.getBlockByLabel (p, ifunc, l))
+        fun adjustR2 (r2) : domTree option =
+            let
+              fun adjust (internal, r2) : domTree option =
+                let
+                  val children   = treeChildren r2
+                  val labels     = LS.fromVector (treeChildrenLabels r2)
+                  val internal   = LS.union (internal, labels)
+                  val blk        = hd (LD.range (treeBlocks r2)) (* must never fail *)
+                  val successors = MU.Block.successors blk
+                  fun verify  n  = LS.member (#blocks (treeFrontier n), headerlabel)
+                in
+                  if (#exits successors orelse
+                     (not o LS.isEmpty o LS.difference) (#blocks successors, internal))
+                    then if V.size children = 0
+                           then NONE (* no more R2 when it both exits loop and is a leaf *)
+                           else case keepAll (children, verify)
+                                  of [newR2] => adjust (internal, newR2)
+                                   | _       => SOME r2
+                    else SOME r2
+                end
+            in adjust (LS.fromList [headerlabel, treeLabel r2], r2)
+            end
+        (*
+         * R1 region is the set of nodes not in RC and R2.
+         * Return NONE when the region is empty.
+         *)
+        fun findR1 (exclude) : (domTree list) option =
+            let
+              fun find (node, r1) =
+                  let val l = treeLabel node
+                      val children = treeChildren node
+                  in if LS.member (exclude, l)
+                       then r1
+                       else vfold (children, node :: r1, find)
+                  end
+            in case find (header, [])
+                 of [] => NONE
+                  | x  => SOME x
+            end
+        (*
+         * Check if R1 has no node that is a loop.
+         * Invariant: any sub-loops would have already been collapsed
+         * into a single leaf node that contains more than 1 block.
+         *
+         * TODO:
+         *   shall we check if R1 actually returns or exits to RC?
+         *)
+         fun sanityCheck (r1) : bool =
+             not (null r1) andalso List.forall (r1, fn n => LD.size (treeBlocks n) = 1)
+        (*
+         * Return the spine from loop header to a certain label
+         * as a list of nodes.
+         *)
+        fun spineTo label : domTree list =
+            let
+              fun find spine (node, found) =
+                  case (null found, treeLabel node <> label)
+                    of (true,  true) => vfold (treeChildren node, [], find (node :: spine))
+                     | (false, _   ) => found
+                     | (_,    false) => spine
+            in find [] (header, [])
+            end
+        (*
+         * Invert a while loop by duplicating R1 region, and collapse
+         * the entire loop tree into a leaf node. This is done in the
+         * following steps:
+         *   1. We first get the set variables defined on the spine
+         *      to R2 (or RC) and close up R2 (or RC) with respect to
+         *      the set.
+         *   2. Then we create a copy of R1, call it R1', and change
+         *      every JMP in R2 to R1'.
+         *
+         * Note that we still may fail if the closing a region involves
+         * adjusting inter-proc call or cut transfers.
+         *)
+        fun invertLoop (r1, r2, rc) : domTree option = try (fn () => 
+           let
+             fun concatBlks t = List.fold (t, LD.empty,
+                                           fn (x,y) => LD.union (x,y,#3))
+             val concatTreeBlks = concatBlks o map treeBlocks
 
-        val rest = getR1Rest (p, ifunc, r1)
-        val r1Def = findDefinedVar (p, ifunc, r1)         (* defined variables in r1 blocks *)
-        val restUse = List.fold (rest, VS.empty, fn (l, vs) => VS.union (getUsedVar(p, ifunc, l), vs))
-        val vars = VS.intersection (r1Def, restUse)       (* defined in r1 and used in rest *)
-        val () = Debug.printLayout (config, L.seq [L.str "vars to be parameterized: ", 
-                                                   VS.layout (vars, fn x => I.layoutVariable' x)])
-      in vars
-      end
-
-  (* REMOVE THIS FUNCTION, DEBUG ONLY *)
-  fun debugLoops (p, header) =
-      let
-(*      
-        val config = IMil.T.getConfig p
-        val si = IMil.T.getSi p
-        val ins = TextIO.openIn "c:\\p\\ppiler-test\\debug.loop.txt"
-        fun readLoopList (loopList) =
-            (case TextIO.inputLine ins
-              of SOME line => 
+             fun boundedVarsInUse r =
                  let
-                   val newLoopList = List.insert (loopList, line, fn (x, y) => x = y)
-                 in readLoopList newLoopList
-                 end
-               | _ => loopList)
+                   val label = treeLabel r
+                   (* Find spine blocks to node r *)
+                   val toR = concatTreeBlks (spineTo label)
+                   (* Turn r into blocks *)
+                   val r = treeBlocks (collapse r)
+                   (* Find variables bound on the spine, and free in r *)
+                   fun intersect (s, t) = 
+                       VS.intersection (MBV.blocks (config, s), MFV.blocks (config, t))
+                   val rv = intersect (toR, r)
+                   val _ = printList ("Set of var: ", map I.layoutVariable' (VS.toList rv))
+               in (label, r, rv)
+               end
 
-        fun sameLabel x = (L.toString(I.layoutLabel (header)) ^ "\n") = x
-            
-        val loopList = readLoopList ([])
-        val () = TextIO.closeIn ins
-        val dbg = List.exists (loopList, sameLabel)
-*)
-      in (* dbg *) true
-      end
+             (* Turn R1 into blocks *)
+             val r1 = concatTreeBlks r1
 
-  (*
-   * get all blocks, which do not belong to the loop, define it as r0
-   *)
-  fun getR0 (config, si, p, ifunc, loop as MilLoop.L {header, blocks, ...}) =
-      let
-        val allLabels = List.map (IMil.IFunc.getBlocks (p, ifunc), fn b => getLabel (p, b))
-        val loopBlocks = List.map (LD.toList blocks, fn (l, _) => l)
-      in LS.fromList (List.removeAll (allLabels, fn x => List.exists(loopBlocks, fn y => x = y)))
-      end
+             (* find bounded vars and turn R2 into blocks *)
+             val (r2l, r2, r2v) = boundedVarsInUse r2
+             (* same for RC, but lifted through option type *)
+             fun inject (l, r, v) = (SOME l, r, v)
+             val (rcl, rc, rcv) = UO.dispatch (rc, inject o boundedVarsInUse, 
+                                               fn _ => (NONE, LD.empty, VS.empty))
+             val rvs = (VS.toVector o VS.union) (r2v, rcv)
 
-  (*
-   * add a new variable to transfer instruction's parameter
-   *)
-  fun paramEdgeTrans (p, ifunc, (srcl, srcb), (tgtl, tgtb), v) =
-      let
-        val fname = "paramEdgeTrans"
-                    
-        fun newCase (on, cases, default, tCase) =
-            let
-              fun newTarget (Mil.T {block, arguments}) =
-                  if (MU.Compare.label (block, tgtl) = EQUAL) 
-                  then Mil.T {block = block, arguments = appendArgs (arguments, v)}
-                  else Mil.T {block = block, arguments = arguments}
-                       
-              val newbranches = Vector.map(cases, fn (c, tgt) => (c, newTarget tgt))
-              val newdefault =
-                  case default
-                   of SOME tgt => SOME (newTarget tgt)
-                    | NONE => NONE
-            in
-              tCase {on = on, cases = newbranches, default = newdefault}
-            end
-            
-        val nt = case IMil.IBlock.getTransfer' (p, srcb)
-                  of Mil.TGoto (Mil.T {block, arguments}) =>
-                     Mil.TGoto (Mil.T {block = block, arguments = appendArgs (arguments, v)})
-                   | Mil.TCase {on, cases, default} => newCase (on, cases, default, Mil.TCase)
-                   | Mil.TInterProc {callee, ret, fx} => 
+             (* Process R2 *)
+             val _ = Debug.prints (config, "Closing R2\n")
+             val (r2n, r2, r2dict) = closeRegion (config, sm, r2l, r2, rvs)
+             val _ = printRegion ("After closing: ", r2)
+             val r1 = <- (adjustTarget (r2l, r2n, r1, rvs))
+             val _ = printRegion ("Adjusted R1: ", r1)
+
+             (* Process RC *)
+             val (r1, r2, rc) = 
+                 UO.dispatch (rcl,
+                   fn rcl => 
                      let
-                       val newCallee = 
-                           (case callee 
-                             of Mil.IpCall {call, args} => Mil.IpCall {call = call, args = appendArgs (args, v)}
-                              | Mil.IpEval {typ, eval} => Mil.IpEval {typ = typ, eval = eval})
-                     in Mil.TInterProc {callee = newCallee, ret = ret, fx = fx}
-                     end
-                   | Mil.TReturn opnd => fail (fname, "TReturn")
-                   | Mil.TCut {cont, args, cuts} => fail (fname, "TCut") 
-                   | Mil.THalt _ => fail (fname, "THalt")
-                   | Mil.TPSumCase {on, cases, default} => newCase (on, cases, default, Mil.TPSumCase)
-      in IMil.IBlock.replaceTransfer (p, srcb, nt)
+                       val _ = Debug.prints (config, "Closing RC\n")
+                       val (rcn, rc, _) = closeRegion (config, sm, rcl, rc, rvs)
+                       val _ = printRegion ("After closing: ", rc)
+                       val r1 = <- (adjustTarget (rcl, rcn, r1, rvs))
+                       val _ = printRegion ("Adjusted R1: ", r1)
+                       val rvs = V.map (rvs, UF.curry Rename.use r2dict)
+                       val r2 = <- (adjustTarget (rcl, rcn, r2, rvs))
+                       val _ = printRegion ("Adjusted R2: ", r2)
+                     in (r1, r2, rc)
+                     end,
+                   fn () => (r1, r2, rc))
+
+             (* Clone R1 *)
+             val (newlabel, r1) = cloneRegion (config, sm, headerlabel, r1)
+             val _ = printRegion ("Cloned R1: ", r1)
+             (* Let R2 jump to the cloned R1 *)
+             val r2 = renameLabels (config, r2, LD.fromList [(headerlabel, newlabel)])
+             val _ = printRegion ("Adjusted R2: ", r2)
+           in Tree.T ((headerlabel, concatBlks [r1,r2,rc], treeFrontier header), vempty ())
+           end)
+      in UO.out
+           (try (fn () =>
+                let
+                  val rc = findRC ()
+                  val rclabels = map treeLabel (UO.toList rc)
+                  val _ = printList ("Found RC: ", map I.layoutLabel rclabels)
+                  val r2 = <- (findR2 (rc, LS.fromList (headerlabel :: rclabels)))
+                  (* reject when RC is not a subtree of R2 *)
+                  val _ = map (require o not o treeContainsLabel r2) rclabels
+                  val _ = printLayout ("Found R2: ", I.layoutLabel (treeLabel r2))
+                  val r2 = <- (adjustR2 r2)
+                  val r2label = treeLabel r2
+                  val _ = printLayout ("Adjusted R2: ", I.layoutLabel r2label)
+                  val r1 = <- (findR1 (LS.fromList (r2label :: rclabels)))
+                  val _ = require (sanityCheck r1)
+                  val _ = printList ("Found R1: ", map (I.layoutLabel o treeLabel) r1)
+                  val header = <- (invertLoop (r1, r2, rc))
+                in 
+                  header
+                end),
+           fn () => collapse header)
       end
 
+
   (*
-   * look up sub dom tree 
+   * Traverse an annotated dominator tree, locate loops from
+   * inner to outer, and invert while-do loops that exits to
+   * only one RC.
+   *
+   *  doDom : Config.t * M.symbolTableManager * domTree -> domTree
    *)
-  fun lookupSubTree (p, dom, b) =
+  fun doDom (config, sm, self) : domTree =
       let
-        val subo = ref NONE
-        val fname = "lookupSubTree"
-
-        fun find (tree as Tree.T (parent, children), b) =
-            if MU.Compare.label (getLabel (p, b), getLabel (p, parent)) = EQUAL 
-            then subo := SOME tree
-            else Vector.foreach (children, fn x => find (x, b))
-
-        val () = find (dom, b)
-      in case !subo 
-          of SOME sub => sub
-           | _ => fail (fname, "cannot find sub tree!")
-      end
-
-  (*
-   * 
-   * a function paramEdge, defines region dominated by the edge, and a list of variables V:
-   * 1)	splits the edge if needed (possibly twice)
-   *    a.  If the source of E is a call, then we need to add a landing pad block to pass the parameters out.  
-   *        This block is outside of R.
-   *    b.  If the target of E has multiple predecessors then we need to add an entry block to receive the parameters.  
-   *        This block is inside of R.
-   *    c.  if E is a cut edge, fail.
-   * 2)	replaces V with new variables V’ in R
-   * 3)	passes V as additional parameters from the source of E (or the landing pad block)
-   * 4)	modifies the target of E (or the entry block) to bind V’
-   *)
-  fun paramEdge (p, ifunc, (srcl, srcb), (tgtl, tgtb), vars) =
-      let
-        val fname = "paramRegionDom"
-        val vvMap = ref VD.empty
-
-        fun replaceVarInTree (p, ifunc, v, newv, tree as Tree.T (parent, children)) =
-            let
-              val () = IMil.IFunc.renameBlock (p, ifunc, parent, v, newv)
-              val () = Vector.foreach (children, fn x => replaceVarInTree (p, ifunc, v, newv, x))
-            in ()
-            end
-
-        (* step 1*)
-        val nbo = IMil.IBlock.splitEdge (p, (srcb, tgtb))
-        val dom = IMil.IFunc.getDomTree (p, ifunc)
-        val () = case nbo
-                  of SOME nb => 
-                     let
-                       val nbl = getLabel (p, nb)
-                       (* step 2 *)
-                       val sub = lookupSubTree (p, dom, nb)
-                       val () = VS.foreach (vars, fn v => replaceVarInTree (p, ifunc, v, newVar(p, vvMap, v), sub))
-                       (* step 3 *)
-                       val () = VS.foreach (vars, fn v => paramEdgeTrans (p, ifunc, (srcl, srcb), (nbl, nb), v))
-                       (* step 4 *)
-                       val nbParam = IMil.IBlock.getParameters (p, nb)
-                       val newVars = List.map (VS.toList vars, fn x => getMappedVar(vvMap, x))
-                       val newParamList = List.append (Vector.toList nbParam, newVars)
-                       val newParam = Vector.fromList newParamList
-                     in IMil.IBlock.replaceLabel (p, nb, (nbl, newParam))
-                     end
-                   | NONE => fail (fname, "cannot split the edge!")
-      in ()
-      end
-
-  (*
-   * convert simple while loop (contains only one exit block)
-   *)
-  fun convertSimpleWhileLoop (d, p, ifunc, miloop, loop as MilLoop.L {header, blocks, ...}, r1, exit) =
-      if debugLoops (p, header) then 
-        let
-          (* 
-           * r1Map is used to recored block duplication in r1 
-           * (original block, duplicated block)
-           *)
-          val r1Map = ref LD.empty
-          val config = IMil.T.getConfig p
-          val vars = findLiveOutVar (p, ifunc, r1)
-          val () = List.foreach (findR1OutEdges (p, ifunc, r1, exit), 
-                              fn (sl, el) => paramEdge (p, ifunc, sl, el, vars))
-          val () = dupR1 (p, ifunc, r1Map, r1, header, exit)
-          val () = linkToNewLoopHeader (p, ifunc, miloop, loop, r1Map)
-          val () = PD.click (d, passname)
-          val () = Debug.printLayout (config, Debug.layoutMap (!r1Map))
-        in ()
-        end
-      else ()
-
-  (*
-   * convert while loop to do while 
-   *)           
-  fun convertWhileLoop (d, p, ifunc, miloop, loop as MilLoop.L {header, blocks, ...}, children, r1) =
-      let
-        (*
-         * only convert while loop with one exit block, and dont have children loop!
-         *)
-        val exits = MilLoop.getExits (miloop, header)
+        val Tree.T ((label, blk, frontier), children) = self
+        val children = V.map (children, fn c => doDom (config, sm, c))
+        val self = Tree.T ((label, blk, frontier), children)
       in
-        if (LS.size exits = 1 
-            andalso  Vector.length (children) = 0)
-        then convertSimpleWhileLoop (d, p, ifunc, miloop, loop, r1, List.first (LS.toList (exits)))
-        else ()
+        if LS.member (#blocks frontier, label)
+          then let val _ = Debug.prints (config, "Loop header: " ^ I.labelString label ^ "\n")
+                   val _ = Debug.printLayout (config, Debug.layoutTree self)
+               in tryInvertLoop (config, sm, self)
+               end
+          else self
       end
 
-  (*
-   * H is the loop header.
-   * H and E are in R1.
-   * E has two outgoing edges, one to a block outside the loop and one to a block in R1.
-   * Blocks in R1 other than E only go to blocks in R1.
-   * edges in R1 not to H
-   *)
-  fun getR1 (p, ifunc, loop as MilLoop.L {header, blocks, ...}, loopExits) =
+  fun doBody (config, sm, body) =
       let
-        fun notToH (H, l) =
-            let
-              val ret = List.exists (getOutLabels (p, ifunc, l), fn x => (MU.Compare.label (x, H) = EQUAL))
-            in not ret
-            end
-
-        fun isToR1Only (r1, l) =
-            List.fold(getOutLabels (p, ifunc, l), true, fn (x, r) => LS.exists (r1, fn y => (MU.Compare.label (x, y) = EQUAL)))
-
-        fun mergeR1 (bls, header, r1) =
-            let
-              val ns = List.keepAll(bls, fn x => isToR1Only(r1, x) andalso notToH (header, x))
-              val nbls = List.removeAll(bls, fn x => List.exists (ns, fn y => (MU.Compare.label (x, y) = EQUAL)))
-            in 
-              (* if there are new blocks merged into r1, then repeat the merging till it becomes stable *)
-              if List.length (ns) > 0 
-              then mergeR1 (nbls, header, LS.union (r1, LS.fromList ns)) 
-              else r1
-            end
-
-        (* header and exits *)
-        val HE = LS.insert (loopExits, header)
-        val bls = List.map (LD.toList(blocks), fn (l, _) => l)
-      in mergeR1 (bls, header, HE)
-      end
-
-  (*
-   * get the blocks label set in the loop, which does not belong to r1
-   *)
-  fun getBlocksNotInR1 (loop as MilLoop.L {header, blocks, ...}, R1) =
-      let
-        (* the label list includes all blocks *)
-        val bls = List.map (LD.toList(blocks), fn (l, _) => l)
-        (* blocks not in R1 region *)
-        val blocksNotInR1 = List.removeAll (bls, fn x => LS.exists (R1, fn y => (MU.Compare.label (x, y) = EQUAL)))
-      in LS.fromList blocksNotInR1
-      end
-
-  (*
-   * check those non r1 blocks
-   * whether all of them meet the requirement of r2
-   * if yes, then it forms a while loop
-   *)
-  fun isR2Region (p, ifunc, loop, R1, blocksNotInR1) =
-      let
-        (*
-         * Blocks in R2 go only to other blocks in R2 or to H.
-         *)
-        fun isBlockInR2 (p, ifunc, l, loop as MilLoop.L {header, ...}, R2) =
-            let 
-              val R2H = LS.insert (R2, header) (* R2 and H *)
-              val outLabels = getOutLabels (p, ifunc, l)
-            in List.fold (outLabels, true, fn (x, r) => LS.exists (R2H, fn y => (MU.Compare.label (x, y) = EQUAL)))
-            end
-
-      in LS.fold (blocksNotInR1, true, fn (x, y) => (isBlockInR2 (p, ifunc, x, loop, blocksNotInR1) andalso y))
-      end
-
-  (*
-   * find the while loop, and then conert it
-   *)
-  fun tryConvertWhileLoop (d, config, si, p, ifunc, miloop, loop as MilLoop.L {header, blocks, ...}, children) =
-      let
-        fun hasCutTransfer (p, ifunc, region) =
-            LS.fold (region, false, fn (l, ret) => (ret orelse (isCut (p, ifunc, l))))
-
-        val r1 = getR1 (p, ifunc, loop, MilLoop.getExits (miloop, header))
-        val blocksNotInR1 = getBlocksNotInR1 (loop, r1) 
-        val isWhileLoop = isR2Region (p, ifunc, loop, r1, blocksNotInR1)
-        val isWhileLoop = (not (hasCutTransfer (p, ifunc, r1))) andalso isWhileLoop
-        val () = Debug.printLayout (config, Debug.layoutWhileLoop (miloop, loop, r1, blocksNotInR1, isWhileLoop))
+        val si = I.SymbolInfo.SiManager sm
+        val M.CB {entry, blocks} = body
+        val cfg = MilCfg.build(config, si, body)
+        val dom = annotateFrontier (MilCfg.getLabelBlockDomTree cfg)
+        val dom = doDom (config, sm, dom)
+        val blocks = treeBlocks (collapse dom)
       in
-        if isWhileLoop 
-        then convertWhileLoop (d, p, ifunc, miloop, loop, children, r1) 
-        else ()
+        M.CB { entry = entry, blocks = blocks }
       end
 
-  (*
-   * traverse the loop tree to find while loop
-   *)
-  fun tryConvertWhileLoops (d, config, si, p, ifunc, miloop, loops) =
+  fun doGlobal (config, M.P {includes, externs, globals = gs, symbolTable, entry}) =
       let
-        val Tree.T (parent as MilLoop.L {header, blocks, ...}, children) = loops
-        val () = tryConvertWhileLoop (d, config, si, p, ifunc, miloop, parent, children)
-        val () = Vector.foreach (children, fn x => tryConvertWhileLoops (d, config, si, p, ifunc, miloop, x))
-      in ()
+        val sm = I.Manager.fromExistingAll symbolTable
+
+        fun doCode (M.F { fx, escapes, recursive, cc, args, rtyps, body }) =
+            M.F { fx        = fx,
+                  escapes   = escapes,
+                  recursive = recursive,
+                  cc        = cc,
+                  args      = args,
+                  rtyps     = rtyps,
+                  body      = doBody (config, sm, body) }
+
+
+        val gs = VD.map (gs, fn (_, glob) => case glob
+                   of M.GCode code => M.GCode (doCode code)
+                    | _            => glob)
+      in
+        M.P { includes    = includes,
+              externs     = externs,
+              globals     = gs,
+              symbolTable = I.Manager.finish sm,
+              entry       = entry }
       end
 
-  (*
-   * transfrom every loop in the function
-   *)
-  fun loopInvert (d, p, ifunc) =
+  fun program (mil, d) =
       let
-        val (gv, global) = IMil.IFunc.unBuild ifunc
-        val config = IMil.T.getConfig p
-        val si = IMil.T.getSi p
-      in (case global
-           of Mil.GCode (c as Mil.F {body, ...}) =>
-              let
-                val cfg = MilCfg.build(config, si, body)
-                val lbdomtree = MilCfg.getLabelBlockDomTree cfg
-                val linfo = MilLoop.build (config, si, cfg, lbdomtree)
-                val linfo = MilLoop.genAllNodes linfo
-                val linfo = MilLoop.genExits linfo
-                val loops = MilLoop.getLoops linfo
-                val () = Debug.printLayout (config, L.seq [L.str "MilLoop: ", MilLoop.layout (config, si, linfo)])
-                val () = Vector.foreach(loops, fn x => tryConvertWhileLoops (d, config, si, p, ifunc, linfo, x))
-              in ()
-              end
-            | _ => ())
-      end
-
-  fun program (p, d) = 
-      let
-        val () = List.foreach (IMil.Enumerate.T.funcs p, fn ifunc => loopInvert (d, p, ifunc))
-        val () = PD.report (d, passname)
-      in ()
+        val config = PD.getConfig d
+        val mil = doGlobal (config, mil)
+        val ()  = PD.report (d, passname)
+      in mil
       end
 
   val description = {name        = passname,
@@ -609,6 +649,6 @@ struct
                     features  = [],
                     subPasses = []}
 
-  val pass = Pass.mkOptPass (description, associates, BothMil.mkIMilPass program)
+  val pass = Pass.mkOptPass (description, associates, BothMil.mkMilPass program)
 
 end

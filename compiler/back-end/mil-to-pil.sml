@@ -1040,6 +1040,7 @@ struct
                Pil.E.word32 m
              end) *)
         | M.CPok pok => Pil.E.namedConstant (RT.MD.pObjKindTag pok)
+        | M.CRef i   => Pil.E.cast (genTyp (state, env, M.TRef), Pil.E.intInf i)
         | M.COptionSetEmpty =>
           notCoreMil (env, "genConstant", "COptionSetEmpty")
         | M.CTypePH =>
@@ -1576,7 +1577,7 @@ struct
          * before anything that it reads from does.  For parameters involved in 
          * a strongly connected component, add temporaries.
          *)
-        val scc = I.variableToposort (pi, depsOf)
+        val scc = I.variableTopoSort (pi, depsOf)
         fun doOne vis =
             case vis
              of [(p, i)] =>
@@ -1656,6 +1657,8 @@ struct
                 Fail.fail ("MilToPil", "genTransfer", "Mixed constants")
         fun doGenArm (c, t) =
             (genConstant (state, env, c), genGoto (state, env, cb, src, t))
+        fun doRefArm (c, t) =
+            (Pil.E.cast (Pil.T.sintp, genConstant (state, env, c)), genGoto (state, env, cb, src, t))
       in
         case (Vector.length cases, default)
          of (0, NONE) => Fail.fail ("MilToPil", "genCase", "no cases")
@@ -1673,10 +1676,9 @@ struct
             let
               val (on, doArm) =
                   case #1 (Vector.sub (cases, 0))
-                   of M.CName _ => 
-                      (Pil.E.call (Pil.E.namedConstant RT.Name.getTag, [on]),
-                       doNameArm)
-                    | _ => (Pil.E.cast (Pil.T.sintp, on), doGenArm)
+                   of M.CName _ => (Pil.E.call (Pil.E.namedConstant RT.Name.getTag, [on]), doNameArm)
+                    | M.CRef _  => (Pil.E.cast (Pil.T.sintp, on), doRefArm)
+                    | _         => (Pil.E.cast (Pil.T.sintp, on), doGenArm)
               val arms = Vector.toListMap (cases, doArm)
               val default =
                   case default
@@ -1854,7 +1856,13 @@ struct
               val cut = Pil.S.contCutTo (getConfig env, genVarE (state, env, cont), args, cuts)
             in cut
             end
-          | M.THalt opnd => Pil.S.call (Pil.E.namedConstant RT.halt, [genOperand (state, env, opnd)])
+          | M.THalt opnd => 
+            let
+              val M.F {rtyps, ...} = getFunc env
+              val void = Vector.length rtyps = 0
+              val halt = if void then RT.haltV else RT.halt
+            in Pil.S.call (Pil.E.namedConstant halt, [genOperand (state, env, opnd)])
+            end
           | M.TPSumCase _ => notCoreMil (env, "genTransfer", "TPSumCase")
        end
 
@@ -2292,7 +2300,7 @@ struct
         val () = Chat.log2 (env, "Computing SCCs")
         val c = getConfig env
         fun depsOf (v, g) = MFV.global (c, v, g)
-        val scc = I.variableToposort (VD.toList gs, depsOf)
+        val scc = I.variableTopoSort (VD.toList gs, depsOf)
         val () = Chat.log2 (env, "Emitting globals")
         (* Process each strongly connected component *)
         fun doOneScc scc =

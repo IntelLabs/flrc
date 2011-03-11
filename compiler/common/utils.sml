@@ -2742,3 +2742,4 @@ structure IntFiniteOrdinal = FiniteOrdinalF(structure Base =
                                               val eq      : t * t -> bool = Int32.equals
                                               val hash    : t -> Word32.word = Word32.fromInt
                                             end)
+

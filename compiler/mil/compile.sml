@@ -210,7 +210,7 @@ struct
       let
         val p = BothMil.toMil (pd, p)
         val config = PassData.getConfig pd
-        val l = MilLayout.layout (config, p)
+        val l = MilExtendedLayout.layout (config, p)
         val () = LayoutUtils.printLayout l
       in BothMil.Mil p
       end

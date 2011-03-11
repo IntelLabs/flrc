@@ -44,8 +44,8 @@ struct
         | IMil p => p
   fun layout (p, c) =
       case p
-       of Mil p => MilLayout.layout (c, p)
-        | IMil p => MilLayout.layout (c, IMil.T.unBuild p)
+       of Mil p => MilExtendedLayout.layout (c, p)
+        | IMil p => MilExtendedLayout.layout (c, IMil.T.unBuild p)
   fun stater (p, c) =
       case p
        of Mil p => MilStats.layout (MilStats.O {id = NONE}) (p, c)

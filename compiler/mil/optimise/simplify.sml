@@ -46,6 +46,7 @@ struct
   structure VS = M.VS
   structure LU = LayoutUtils
   structure L = Layout
+  structure MEL = MilExtendedLayout
 
   structure Chat = ChatF (struct 
                             type env = PD.t
@@ -426,6 +427,7 @@ struct
               | Mil.CDouble d       => SOME (CDouble d)
               | Mil.CViMask _       => NONE
               | Mil.CPok _          => NONE
+              | Mil.CRef _          => NONE
               | Mil.COptionSetEmpty => NONE
               | Mil.CTypePH         => NONE)
 
@@ -1687,16 +1689,26 @@ struct
                   val summarizeArgs = 
                    fn objects => Vector.map (objects, fn opt => Option.map (opt, typeOfObject))
 
+                  val consistent =
+                   fn t => isSome (MU.FieldKind.fromTyp' (config, t))
+
                   val combineObject =
                       Try.lift 
                         (fn (objO, tobjO) => 
-                            (case (<- objO, <- tobjO)
-                              of (OTuple v, OTuple ts) => 
+                            (case (typeOfObject (<- objO), <- tobjO)
+                              of (OTuple ts1, OTuple ts2) => 
                                  let
-                                   val () = Try.require (Vector.length v = Vector.length ts)
+                                   val () = Try.require (Vector.length ts1 = Vector.length ts2)
+                                   val ts = Vector.map2 (ts1, ts2, fn (t1, t2) => MilType.Type.lub (config, t1, t2))
+                                   val () = Try.require (Vector.forall (ts, consistent))
                                  in OTuple ts
                                  end
-                               | (OThunk v, OThunk t) => OThunk t
+                               | (OThunk t1, OThunk t2) => 
+                                 let
+                                   val t = MilType.Type.lub (config, t1, t2)
+                                   val () = Try.require (consistent t)
+                                 in OThunk t
+                                 end
                                | _ => Try.fail ()))
                       
                   val combineObjects = 
@@ -1844,7 +1856,8 @@ struct
                       {on = a, 
                        cases = Vector.map2 (arms', arms, rewriteArm),
                        default = case (dflt', dflt)
-                                  of (_, NONE) => NONE
+                                  of (NONE, NONE)    => NONE
+                                   | (SOME tg, NONE) => SOME tg
                                    | (SOME tg, SOME objects) => 
                                      SOME (rewriteTarget (tg, objects))
                                    | _ => fail ("rewriteCase", "Bad switch default")}
@@ -2755,7 +2768,7 @@ struct
    fn (d, imil) => 
       let
         val () = if checkIr d then IMil.T.check imil else ()
-        val () = if showIr d then MilLayout.printGlobalsOnly (PD.getConfig d, IMil.T.unBuild imil) else ()
+        val () = if showIr d then LU.printLayout (MEL.layout (PD.getConfig d, IMil.T.unBuild imil)) else ()
         val () = if showIMil d then LU.printLayout (IMil.Layout.t imil) else ()
       in ()
       end
@@ -2905,7 +2918,7 @@ struct
       let
         val () = if statPhases d then Stats.report (PD.getStats d) else ()
         val () = if checkPhases d then IMil.T.check imil else ()
-        val () = if showPhases d then MilLayout.printGlobalsOnly (PD.getConfig d, IMil.T.unBuild imil) else ()
+        val () = if showPhases d then LU.printLayout (MEL.layout (PD.getConfig d, IMil.T.unBuild imil)) else ()
       in ()
       end
 
