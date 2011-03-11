@@ -153,7 +153,8 @@ struct
                 | TS.TsMask _    => false)
            | (M.TNumeric nt1, M.TNumeric nt2) => MU.Prims.Utils.NumericTyp.eq (nt1, nt2)
            | (M.TName, M.TName) => true
-           | (M.TViVector vet1, M.TViVector vet2) => MU.Prims.Utils.VectorSize.eq (#vectorSize vet1, #vectorSize vet2) andalso
+           | (M.TViVector vet1, M.TViVector vet2) => MU.Prims.Utils.VectorSize.eq (#vectorSize vet1, #vectorSize vet2)
+                                                     andalso
                                                      subtype (c, #elementTyp vet1, #elementTyp vet2)
            | (M.TViMask vet1, M.TViMask vet2) => MU.Prims.Utils.VectorDescriptor.eq (vet1, vet2)
            | (M.TCode {cc = cc1, args = args1, ress = ress1}, M.TCode {cc = cc2, args = args2, ress = ress2}) =>

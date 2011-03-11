@@ -344,4 +344,3 @@ struct
   }
 
 end (* structure Mil *)
-
