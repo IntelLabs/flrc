@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, July 2007 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 (* Compute the call graph for Mil.  Namely:
  *   * For each code global, identified by their binding variable, compute:

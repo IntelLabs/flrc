@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, May 2008 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 (* Print multiple annotated call graphs to a single or multi files.  *)
 

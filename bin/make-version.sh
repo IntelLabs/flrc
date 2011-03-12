@@ -1,4 +1,5 @@
 #!/bin/bash
+# COPYRIGHT_NOTICE_1
 
 # Make a version.sml file with brief version and build information for the PPiler.
 # usage: make-version.sh version lang_version outfile

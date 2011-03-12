@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, January 2009 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 (*
  * Loop inversion: transform while-do loop to do-while loop.

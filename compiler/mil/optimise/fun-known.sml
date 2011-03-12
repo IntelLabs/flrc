@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, December 2007 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 (* Various optimisations on functions with all known callers *)
 

@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, July 2008 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 signature MIL_SHAPE_ANALYSIS =
 sig
