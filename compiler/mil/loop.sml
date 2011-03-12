@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, October 2006 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 (* XXX N.B.  This may have problems with signed integers, needs thinking about.  -leaf
  *)

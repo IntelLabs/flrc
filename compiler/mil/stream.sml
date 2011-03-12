@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, October 2006 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 (* This file contains two abstractions for building up code bodies for Mil code.
  * Both are intended to contain parts of a code body.

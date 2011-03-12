@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation *)
+(* COPYRIGHT_NOTICE_1 *)
 
 (* This module defines how P concepts are modeled in core Mil.  There are three
  * modules defined here:
