@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, October 2006 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 (* Mil utilities *)
 
@@ -871,7 +871,7 @@ sig
     val variableRelated : t * Mil.variable * string * Typ.t * VariableKind.t -> Mil.variable
     val variableRelatedNoInfo : t * Mil.variable * string -> Mil.variable
     val variableHasInfo : t * Mil.variable -> bool
-    val variableSetInfo : t * Mil.variable * Typ.t * VariableKind.t -> unit
+    val variableSetInfo : t * Mil.variable * VariableInfo.t -> unit
     val nameMake : t * string -> Mil.name
     val labelFresh : t -> Mil.label
     val finish : t -> SymbolTable.t
@@ -1080,7 +1080,13 @@ sig
     (* Flat typs are the nullary super-types of the general types *)
     val fromTyp : Config.t * Mil.typ -> Mil.typ
   end (* structure FlatTyp *)
-              
+
+  (* Compiler assumptions about pointers into the heap *)
+  structure HeapModel : 
+  sig
+    val null : Config.t -> IntInf.t
+    val validRefConstant : Config.t * IntInf.t -> bool
+  end (* structure HeapModel *)
 end;
 
 functor Intp(val sgn : IntArb.signed
@@ -1479,6 +1485,9 @@ struct
             | (M.CPok pok1,       M.CPok pok2      ) => pObjKind (pok1, pok2)
             | (M.CPok _,          _                ) => LESS
             | (_,                 M.CPok _         ) => GREATER
+            | (M.CRef i1,         M.CRef i2        ) => IntInf.compare (i1, i2)
+            | (M.CRef _,          _                ) => LESS
+            | (_,                 M.CRef _         ) => GREATER
             | (M.COptionSetEmpty, M.COptionSetEmpty) => EQUAL
             | (M.COptionSetEmpty, _                ) => LESS
             | (_,                 M.COptionSetEmpty) => GREATER
@@ -2640,6 +2649,7 @@ struct
           | M.CDouble _       => true
           | M.CViMask _       => true
           | M.CPok _          => true
+          | M.CRef _          => true
           | M.COptionSetEmpty => false
           | M.CTypePH         => false
 
@@ -2659,6 +2669,7 @@ struct
            | M.CDouble _       => NONE
            | M.CViMask _       => NONE
            | M.CPok _          => NONE
+           | M.CRef _          => NONE
            | M.COptionSetEmpty => SOME M.PokOptionSet
            | M.CTypePH         => SOME M.PokType)
 
@@ -2682,6 +2693,8 @@ struct
        fn c => (case c of M.CViMask r => SOME r | _ => NONE)
       val cPok = 
        fn c => (case c of M.CPok r => SOME r | _ => NONE)
+      val cRef = 
+       fn c => (case c of M.CRef i => SOME i | _ => NONE)
       val cOptionSetEmpty = 
        fn c => (case c of M.COptionSetEmpty => SOME () | _ => NONE)
       val cTypePH = 
@@ -4013,8 +4026,8 @@ struct
     fun variableHasInfo (stm, v) =
         IM.variableHasInfo (stm, v)
 
-    fun variableSetInfo (stm, v, t, k) =
-        IM.variableSetInfo (stm, v, M.VI {typ = t, kind = k})
+    fun variableSetInfo (stm, v, info) =
+        IM.variableSetInfo (stm, v, info)
 
     fun nameMake (stm, s) = IM.nameMake (stm, s)
 
@@ -4582,5 +4595,15 @@ struct
            | M.TPRef t                    => M.TPAny)
 
   end (* structure FlatTyp *)
+
+  (* Compiler assumptions about pointers into the heap *)
+  structure HeapModel =
+  struct
+    val null : Config.t -> IntInf.t = fn c => 0
+    val isNull : Config.t * IntInf.t -> bool = fn (c, i) => i = 0
+    val lowBitsSet : Config.t * IntInf.t -> bool = fn (c, i) => IntInf.andb (i, 3) <> 0
+    val validRefConstant : Config.t * IntInf.t -> bool = 
+     fn (config, i) => isNull (config, i) orelse lowBitsSet (config, i)
+  end (* structure HeapModel *)
               
 end

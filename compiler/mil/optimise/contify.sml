@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, July 2007 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 (* This pass contifies functions into other functions.
  * It is based on Mathew Fluett and Stephen Weeks "Contification using

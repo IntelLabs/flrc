@@ -1,3 +1,6 @@
+(* The Intel P to C/Pillar Compiler *)
+(* COPYRIGHT_NOTICE_1 *)
+
 signature FLAT_TUPLE = 
 sig
   val flatten1 : 'a1

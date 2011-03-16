@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, July 2008 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 (* Estimate block and edge execution frequencies for Mil programs. The
  * algorithm is based on Wu and Larus (MICRO-27) paper.
@@ -9,7 +9,8 @@
  *   execution frequencies assuming the function is executed only once.
  * - global (absolute) frequency: it is the absolute execution frequency.
  *   It is computed by multiplying the local frequency by the function
- *   execution frequency. *)
+ *   execution frequency.
+ *)
 
 signature MIL_PROFILER = sig
 

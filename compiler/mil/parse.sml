@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, October 2006 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 signature MIL_PARSE =
 sig
@@ -175,6 +175,7 @@ struct
             | M.CViMask _ => c
             | M.CPok _ => c
             | M.COptionSetEmpty => c
+            | M.CRef _ => c
             | M.CTypePH => c
 
       fun simple (nm : t, s : M.simple) : M.simple =
@@ -842,7 +843,7 @@ struct
               P.error "Variable already bound"
             else
               let
-                val () = MU.SymbolTableManager.variableSetInfo (getStm state, v, t, k)
+                val () = MU.SymbolTableManager.variableSetInfo (getStm state, v, M.VI {typ = t, kind = k})
               in P.succeed v
               end
         val p = P.bind (variableF (state, env) && keycharS #":" && typ (state, env)) doIt
@@ -975,6 +976,7 @@ struct
               | "Ptr" => P.succeed (M.CPok M.PokPtr)
               | "R" => P.map (paren intInf, M.CRat)
               | "Rat" => P.succeed (M.CPok M.PokRat)
+              | "Ref" => P.map (paren intInf, M.CRef)
               | "S8" => intArb (IntArb.Signed, IntArb.S8)
               | "S16" => intArb (IntArb.Signed, IntArb.S16)
               | "S32" => intArb (IntArb.Signed, IntArb.S32)

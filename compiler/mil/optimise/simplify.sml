@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, July 2007 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 signature MIL_SIMPLIFY =
 sig
@@ -427,6 +427,7 @@ struct
               | Mil.CDouble d       => SOME (CDouble d)
               | Mil.CViMask _       => NONE
               | Mil.CPok _          => NONE
+              | Mil.CRef _          => NONE
               | Mil.COptionSetEmpty => NONE
               | Mil.CTypePH         => NONE)
 

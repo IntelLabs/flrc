@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation *)
+(* COPYRIGHT_NOTICE_1 *)
 
 signature MIL_CHECK = 
 sig
@@ -362,25 +362,17 @@ struct
       in ()
       end
 
-  fun fitsOptRep (s, e, i) =
-      let
-        val ws =
-            case Config.targetWordSize (getConfig e)
-             of Config.Ws32 => 32
-              | Config.Ws64 => 64
-        val upper = IntInf.<< (IntInf.one, Word.fromInt (ws - 2))
-        val lower = IntInf.~ upper
-        val fits = IntInf.<= (lower, i) andalso IntInf.< (i, upper)
-      in fits
-      end
-
   fun optIntegerRep (s, e, msg, i) =
-      assert (s, fitsOptRep (s, e, i),
+      assert (s, MU.Integer.Opt.integerFits i,
               fn () => msg () ^ ": integer constant out of opt rep range")
 
   fun optRatRep (s, e, msg, r) =
-      assert (s, fitsOptRep (s, e, r),
+      assert (s, MU.Rational.Opt.integerFits r,
               fn () => msg () ^ ": rat constant out of opt rep range")
+
+  fun validRefConstant (s, e, msg, i) = 
+      assert (s, MU.HeapModel.validRefConstant (getConfig e, i),
+              fn () => msg () ^ ": ref value not valid as ref constant")
 
   fun constant (s, e, msg, c) =
       case c
@@ -410,6 +402,11 @@ struct
           in M.TViMask descriptor
           end
         | M.CPok _ => MU.Uintp.t (getConfig e)
+        | M.CRef i => 
+          let
+            val () = validRefConstant (s, e, msg, i)
+          in M.TRef
+          end
         | M.COptionSetEmpty => M.TPType {kind = M.TkE, over = M.TNone}
         | M.CTypePH => M.TPType {kind = M.TkI, over = M.TNone}
 
