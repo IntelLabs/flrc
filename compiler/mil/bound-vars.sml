@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, October 2010 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 (* Provides utilities for extracting the set of bound variables from
    some mil AST subtree *)

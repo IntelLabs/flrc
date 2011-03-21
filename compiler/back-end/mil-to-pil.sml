@@ -174,8 +174,11 @@ struct
    *
    * For types we may generate typedefs, these are held in typDecs.
    *
-   * For registering stuff in the init function, we keep a list of statements
-   * in regs.
+   * For registering stuff in the init function, we keep two list of statements
+   * in regs0 and regs1.  Everything in regs0 will preceed the reporting of
+   * the global objects, and hence cannot put (ppiler generated) globals on 
+   * the stack. Everthing in regs1 will follow the reporting of the globals
+   * and hence can refer to them.
    *
    * For reporting global objects that are allocated in the static data
    * segment we need a list of pil expressions for the addresses of these
@@ -185,7 +188,9 @@ struct
    * the global object.  For roots outside global objects, we need to know
    * the locations of refs.  Since we don't have any of these right now, we
    * record and do nothing.  If refs outside of global objects are generated,
-   * then this scheme needs to be modified.
+   * then this scheme needs to be modified.  
+   * The vtables for the global roots must be registered before the global
+   * objects are reported.
    *
    * We collect a set of local variables for a procedure,
    * and declare them at the head of C function.
@@ -201,7 +206,8 @@ struct
     vtables : I.variable VtiD.t ref,
     xtrGlbs : Pil.D.t list ref,
     typDecs : Pil.D.t list ref,
-    regs    : Pil.S.t list ref,
+    regs0   : Pil.S.t list ref,
+    regs1   : Pil.S.t list ref,
     globals : Pil.E.t list ref,
     gRoots  : unit,
     locals  : VS.t ref,
@@ -232,7 +238,8 @@ struct
          vtables = ref VtiD.empty,
          xtrGlbs = ref [],
          typDecs = ref [],
-         regs = ref [],
+         regs0 = ref [],
+         regs1 = ref [],
          globals = ref [],
          gRoots = (),
          locals = ref VS.empty,
@@ -278,8 +285,11 @@ struct
       in ()
       end
 
-  fun getRegs (S {regs, ...}) = List.rev (!regs)
-  fun addReg (S {regs, ...}, reg) = regs := reg::(!regs)
+  fun getRegs0 (S {regs0, ...}) = List.rev (!regs0)
+  fun addReg0 (S {regs0, ...}, reg) = regs0 := reg::(!regs0)
+
+  fun getRegs1 (S {regs1, ...}) = List.rev (!regs1)
+  fun addReg1 (S {regs1, ...}, reg) = regs1 := reg::(!regs1)
 
   fun getGlobals (S {globals, ...}) = List.rev (!globals)
   fun addGlobal (S {globals, ...}, g) = globals := g::(!globals)
@@ -742,7 +752,7 @@ struct
           val mut = Pil.E.namedConstant (genVtMutability mut)
           val args = [Pil.E.addrOf vt', fs, refsv, vs, vlo, vr, mut]
           val vtr = Pil.E.call (Pil.E.namedConstant RT.MD.register, args)
-          val () = if vtReg env then addReg (state, Pil.S.expr vtr) else ()
+          val () = if vtReg env then addReg0 (state, Pil.S.expr vtr) else ()
         in vt
         end
 
@@ -2382,10 +2392,11 @@ struct
         val ord = IM.nameMake (getStm state, Prims.ordString)
         val ord = genName (state, env, ord)
         val or = Pil.E.call (Pil.E.variable RT.Name.registerCoreCharOrd, [ord])
-        val () = addReg (state, Pil.S.expr or)
-        val registrations = getRegs state
+        val () = addReg1 (state, Pil.S.expr or)
+        val registrations0 = getRegs0 state
+        val registrations1 = getRegs1 state
         val () = Stats.addToStat (getStats state, "registrations",
-                                  List.length registrations)
+                                  List.length registrations0 + List.length registrations1)
         (* For each global index, initialise its entries. *)
         fun initIdx (v, g, idxs) =
             case g
@@ -2415,7 +2426,7 @@ struct
             if gcGlobals env then genReportGlobals (state, env) else ([], [])
         (* Run the program *)
         val run = Pil.S.expr (Pil.E.call (genVarE (state, env, entry), []))
-        val body = registrations @ idxs @ globals @ [run]
+        val body = registrations0 @ globals @ registrations1 @ idxs @ [run]
       in
         Pil.D.sequence (xtras @
                         [Pil.D.function (Pil.T.void, RT.pmain, [], [], body)])

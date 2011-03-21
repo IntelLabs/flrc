@@ -562,7 +562,7 @@ struct
             let
               val M.VI {typ, kind} = MSTM.variableInfo (stm, v)
               val typ = doTyp (state, env, typ)
-              val () = MSTM.variableSetInfo (stm, v, typ, kind)
+              val () = MSTM.variableSetInfo (stm, v, M.VI {typ = typ, kind = kind})
             in ()
             end
         val () = List.foreach (vs, doOne)

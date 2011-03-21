@@ -896,7 +896,7 @@ struct
               P.error "Variable already bound"
             else
               let
-                val () = MU.SymbolTableManager.variableSetInfo (getStm state, v, t, k)
+                val () = MU.SymbolTableManager.variableSetInfo (getStm state, v, M.VI {typ = t, kind = k})
               in P.succeed v
               end
         val p = P.bind (variableF (state, env) && keycharS #":" && typ (state, env)) doIt
