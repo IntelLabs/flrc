@@ -8,7 +8,7 @@ sig
   sig
     type t
     val layoutTemplate : Config.t * Mil.symbolInfo * t -> Layout.t
-    datatype argument = AVar of Mil.variable | AName of Mil.name | AStream of MilStream.t
+    datatype argument = AVar of Mil.variable | AName of Mil.name | AStream of MilStream.t | ACutSet of Mil.cuts
     val apply : Mil.symbolTableManager * Config.t * t * argument Vector.t -> MilStream.t
     val applyIs : Mil.symbolTableManager * Config.t * t * argument Vector.t -> Mil.instruction Vector.t
   end
@@ -68,7 +68,7 @@ struct
 
     structure MR = MilRename.VarLabel
 
-    datatype parameter = PVar of M.variable | PName of M.name | PStream of string
+    datatype parameter = PVar of M.variable | PName of M.name | PStream of string | PCutSet of M.label
 
     datatype item =
         TiInstruction of M.instruction
@@ -79,6 +79,7 @@ struct
         IaVar of M.variable
       | IaName of M.name
       | IaStream of stream
+      | IaCutSet of M.cuts
     and t = T of {
       name       : string,
       parameters : parameter Vector.t,
@@ -87,7 +88,7 @@ struct
     }
     withtype stream = item Vector.t
 
-    datatype argument = AVar of M.variable | AName of M.name | AStream of MS.t
+    datatype argument = AVar of M.variable | AName of M.name | AStream of MS.t | ACutSet of M.cuts
 
     fun remapVar (stm : M.symbolTableManager, vps : VS.t, r : Rename.t, v : M.variable) : Rename.t =
         if VS.member (vps, v) then
@@ -128,10 +129,11 @@ struct
          of IaVar _ => r
           | IaName _ => r
           | IaStream s => remapStream (stm, vps, r, s)
+          | IaCutSet _ => r
     and remapStream (stm : M.symbolTableManager, vps : VS.t, r : MR.t, s : stream) : MR.t =
         Vector.fold (s, r, fn (i, r) => remapItem (stm, vps, r, i))
 
-    type rewriteMaps = MR.t * M.name ND.t * MS.t SD.t
+    type rewriteMaps = MR.t * M.name ND.t * MS.t SD.t * M.cuts LD.t
 
     fun buildMaps (stm : M.symbolTableManager, t : t, args : argument Vector.t) : rewriteMaps =
         let
@@ -141,18 +143,20 @@ struct
                 fail ("buildMaps", "argument number mismatch applying " ^ name)
               else
                 ()
-          fun matchOne (p, a, (vm, nm, sm)) =
+          fun matchOne (p, a, (vm, nm, sm, csm)) =
               case (p, a)
-               of (PVar v1, AVar v2) => (Rename.renameTo (vm, v1, v2), nm, sm)
-                | (PName n1, AName n2) => (vm, ND.insert (nm, n1, n2), sm)
-                | (PStream s1, AStream s2) => (vm, nm, SD.insert (sm, s1, s2))
+               of (PVar v1, AVar v2) => (Rename.renameTo (vm, v1, v2), nm, sm, csm)
+                | (PName n1, AName n2) => (vm, ND.insert (nm, n1, n2), sm, csm)
+                | (PStream s1, AStream s2) => (vm, nm, SD.insert (sm, s1, s2), csm)
+                | (PCutSet l, ACutSet cs) => (vm, nm, sm, LD.insert (csm, l, cs))
                 | _ => fail ("buildMaps.matchOne", "parameter/argument kind mismatch applying " ^ name)
-          val (vm, nm, sm) = Vector.fold2 (parameters, args, (Rename.none, ND.empty, SD.empty), matchOne)
+          val (vm, nm, sm, csm) =
+              Vector.fold2 (parameters, args, (Rename.none, ND.empty, SD.empty, LD.empty), matchOne)
           fun doOne (p, vps) = case p of PVar v => VS.insert (vps, v) | _ => vps
           val vps = Vector.fold (parameters, VS.empty, doOne)
           val vm = remapVars (stm, vps, vm, locals)
           val r = remapStream (stm, vps, (vm, LD.empty), items)
-          val maps = (r, nm, sm)
+          val maps = (r, nm, sm, csm)
         in maps
         end
 
@@ -264,11 +268,50 @@ struct
           | M.THalt opnd => M.THalt (operand (nm, opnd))
           | M.TPSumCase sw => M.TPSumCase (switch (nm, name, sw))
 
-    end
+    end (* RewriteNames *)
+
+    structure RewriteCutSets =
+    struct
+
+      type t = M.cuts LD.t
+
+      fun cuts (csm : t, M.C {exits, targets} : M.cuts) : M.cuts =
+          let
+            fun doOne (l, cs as M.C {exits, targets}) =
+                case LD.lookup (csm, l)
+                 of NONE => M.C {exits = exits, targets = LS.insert (targets, l)}
+                  | SOME cs' => MU.Cuts.union (cs, cs')
+          in
+            LS.fold (targets, if exits then MU.Cuts.justExits else MU.Cuts.none, doOne)
+          end
+
+      fun return (csm : t, r : M.return) : M.return =
+          case r
+           of M.RNormal {rets, block, cuts = cs} => M.RNormal {rets = rets, block = block, cuts = cuts (csm, cs)}
+            | M.RTail _ => r
+
+      fun transfer (csm : t, t : M.transfer) : M.transfer =
+          case t
+           of M.TGoto _ => t
+            | M.TCase _ => t
+            | M.TInterProc {callee, ret, fx} => M.TInterProc {callee = callee, ret = return (csm, ret), fx = fx}
+            | M.TReturn _ => t
+            | M.TCut {cont, args, cuts = cs} => M.TCut {cont = cont, args = args, cuts = cuts (csm, cs)}
+            | M.THalt _ => t
+            | M.TPSumCase _ => t
+
+    end (* RewriteCutSets *)
+
+    fun rewriteLabel (maps : rewriteMaps, l : M.label) : M.label =
+        Utils.Option.get (LD.lookup (#2 (#1 maps), l), l)
+
+    fun rewriteCutSet (maps : rewriteMaps, M.C {exits, targets} : M.cuts) : M.cuts =
+        M.C {exits = exits,
+             targets = LS.fold (targets, LS.empty, fn (l, ls) => LS.insert (ls, rewriteLabel (maps, l)))}
 
     fun rewriteTransfer (stm : M.symbolTableManager, config : Config.t, maps : rewriteMaps, t : M.transfer)
         : M.transfer =
-        RewriteNames.transfer (#2 maps, MR.transfer (config, #1 maps, t))
+        RewriteCutSets.transfer (#4 maps, RewriteNames.transfer (#2 maps, MR.transfer (config, #1 maps, t)))
 
     fun rewriteItem (stm : M.symbolTableManager, config : Config.t, maps : rewriteMaps, i : item) : MS.t =
         case i
@@ -297,6 +340,14 @@ struct
          of IaVar v => AVar (Rename.use (#1 (#1 maps), v))
           | IaName n => AName (RewriteNames.name (#2 maps, n))
           | IaStream s => AStream (rewriteStream (stm, config, maps, s))
+          | IaCutSet (M.C {exits, targets}) =>
+            let
+              val lm = #2 (#1 maps)
+              fun doOne (l, ls) = LS.insert (ls, Utils.Option.get (LD.lookup (lm, l), l))
+              val cs = M.C {exits = exits, targets = LS.fold (targets, LS.empty, doOne)}
+              val cs = RewriteCutSets.cuts (#4 maps, cs)
+            in ACutSet cs
+            end
 
     and rewriteStream (stm : M.symbolTableManager, config : Config.t, maps : rewriteMaps, s : stream) : MS.t =
         MS.seqnV (Vector.map (s, fn i => rewriteItem (stm, config, maps, i)))
@@ -320,7 +371,7 @@ struct
         : M.instruction Vector.t =
         let
           val T {items, ...} = t
-          val (r, nm, _) = buildMaps (stm, t, args)
+          val (r, nm, _, _) = buildMaps (stm, t, args)
           fun doOne i =
               case i
                of TiInstruction i => RewriteNames.instruction (nm, MR.instruction (config, r, i))
@@ -339,6 +390,7 @@ struct
          of PVar v => ML.layoutVariable (c, si, v)
           | PName n => ML.layoutName (c, si, n)
           | PStream s => L.str s
+          | PCutSet l => ML.layoutLabel (c, si, l)
     fun layoutTemplateItem (c, si, ti) =
         case ti
          of TiInstruction i => L.seq [L.str "i: ", ML.layoutInstruction (c, si, i)]
@@ -357,6 +409,7 @@ struct
          of IaVar v => ML.layoutVariable (c, si, v)
           | IaName n => ML.layoutName (c, si, n)
           | IaStream s => layoutStream (c, si, s)
+          | IaCutSet cs => ML.layoutCuts (c, si, cs)
     and layoutStream (c, si, s) =
         L.align [L.str "{",
                  LU.indent (L.align (Vector.toListMap (s, fn ti => layoutTemplateItem (c, si, ti)))),
@@ -1322,9 +1375,10 @@ struct
               | SOME l => {exits = exits, targets = LS.insert (targets, l)}
         fun process is = M.C (Vector.fold (is, {exits = false, targets = LS.empty}, doOne))
         val p = P.map (keywordSF "/->/" && braceSeq item, process o #2)
-        val p = p || P.succeed MU.Cuts.none
       in p
       end
+
+  fun cutsOpt (state : state, env : env) : M.cuts P.t = cuts (state, env) || P.succeed MU.Cuts.none
 
   fun return (state : state, env : env) : M.return P.t =
       let
@@ -1332,7 +1386,7 @@ struct
             P.map (keywordSF "->" &&
                    parenSeq (binder (state, env, M.VkLocal)) &&
                    label (state, env) &&
-                   cuts (state, env),
+                   cutsOpt (state, env),
                    fn (((_, vs), l), cs) => M.RNormal {rets = vs, block = l, cuts = cs})
         val tail =
             P.map (keywordSF "-|" && P.succeeds (keywordSF "/->/" && keywordS "Exit"),
@@ -1352,7 +1406,7 @@ struct
               | "CallClos" => interProc s
               | "CallDir" => interProc s
               | "Case" => P.map (switch (state, env, constantF), M.TCase)
-              | "Cut" => P.map (variable (state, env) && parenSeq (operand (state, env)) && cuts (state, env),
+              | "Cut" => P.map (variable (state, env) && parenSeq (operand (state, env)) && cutsOpt (state, env),
                                 fn ((v, os), cs) => M.TCut {cont = v, args = os, cuts = cs})
               | "Eval" => interProc s
               | "EvalDir" => interProc s
@@ -1416,7 +1470,8 @@ struct
   and templateArgumentF (state : state, env : env) : Template.itemArg P.t =
       P.map (variableF (state, env), Template.IaVar) ||
       P.map (nameF (state, env), Template.IaName) ||
-      P.map (P.$$ streamF (state, env), Template.IaStream)
+      P.map (P.$$ streamF (state, env), Template.IaStream) ||
+      P.map (cuts (state, env), Template.IaCutSet)
 
   and streamF (state : state, env : env) : Template.stream P.t =
       let
@@ -1541,7 +1596,8 @@ struct
   fun templateParameterF (state : state, env : env) : Template.parameter P.t =
       P.map (variableF (state, env), Template.PVar) ||
       P.map (nameF (state, env), Template.PName) ||
-      P.map (streamNameF (state, env), Template.PStream)
+      P.map (streamNameF (state, env), Template.PStream) ||
+      P.map (labelF (state, env), Template.PCutSet)
 
   fun templateBody (state : state, env : env) : (M.variable Vector.t * Template.stream) P.t =
       let
