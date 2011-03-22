@@ -47,9 +47,6 @@ struct
   val (debugPassD, debugPass) =
       Config.Debug.mk (passname ^ ":debug", "Debug rep analysis according to debug level")
 
-  val (enableCFAD, enableCFA) =
-      Config.Debug.mk (passname ^ ":cfa", "Re-enable CFA")
-
   val mkDebug : string * string * int -> (Config.Debug.debug * (PassData.t -> bool)) = 
    fn (tag, description, level) =>
       let
@@ -74,7 +71,7 @@ struct
   val (showPhasesD, showPhases) = mkDebug ("show-phases", "Show IR between phases", 1)
       
 
-  val debugs = [debugPassD, enableCFAD, showUnboxingD, showCFAD, showConstantPropD, showPhasesD]
+  val debugs = [debugPassD, showUnboxingD, showCFAD, showConstantPropD, showPhasesD]
 
   structure Unbox = 
   struct
@@ -1214,11 +1211,7 @@ struct
         val p = if Unbox.skip pd then p else Unbox.program (pd, summary, p)
         val () = if showPhases pd then MilLayout.print (PD.getConfig pd, p) else ()
         val p = if ConstantProp.skip pd then p else ConstantProp.program (pd, summary, p)
-        val p = 
-            if enableCFA (PD.getConfig pd) then 
-              if CFA.skip pd then p else CFA.program (pd, summary, p)
-            else
-              p
+        val p = if CFA.skip pd then p else CFA.program (pd, summary, p)
       in p
       end
 
