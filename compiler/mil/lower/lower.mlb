@@ -5,6 +5,7 @@ local
         $(SML_LIB)/mlton/sources.mlb
         ../../common/common.mlb
         ../mil.mlb
+        ../imil/imil.mlb
         mil-to-core-mil.sml
 in
         structure MilLowerClosures

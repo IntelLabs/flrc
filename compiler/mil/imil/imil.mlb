@@ -1,0 +1,27 @@
+(* The Intel P to C/Pillar Compiler *)
+(* COPYRIGHT_NOTICE_1 *)
+
+local
+        $(SML_LIB)/mlton/sources.mlb
+        ../../common/common.mlb
+        ../mil.mlb
+        types.sml
+        enumerate.sml
+        layout.sml
+        common.sml
+        use.sml
+        def.sml
+        var.sml
+        instr.sml
+        global.sml
+        block.sml
+        func.sml
+        item.sml
+        workset.sml
+        t.sml
+        imil.sml
+        both-mil.sml
+in
+        structure BothMil
+        structure IMil
+end

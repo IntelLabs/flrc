@@ -301,7 +301,5 @@ struct
                     features  = PObjectModelCommon.features @ PObjectModelLow.features @ PObjectModelHigh.features @
                                 [writeFinalF],
                     subPasses = subPasses}
-
-  val pass = Pass.mkOptFullPass (description, associates, program) 
-
+  val pass = Pass.mkOptFullPass (description, associates, program)
 end
