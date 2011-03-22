@@ -157,9 +157,9 @@ struct
   fun treeBlocks   (Tree.T ((_,b,_), _) : domTree) = b
   fun treeFrontier (Tree.T ((_,_,f), _) : domTree) = f
   fun treeChildrenLabels t = vmap (treeChildren t, treeLabel)
-  fun treeContainsLabel t l = 
-      (treeLabel t = l) orelse 
-      V.exists (treeChildren t, fn c => treeContainsLabel c l) 
+  fun treeContainsLabel t l =
+      (treeLabel t = l) orelse
+      V.exists (treeChildren t, fn c => treeContainsLabel c l)
 
   fun rename func (config, blks, dict) =
       LD.map (blks, fn (l, blk) => #2 (func (config, dict, l, blk)))
@@ -167,15 +167,37 @@ struct
   val renameVars   = rename MR.Var.block
   val renameBoth   = rename MR.VarLabel.block
 
+  (* data type for collecting statistics *)
+  type stat = { total : int ref, inverted : int ref, aborted : int ref}
+
+  structure Control =
+  struct
+    fun default _ = 4
+
+    fun parse (s:string) =
+        case Int.fromString s
+          of NONE => NONE
+           | SOME n => if n >= 0 then SOME n else NONE
+
+    fun description () =
+        L.str("Max number of blocks in R1 (between loop header and " ^
+              "loop exit) blocks allowed during loop inversion. This controls " ^
+              "code duplication, and the default is " ^ Int.toString (default ()) ^ ".\n")
+
+    val name = passname ^ ":max-r1-size"
+
+    val (maxR1Size, getMaxR1Size) =
+        Config.Control.mk (name, description, parse, default)
+  end
+
   structure Debug =
   struct
     val (debugPassD, debugPass) = Config.Debug.mk (passname, "debug the Mil loop invert")
 
-    fun debug config = Config.debug andalso debugPass config
-
-    fun prints (config, s) = if debug config then print s else ()
-
-    fun printLayout (config, l) = if debug config then LU.printLayout l else ()
+    fun isDebug config = Config.debug andalso debugPass config
+    fun when b f x = if b then f x else ()
+    fun debug config = when (isDebug config)
+    fun detailDebug config = when (isDebug config andalso Config.verbose config)
 
     fun layoutTree (Tree.T ((label,blks,{blocks,exits}), children)) =
         L.align [
@@ -220,8 +242,8 @@ struct
   val closeRegion : Config.t * M.symbolTableManager * M.label * blocks * I.variable V.t
                     -> M.label * blocks * Rename.t =
     fn (config, sm, entrylabel, blks, arguments) =>
-       if V.isEmpty arguments 
-         then (entrylabel, blks, Rename.none) 
+       if V.isEmpty arguments
+         then (entrylabel, blks, Rename.none)
          else
            let
              (* Get the original parameters *)
@@ -278,7 +300,7 @@ struct
           | replaceTr (x as M.TCut { cuts = M.C { targets, ... }, ... }) =
             if LS.member (targets, targetlabel) then NONE else SOME x
           | replaceTr x = SOME x
-      in try (fn () => LD.map (blks, 
+      in try (fn () => LD.map (blks,
                 fn (_, M.B { parameters, instructions, transfer }) =>
                        M.B { parameters = parameters,
                              instructions = instructions,
@@ -337,12 +359,14 @@ struct
    *
    * Always return a collapsed domTree.
    *)
-  val tryInvertLoop : Config.t * M.symbolTableManager * domTree -> domTree =
-    fn (config, sm, header) =>
+  val tryInvertLoop : Config.t * M.symbolTableManager * domTree * stat -> domTree =
+    fn (config, sm, header, stat) =>
       let
-        fun printLayout (m, l) = Debug.printLayout (config, L.seq [L.str m, l])
-        fun printList   (m, l) = printLayout (m, L.sequence ("{","}",",") l)
-        fun printRegion (m, r) = printLayout (m, Debug.layoutBlocks (config, sm, r))
+        val maxR1Size = Control.getMaxR1Size config
+        fun prints s           = Debug.detailDebug config print s
+        fun printLayout (m, l) = LU.printLayout (L.seq [L.str m, l])
+        fun printList   (m, l) = Debug.detailDebug config printLayout (m, L.sequence ("{","}",",") l)
+        fun printRegion (m, r) = Debug.detailDebug config printLayout (m, Debug.layoutBlocks (config, sm, r))
 
         val headerlabel = treeLabel header
         (*
@@ -393,8 +417,8 @@ struct
                     val labels   = LS.fromVector (treeChildrenLabels self)
                     val internal = LS.union (internal, labels)
                     fun verify n = LS.member (#blocks (treeFrontier n), headerlabel)
-                    val red = UO.dispatch (rc, fn _ => UF.id, 
-                                               fn _ => UF.curry LS.intersection internal) 
+                    val red = UO.dispatch (rc, fn _ => UF.id,
+                                               fn _ => UF.curry LS.intersection internal)
                     fun found n = LS.isSubset (red (#blocks (treeFrontier n)), max)
                   in
                     case keepAll (children, verify)
@@ -483,7 +507,7 @@ struct
          * Note that we still may fail if the closing a region involves
          * adjusting inter-proc call or cut transfers.
          *)
-        fun invertLoop (r1, r2, rc) : domTree option = try (fn () => 
+        fun invertLoop (r1, r2, rc) : domTree option = try (fn () =>
            let
              fun concatBlks t = List.fold (t, LD.empty,
                                            fn (x,y) => LD.union (x,y,#3))
@@ -497,7 +521,7 @@ struct
                    (* Turn r into blocks *)
                    val r = treeBlocks (collapse r)
                    (* Find variables bound on the spine, and free in r *)
-                   fun intersect (s, t) = 
+                   fun intersect (s, t) =
                        VS.intersection (MBV.blocks (config, s), MFV.blocks (config, t))
                    val rv = intersect (toR, r)
                    val _ = printList ("Set of var: ", map I.layoutVariable' (VS.toList rv))
@@ -506,28 +530,36 @@ struct
 
              (* Turn R1 into blocks *)
              val r1 = concatTreeBlks r1
+             val r1size = LD.size r1
+             val _ = if r1size > maxR1Size then
+                       let val _ = prints ("Bail out due to R1 block size " ^
+                                   Int.toString r1size ^ " exceeds maxR1Size " ^
+                                   Int.toString maxR1Size ^ ".\n")
+                           val _ = #aborted stat := !(#aborted stat) + 1
+                       in Try.fail () end
+                     else ()
 
              (* find bounded vars and turn R2 into blocks *)
              val (r2l, r2, r2v) = boundedVarsInUse r2
              (* same for RC, but lifted through option type *)
              fun inject (l, r, v) = (SOME l, r, v)
-             val (rcl, rc, rcv) = UO.dispatch (rc, inject o boundedVarsInUse, 
+             val (rcl, rc, rcv) = UO.dispatch (rc, inject o boundedVarsInUse,
                                                fn _ => (NONE, LD.empty, VS.empty))
              val rvs = (VS.toVector o VS.union) (r2v, rcv)
 
              (* Process R2 *)
-             val _ = Debug.prints (config, "Closing R2\n")
+             val _ = prints "Closing R2\n"
              val (r2n, r2, r2dict) = closeRegion (config, sm, r2l, r2, rvs)
              val _ = printRegion ("After closing: ", r2)
              val r1 = <- (adjustTarget (r2l, r2n, r1, rvs))
              val _ = printRegion ("Adjusted R1: ", r1)
 
              (* Process RC *)
-             val (r1, r2, rc) = 
+             val (r1, r2, rc) =
                  UO.dispatch (rcl,
-                   fn rcl => 
+                   fn rcl =>
                      let
-                       val _ = Debug.prints (config, "Closing RC\n")
+                       val _ = prints "Closing RC\n"
                        val (rcn, rc, _) = closeRegion (config, sm, rcl, rc, rvs)
                        val _ = printRegion ("After closing: ", rc)
                        val r1 = <- (adjustTarget (rcl, rcn, r1, rvs))
@@ -540,6 +572,7 @@ struct
                    fn () => (r1, r2, rc))
 
              (* Clone R1 *)
+             val _ = prints ("Cloning R1 (" ^ Int.toString r1size ^ " blocks)\n")
              val (newlabel, r1) = cloneRegion (config, sm, headerlabel, r1)
              val _ = printRegion ("Cloned R1: ", r1)
              (* Let R2 jump to the cloned R1 *)
@@ -556,19 +589,21 @@ struct
                   val r2 = <- (findR2 (rc, LS.fromList (headerlabel :: rclabels)))
                   (* reject when RC is not a subtree of R2 *)
                   val _ = map (require o not o treeContainsLabel r2) rclabels
-                  val _ = printLayout ("Found R2: ", I.layoutLabel (treeLabel r2))
+                  val _ = printList ("Found R2: ", [I.layoutLabel (treeLabel r2)])
                   val r2 = <- (adjustR2 r2)
                   val r2label = treeLabel r2
-                  val _ = printLayout ("Adjusted R2: ", I.layoutLabel r2label)
+                  val _ = printList ("Adjusted R2: ", [I.layoutLabel r2label])
                   val r1 = <- (findR1 (LS.fromList (r2label :: rclabels)))
                   val _ = require (sanityCheck r1)
                   val _ = printList ("Found R1: ", map (I.layoutLabel o treeLabel) r1)
                   val header = <- (invertLoop (r1, r2, rc))
-                in 
+                  val _ = #inverted stat := !(#inverted stat) + 1
+                in
                   header
                 end),
            fn () => collapse header)
       end
+
 
 
   (*
@@ -576,29 +611,31 @@ struct
    * inner to outer, and invert while-do loops that exits to
    * only one RC.
    *
-   *  doDom : Config.t * M.symbolTableManager * domTree -> domTree
+   *  doDom : Config.t * M.symbolTableManager * domTree * stat -> domTree
    *)
-  fun doDom (config, sm, self) : domTree =
+  fun doDom (config, sm, self, stat) : domTree =
       let
         val Tree.T ((label, blk, frontier), children) = self
-        val children = V.map (children, fn c => doDom (config, sm, c))
+        val children = V.map (children, fn c => doDom (config, sm, c, stat))
         val self = Tree.T ((label, blk, frontier), children)
       in
         if LS.member (#blocks frontier, label)
-          then let val _ = Debug.prints (config, "Loop header: " ^ I.labelString label ^ "\n")
-                   val _ = Debug.printLayout (config, Debug.layoutTree self)
-               in tryInvertLoop (config, sm, self)
+          then let val _ = Debug.detailDebug config print ("Loop header: " ^ I.labelString label ^ "\n")
+                   val _ = Debug.detailDebug config LU.printLayout (Debug.layoutTree self)
+                   val _ = #total stat := !(#total stat) + 1
+                   val b = tryInvertLoop (config, sm, self, stat)
+               in b
                end
           else self
       end
 
-  fun doBody (config, sm, body) =
+  fun doBody (config, sm, body, stat) =
       let
         val si = I.SymbolInfo.SiManager sm
         val M.CB {entry, blocks} = body
         val cfg = MilCfg.build(config, si, body)
         val dom = annotateFrontier (MilCfg.getLabelBlockDomTree cfg)
-        val dom = doDom (config, sm, dom)
+        val dom = doDom (config, sm, dom, stat)
         val blocks = treeBlocks (collapse dom)
       in
         M.CB { entry = entry, blocks = blocks }
@@ -607,6 +644,7 @@ struct
   fun doGlobal (config, M.P {includes, externs, globals = gs, symbolTable, entry}) =
       let
         val sm = I.Manager.fromExistingAll symbolTable
+        val stat = { total = ref 0, inverted = ref 0, aborted = ref 0 }
 
         fun doCode (M.F { fx, escapes, recursive, cc, args, rtyps, body }) =
             M.F { fx        = fx,
@@ -615,18 +653,25 @@ struct
                   cc        = cc,
                   args      = args,
                   rtyps     = rtyps,
-                  body      = doBody (config, sm, body) }
-
+                  body      = doBody (config, sm, body, stat) }
 
         val gs = VD.map (gs, fn (_, glob) => case glob
                    of M.GCode code => M.GCode (doCode code)
                     | _            => glob)
+
+        val prog = M.P { includes    = includes,
+                         externs     = externs,
+                         globals     = gs,
+                         symbolTable = I.Manager.finish sm,
+                         entry       = entry }
+
+        val _ = Debug.debug config print (passname ^ ": with max-r1-size = " ^
+                Int.toString (Control.getMaxR1Size config) ^ ", found " ^
+                Int.toString (!(#total stat)) ^ " loops, " ^
+                Int.toString (!(#inverted stat)) ^ " inverted, " ^
+                Int.toString (!(#aborted stat)) ^ " aborted.\n")
       in
-        M.P { includes    = includes,
-              externs     = externs,
-              globals     = gs,
-              symbolTable = I.Manager.finish sm,
-              entry       = entry }
+          prog
       end
 
   fun program (mil, d) =
@@ -644,7 +689,7 @@ struct
                      mustBeAfter = [],
                      stats       = stats}
 
-  val associates = {controls  = [],
+  val associates = {controls  = [Control.maxR1Size],
                     debugs    = [Debug.debugPassD],
                     features  = [],
                     subPasses = []}
