@@ -51,7 +51,7 @@ struct
     (* Core *)
       TAny                        (* All values *)
     | TAnyS         of valueSize  (* All values of given size *)
-    | TPtr                        (* All pointers; traceability unknown *)
+    | TNonRefPtr                  (* All non-GC pointers *)
     | TRef                        (* All GC valid pointers to object starts *)
     | TBits         of valueSize  (* All values of given size except heap pointers, floats, and doubles *)
     | TNone                       (* No values *)

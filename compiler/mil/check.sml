@@ -174,7 +174,7 @@ struct
       case t
        of M.TAny                       => ()
         | M.TAnyS vs                   => ()
-        | M.TPtr                       => ()
+        | M.TNonRefPtr                 => ()
         | M.TRef                       => ()
         | M.TBits vs                   => ()
         | M.TNone                      => ()
@@ -227,14 +227,11 @@ struct
 
   fun knownTraceSize (s, e, t, msg) =
       case MUT.traceabilitySize (getConfig e, t)
-       of TS.TsAny =>
-          reportError (s, msg () ^ ": bad traceability and size")
-        | TS.TsAnyS _ => reportError (s, msg () ^ ": bad size")
+       of TS.TsAny => reportError (s, msg () ^ ": bad traceability and size")
+        | TS.TsAnyS _ => reportError (s, msg () ^ ": bad traceability")
         | TS.TsBits _ => ()
         | TS.TsFloat => ()
         | TS.TsDouble => ()
-        | TS.TsPtr => reportError (s, msg () ^ ": bad traceability")
-        | TS.TsNonRefPtr => ()
         | TS.TsRef => ()
         | TS.TsNone => ()
         | TS.TsMask _ => ()
@@ -251,14 +248,7 @@ struct
         val ts2 = MUT.traceabilitySize (c, t2)
         fun err () = reportError (s, msg ())
       in
-        case (ts1, ts2)
-         of (*(TS.TsAny, _) => ()
-          | (_, TS.TsAny) => ()
-          | (TS.TsAnyS vs1, _) => ?
-          | (_, TS.TsAnyS vs2) => ?
-          | (TS.TsBits vs1, TS.TsBits vs2) =>
-          | (TS.TsBits vs1, TS.TsNon
-          | _ => err ()*) _ => ()
+        () (*if ts1 = ts2 then () else err ()*)
       end
 
   fun checkConsistentTyps (s, e, msg, ts1, ts2) =
@@ -439,10 +429,7 @@ struct
       in
         case (fd, MUT.traceabilitySize (getConfig e, t))
          of (M.FkRef, TS.TsRef) => ()
-          | (M.FkBits fs, TS.TsBits vs) =>
-            if MU.FieldSize.toValueSize fs = vs then () else err ()
-          | (M.FkBits fs, TS.TsNonRefPtr) =>
-            if fs = MU.FieldSize.ptrSize (getConfig e) then () else err ()
+          | (M.FkBits fs, TS.TsBits vs) => if MU.FieldSize.toValueSize fs = vs then () else err ()
           | (M.FkFloat, TS.TsFloat) => ()
           | (M.FkDouble, TS.TsDouble) => ()
           | (_, TS.TsNone) => ()
@@ -857,7 +844,7 @@ struct
                        else err ()
             in (NONE, NONE)
             end
-          | M.TPtr => (NONE, NONE)
+          | M.TNonRefPtr => (NONE, NONE)
           | M.TBits vs => 
             let
               val () = if vs = MU.ValueSize.ptrSize (getConfig e)
@@ -887,7 +874,6 @@ struct
                        else err ()
             in (NONE, NONE)
             end
-          | M.TPtr => (NONE, NONE)
           | M.TRef => (NONE, NONE)
           | M.TPAny => (NONE, NONE)
           | M.TNone => (NONE, NONE)
@@ -948,7 +934,6 @@ struct
                        else err ()
             in M.TNone
             end
-          | M.TPtr => M.TNone
           | M.TRef => M.TNone
           | M.TNone => M.TNone
           | M.TThunk t => t
@@ -1038,14 +1023,11 @@ struct
       in
         case t
          of M.TAny => ()
-          | M.TAnyS vs =>
-            if vs = MU.ValueSize.ptrSize (getConfig e) then () else err ()
-          | M.TPtr => ()
-          | M.TBits vs =>
-            if vs = MU.ValueSize.ptrSize (getConfig e) then () else err ()
+          | M.TAnyS vs => if vs = MU.ValueSize.ptrSize (getConfig e) then () else err ()
+          | M.TNonRefPtr => ()
+          | M.TBits vs => if vs = MU.ValueSize.ptrSize (getConfig e) then () else err ()
           | M.TNone => ()
-          | M.TContinuation ts' =>
-            checkConsistentTyps (s, e, msg', ts', ts)
+          | M.TContinuation ts' => checkConsistentTyps (s, e, msg', ts', ts)
           | _ => err ()
       end
 

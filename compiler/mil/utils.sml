@@ -136,11 +136,12 @@ sig
   sig
     type t = Mil.pObjKind
     val fromChar : char -> t option
+    val fromTyp : Mil.typ -> t option
     val toChar : t -> char
     val toString : t -> string
+    val isP : t -> bool
     val compare : t Compare.t
     val eq : t * t -> bool
-    val fromTyp : Mil.typ -> t option
   end
 
   structure ValueSize :
@@ -174,16 +175,14 @@ sig
   sig
     datatype traceability = TRef | TBits
     datatype t =
-        TsAny
-      | TsAnyS of ValueSize.t
-      | TsBits of ValueSize.t
+        TsAny                                  (* top *)
+      | TsAnyS of ValueSize.t                  (* traceability unknown, size fixed *)
+      | TsBits of ValueSize.t                  (* not GC, not float, not double, not mask, size fixed *)
       | TsFloat
       | TsDouble
-      | TsPtr
-      | TsNonRefPtr
-      | TsRef
-      | TsNone
-      | TsMask of Mil.Prims.vectorDescriptor
+      | TsRef                                  (* GC pointers to object starts *)
+      | TsNone                                 (* bottom *)
+      | TsMask of Mil.Prims.vectorDescriptor   (* masks for given vector type *)
     val toString : Config.t * t -> string
     val traceabilityIsRef : traceability -> bool
     val traceability : t -> traceability option
@@ -218,6 +217,9 @@ sig
     val traceabilitySize : Config.t * t -> TraceabilitySize.t
     val fromTraceabilitySize : TraceabilitySize.t -> t
     val traceability : Config.t * t -> TraceabilitySize.traceability option
+    val isNonRefPtr : t -> bool
+    val isRef : t -> bool
+    val isP : t -> bool
     val isCore : t -> bool
     val compare : t Compare.t
     val eq : t * t -> bool
@@ -228,7 +230,7 @@ sig
     sig
       val tAny : t -> unit option
       val tAnyS : t -> Mil.valueSize  option
-      val tPtr : t -> unit option
+      val tNonRefPtr : t -> unit option
       val tRef : t -> unit option
       val tBits : t -> Mil.valueSize  option
       val tNone : t -> unit option
@@ -1364,9 +1366,9 @@ struct
             | (M.TAnyS x1,         M.TAnyS x2        ) => valueSize (x1, x2)
             | (M.TAnyS _,          _                 ) => LESS
             | (_,                  M.TAnyS _         ) => GREATER
-            | (M.TPtr,             M.TPtr            ) => EQUAL
-            | (M.TPtr,             _                 ) => LESS
-            | (_,                  M.TPtr            ) => GREATER
+            | (M.TNonRefPtr,       M.TNonRefPtr      ) => EQUAL
+            | (M.TNonRefPtr,       _                 ) => LESS
+            | (_,                  M.TNonRefPtr      ) => GREATER
             | (M.TRef,             M.TRef            ) => EQUAL
             | (M.TRef,             _                 ) => LESS
             | (_,                  M.TRef            ) => GREATER
@@ -2022,7 +2024,7 @@ struct
         (case t
           of M.TAny                       => NONE
            | M.TAnyS vs                   => NONE
-           | M.TPtr                       => NONE
+           | M.TNonRefPtr                 => NONE
            | M.TRef                       => NONE
            | M.TBits vs                   => NONE
            | M.TNone                      => NONE
@@ -2042,6 +2044,23 @@ struct
            | M.TPSum nts                  => SOME M.PokTagged
            | M.TPType {kind, over}        => SOME M.PokType
            | M.TPRef t                    => SOME M.PokPtr)
+
+     fun isP pok =
+         case pok
+          of M.PokNone      => false
+           | M.PokRat       => true
+           | M.PokFloat     => true
+           | M.PokDouble    => true
+           | M.PokName      => true
+           | M.PokFunction  => true
+           | M.PokArray     => true
+           | M.PokDict      => true
+           | M.PokTagged    => true
+           | M.PokOptionSet => true
+           | M.PokType      => true
+           | M.PokPtr       => true
+           | M.PokCell      => false
+
   end
 
   structure ValueSize =
@@ -2146,8 +2165,6 @@ struct
       | TsBits of ValueSize.t
       | TsFloat
       | TsDouble
-      | TsPtr
-      | TsNonRefPtr
       | TsRef
       | TsNone
       | TsMask of MP.vectorDescriptor
@@ -2159,8 +2176,6 @@ struct
           | TsBits vs   => "Bits" ^ Int.toString (ValueSize.numBits vs)
           | TsFloat     => "Float"
           | TsDouble    => "Double"
-          | TsPtr       => "Ptr"
-          | TsNonRefPtr => "NonRefPtr"
           | TsRef       => "Ref"
           | TsNone      => "None"
           | TsMask vet  => "Mask(" ^ PrimsUtils.VectorDescriptor.toString (config, vet) ^ ")"
@@ -2177,8 +2192,6 @@ struct
           | TsBits vs   => SOME TBits
           | TsFloat     => SOME TBits
           | TsDouble    => SOME TBits
-          | TsPtr       => NONE
-          | TsNonRefPtr => SOME TBits
           | TsRef       => SOME TRef
           | TsNone      => NONE
           | TsMask vet  => SOME TBits
@@ -2190,8 +2203,6 @@ struct
           | TsBits vs   => SOME vs
           | TsFloat     => SOME M.Vs32
           | TsDouble    => SOME M.Vs64
-          | TsPtr       => SOME (ValueSize.ptrSize config)
-          | TsNonRefPtr => SOME (ValueSize.ptrSize config)
           | TsRef       => SOME (ValueSize.ptrSize config)
           | TsNone      => NONE
           | TsMask vet  => NONE
@@ -2219,12 +2230,6 @@ struct
           | (TsMask vit1, TsMask vit2) => PrimsUtils.VectorDescriptor.eq (vit1, vit2)
           | (_, TsMask _) => false
           | (TsMask _, _) => false
-          | (TsPtr, TsPtr) => true
-          | (_, TsPtr) => true
-          | (TsPtr, _) => false
-          | (TsNonRefPtr, TsNonRefPtr) => true
-          | (_, TsNonRefPtr) => false
-          | (TsNonRefPtr, _) => false
           | (TsRef, TsRef) => true
 
   end
@@ -2297,7 +2302,7 @@ struct
         case t
          of M.TAny                       => TS.TsAny
           | M.TAnyS vs                   => TS.TsAnyS vs
-          | M.TPtr                       => TS.TsPtr
+          | M.TNonRefPtr                 => TS.TsBits (ValueSize.ptrSize c)
           | M.TRef                       => TS.TsRef
           | M.TBits vs                   => TS.TsBits vs
           | M.TNone                      => TS.TsNone
@@ -2306,11 +2311,11 @@ struct
           | M.TName                      => TS.TsRef
           | M.TViVector et               => TS.TsBits (ValueSize.vectorSize c)
           | M.TViMask et                 => TS.TsMask et
-          | M.TCode {cc, args, ress}     => TS.TsNonRefPtr
+          | M.TCode {cc, args, ress}     => TS.TsBits (ValueSize.ptrSize c)
           | M.TTuple {pok, fixed, array} => TS.TsRef
-          | M.TCString                   => TS.TsNonRefPtr
+          | M.TCString                   => TS.TsBits (ValueSize.ptrSize c)
           | M.TIdx                       => TS.TsRef
-          | M.TContinuation ts           => TS.TsNonRefPtr
+          | M.TContinuation ts           => TS.TsBits (ValueSize.ptrSize c)
           | M.TThunk t                   => TS.TsRef
           | M.TPAny                      => TS.TsRef
           | M.TClosure {args, ress}      => TS.TsRef
@@ -2325,8 +2330,6 @@ struct
            | TS.TsBits vs   => M.TBits vs
            | TS.TsFloat     => Prims.NumericTyp.tFloat
            | TS.TsDouble    => Prims.NumericTyp.tDouble
-           | TS.TsPtr       => M.TPtr
-           | TS.TsNonRefPtr => M.TPtr
            | TS.TsRef       => M.TRef
            | TS.TsNone      => M.TNone
            | TS.TsMask et   => M.TViMask et)
@@ -2344,11 +2347,46 @@ struct
 
     fun traceability (c, t) = TS.traceability (traceabilitySize (c, t))
 
+    fun isNonRefPtr t =
+        case t
+         of M.TNonRefPtr      => true
+          | M.TCode _         => true
+          | M.TCString        => true
+          | M.TContinuation _ => true
+          | _                 => false
+
+    fun isRef t =
+        case t
+         of M.TRef                                             => true
+          | M.TName                                            => true
+          | M.TNumeric M.Prims.NtRat                           => true
+          | M.TNumeric (M.Prims.NtInteger M.Prims.IpArbitrary) => true
+          | M.TTuple _                                         => true
+          | M.TIdx                                             => true
+          | M.TThunk _                                         => true
+          | M.TPAny                                            => true
+          | M.TClosure _                                       => true
+          | M.TPSum _                                          => true
+          | M.TPType _                                         => true
+          | M.TPRef _                                          => true
+          | _                                                  => false
+
+     fun isP t =
+         case t
+          of M.TName             => true
+           | M.TTuple {pok, ...} => PObjKind.isP pok
+           | M.TPAny             => true
+           | M.TClosure _        => true
+           | M.TPSum _           => true
+           | M.TPType _          => true
+           | M.TPRef _           => true
+           | _                   => false
+
     fun isCore t =
         case t
          of M.TAny                       => true
           | M.TAnyS vs                   => true
-          | M.TPtr                       => true
+          | M.TNonRefPtr                 => true
           | M.TRef                       => true
           | M.TBits vs                   => true
           | M.TNone                      => true
@@ -2380,8 +2418,8 @@ struct
        fn t => (case t of M.TAny => SOME () | _ => NONE)
       val tAnyS = 
        fn t => (case t of M.TAnyS r => SOME r | _ => NONE)
-      val tPtr = 
-       fn t => (case t of M.TPtr => SOME () | _ => NONE)
+      val tNonRefPtr = 
+       fn t => (case t of M.TNonRefPtr => SOME () | _ => NONE)
       val tRef = 
        fn t => (case t of M.TRef => SOME () | _ => NONE)
       val tBits = 
@@ -2485,8 +2523,6 @@ struct
             | TS.TsBits vs   => M.FkBits (FieldSize.fromValueSize vs)
             | TS.TsFloat     => M.FkFloat
             | TS.TsDouble    => M.FkDouble
-            | TS.TsPtr       => err ()
-            | TS.TsNonRefPtr => nonRefPtr c
             | TS.TsRef       => M.FkRef
             | TS.TsNone      => err ()
             | TS.TsMask vs   => err ()
@@ -2514,7 +2550,7 @@ struct
         (case t
           of M.TAny                       => NONE
            | M.TAnyS vs                   => SOME (M.FkBits (vsToFs vs))
-           | M.TPtr                       => SOME (M.FkBits (FieldSize.ptrSize c))
+           | M.TNonRefPtr                 => SOME (M.FkBits (FieldSize.ptrSize c))
            | M.TRef                       => SOME M.FkRef
            | M.TBits vs                   => SOME (M.FkBits (vsToFs vs))
            | M.TNone                      => NONE
@@ -4573,7 +4609,7 @@ struct
         (case t
           of M.TAny                       => t
            | M.TAnyS vs                   => t
-           | M.TPtr                       => t
+           | M.TNonRefPtr                 => t
            | M.TRef                       => t
            | M.TBits vs                   => t
            | M.TNone                      => t

@@ -252,7 +252,7 @@ struct
        case t
         of M.TAny => L.str "Any"
          | M.TAnyS vs => L.str ("Any" ^ Int.toString (MU.ValueSize.numBits vs))
-         | M.TPtr => L.str "Ptr"
+         | M.TNonRefPtr => L.str "NonRefPtr"
          | M.TRef => L.str "Ref"
          | M.TBits vs => L.str ("Bits" ^ Int.toString (MU.ValueSize.numBits vs))
          | M.TNone => L.str "None"
