@@ -1939,8 +1939,9 @@ struct
          * #define v ((vt)&vu)
          *)
         val declareAndDefine = 
-         fn (v, vT, vuT) =>
+         fn (v, vuT) =>
             let
+              val vT = genTyp (state, env, getVarTyp (state, v))
               val vu = unboxedVar (state, env, v)
               val v = genVar (state, env, v)
               val dec1 = Pil.D.staticVariable (Pil.varDec (vuT, vu))
@@ -1970,12 +1971,10 @@ struct
                   val M.MDD {pok, ...} = mdDesc
                   val tv = globalTVar (state, env, v)
                   val ts = MTT.operands (getConfig env, getSymbolInfo state, inits)
-                  val tvs = Vector.map (ts, fn t => (t, M.FvReadWrite))
-                  val t = MU.Typ.fixedArray (pok, tvs)
                   val fs = genTyps (state, env, ts)
                   val utt = tupleUnboxedTyp (pok, fs, NONE)
                   val ut = Pil.D.typDef (utt, tv)
-                  val dec = declareAndDefine (v, genTyp (state, env, t), Pil.T.named tv)
+                  val dec = declareAndDefine (v, Pil.T.named tv)
                 in Pil.D.sequence [ut, dec]
                 end
               | M.GRat t => error "GRat"
@@ -1983,8 +1982,7 @@ struct
               | M.GThunkValue {typ, ofVal} => 
                 let
                   val ut = Pil.T.named (RT.Thunk.unboxedTyp typ)
-                  val t  = Pil.T.named (RT.Thunk.boxedTyp typ)
-                  val dec = declareAndDefine (v, t, ut)
+                  val dec = declareAndDefine (v, ut)
                 in dec
                 end
               | M.GSimple s => (* This is supposed to be eliminated?  XXX -leaf *)
@@ -2195,19 +2193,29 @@ struct
       in (code, e)
       end
 
-  fun genGlobal (state, env, var, global) = 
+  fun genGlobal (state, env, var, global, preDefined) = 
       let
         val define = fn (v, g) => Pil.D.constantMacro (genVar (state, env, v), g)
-        val addGlobalDef = 
-         fn (v, vu) => 
+        val addGlobalReg = 
+         fn vu => 
             let
               val vr = Pil.E.addrOf vu
               val () = addGlobal (state, vr)
-              val t = genTyp (state, env, getVarTyp (state, v))
-              val g = Pil.E.cast (t, vr)
-              val d = define (v, g)
-            in d
+            in ()
             end
+
+        val mkGlobalDef = 
+         fn (v, vu, s) => 
+            if preDefined then
+              Pil.D.comment (s ^ " forward defined above")
+            else
+              let
+                val vr = Pil.E.addrOf vu
+                val t = genTyp (state, env, getVarTyp (state, v))
+                val g = Pil.E.cast (t, vr)
+                val d = define (v, g)
+              in d
+              end
 
         val res = 
             case global
@@ -2240,7 +2248,8 @@ struct
                                                  newv :: len' :: inits)
                           in idx
                           end
-                  val d = addGlobalDef (var, newv)
+                  val () = addGlobalReg newv
+                  val d = mkGlobalDef (var, newv, "Idx")
                   val d = Pil.D.sequence [idx, d]
                 in d
                 end
@@ -2260,7 +2269,8 @@ struct
                   val newv  = Pil.E.variable newvId
                   val init = Pil.E.strctInit elts
                   val tuple = Pil.D.staticVariableExpr (Pil.varDec (tv, newvId), init)
-                  val tupleptr = addGlobalDef (var, newv)
+                  val () = addGlobalReg newv
+                  val tupleptr = mkGlobalDef (var, newv, "Tuple")
                   val d = Pil.D.sequence [tuple, tupleptr]
                 in d
                 end
@@ -2272,7 +2282,8 @@ struct
                   val (code_d, den) = genStaticIntInf (state, env, den)
                   val newv  = Pil.E.variable (unboxedVar (state, env, var))
                   val rDef = Pil.D.macroCall (RT.Rat.staticDef, [newv, num, den])
-                  val d = addGlobalDef (var, newv)
+                  val () = addGlobalReg newv
+                  val d = mkGlobalDef (var, newv, "GRat")
                   val d = Pil.D.sequence (c::code_n@code_d@[rDef, d])
                 in d
                 end
@@ -2292,7 +2303,8 @@ struct
                    val s = genSimple (state, env, ofVal)
                    val newv  = Pil.E.variable (unboxedVar (state, env, var))
                    val thnk = Pil.D.macroCall (RT.Thunk.staticValue typ, [newv, s])
-                   val d = addGlobalDef (var, newv)
+                   val () = addGlobalReg newv
+                   val d = mkGlobalDef (var, newv, "Thunk")
                    val d = Pil.D.sequence [thnk, d]
                  in d
                  end
@@ -2325,14 +2337,14 @@ struct
                 in
                   Pil.D.sequence [Pil.D.comment "Global",
                                   Pil.D.sequence ds,
-                                  genGlobal (state, env, v, g)]
+                                  genGlobal (state, env, v, g, false)]
                 end
               | _ =>
                 let
                   val () = incMultipleGlobals state
                   fun doForward (v, g) = genForward (state, env, v, g)
                   val fs = List.map (scc, doForward)
-                  fun doGlobal (v, g) = genGlobal (state, env, v, g)
+                  fun doGlobal (v, g) = genGlobal (state, env, v, g, true)
                   val gs = List.map (scc, doGlobal)
                   val ds = Pil.D.sequence [Pil.D.comment "Forwards",
                                            Pil.D.sequence fs,
