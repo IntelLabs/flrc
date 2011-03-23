@@ -138,8 +138,10 @@ struct
    fn (pd, p) => 
       let
           val () = Chat.log1 (pd, "Doing analysis")
+          val s = Time.now ()
           val summary = MilRepAnalyze.program (pd, p)
-          val () = Chat.log1 (pd, "Done with analysis")
+          val e = Time.toString (Time.- (Time.now (), s))
+          val () = Chat.log1 (pd, "Done with analysis in "^e^"s")
           val () = 
               if showAnalysis pd then
                 MilRepShow.printAnalysis (pd, summary, p)
