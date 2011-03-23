@@ -633,7 +633,10 @@ struct
                  end
                | M.RhsCont l =>
                  let
-                   val () = labelUseNoArgs (s, e, msg, l)
+                   (* Dead blocks that get trimmed leave 
+                    * unused labels here. Backend treats them
+                    * as null.
+                    *)
                    val t =
                        case isLabAvailable (e, l)
                         of NONE => M.TNone

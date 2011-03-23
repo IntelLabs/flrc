@@ -132,6 +132,9 @@ struct
           of SOME n => n
            | NONE => fail ("getVarNode", "Unknown variable: "^stringFromVar (env, v)))
 
+    val getLabelNode' = 
+     fn (env, l) => LD.lookup (envGetLabelNodes env, l)
+
     val getLabelNode = 
      fn (env, l) => 
         (case LD.lookup (envGetLabelNodes env, l)
@@ -247,6 +250,9 @@ struct
 
   val getLabelNode = 
    fn ((state, env), l) => Env.getLabelNode (env, l)
+
+  val getLabelNode' = 
+   fn ((state, env), l) => Env.getLabelNode' (env, l)
 
   val getCont = 
    fn ((state, env), l) => Env.getCont (env, l)
@@ -449,6 +455,8 @@ struct
    fn (se, vs) => Vector.map (vs, fn v => variable (se, v))
 
   val label = getLabelNode
+
+  val label' = getLabelNode'
 
   val constant = 
    fn (se, c) =>
@@ -682,7 +690,10 @@ struct
                | M.RhsTupleSet {tupField, ofVal} => op <-- (tupleOp (se, id, tupField, operand (se, ofVal)))  
                | M.RhsTupleInited {mdDesc, tup} => variable (se, tup) <-- tupleMk (se, id, mdDesc, Vector.new0 ())
                | M.RhsIdxGet {idx, ofVal} => node () <-- Build.base (MU.Uintp.t (getConfig se))
-               | M.RhsCont l => node () <== label (se, l)
+               | M.RhsCont l => 
+                 (case label' (se, l)
+                   of SOME n => node () <== n
+                    | NONE   => ())
                | M.RhsObjectGetKind v => node () <-- Build.base (MU.Uintp.t (getConfig se))
                | M.RhsThunkMk {typ, fvs} => 
                  let
