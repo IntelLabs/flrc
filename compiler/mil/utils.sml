@@ -798,6 +798,7 @@ sig
     val compare : t Compare.t
     val eq : t * t -> bool
     val pObjKind : t -> Mil.pObjKind option
+    val immutable : t -> bool
     structure Dec : 
     sig
       val gCode : t -> Mil.code option
@@ -3929,6 +3930,22 @@ struct
            | M.GPSum _              => SOME M.PokTagged
            | M.GPSet _              => SOME M.PokOptionSet)
 
+
+    val immutable =
+     fn g =>
+        (case g
+          of M.GCode f              => true
+           | M.GErrorVal _          => true
+           | M.GIdx _               => true
+           | M.GTuple {mdDesc, ...} => MetaDataDescriptor.immutable mdDesc
+           | M.GRat _               => true
+           | M.GInteger _           => true
+           | M.GCString _           => false
+           | M.GThunkValue _        => true
+           | M.GSimple s            => true
+           | M.GClosure _           => true
+           | M.GPSum _              => true
+           | M.GPSet _              => true)
 
     structure O = struct type t = t val compare = compare end
     structure Dict = DictF(O)

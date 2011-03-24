@@ -114,12 +114,15 @@ struct
       (case g
         of M.GCode _ => env  (* Useless to try to CSE code *)
          | _ => 
-           let
-             val gDict = envGetGDict env
-             val gDict = GD.insert (gDict, g, v)
-             val env = envSetGDict (env, gDict)
-           in env
-           end)
+           if MU.Global.immutable g then
+             let
+               val gDict = envGetGDict env
+               val gDict = GD.insert (gDict, g, v)
+               val env = envSetGDict (env, gDict)
+             in env
+             end
+           else
+             env)
 
   fun addEvalToEDict (env, parms, ev) = 
        let

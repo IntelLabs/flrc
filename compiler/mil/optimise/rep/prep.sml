@@ -118,8 +118,7 @@ struct
            fn g => 
               (case g 
                 of M.GCode _ => false 
-                 | M.GTuple {mdDesc, ...} => MU.MetaDataDescriptor.immutable mdDesc
-                 | _ => true)
+                 | _         => MU.Global.immutable g)
           val help = 
            fn ((v, g), s) => if splittable g then VS.insert (s, v) else s
           val candidates = List.fold (cc, envGetCandidates env, help)
