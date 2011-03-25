@@ -27,6 +27,7 @@ sig
   val splitAggressive : PassData.t -> bool
   val noSplitting     : PassData.t -> bool
   val noCFA           : PassData.t -> bool
+  val cfaAnnotateFull : PassData.t -> bool
 end  (* signature MIL_REP_BASE *)
 
 structure MilRepBase :> MIL_REP_BASE = 
@@ -146,6 +147,10 @@ struct
   val (noCFAF, noCFA) =
       mkFeature ("no-cfa", "Disable global control flow analysis")
 
-  val features = [noConstantPropF, noSplittingF, noTupleUnboxF, splitAggressiveF, statPhasesF, useShallowTypesF, noCFAF]
+  val (cfaAnnotateFullF, cfaAnnotateFull) =
+      mkFeature ("cfa-annotate", "CFA adds full code annotations")
+
+  val features = [cfaAnnotateFullF, noConstantPropF, noSplittingF, noTupleUnboxF, 
+                  splitAggressiveF, statPhasesF, useShallowTypesF, noCFAF]
 
 end (* structure MilRepBase *)

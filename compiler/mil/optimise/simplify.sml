@@ -138,7 +138,7 @@ struct
       end
 
   val (statPhasesF, statPhases) = 
-      mkLogFeature ("stat-phases", "Show stats between each phase", 2)
+      mkLogFeature ("stat-phases", "Show stats between each phase", 3)
 
   val mkFeature : string * string -> (Config.Feature.feature * (PassData.t -> bool)) = 
    fn (tag, description) =>

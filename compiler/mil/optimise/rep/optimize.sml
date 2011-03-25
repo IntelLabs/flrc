@@ -1170,11 +1170,46 @@ struct
         in codes
         end
 
+    val summarizeCodes =
+     fn (pd, codes, signatures) => 
+        let
+          val markEscaping = 
+           fn (signatures, possible) => 
+              let
+                val escapes = 
+                 fn {args, rets, thunk, escapes} => 
+                    {args = args, rets = rets, thunk = thunk, escapes = true}
+                val mark = 
+                 fn (v, signatures) => 
+                    (case VD.lookup (signatures, v)
+                      of SOME r => VD.insert (signatures, v, escapes r)
+                       | NONE   => fail ("CFA:summarizeCodes", "No signature for code variable"))
+                val signatures = VS.fold (possible, signatures, mark)
+              in signatures
+              end
+          val fold = 
+           fn (v, entry as {possible, exhaustive}, signatures) =>
+              if VS.size possible > 1 then
+                let
+                  val entry = {possible = VS.empty, exhaustive = false}
+                  val signatures = markEscaping (signatures, possible)
+                in (entry, signatures)
+                end
+              else
+                (entry, signatures)
+        in VD.mapFold (codes, signatures, fold)
+        end
+
     val rewrite = 
      fn (pd, summary, fgF, p) => 
         let
           val signatures = getFunctionSignatures (pd, summary, p)
           val codes = computeCodes (pd, summary, fgF)
+          val (codes, signatures) = 
+              if MilRepBase.cfaAnnotateFull pd then
+                (codes, signatures)
+              else
+                summarizeCodes (pd, codes, signatures)
           val state = ()
           val env = E {pd = pd, codes = codes, signatures = signatures, currentRetCount = 0}
           val p = Rewrite.program (state, env, p)
