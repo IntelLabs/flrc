@@ -1202,7 +1202,7 @@ struct
         in p
         end
 
-  end (* structure ConstantProp *)
+  end (* structure CFA *)
 
 
   val program = 
