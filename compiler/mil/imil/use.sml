@@ -42,7 +42,7 @@ struct
   structure BP = BackPatch
 
   val fail = 
-   fn (f, s) => Fail.fail ("imil-use.sml",
+   fn (f, s) => Fail.fail ("use.sml",
                            f,
                            s)
 

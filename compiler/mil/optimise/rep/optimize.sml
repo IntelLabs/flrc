@@ -12,7 +12,7 @@ structure MilRepOptimize :> MIL_REP_OPTIMIZE =
 struct
   val passname = "MilRepOptimize"
   val fail = 
-   fn (fname, msg) => Fail.fail ("rep-optimize.sml", fname, msg)
+   fn (fname, msg) => Fail.fail ("optimize.sml", fname, msg)
 
   structure M = Mil
   structure MU = MilUtils

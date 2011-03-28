@@ -12,7 +12,7 @@ structure MilRepPrep :> MIL_REP_PREP =
 struct
   val passname = "MilRepPrep"
   val fail = 
-   fn (fname, msg) => Fail.fail ("rep-prep.sml", fname, msg)
+   fn (fname, msg) => Fail.fail ("prep.sml", fname, msg)
 
   structure M = Mil
   structure MU = MilUtils

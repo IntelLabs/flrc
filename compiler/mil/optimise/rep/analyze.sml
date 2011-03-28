@@ -67,7 +67,7 @@ struct
   * param f: The function name.
   * param s: the messagse. *)
   val fail = 
-   fn (f, m) => Fail.fail ("rep-analyze.sml", f, m)
+   fn (f, m) => Fail.fail ("analyze.sml", f, m)
 
   val stringFromVar = Layout.toString o MilLayout.layoutVariable
   val stringFromLabel = Layout.toString o MilLayout.layoutLabel

@@ -33,7 +33,7 @@ struct
   structure Def = IMilDef
 
   val fail = 
-   fn (f, s) => Fail.fail ("imil-var.sml", f, s)
+   fn (f, s) => Fail.fail ("var.sml", f, s)
 
   val new = 
    fn (p, hint, t, g) =>

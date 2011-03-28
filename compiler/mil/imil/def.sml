@@ -36,7 +36,7 @@ struct
   structure MU = MilUtils
 
   val fail = 
-   fn (f, s) => Fail.fail ("imil-def.sml", f, s)
+   fn (f, s) => Fail.fail ("def.sml", f, s)
 
   val get = 
    fn (p, v) =>

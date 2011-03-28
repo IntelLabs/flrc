@@ -13,7 +13,7 @@ struct
   val passname = "MilRepReconstruct"
 
   val fail = 
-   fn (f, m) => Fail.fail ("rep-reconstruct.sml", f, m)
+   fn (f, m) => Fail.fail ("reconstruct.sml", f, m)
 
   val (showTypChangesD, showTypChanges) =
       Config.Debug.mk (passname ^ ":show-type-changes", "Show changes to variable types")

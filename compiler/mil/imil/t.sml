@@ -45,7 +45,7 @@ struct
   type t = IMT.t
 
   val fail = 
-   fn (f, s) => Fail.fail ("imil-t.sml", f, s)
+   fn (f, s) => Fail.fail ("t.sml", f, s)
 
 
   val getEntry = IMT.tGetEntry

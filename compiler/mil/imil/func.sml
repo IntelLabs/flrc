@@ -72,7 +72,7 @@ struct
   open IMilPublicTypes
 
   val fail = 
-   fn (f, s) => Fail.fail ("imil-func.sml", f, s)
+   fn (f, s) => Fail.fail ("func.sml", f, s)
 
   structure M = Mil
   structure MU = MilUtils

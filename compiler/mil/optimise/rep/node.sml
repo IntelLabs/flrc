@@ -47,7 +47,7 @@ end (* signature MIL_REP_NODE *)
 structure MilRepNode :> MIL_REP_NODE = 
 struct
   val fail = 
-   fn (f, m) => Fail.fail ("rep-node.sml", f, m)
+   fn (f, m) => Fail.fail ("node.sml", f, m)
 
   structure I = Identifier
 

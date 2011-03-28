@@ -27,7 +27,7 @@ end (* signature MIL_REP_FLOW_GRAPH *)
 structure MilRepFlowGraph :> MIL_REP_FLOW_GRAPH = 
 struct
 
-  val fail = fn (f, m) => Fail.fail ("rep-flowgraph.sml", f, m)
+  val fail = fn (f, m) => Fail.fail ("flowgraph.sml", f, m)
 
   structure ID = IntDict
   structure MRS = MilRepSummary

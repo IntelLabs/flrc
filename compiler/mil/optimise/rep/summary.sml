@@ -35,7 +35,7 @@ struct
   val passname = "MilRepSummary"
 
   val fail = 
-   fn (f, m) => Fail.fail ("rep-summary.sml", f, m)
+   fn (f, m) => Fail.fail ("summary.sml", f, m)
 
   structure PD = PassData
   structure M = Mil

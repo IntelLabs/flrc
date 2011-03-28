@@ -327,7 +327,7 @@ struct
   structure ILD = Identifier.ImpLabelDict
 
   val fail = 
-   fn (f, s) => Fail.fail ("imil-types.sml", f, s)                 
+   fn (f, s) => Fail.fail ("types.sml", f, s)
 
   type variable = Mil.variable
   type label = Mil.label

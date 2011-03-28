@@ -114,7 +114,7 @@ struct
   open IMilPublicTypes
 
   val fail = 
-   fn (f, s) => Fail.fail ("imil-instr.sml", f, s)
+   fn (f, s) => Fail.fail ("instr.sml", f, s)
 
   structure L = Layout
   structure LU = LayoutUtils
