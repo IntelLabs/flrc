@@ -129,7 +129,7 @@ struct
             case t
              of M.TAny => t
               | M.TAnyS _ => t
-              | M.TPtr => t
+              | M.TNonRefPtr => t
               | M.TRef => t
               | M.TBits _ => t
               | M.TNone => t

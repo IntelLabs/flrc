@@ -847,18 +847,18 @@ struct
               | "Bits256" => P.succeed (M.TBits M.Vs256)
               | "Bits512" => P.succeed (M.TBits M.Vs512)
               | "Bitsp" => P.succeed (M.TBits (MU.ValueSize.ptrSize (getConfig env)))
+              | "Boolean" => P.succeed M.TBoolean
               | "Cont" => P.map (parenSeq (typ (state, env)), fn ts => M.TContinuation ts)
               | "CStr" => P.succeed M.TCString
               | "Idx" => P.succeed M.TIdx
               | "Mask" => P.map (bracket (vectorDescriptor (state, env)), M.TViMask)
               | "Name" => P.succeed M.TName
-              | "Boolean" => P.succeed M.TBoolean
               | "None" => P.succeed M.TNone
+              | "NonRefPtr" => P.succeed M.TNonRefPtr
               | "PAny" => P.succeed M.TPAny
               | "PSet" => P.map (paren (typ (state, env)), fn t => M.TPType {kind = M.TkE, over = t})
               | "PSum" => P.map (braceSeq nameTyp, fn nts => M.TPSum (ND.fromVector nts))
               | "PRef" => P.map (paren (typ (state, env)), M.TPRef)
-              | "Ptr" => P.succeed M.TPtr
               | "PType" => P.map (paren (typ (state, env)), fn t => M.TPType {kind = M.TkI, over = t})
               | "Ref" => P.succeed M.TRef
               | "Thunk" => P.map (paren (typ (state, env)), M.TThunk)
