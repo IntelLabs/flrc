@@ -3018,8 +3018,10 @@ struct
     val getInit = 
      fn rhs => 
         (case rhs 
-          of M.RhsTupleSet {tupField = M.TF {tup, ...}, ...} => SOME tup
-           | M.RhsTupleInited {tup, ...} => SOME tup
+          of M.RhsTupleSet {tupField = M.TF {tup, tupDesc, ...}, ...} => 
+             if TupleDescriptor.immutable tupDesc then SOME tup else NONE
+           | M.RhsTupleInited {tup, mdDesc} => 
+             if MetaDataDescriptor.immutable mdDesc then SOME tup else NONE
            | M.RhsThunkInit {thunk, ...} => thunk
            | M.RhsThunkValue {thunk, ...} => thunk
            | M.RhsClosureInit {cls, ...} => cls
