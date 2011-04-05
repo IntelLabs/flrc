@@ -39,6 +39,8 @@ struct
                                                   name = "UnboxTuple", desc = "Single element tuples unboxed"}
     val {stats, click = mkDirect} = PD.clicker {stats = stats, passname = passname, 
                                                 name = "MkDirect", desc = "Calls/Evals resolved to direct"}
+    val {stats, click = escapeAnalysis} = PD.clicker {stats = stats, passname = passname, 
+                                                      name = "NonEscape", desc = "Codes marked non-escaping"}
                                                
   end   (*  structure Click *)
 
@@ -852,59 +854,113 @@ struct
 
     structure Lat = 
     struct
-      (* (s, b) : represents the set of functions s U E where 
-       *  E = {f | f escapes} if b
-       *    = {}              if not b
+      (* A set s represents the set of functions |s| where:
+       *  | Empty |       = {}
+       *  | Singleton v | = {v}
+       *  | Set s       | = s
+       *  | Any         | {f | f escapes} 
+       *
+       * By invariant, Set s => |s| > 1
        *)
-      type 's set = 's * bool
-      datatype t = L of LS.t set * VS.t set
-      val bot = L ((LS.empty, false), (VS.empty, false))
-      val escaping = L ((LS.empty, true), (VS.empty, true))
-      val label = fn l => L ((LS.singleton l, false), (VS.empty, false))
-      val codePtr = fn v => L ((LS.empty, false), (VS.singleton v, false))
-      val unknownCodePtr = L ((LS.empty, false), (VS.empty, true))
+      datatype ('a, 's) set = Empty | Singleton of 'a | Set of 's | Any of 's
+
+      datatype t = L of (M.label, LS.t) set * (M.variable, VS.t) set
+
+      val bot = L (Empty, Empty)
+
+      val escaping = L (Any LS.empty, Any VS.empty)
+
+      val label = fn l => L (Singleton l, Empty)
+
+      val codePtr = fn v => L (Empty, Singleton v)
+
+      val unknownCodePtr = L (Empty, Any VS.empty)
+
+      val toSet = 
+       fn (s, empty, singleton) => 
+          (case s
+            of Empty       => {possible = empty,       exhaustive = true}
+             | Singleton v => {possible = singleton v, exhaustive = true}
+             | Set s       => {possible = s,           exhaustive = true}
+             | Any s       => {possible = s,           exhaustive = false})
+
       val toCodes = 
-       fn (L (_, (s, b))) => {possible = s, exhaustive = not b}
-      val empty' = 
-       fn ((s, b), e) => not b andalso e s
+       fn (L (_, s)) => toSet (s, VS.empty, VS.singleton)
+
+      (* By invariant, Set s => s not empty *)
       val empty =
-       fn (L (ls, vs)) => empty' (ls, LS.isEmpty) andalso empty' (vs, VS.isEmpty)
+       fn (L (ls, vs)) => 
+          (case (ls, vs)
+            of (Empty, Empty) => true
+             | _              => false)
+
       val join' = 
-       fn ((s1, b1), (s2, b2), u) => (u (s1, s2), b1 orelse b2)
+       fn (s1, s2, precise, e, s, u) => 
+          (case (s1, s2) 
+            of (Empty, _)                 => s2
+             | (_, Empty)                 => s1
+             | (Any s1, s2)               => Any (u (s1, #possible (toSet (s2, e, s))))
+             | (s1, Any s2)               => Any (u (#possible (toSet (s1, e, s)), s2))
+             | (Singleton a, Singleton b) => if a = b then s1 else 
+                                             if precise then Set (u (s a, s b)) else Any e
+             | (Singleton a, Set b)       => Set (u (s a, b))
+             | (Set a, Singleton b)       => Set (u (a, s b))
+             | (Set a, Set b)             => Set (u (a, b)))
+
+     (* if precise is false, then we keep track only of singleton sets *)
       val join = 
-       fn (L (ls1, vs1), L (ls2, vs2)) => L (join' (ls1, ls2, LS.union),
-                                             join' (vs1, vs2, VS.union))
+       fn precise => 
+       fn (L (ls1, vs1), L (ls2, vs2)) => L (join' (ls1, ls2, precise, LS.empty, LS.singleton, LS.union),
+                                             join' (vs1, vs2, precise, VS.empty, VS.singleton, VS.union))
       val equal' = 
-       fn ((s1, b1), (s2, b2), e) => e (s1, s2) andalso (b1 = b2)
+       fn (s1, s2, se) => 
+        (case (s1, s2)
+          of (Empty, Empty)             => true
+           | (Singleton a, Singleton b) => a = b 
+           | (Set a, Set b)             => se (a, b)
+           | (Any s1, Any s2)           => se (s1, s2) (*true -XXX *)
+           | _                          => false)
+
       val equal = 
        fn (L (ls1, vs1), L (ls2, vs2)) => equal' (ls1, ls2, LS.equal) andalso
                                           equal' (vs1, vs2, VS.equal)
+
       val layout' = 
        fn ((s, b), sl, el) => Layout.seq [sl (s, el), if b then Layout.str "^" else Layout.str "!"]
+
       val layout = 
        fn (config, si, L (ls, vs)) => 
           let
+            val ls = 
+                let
+                  val {possible, exhaustive} = toSet (ls, LS.empty, LS.singleton)
+                in (possible, exhaustive)
+                end
+            val vs =
+                let
+                  val {possible, exhaustive} = toSet (vs, VS.empty, VS.singleton)
+                in (possible, exhaustive)
+                end
             val lbl = fn l => MilLayout.layoutLabel (config, si, l)
             val var = fn v => MilLayout.layoutVariable (config, si, v)
             val l = Layout.mayAlign [layout' (ls, LS.layout, lbl), 
                                      layout' (vs, VS.layout, var)]
           in l
           end
+
     end (* structure Lat *)
 
     datatype state = S of {summary : MRS.summary,
                            flowgraph : Lat.t FG.t}
 
     datatype env = E of {pd : PD.t,
-                         codes : M.codes VD.t,
-                         signatures : {args : int, rets : int, thunk : bool, escapes : bool} VD.t,
+                         signatures : {args : int, rets : int, thunk : bool} VD.t,
                          currentRetCount : int} 
 
     val getSummary = fn (S {summary, ...}) => summary
     val getFlowgraph = fn (S {flowgraph, ...}) => flowgraph
     val getPd = fn (E {pd, ...}) => pd
     val getConfig = PD.getConfig o getPd
-    val getCodes = fn (E {codes, ...}) => codes
     val getSignatures = fn (E {signatures, ...}) => signatures
     val getSignature = 
      fn (E {signatures, ...}, f) => 
@@ -912,8 +968,8 @@ struct
           of SOME s => s
            | NONE => fail ("CFA:getSignature", "No signature for variable"))
     val getRetCount = fn (E {currentRetCount, ...}) => currentRetCount
-    val setRetCount = fn (E {pd, codes, signatures, ...}, rc) => 
-                         E {pd = pd, codes = codes, signatures = signatures, currentRetCount = rc}
+    val setRetCount = fn (E {pd, signatures, ...}, rc) => 
+                         E {pd = pd, signatures = signatures, currentRetCount = rc}
 
     structure Analyze =
     MilAnalyseF(struct
@@ -976,6 +1032,8 @@ struct
                                   FG.add (getFlowgraph s, MRS.variableNode (summary, v), Lat.codePtr cptr)
                                 | M.GThunkValue _ => 
                                   FG.add (getFlowgraph s, MRS.variableNode (summary, v), Lat.unknownCodePtr)
+                                | M.GCode _ => 
+                                  FG.add (getFlowgraph s, MRS.variableNode (summary, v), Lat.codePtr v)
                                 | _         => ())
                        in e
                        end
@@ -1012,7 +1070,7 @@ struct
     MilRewriterF (struct
                     structure MRC = MilRewriterClient
                     type env   = env
-                    type state = unit
+                    type state = state
                     val config = getConfig
                     val indent = 2
                     val label       = fn _ => MRC.Stop
@@ -1022,6 +1080,9 @@ struct
                     val transfer    = 
                      fn (state, env, t) => 
                         let
+                          val flowgraph = getFlowgraph state
+                          val summary = getSummary state
+                          val pd = getPd env
                           (* Both are conservative, so if either is exhaustive, we can use it,
                            * and if both are exhaustive we can take their intersection.  If
                            * neither are exhaustive, we must take care not to invalidate the
@@ -1035,21 +1096,6 @@ struct
                                  | (false, false) => {possible = VS.union (p1, p2), exhaustive = false}
                                  | (true, false)  => {possible = p1, exhaustive = true}
                                  | (false, true)  => {possible = p2, exhaustive = true})
-                          val getCallee =
-                           fn {possible, exhaustive} => 
-                              if exhaustive andalso VS.size possible = 1 then
-                                VS.getAny possible
-                              else
-                                NONE
-                          val refineCodeForObject = 
-                           fn (v, code) => 
-                              (case VD.lookup (getCodes env, v)
-                                of NONE => 
-                                   let
-                                     val () = Chat.log2 (getPd env, "Dead call")
-                                   in Lat.toCodes (Lat.bot)
-                                   end
-                                 | SOME code' => combine (code, code'))
                           val filterCode = 
                            fn ({possible, exhaustive}, argC, retC, isThunk) => 
                               let
@@ -1062,6 +1108,27 @@ struct
                                 val possible = VS.keepAll (possible, pred)
                               in {possible = possible, exhaustive = exhaustive}
                               end
+                          val mkCodes =
+                           fn (v, oldCodes, argC, retC, isThunk) => 
+                              let
+                                val set = FG.query (flowgraph, MRS.variableNode (summary, v))
+                                val newCodes = Lat.toCodes set
+                                val newCodes = 
+                                    if MilRepBase.cfaAnnotateFull pd orelse VS.size (#possible newCodes) <= 1 then
+                                      newCodes
+                                    else
+                                      {possible = VS.empty, exhaustive = false}
+                                val newCodes = combine (oldCodes, newCodes)
+                                val newCodes = filterCode (newCodes, argC, retC, isThunk)
+                              in newCodes
+                              end
+                          val getCallee =
+                           fn {possible, exhaustive} => 
+                              if exhaustive andalso VS.size possible = 1 then
+                                VS.getAny possible
+                              else
+                                NONE
+
                           val getReturnCount =
                            fn ret => 
                               (case ret
@@ -1071,8 +1138,7 @@ struct
                               (case t
                                 of M.TInterProc {callee = M.IpCall {call = M.CClosure {cls, code}, args}, ret, fx} => 
                                    let
-                                     val code = refineCodeForObject (cls, code)
-                                     val code = filterCode (code, Vector.length args, getReturnCount ret, false)
+                                     val code = mkCodes (cls, code, Vector.length args, getReturnCount ret, false)
                                      val call = 
                                          (case getCallee code
                                            of SOME cptr => 
@@ -1085,10 +1151,17 @@ struct
                                      val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
                                    in  MRC.StopWith (env, t)
                                    end
+                                 | M.TInterProc {callee = M.IpCall {call = M.CCode {ptr, code}, args}, ret, fx} => 
+                                   let
+                                     val code = mkCodes (ptr, code, Vector.length args, getReturnCount ret, false)
+                                     val call = M.CCode {ptr = ptr, code = code}
+                                     val callee = M.IpCall {call = call, args = args}
+                                     val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                                   in  MRC.StopWith (env, t)
+                                   end
                                  | M.TInterProc {callee = M.IpEval {eval = M.EThunk {thunk, code}, typ}, ret, fx} => 
                                    let
-                                     val code = refineCodeForObject (thunk, code)
-                                     val code = filterCode (code, 0, getReturnCount ret, true)
+                                     val code = mkCodes (thunk, code, 0, getReturnCount ret, true)
                                      val eval = 
                                          (case getCallee code
                                            of SOME cptr => 
@@ -1105,23 +1178,7 @@ struct
                         in r
                         end
                     val block       = (fn _ => MRC.Continue)
-                    val global      = 
-                     fn (state, env, (v, g)) => 
-                        let
-                          val res = 
-                              (case g
-                                of M.GCode (M.F {fx, escapes, recursive, cc, args, rtyps, body}) => 
-                                   let
-                                     val escapes = escapes andalso #escapes (getSignature (env, v))
-                                     val f = M.F {fx = fx, escapes = escapes, recursive = recursive, cc = cc, 
-                                                  args = args, rtyps = rtyps, body = body}
-                                     val g = M.GCode f
-                                     val env = setRetCount (env, Vector.length rtyps)
-                                   in MRC.ContinueWith (env, (v, g))
-                                   end
-                                 | _ => MRC.Stop)
-                        in res
-                        end
+                    val global      = (fn _ => MRC.Continue)
                     val bind        = fn (_, env, _) => (env, NONE)
                     val bindLabel   = fn (_, env, _) => (env, NONE)
                     val cfgEnum     = fn (_, _, t) => MilUtils.CodeBody.dfsTrees t
@@ -1136,11 +1193,10 @@ struct
               (case g
                 of M.GCode (M.F {args, rtyps, cc, ...}) => 
                    let
-                     val escapes = not (MRS.variableUsesKnown (summary, v))
                      val args = Vector.length args
                      val rets = Vector.length rtyps
                      val thunk = case cc of M.CcThunk _ => true | _ => false
-                     val si = {escapes = escapes, args = args, rets = rets, thunk = thunk}
+                     val si = {args = args, rets = rets, thunk = thunk}
                    in SOME si
                    end
                  | _ => NONE)
@@ -1148,97 +1204,223 @@ struct
         in signatures
         end
 
-    val computeCodes = 
-     fn (pd, summary, fgF) => 
-        let 
-          val mkCodes =
-           fn v => 
-              let
-                val set = FG.query (fgF, MRS.variableNode (summary, v))
-              in if Lat.empty set then
-                   NONE
-                 else 
-                   SOME (Lat.toCodes set)
-              end
-          val folder = 
-           fn (v, codes) => 
-              case mkCodes v
-               of SOME c => VD.insert (codes, v, c)
-                | NONE => codes
-          val variables = MRS.listVariables summary
-          val codes = List.fold (variables, VD.empty, folder)
-        in codes
-        end
-
-    val summarizeCodes =
-     fn (pd, codes, signatures) => 
-        let
-          val markEscaping = 
-           fn (signatures, possible) => 
-              let
-                val escapes = 
-                 fn {args, rets, thunk, escapes} => 
-                    {args = args, rets = rets, thunk = thunk, escapes = true}
-                val mark = 
-                 fn (v, signatures) => 
-                    (case VD.lookup (signatures, v)
-                      of SOME r => VD.insert (signatures, v, escapes r)
-                       | NONE   => fail ("CFA:summarizeCodes", "No signature for code variable"))
-                val signatures = VS.fold (possible, signatures, mark)
-              in signatures
-              end
-          val fold = 
-           fn (v, entry as {possible, exhaustive}, signatures) =>
-              if VS.size possible > 1 then
-                let
-                  val entry = {possible = VS.empty, exhaustive = false}
-                  val signatures = markEscaping (signatures, possible)
-                in (entry, signatures)
-                end
-              else
-                (entry, signatures)
-        in VD.mapFold (codes, signatures, fold)
-        end
-
-    val rewrite = 
-     fn (pd, summary, fgF, p) => 
-        let
-          val signatures = getFunctionSignatures (pd, summary, p)
-          val codes = computeCodes (pd, summary, fgF)
-          val (codes, signatures) = 
-              if MilRepBase.cfaAnnotateFull pd then
-                (codes, signatures)
-              else
-                summarizeCodes (pd, codes, signatures)
-          val state = ()
-          val env = E {pd = pd, codes = codes, signatures = signatures, currentRetCount = 0}
-          val p = Rewrite.program (state, env, p)
-        in p
-        end
-
     val program = 
      fn (pd, summary, p) => 
         let
+          val precise = MilRepBase.cfaAnnotateFull pd
           val fgF = FG.build {pd = pd,
                               forward = true,
                               summary = summary,
                               uDefInit = Lat.escaping,
                               uUseInit = Lat.bot, 
                               initialize = fn n => Lat.bot,
-                              merge = Lat.join,
+                              merge = Lat.join precise,
                               equal = Lat.equal 
                              }
+          val signatures = getFunctionSignatures (pd, summary, p) 
           val state = S {summary = summary, flowgraph = fgF}
-          val env = E {pd = pd, codes = VD.empty, signatures = VD.empty, currentRetCount = 0}
-          val () = Analyze.analyseProgram (state, env, p)
-          val () = FG.propagate fgF
+          val env = E {pd = pd, signatures = signatures, currentRetCount = 0}
+          val () = Analyze.analyseProgram (state, env, p) 
+          val () = FG.propagate fgF 
           val () = show (pd, summary, fgF, p)
-          val p = rewrite (pd, summary, fgF, p)
+          val p = Rewrite.program (state, env, p)
         in p
         end
 
   end (* structure CFA *)
 
+
+  structure EscapeAnalysis = 
+  struct
+    val skip = MilRepBase.noEscapeAnalysis
+
+    structure LS = Identifier.LabelSet
+    structure VS = Identifier.VariableSet
+    structure VD = Identifier.VariableDict
+
+
+    structure Lat = LatticeFn (struct
+                                 type element = VS.t
+                                 val lub = SOME o VS.intersection
+                               end)
+
+    datatype state = S of {summary : MRS.summary,
+                           flowgraph : Lat.t FG.t}
+
+    datatype env = E of {pd : PD.t} 
+
+    val getSummary = fn (S {summary, ...}) => summary
+    val getFlowgraph = fn (S {flowgraph, ...}) => flowgraph
+    val getPd = fn (E {pd, ...}) => pd
+    val getConfig = PD.getConfig o getPd
+
+    structure Analyze1 =
+    MilAnalyseF(struct
+                  type state = state
+                  type env = env
+                  val config = getConfig
+                  val indent = 2
+                  val variableBind = NONE
+                  val labelBind = NONE
+                  val variableUse = NONE
+                  val analyseJump = NONE
+                  val analyseCut = NONE
+                  val analyseConstant = NONE
+                  val analyseInstruction = NONE
+                  val analyseTransfer' = 
+                   fn (s, e, t) => 
+                      let
+                        val summary = getSummary s
+                        val add = 
+                         fn (v, possible) => FG.add (getFlowgraph s, MRS.variableNode (summary, v), Lat.elt possible)
+                        val () =
+                            (case t
+                              of M.TInterProc {callee, ...} => 
+                                 (case callee
+                                   of M.IpCall {call, ...} => 
+                                      (case call
+                                        of M.CCode {ptr, code}          => add (ptr, #possible code)
+                                         | M.CClosure {cls, code}       => add (cls, #possible code)
+                                         | M.CDirectClosure {cls, code} => (add (code, VS.singleton code);
+                                                                            add (cls, VS.singleton code)))
+                                    | M.IpEval {eval, ...} => 
+                                      (case eval
+                                        of M.EThunk {thunk, code}       => add (thunk, #possible code)
+                                         | M.EDirectThunk {thunk, code} =>  (add (code, VS.singleton code);
+                                                                             add (thunk, VS.singleton code))))
+                               | _ => ())
+                      in e
+                      end
+                  val analyseTransfer = SOME analyseTransfer'
+                  val analyseBlock = NONE
+                  val analyseGlobal = NONE
+                end)
+
+    (* Merge the closure information into the code pointer information *)
+    structure Analyze2 =
+    MilAnalyseF(struct
+                  type state = state
+                  type env = env
+                  val config = getConfig
+                  val indent = 2
+                  val variableBind = NONE
+                  val labelBind = NONE
+                  val variableUse = NONE
+                  val analyseJump = NONE
+                  val analyseCut = NONE
+                  val analyseConstant = NONE
+                  val analyseInstruction' = 
+                   fn (s, e, M.I {dests, n, rhs}) => 
+                       let
+                         val summary = getSummary s
+                         val fg = getFlowgraph s
+                         val addTo = 
+                          fn cptr => 
+                          fn v => 
+                             FG.add (fg, MRS.variableNode (summary, cptr), FG.query (fg, MRS.variableNode (summary, v)))
+                         val () = 
+                             (case rhs
+                               of M.RhsThunkInit {thunk, code = SOME cptr, ...} => 
+                                  let
+                                    val add = addTo cptr
+                                    val () = Option.foreach (thunk, add)
+                                    val () = Vector.foreach (dests, add)
+                                  in ()
+                                  end
+                                | M.RhsClosureInit {cls, code = SOME cptr, ...} => 
+                                  let
+                                    val add = addTo cptr
+                                    val () = Option.foreach (cls, add)
+                                    val () = Vector.foreach (dests, add)
+                                  in ()
+                                  end
+                                | _           => ())
+                       in e
+                       end
+                  val analyseInstruction = SOME analyseInstruction'
+                  val analyseTransfer = NONE
+                  val analyseBlock = NONE
+                  val analyseGlobal' = 
+                   fn (s, e, v, g) => 
+                       let
+                         val summary = getSummary s
+                         val fg = getFlowgraph s
+                         val elt = 
+                             (case g
+                               of M.GClosure {code = SOME cptr, ...} => 
+                                  FG.add (fg, MRS.variableNode (summary, cptr), 
+                                          FG.query (fg, MRS.variableNode (summary, v)))
+                                | _         => ())
+                       in e
+                       end
+                  val analyseGlobal = SOME analyseGlobal'
+                end)
+
+    structure Rewrite = 
+    MilRewriterF (struct
+                    structure MRC = MilRewriterClient
+                    type env   = env
+                    type state = state
+                    val config = getConfig
+                    val indent = 2
+                    val label       = fn _ => MRC.Stop
+                    val variable    = fn _ => MRC.Stop
+                    val operand     = fn _ => MRC.Stop
+                    val instruction = fn _ => MRC.Stop
+                    val transfer    = fn _ => MRC.Stop
+                    val block       = fn _ => MRC.Stop
+                    val global      = 
+                     fn (state, env, (v, g)) => 
+                        let
+                         val res = 
+                             (case g
+                               of M.GCode (M.F {fx, escapes = true, recursive, cc, args, rtyps, body}) => 
+                                  let
+                                    val summary = getSummary state
+                                    val fg = getFlowgraph state
+                                    val pd = getPd env
+                                    val info = FG.query (fg, MRS.variableNode (summary, v))
+                                    val allKnown = 
+                                        Lat.isBot info orelse (case Lat.get info
+                                                                of SOME s => VS.member (s, v)
+                                                                 | NONE   => false)
+                                     val escapes = not allKnown
+                                     val f = M.F {fx = fx, escapes = escapes, recursive = recursive, cc = cc, 
+                                                  args = args, rtyps = rtyps, body = body}
+                                     val () = if escapes then () else Click.escapeAnalysis pd
+                                     val g = M.GCode f
+                                   in MRC.ContinueWith (env, (v, g))
+                                  end
+                                | _ => MRC.Stop)
+                        in res
+                        end
+                    val bind        = fn (_, env, _) => (env, NONE)
+                    val bindLabel   = fn (_, env, _) => (env, NONE)
+                    val cfgEnum     = fn (_, _, t)   => MilUtils.CodeBody.dfsTrees t
+                  end)
+
+    val program = 
+     fn (pd, summary, p) => 
+        let
+          val fgB = FG.build {pd = pd,
+                              forward = false,
+                              summary = summary,
+                              uDefInit = Lat.bot,
+                              uUseInit = Lat.top,
+                              initialize = fn n => Lat.bot,
+                              merge = Lat.join,
+                              equal = Lat.equal (VS.equal)
+                             }
+          val state = S {summary = summary, flowgraph = fgB}
+          val env = E {pd = pd}
+          val () = Analyze1.analyseProgram (state, env, p)
+          val () = Analyze2.analyseProgram (state, env, p)
+          val () = FG.propagate fgB
+          val p = Rewrite.program (state, env, p)
+        in p
+        end
+
+  end (* structure EscapeAnalysis *)
 
   val program = 
    fn (pd, summary, p) => 
@@ -1247,6 +1429,7 @@ struct
         val () = if showPhases pd then MilLayout.print (PD.getConfig pd, p) else ()
         val p = if ConstantProp.skip pd then p else ConstantProp.program (pd, summary, p)
         val p = if CFA.skip pd then p else CFA.program (pd, summary, p)
+        val p = if EscapeAnalysis.skip pd then p else EscapeAnalysis.program (pd, summary, p)
       in p
       end
 

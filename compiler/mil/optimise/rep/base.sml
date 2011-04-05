@@ -20,14 +20,15 @@ sig
 
   val features : Config.Feature.feature list
 
-  val noTupleUnbox    : PassData.t -> bool
-  val noConstantProp  : PassData.t -> bool
-  val statPhases      : PassData.t -> bool
-  val useShallowTypes : PassData.t -> bool
-  val splitAggressive : PassData.t -> bool
-  val noSplitting     : PassData.t -> bool
-  val noCFA           : PassData.t -> bool
-  val cfaAnnotateFull : PassData.t -> bool
+  val noTupleUnbox     : PassData.t -> bool
+  val noConstantProp   : PassData.t -> bool
+  val statPhases       : PassData.t -> bool
+  val useShallowTypes  : PassData.t -> bool
+  val splitAggressive  : PassData.t -> bool
+  val noSplitting      : PassData.t -> bool
+  val noCFA            : PassData.t -> bool
+  val noEscapeAnalysis : PassData.t -> bool
+  val cfaAnnotateFull  : PassData.t -> bool
 end  (* signature MIL_REP_BASE *)
 
 structure MilRepBase :> MIL_REP_BASE = 
@@ -147,10 +148,13 @@ struct
   val (noCFAF, noCFA) =
       mkFeature ("no-cfa", "Disable global control flow analysis")
 
+  val (noEscapeAnalysisF, noEscapeAnalysis) =
+      mkFeature ("no-escape-analysis", "Disable global escape analysis")
+
   val (cfaAnnotateFullF, cfaAnnotateFull) =
       mkFeature ("cfa-annotate", "CFA adds full code annotations")
 
   val features = [cfaAnnotateFullF, noConstantPropF, noSplittingF, noTupleUnboxF, 
-                  splitAggressiveF, statPhasesF, useShallowTypesF, noCFAF]
+                  splitAggressiveF, statPhasesF, useShallowTypesF, noCFAF, noEscapeAnalysisF]
 
 end (* structure MilRepBase *)
