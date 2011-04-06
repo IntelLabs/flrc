@@ -926,7 +926,7 @@ struct
                                           equal' (vs1, vs2, VS.equal)
 
       val layout' = 
-       fn ((s, b), sl, el) => Layout.seq [sl (s, el), if b then Layout.str "^" else Layout.str "!"]
+       fn ((s, b), sl, el) => Layout.seq [sl (s, el), if b then Layout.str "!" else Layout.str "^"]
 
       val layout = 
        fn (config, si, L (ls, vs)) => 
@@ -1026,7 +1026,7 @@ struct
                    fn (s, e, v, g) => 
                        let
                          val summary = getSummary s
-                         val elt = 
+                         val () = 
                              (case g
                                of M.GClosure {code = SOME cptr, ...} => 
                                   FG.add (getFlowgraph s, MRS.variableNode (summary, v), Lat.codePtr cptr)
@@ -1178,7 +1178,11 @@ struct
                         in r
                         end
                     val block       = (fn _ => MRC.Continue)
-                    val global      = (fn _ => MRC.Continue)
+                    val global      = 
+                     fn (state, env, (v, g)) => 
+                        (case g
+                          of M.GCode (M.F {rtyps, ...}) => MRC.ContinueWith (setRetCount (env, Vector.length rtyps), (v, g))
+                           | _                          => MRC.Continue)
                     val bind        = fn (_, env, _) => (env, NONE)
                     val bindLabel   = fn (_, env, _) => (env, NONE)
                     val cfgEnum     = fn (_, _, t) => MilUtils.CodeBody.dfsTrees t
