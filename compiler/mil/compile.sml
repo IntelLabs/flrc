@@ -22,7 +22,7 @@ struct
        (#"D", MilDblDiamond.pass      ),
        (#"F", MilFlatten.pass         ),
        (#"f", MilLowerClosures.pass   ),
-       (#"I", MilInlineLeaves.pass    ),  
+       (#"I", MilInlineLeaves.pass    ),
        (#"J", MilInlineAggressive.pass),
        (#"K", MilInlineProfile.pass   ),
        (#"L", MilLicm.pass            ),

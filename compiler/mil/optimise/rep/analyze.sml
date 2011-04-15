@@ -888,8 +888,14 @@ struct
                   (case getFunInfo (se, f)
                     of SOME {cargs, args, returns} => 
                        let
-                         val () = Vector.foreach2 (args, actuals, op <==)
-                         val () = Vector.foreach2 (rets, returns, op <==)
+                         val () = if Vector.length args = Vector.length actuals then
+                                    Vector.foreach2 (args, actuals, op <==)
+                                  else fail ("directCall", "Mismatched args in call to " 
+                                                           ^ stringFromVar (se, f))
+                         val () = if Vector.length rets = Vector.length returns then 
+                                    Vector.foreach2 (rets, returns, op <==)
+                                  else fail ("directCall", "Mismatched returns in call to " 
+                                                           ^ stringFromVar (se, f))
                        in ()
                        end
                      | NONE => variable (se, f) --> Build.code {name = NONE, args = actuals, ress = rets})
