@@ -218,7 +218,9 @@ struct
          ("ThunkValueBeta",   "ThunkValues beta reduced"       ),
          ("ThunkValueEta",    "ThunkValues eta reduced"        ),
          ("TupleBeta",        "Tuple subscripts reduced"       ),
-         ("TupleField",       "Tuple sub/set -> project"       ),
+         ("TupleToField",     "Tuple sub/set -> project"       ),
+         ("TupleFieldNorm",   "Tuple fields normalized"        ),
+         ("TupleNormalize",   "Tuple meta-data normalized"     ),
          ("Unreachable",      "Unreachable objects killed"     )
         ]
     val globalNm = 
@@ -299,7 +301,9 @@ struct
     val thunkValueBeta = clicker "ThunkValueBeta"
     val thunkValueEta = clicker "ThunkValueEta"
     val tupleBeta = clicker "TupleBeta"
-    val tupleField = clicker "TupleField"
+    val tupleVariableToField = clicker "TupleToField"
+    val tupleFieldNormalize = clicker "TupleFieldNorm"
+    val tupleNormalize = clicker "TupleNormalize"
     val unreachable = clicker "Unreachable"
 
     val wrap : (PD.t -> unit) * ((PD.t * I.t * WS.ws) * 'a -> 'b option) 
@@ -2258,23 +2262,69 @@ struct
 
     val prim = primPrim or primToLen or primRuntime
 
-    val tuple = fn (state, (i, dests, r)) => NONE
+    val tupleNormalize = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dests, {mdDesc, inits})) =>
+              let
+                val fixed = MU.MetaDataDescriptor.fixedFields mdDesc
+                val array as (_, fd) = <@ MU.MetaDataDescriptor.array mdDesc
+                val ic = Vector.length inits
+                val fc = Vector.length fixed
+                val () = Try.require (ic > fc)
+                val extra = ic - fc
+                val extras = Vector.new (extra, fd)
+                val mdDesc = M.MDD {pok = MU.MetaDataDescriptor.pok mdDesc,
+                                    fixed = Vector.concat [fixed, extras], array = SOME array}
+                val rhs = M.RhsTuple {mdDesc = mdDesc, inits = inits}
+                val mil = Mil.I {dests = dests, n = 0, rhs = rhs}
+                val () = IInstr.replaceInstruction (imil, i, mil)
+              in []
+              end
+        in try (Click.tupleNormalize, f)
+        end
 
-    val tupleField = 
+    val tuple = tupleNormalize
+
+    val tupleFieldNormalize = 
      fn {dec, con} => 
         let
           val f = 
            fn ((d, imil, ws), (i, dests, r)) =>
               let
                 val (tf, remainder) = dec r
-                val fi = MU.TupleField.field tf
+                val field = MU.TupleField.field tf
                 val td = MU.TupleField.tupDesc tf
                 val tup = MU.TupleField.tup tf
-                val idx = 
-                    (case fi 
-                      of M.FiVariable p => 
-                         <@ IntArb.toInt <! MU.Constant.Dec.cIntegral <! MU.Simple.Dec.sConstant @@ p
-                       | _ => Try.fail ())
+                val idx = <@ MU.FieldIdentifier.Dec.fiFixed field
+                val fields = MU.TupleDescriptor.fixedFields td
+                val fc = Vector.length fields
+                val () = Try.require (idx >= fc)
+                val extra = idx - fc + 1
+                val fd = <@ MU.TupleDescriptor.array td
+                val extras = Vector.new (extra, fd)
+                val td = M.TD {fixed = Vector.concat [fields, extras], array = NONE}
+                val tf = M.TF {tupDesc = td, tup = tup, field = field}
+                val rhs = con (tf, remainder)
+                val mil = Mil.I {dests = dests, n = 0, rhs = rhs}
+                val () = IInstr.replaceInstruction (imil, i, mil)
+              in []
+              end
+        in try (Click.tupleFieldNormalize, f)
+        end
+
+    val tupleVariableToField = 
+     fn {dec, con} => 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dests, r)) =>
+              let
+                val (tf, remainder) = dec r
+                val field = MU.TupleField.field tf
+                val tup = MU.TupleField.tup tf
+                val p = <@ MU.FieldIdentifier.Dec.fiVariable field
+                val idx = <@ IntArb.toInt <! MU.Constant.Dec.cIntegral <! MU.Simple.Dec.sConstant @@ p
+                val td = MU.TupleField.tupDesc tf
                 val fields = MU.TupleDescriptor.fixedFields td
                 val fd = <@ MU.TupleDescriptor.array td
                 val extras = Vector.new (idx + 1, fd)
@@ -2287,8 +2337,11 @@ struct
                 val () = IInstr.replaceInstruction (imil, i, mil)
               in []
               end
-        in try (Click.tupleField, f)
+        in try (Click.tupleVariableToField, f)
         end
+
+    val tupleField = 
+     fn r => (tupleVariableToField r) or (tupleFieldNormalize r)
 
     val tupleBeta = 
         let

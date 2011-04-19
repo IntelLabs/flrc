@@ -2874,7 +2874,7 @@ struct
       val fiVectorVariable = fn fi => (case fi of Mil.FiVectorVariable r => SOME r | _ => NONE)
     end (* structure Dec *)
 
-  end
+  end (* structure FieldIdentifier *)
 
   structure TupleField =
   struct
