@@ -1913,10 +1913,10 @@ struct
              fn ((d, imil, worklist), (i, (l, parms))) =>
                 let
                   val (summary, defs) = <@ analyzeInEdges (d, imil, i, l)
-                  val parmsOk = analyzeUses (d, imil, parms, summary)
+                  val oks = analyzeUses (d, imil, parms, summary)
                   val () = Try.require (Vector.length summary = 
-                                        Vector.length parmsOk)
-                  val () = Try.require (Vector.exists (parmsOk, fn a => a))
+                                        Vector.length oks)
+                  val () = Try.require (Vector.exists (oks, fn a => a))
                  (* At this point, we have at least one parameter for which 
                   * 1. All uses are immutable subscripts
                   * 2. All defs on all in-edges are tuple introductions with 
