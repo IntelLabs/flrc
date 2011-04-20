@@ -2296,6 +2296,10 @@ struct
 
     val tuple = tupleNormalize
 
+    (* For any tuple subscript or write with a fixed index i,
+     * standardize the meta data into a sequence of i+1 fixed
+     * fields and no array field.  
+     *)
     val tupleFieldNormalize = 
      fn {dec, con} => 
         let
@@ -2307,12 +2311,12 @@ struct
                 val td = MU.TupleField.tupDesc tf
                 val tup = MU.TupleField.tup tf
                 val idx = <@ MU.FieldIdentifier.Dec.fiFixed field
+                val fd = <@ MU.TupleDescriptor.array td
                 val fields = MU.TupleDescriptor.fixedFields td
                 val fc = Vector.length fields
-                val () = Try.require (idx >= fc)
-                val extra = idx - fc + 1
-                val fd = <@ MU.TupleDescriptor.array td
+                val extra = if idx >= fc then idx - fc + 1 else 0
                 val extras = Vector.new (extra, fd)
+                val fixed = Vector.prefix (Vector.concat [fields, extras], idx + 1)
                 val td = M.TD {fixed = Vector.concat [fields, extras], array = NONE}
                 val tf = M.TF {tupDesc = td, tup = tup, field = field}
                 val rhs = con (tf, remainder)
