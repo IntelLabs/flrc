@@ -115,9 +115,11 @@ struct
                 (fn () =>
                     let
                       val dest = Try.V.singleton dests
-                      val () = Try.require (not (MU.MetaDataDescriptor.hasArray mdDesc))
-                      val () = Try.require (MU.MetaDataDescriptor.numFixed mdDesc = 1)
-                      val () = Try.require (MU.MetaDataDescriptor.immutable mdDesc)
+                      (* We only require that there be at least one field 
+                       * here.  We permit the tuple to have other fields
+                       * and/or be mutable, so long as the only uses are
+                       * subscripts from the 0 field
+                       *)
                       val oper = Try.V.sub (inits, 0)
                       val v = Try.<@ MU.Simple.Dec.sVariable oper
                       val t = MRS.variableTyp (summary, v)
@@ -302,11 +304,16 @@ struct
 
                          val () = 
                              (case rhs
-                               of M.RhsPrim {args, ...} => Vector.foreach (args, noUnboxO)
-                                | M.RhsObjectGetKind v  => noUnbox v
-                                | M.RhsPSetNew oper     => noUnboxO oper
-                                | M.RhsPSetCond r       => noUnboxO (#ofVal r)
-                                | _                     => ())
+                               of M.RhsPrim {args, ...}         => Vector.foreach (args, noUnboxO)
+                                | M.RhsTupleSet {tupField, ...} => noUnbox (MU.TupleField.tup tupField)
+                                | M.RhsTupleSub tf              => 
+                                  (case MU.FieldIdentifier.Dec.fiFixed (MU.TupleField.field tf)
+                                    of SOME 0 => ()
+                                     | _      => noUnbox (MU.TupleField.tup tf))
+                                | M.RhsObjectGetKind v          => noUnbox v
+                                | M.RhsPSetNew oper             => noUnboxO oper
+                                | M.RhsPSetCond r               => noUnboxO (#ofVal r)
+                                | _                             => ())
                        in e
                        end
                   val analyseInstruction = SOME analyseInstruction'
@@ -445,15 +452,13 @@ struct
           ()
 
     structure Rewrite = 
-    MilRewriterF (struct
-                    structure MRC = MilRewriterClient
+    MilTransformF (struct
+                    structure MS = MilStream
                     type env   = env
                     type state = bool state
                     val config = getConfig
                     val indent = 2
-                    val label       = fn _ => MRC.Stop
-                    val variable    = fn _ => MRC.Stop
-                    val operand     = fn _ => MRC.Stop
+                    val label       = fn (_, env, _, _) => (env, NONE)
                     val unboxTuple = 
                      fn (state, env, dests, {mdDesc, inits}) => 
                         Try.try 
@@ -473,7 +478,7 @@ struct
                               in oper
                               end)
 
-                    val instruction = 
+                    val instr = 
                      fn (state, env, i as M.I {dests, n, rhs}) => 
                         let
                           val summary = getSummary state
@@ -483,11 +488,10 @@ struct
                                 of M.RhsTuple r => 
                                    let
                                      val operO = unboxTuple (state, env, dests, r)
-                                     val c = (case operO
-                                               of SOME oper => 
-                                                  MRC.StopWith (env, M.I {dests = dests, n = n, rhs = M.RhsSimple oper})
-                                                | NONE => MRC.Stop)
-                                   in c
+                                     val help = 
+                                      fn oper => MS.instruction (M.I {dests = dests, n = n, rhs = M.RhsSimple oper})
+                                     val c = Option.map (operO, help)
+                                   in (env, c)
                                    end
                                  | M.RhsTupleSub tf => 
                                    let
@@ -508,20 +512,29 @@ struct
                                                       end
                                                     | NONE => ())
                                              val i = M.I {dests = dests, n = n, rhs = rhs}
-                                           in MRC.StopWith (env, i)
+                                             val s = MS.instruction i
+                                           in (env, SOME s)
                                            end
                                          else
-                                           MRC.Stop
+                                           (env, NONE)
                                            
                                    in res
                                    end
-                                 | _ => MRC.Stop)
+                                 | M.RhsTupleInited {tup, ...} => 
+                                   let
+                                     val node = MRS.variableNode (summary, tup)
+                                   in
+                                     if FG.query (fg, node) then
+                                       (env, SOME MS.empty)
+                                     else 
+                                       (env, NONE)
+                                   end
+                                 | _ => (env, NONE))
                         in res
                         end
-                    val transfer    = fn _ => MRC.Stop
-                    val block       = fn _ => MRC.Continue
+                    val transfer    = fn (_, env, _) => (env, NONE)
                     val global      = 
-                     fn (state, env, (v, g)) => 
+                     fn (state, env, v, g) => 
                         let
                           val summary = getSummary state
                           val fg = getFlowgraph state
@@ -530,11 +543,8 @@ struct
                                 of M.GTuple r => 
                                    let
                                      val operO = unboxTuple (state, env, Vector.new1 v, r)
-                                     val c = (case operO
-                                               of SOME oper => 
-                                                  MRC.StopWith (env, (v, M.GSimple oper))
-                                                | NONE => MRC.Stop)
-                                   in c
+                                     val c = Option.map (operO, fn oper => [(v, M.GSimple oper)])
+                                   in (env, c)
                                    end
                                  | M.GErrorVal t => 
                                    let
@@ -547,19 +557,16 @@ struct
                                                   of SOME {pok, fixed, array = (M.TNone, M.FvReadWrite)} =>
                                                      #1 (Vector.sub (fixed, 0))
                                                    | _ => fail ("global", "Not an unboxable error value")
-                                           in MRC.StopWith (env, (v, M.GErrorVal t))
+                                           in (env, SOME [(v, M.GErrorVal t)])
                                            end
                                          else
-                                           MRC.Stop
+                                           (env, NONE)
                                    in res
                                    end
-                                 | _ => MRC.Continue)
+                                 | _ => (env, NONE))
                         in res
                         end
-                    val bind        = fn (_, env, _) => (env, NONE)
-                    val bindLabel   = fn (_, env, _) => (env, NONE)
-                    val cfgEnum     = fn (_, _, t) => MilUtils.CodeBody.dfsTrees t
-                  end)
+                   end)
 
     val replaceNodeDataWithoutShape = 
      fn (pd, summary, fgF1, n) => 
@@ -635,7 +642,7 @@ struct
         let
           val state = S {summary = summary, flowgraph = fgF2}
           val env = E {pd = pd}
-          val p = Rewrite.program (state, env, p)
+          val p = Rewrite.program (state, env, Rewrite.OAny, p)
           val () = replaceAllNodeData (pd, summary, fgF1, fgF2)
         in p
         end
