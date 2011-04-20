@@ -206,9 +206,11 @@ struct
                 (fn () =>
                     let
                       val dest = Try.V.singleton dests
-                      val () = Try.require (not (MU.MetaDataDescriptor.hasArray mdDesc))
-                      val () = Try.require (MU.MetaDataDescriptor.numFixed mdDesc = Vector.length inits)
-                      val () = Try.require (MU.MetaDataDescriptor.immutable mdDesc)
+                      (* We don't actually care if the tuple is mutable or not,
+                       * nor if it has an array.  All we care is that all uses are
+                       * subscripts of fixed fields.  Since there are therefore no
+                       * writes and no comparisons, generativity and mutability are 
+                       * irrelevant. *)
                       val vs = Vector.map (inits, Try.<@ MU.Simple.Dec.sVariable)
                       val ts = Vector.map (vs, fn v => TLat.elt (config, MRS.variableTyp (summary, v)))
                       val elt = Lat.elt ts
@@ -464,6 +466,7 @@ struct
                          val () = 
                              (case g
                                of M.GSimple (M.SVariable _) => ()
+                                | M.GCode _                 => ()
                                 | _                         => VS.foreach (MFV.global (getConfig e, v, g), noFlatten))
                        in e
                        end
@@ -548,13 +551,14 @@ struct
     structure Rewrite = 
     struct
 
-      datatype rState = RS of {stm : M.symbolTableManager}
+      datatype rState = RS of {stm : M.symbolTableManager, extraGlobals : Mil.globals ref}
       datatype rEnv = RE of {pd : PD.t, splits : Mil.variable vector VD.t}
                     
       val getPd = fn (RE {pd, ...}) => pd
       val getConfig = PD.getConfig o getPd
       val getSplits = fn (RE {splits, ...}) => splits
-      val getStm = fn (RS {stm}) => stm
+      val getStm = fn (RS {stm, extraGlobals}) => stm
+      val getExtraGlobals = fn (RS {stm, extraGlobals}) => extraGlobals
       val getSi = I.SymbolInfo.SiManager o getStm
 
       structure MS = MilStream
@@ -644,9 +648,23 @@ struct
                                  let
                                    val vs = <@ splitVariable (state, env, v)
                                    val i = <@ MU.TupleField.fixed tf
-                                   val vField = Vector.sub (vs, i)
-                                   val rhs = M.RhsSimple (M.SVariable vField)
-                                   val s = MS.bindsRhs (dests, rhs)
+                                   val s = 
+                                       if i >= 0 andalso i < Vector.length vs then
+                                         let
+                                           val vField = Vector.sub (vs, i)
+                                           val rhs = M.RhsSimple (M.SVariable vField)
+                                           val s = MS.bindsRhs (dests, rhs)
+                                         in s
+                                         end
+                                       else (* This can happen in unreachable code *)
+                                         let 
+                                           val v = Vector.sub (dests, 0)
+                                           val t = MT.Typer.variable (getConfig env, getSi state, v)
+                                           val g = M.GErrorVal t
+                                           val egs = getExtraGlobals state
+                                           val () = egs := VD.insert (!egs, v, g)
+                                         in MS.empty
+                                         end
                                  in s
                                  end)
                      in res
@@ -759,9 +777,11 @@ struct
       val globals = 
        fn (pd, stm, splits, globals) =>
           let
-            val state = RS {stm = stm}
+            val extraGlobals = ref VD.empty
+            val state = RS {stm = stm, extraGlobals = extraGlobals}
             val env = RE {pd = pd, splits = splits}
             val globals = Transform.globals (state, env, Transform.OAny, globals)
+            val globals = VD.union (globals, !extraGlobals, fn (k, a, b) => fail ("globals", "Global name conflict"))
           in globals
           end
     end (* structure Rewrite *)
