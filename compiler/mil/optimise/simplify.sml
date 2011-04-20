@@ -1612,18 +1612,18 @@ struct
           (fn (d, imil, a) =>
               let
                 val v = <@ MU.Simple.Dec.sVariable a
+                (* NB: This doesn't check that the fields are immutable. This
+                 * is done at the use point: we require that the actual fields 
+                 * that we read from the eta-expanded parameter are immutable and 
+                 * present
+                 *)
                 val res = 
-                    (case <@ Def.toMilDef o Def.get @@ (imil, v)
-                      of MU.Def.DefGlobal (M.GTuple {inits, ...})      => OTuple inits
-                       | MU.Def.DefGlobal (M.GThunkValue {ofVal, ...}) => OThunk ofVal
-                       | MU.Def.DefRhs (M.RhsTuple {inits, mdDesc})    => 
-                         let
-                           val () = Try.require (MU.MetaDataDescriptor.immutable mdDesc andalso 
-                                                 not (MU.MetaDataDescriptor.hasArray mdDesc))
-                         in OTuple inits
-                         end
-                       | MU.Def.DefRhs (M.RhsThunkValue {typ, thunk = NONE, ofVal}) => OThunk ofVal
-                       | _                              => Try.fail ())
+                    case <@ Def.toMilDef o Def.get @@ (imil, v)
+                     of MU.Def.DefGlobal (M.GTuple {inits, ...})                   => OTuple inits
+                      | MU.Def.DefGlobal (M.GThunkValue {ofVal, ...})              => OThunk ofVal
+                      | MU.Def.DefRhs (M.RhsTuple {inits, mdDesc})                 => OTuple inits
+                      | MU.Def.DefRhs (M.RhsThunkValue {typ, thunk = NONE, ofVal}) => OThunk ofVal
+                      | _                                                          => Try.fail ()
               in res
               end)
 
@@ -1742,23 +1742,40 @@ struct
                 end)
           
       val analyzeUses =
-       fn (d, imil, parms) => 
+       fn (d, imil, parms, summary) => 
           let
             val analyzeVar = 
-             fn v => 
+             fn (v, objectO) => 
                 let
-                  val uses = Use.getUses (imil, v)
                   val ok = 
-                   fn use => 
-                      case (Use.toRhs use, Use.toTransfer use)
-                       of (SOME (M.RhsTupleSub _), _) => true
-                        | (SOME (M.RhsThunkGetValue _), _) => true
-                        | (_, SOME (M.TInterProc {callee = M.IpEval _, ...})) => true
-                        | _ => false
-                  val isOk = Vector.forall (uses, ok)
+                      Try.lift 
+                        (fn use => 
+                            let
+                              val object = <- objectO
+                            in
+                              case object
+                               of OTuple ts => 
+                                  let
+                                    (* Ensure that every use is an immutable subscript for
+                                     * which we have a value. *)
+                                     val tf = <@ MU.Rhs.Dec.rhsTupleSub <! Use.toRhs @@ use
+                                     val idx = <@ MU.TupleField.fixed tf
+                                     val () = Try.require (idx < Vector.length ts)
+                                     val fd = MU.TupleField.fieldDescriptor tf
+                                     val () = Try.require (MU.FieldDescriptor.immutable fd)
+                                  in ()
+                                  end
+                                | OThunk t => 
+                                  case (Use.toRhs use, Use.toTransfer use)
+                                   of (SOME (M.RhsThunkGetValue _), _)                    => ()
+                                    | (_, SOME (M.TInterProc {callee = M.IpEval _, ...})) => ()
+                                    | _                                                   => Try.fail()
+                            end)
+                  val uses = Use.getUses (imil, v)
+                  val isOk = Vector.forall (uses, isSome o ok)
                 in isOk
                 end
-            val parmsOk = Vector.map (parms, analyzeVar)
+            val parmsOk = Vector.map2 (parms, summary, analyzeVar)
           in parmsOk
           end
 
@@ -1896,21 +1913,14 @@ struct
              fn ((d, imil, worklist), (i, (l, parms))) =>
                 let
                   val (summary, defs) = <@ analyzeInEdges (d, imil, i, l)
-                  val parmsOk = analyzeUses (d, imil, parms)
+                  val parmsOk = analyzeUses (d, imil, parms, summary)
                   val () = Try.require (Vector.length summary = 
                                         Vector.length parmsOk)
-                  val ok = 
-                   fn (obj, parmOk) => 
-                      (case (obj, parmOk)
-                        of (SOME _, true) => true
-                         | _ => false)
-                  val oks = 
-                      Vector.map2 (summary, parmsOk, ok)
-                  val () = Try.require (Vector.exists (oks, fn a => a))
+                  val () = Try.require (Vector.exists (parmsOk, fn a => a))
                  (* At this point, we have at least one parameter for which 
-                  * 1. All uses are subscripts
-                  * 2. All defs on all in-edges are tuple introductions of the
-                  *    correct shape.
+                  * 1. All uses are immutable subscripts
+                  * 2. All defs on all in-edges are tuple introductions with 
+                  *    enough fields.
                   *)
                   val filter1 = 
                    fn (obj, ok) => 
