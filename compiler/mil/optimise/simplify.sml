@@ -218,7 +218,9 @@ struct
          ("ThunkValueBeta",   "ThunkValues beta reduced"       ),
          ("ThunkValueEta",    "ThunkValues eta reduced"        ),
          ("TupleBeta",        "Tuple subscripts reduced"       ),
-         ("TupleField",       "Tuple sub/set -> project"       ),
+         ("TupleToField",     "Tuple sub/set -> project"       ),
+         ("TupleFieldNorm",   "Tuple fields normalized"        ),
+         ("TupleNormalize",   "Tuple meta-data normalized"     ),
          ("Unreachable",      "Unreachable objects killed"     )
         ]
     val globalNm = 
@@ -299,7 +301,9 @@ struct
     val thunkValueBeta = clicker "ThunkValueBeta"
     val thunkValueEta = clicker "ThunkValueEta"
     val tupleBeta = clicker "TupleBeta"
-    val tupleField = clicker "TupleField"
+    val tupleVariableToField = clicker "TupleToField"
+    val tupleFieldNormalize = clicker "TupleFieldNorm"
+    val tupleNormalize = clicker "TupleNormalize"
     val unreachable = clicker "Unreachable"
 
     val wrap : (PD.t -> unit) * ((PD.t * I.t * WS.ws) * 'a -> 'b option) 
@@ -1608,18 +1612,18 @@ struct
           (fn (d, imil, a) =>
               let
                 val v = <@ MU.Simple.Dec.sVariable a
+                (* NB: This doesn't check that the fields are immutable. This
+                 * is done at the use point: we require that the actual fields 
+                 * that we read from the eta-expanded parameter are immutable and 
+                 * present
+                 *)
                 val res = 
-                    (case <@ Def.toMilDef o Def.get @@ (imil, v)
-                      of MU.Def.DefGlobal (M.GTuple {inits, ...})      => OTuple inits
-                       | MU.Def.DefGlobal (M.GThunkValue {ofVal, ...}) => OThunk ofVal
-                       | MU.Def.DefRhs (M.RhsTuple {inits, mdDesc})    => 
-                         let
-                           val () = Try.require (MU.MetaDataDescriptor.immutable mdDesc andalso 
-                                                 not (MU.MetaDataDescriptor.hasArray mdDesc))
-                         in OTuple inits
-                         end
-                       | MU.Def.DefRhs (M.RhsThunkValue {typ, thunk = NONE, ofVal}) => OThunk ofVal
-                       | _                              => Try.fail ())
+                    case <@ Def.toMilDef o Def.get @@ (imil, v)
+                     of MU.Def.DefGlobal (M.GTuple {inits, ...})                   => OTuple inits
+                      | MU.Def.DefGlobal (M.GThunkValue {ofVal, ...})              => OThunk ofVal
+                      | MU.Def.DefRhs (M.RhsTuple {inits, mdDesc})                 => OTuple inits
+                      | MU.Def.DefRhs (M.RhsThunkValue {typ, thunk = NONE, ofVal}) => OThunk ofVal
+                      | _                                                          => Try.fail ()
               in res
               end)
 
@@ -1738,23 +1742,40 @@ struct
                 end)
           
       val analyzeUses =
-       fn (d, imil, parms) => 
+       fn (d, imil, parms, summary) => 
           let
             val analyzeVar = 
-             fn v => 
+             fn (v, objectO) => 
                 let
-                  val uses = Use.getUses (imil, v)
                   val ok = 
-                   fn use => 
-                      case (Use.toRhs use, Use.toTransfer use)
-                       of (SOME (M.RhsTupleSub _), _) => true
-                        | (SOME (M.RhsThunkGetValue _), _) => true
-                        | (_, SOME (M.TInterProc {callee = M.IpEval _, ...})) => true
-                        | _ => false
-                  val isOk = Vector.forall (uses, ok)
+                      Try.lift 
+                        (fn use => 
+                            let
+                              val object = <- objectO
+                            in
+                              case object
+                               of OTuple ts => 
+                                  let
+                                    (* Ensure that every use is an immutable subscript for
+                                     * which we have a value. *)
+                                     val tf = <@ MU.Rhs.Dec.rhsTupleSub <! Use.toRhs @@ use
+                                     val idx = <@ MU.TupleField.fixed tf
+                                     val () = Try.require (idx < Vector.length ts)
+                                     val fd = MU.TupleField.fieldDescriptor tf
+                                     val () = Try.require (MU.FieldDescriptor.immutable fd)
+                                  in ()
+                                  end
+                                | OThunk t => 
+                                  case (Use.toRhs use, Use.toTransfer use)
+                                   of (SOME (M.RhsThunkGetValue _), _)                    => ()
+                                    | (_, SOME (M.TInterProc {callee = M.IpEval _, ...})) => ()
+                                    | _                                                   => Try.fail()
+                            end)
+                  val uses = Use.getUses (imil, v)
+                  val isOk = Vector.forall (uses, isSome o ok)
                 in isOk
                 end
-            val parmsOk = Vector.map (parms, analyzeVar)
+            val parmsOk = Vector.map2 (parms, summary, analyzeVar)
           in parmsOk
           end
 
@@ -1892,21 +1913,14 @@ struct
              fn ((d, imil, worklist), (i, (l, parms))) =>
                 let
                   val (summary, defs) = <@ analyzeInEdges (d, imil, i, l)
-                  val parmsOk = analyzeUses (d, imil, parms)
+                  val oks = analyzeUses (d, imil, parms, summary)
                   val () = Try.require (Vector.length summary = 
-                                        Vector.length parmsOk)
-                  val ok = 
-                   fn (obj, parmOk) => 
-                      (case (obj, parmOk)
-                        of (SOME _, true) => true
-                         | _ => false)
-                  val oks = 
-                      Vector.map2 (summary, parmsOk, ok)
+                                        Vector.length oks)
                   val () = Try.require (Vector.exists (oks, fn a => a))
                  (* At this point, we have at least one parameter for which 
-                  * 1. All uses are subscripts
-                  * 2. All defs on all in-edges are tuple introductions of the
-                  *    correct shape.
+                  * 1. All uses are immutable subscripts
+                  * 2. All defs on all in-edges are tuple introductions with 
+                  *    enough fields.
                   *)
                   val filter1 = 
                    fn (obj, ok) => 
@@ -2258,23 +2272,73 @@ struct
 
     val prim = primPrim or primToLen or primRuntime
 
-    val tuple = fn (state, (i, dests, r)) => NONE
+    val tupleNormalize = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dests, {mdDesc, inits})) =>
+              let
+                val fixed = MU.MetaDataDescriptor.fixedFields mdDesc
+                val array as (_, fd) = <@ MU.MetaDataDescriptor.array mdDesc
+                val ic = Vector.length inits
+                val fc = Vector.length fixed
+                val () = Try.require (ic > fc)
+                val extra = ic - fc
+                val extras = Vector.new (extra, fd)
+                val mdDesc = M.MDD {pok = MU.MetaDataDescriptor.pok mdDesc,
+                                    fixed = Vector.concat [fixed, extras], array = SOME array}
+                val rhs = M.RhsTuple {mdDesc = mdDesc, inits = inits}
+                val mil = Mil.I {dests = dests, n = 0, rhs = rhs}
+                val () = IInstr.replaceInstruction (imil, i, mil)
+              in []
+              end
+        in try (Click.tupleNormalize, f)
+        end
 
-    val tupleField = 
+    val tuple = tupleNormalize
+
+    (* For any tuple subscript or write with a fixed index i,
+     * standardize the meta data into a sequence of i+1 fixed
+     * fields and no array field.  
+     *)
+    val tupleFieldNormalize = 
      fn {dec, con} => 
         let
           val f = 
            fn ((d, imil, ws), (i, dests, r)) =>
               let
                 val (tf, remainder) = dec r
-                val fi = MU.TupleField.field tf
+                val field = MU.TupleField.field tf
                 val td = MU.TupleField.tupDesc tf
                 val tup = MU.TupleField.tup tf
-                val idx = 
-                    (case fi 
-                      of M.FiVariable p => 
-                         <@ IntArb.toInt <! MU.Constant.Dec.cIntegral <! MU.Simple.Dec.sConstant @@ p
-                       | _ => Try.fail ())
+                val idx = <@ MU.FieldIdentifier.Dec.fiFixed field
+                val fd = <@ MU.TupleDescriptor.array td
+                val fields = MU.TupleDescriptor.fixedFields td
+                val fc = Vector.length fields
+                val extra = if idx >= fc then idx - fc + 1 else 0
+                val extras = Vector.new (extra, fd)
+                val fixed = Vector.prefix (Vector.concat [fields, extras], idx + 1)
+                val td = M.TD {fixed = Vector.concat [fields, extras], array = NONE}
+                val tf = M.TF {tupDesc = td, tup = tup, field = field}
+                val rhs = con (tf, remainder)
+                val mil = Mil.I {dests = dests, n = 0, rhs = rhs}
+                val () = IInstr.replaceInstruction (imil, i, mil)
+              in []
+              end
+        in try (Click.tupleFieldNormalize, f)
+        end
+
+    val tupleVariableToField = 
+     fn {dec, con} => 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dests, r)) =>
+              let
+                val (tf, remainder) = dec r
+                val field = MU.TupleField.field tf
+                val tup = MU.TupleField.tup tf
+                val p = <@ MU.FieldIdentifier.Dec.fiVariable field
+                val idx = <@ IntArb.toInt <! MU.Constant.Dec.cIntegral <! MU.Simple.Dec.sConstant @@ p
+                val td = MU.TupleField.tupDesc tf
                 val fields = MU.TupleDescriptor.fixedFields td
                 val fd = <@ MU.TupleDescriptor.array td
                 val extras = Vector.new (idx + 1, fd)
@@ -2287,8 +2351,11 @@ struct
                 val () = IInstr.replaceInstruction (imil, i, mil)
               in []
               end
-        in try (Click.tupleField, f)
+        in try (Click.tupleVariableToField, f)
         end
+
+    val tupleField = 
+     fn r => (tupleVariableToField r) or (tupleFieldNormalize r)
 
     val tupleBeta = 
         let

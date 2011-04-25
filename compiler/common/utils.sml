@@ -19,6 +19,8 @@ structure Utils = struct
     structure Imperative = 
     struct
       val block : unit list -> unit = fn l => ()
+     (* infix 1 *)
+      val $$ : unit * unit -> unit = fn (a, b) => ()
     end
 
     structure Function = 
