@@ -47,25 +47,13 @@ struct
   val stats = Click.stats
 
   val (debugPassD, debugPass) =
-      Config.Debug.mk (passname ^ ":debug", "Debug rep analysis according to debug level")
+      PD.mkDebug (passname ^ ":debug", "Debug rep analysis according to debug level")
 
-  val mkDebug : string * string * int -> (Config.Debug.debug * (PassData.t -> bool)) = 
-   fn (tag, description, level) =>
-      let
-        val (debugD, debug) = 
-            Config.Debug.mk (passname ^ ":" ^ tag, description)
-        val debug = 
-         fn d => 
-            let
-              val config = PD.getConfig d
-            in debug config orelse 
-               (debugPass config andalso Config.debugLevel (config, passname) >= level)
-            end
-      in (debugD, debug)
-      end
+  val mkDebug = 
+   fn (tag, description, level) => PD.mkLevelDebug (passname, passname^":"^tag, description, level, debugPass)
 
   val debug = 
-   fn (config, i) => debugPass config andalso (Config.debugLevel (config, passname) >= i)
+   fn (pd, i) => debugPass pd andalso (Config.debugLevel (PD.getConfig pd, passname) >= i)
 
   val (showUnboxingD, showUnboxing) = mkDebug ("show-unboxing", "Show unboxing analysis", 1)
   val (showConstantPropD, showConstantProp) = mkDebug ("show-constant-prop", "Show constant propagation analysis", 1)
@@ -78,6 +66,20 @@ struct
   structure Unbox = 
   struct
     val skip = MilRepBase.noTupleUnbox
+
+   (* Algorithm:
+    *  1) Forward -> defs appropriate
+    *  2) Backward -> uses appropriate
+    *  3) Forward -> candidates
+    *  4) For every potential unboxing a = {b}, add edge from b -> a in flow graph
+    *     For every subscript from potential unboxing a = b[0] add edge from b -> a in flow graph
+    *     For every def, add traceability
+    *     Mark cycles Top
+    *     Propagate forward
+    *  5) Backward -> all defs appropriate
+    *  6) Forward -> final unboxes
+    *  7) Build same graph as in 4, propogate types forward
+    *)
 
     (* We could loosen this to subtyping, except that float < bits, and int < bits, 
      * but calling conventions and other issues could give us problems if
@@ -152,7 +154,7 @@ struct
                           fn () =>
                              let
                                val ()= 
-                                   if debug (getConfig e, 1) then
+                                   if debug (getPd e, 1) then
                                      LayoutUtils.printLayout 
                                        (Layout.seq [Layout.str "Variables cannot be unboxed: ",
                                                     Vector.layout (Identifier.layoutVariable') dests])
@@ -206,7 +208,7 @@ struct
                           fn () =>
                              let
                                val ()= 
-                                   if debug (getConfig e, 1) then
+                                   if debug (getPd e, 1) then
                                      LayoutUtils.printLayout 
                                        (Layout.seq [Layout.str "Global cannot be unboxed: ",
                                                     Identifier.layoutVariable' v])
@@ -282,7 +284,7 @@ struct
                           fn v => 
                              let
                                val () = 
-                                   if debug (getConfig e, 1) then
+                                   if debug (getPd e, 1) then
                                      LayoutUtils.printLayout 
                                        (Layout.seq [Layout.str "Variable use cannot be unboxed: ",
                                                     Identifier.layoutVariable' v])
@@ -330,7 +332,7 @@ struct
                                       | _ => fail ("analyseTransfer'", "Not in named form"))
 
                                val () = 
-                                   if debug (getConfig e, 1) then
+                                   if debug (getPd e, 1) then
                                      LayoutUtils.printLayout 
                                        (Layout.seq [Layout.str "Variable in comparison cannot be unboxed: ",
                                                     Identifier.layoutVariable' v])
@@ -356,7 +358,7 @@ struct
                           fn v => 
                              let
                                val () = 
-                                   if debug (getConfig e, 1) then
+                                   if debug (getPd e, 1) then
                                      LayoutUtils.printLayout 
                                        (Layout.seq [Layout.str "Global use cannot be unboxed: ",
                                                     Identifier.layoutVariable' v])

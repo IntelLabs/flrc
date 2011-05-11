@@ -37,84 +37,38 @@ struct
                             val indent = 2
                           end)
 
-  val mkLogFeature : string * string * int -> (Config.Feature.feature * (PassData.t -> bool)) = 
-   fn (tag, description, level) =>
-      let
-        val (featureD, feature) = 
-            Config.Feature.mk ("MilFlatten" ^ ":" ^ tag, description)
-        val feature = 
-         fn d => 
-            let
-              val config = PD.getConfig d
-            in feature config orelse 
-               (Config.logLevel (config, "MilFlatten") >= level)
-            end
-      in (featureD, feature)
-      end
-
-  val mkFeature : string * string -> (Config.Feature.feature * (PassData.t -> bool)) = 
-   fn (tag, description) =>
-      let
-        val (featureD, feature) = 
-            Config.Feature.mk ("MilFlatten" ^ ":" ^ tag, description)
-        val feature = 
-         fn d => feature (PD.getConfig d)
-      in (featureD, feature)
-      end
-
   val (noFlattenF, noFlatten) =
-      mkFeature ("no-flatten", "disable flattening")
+      PD.mkFeature (passname ^ ":no-flatten", "disable flattening")
 
   val (statPhasesF, statPhases) = 
-      mkLogFeature ("stat-phases", "Show stats between each phase", 2)
+      PD.mkLogFeature (passname, passname ^ ":stat-phases", "Show stats between each phase", 2)
+
+  val mkDebug = 
+   fn (tag, description) => PD.mkDebug (passname^":"^tag, description)
 
   val (debugPassD, debugPass) =
-      Config.Debug.mk (passname ^ ":debug", "Debug flatten according to debug level")
+      mkDebug ("debug", "Debug flatten according to debug level")
 
-  val mkDebug : string * string -> (Config.Debug.debug * (PassData.t -> bool)) = 
-   fn (tag, description) =>
-      let
-        val (debugD, debug) = 
-            Config.Debug.mk (passname ^ ":" ^ tag, description)
-        val debug = 
-         fn d => 
-            let
-              val config = PD.getConfig d
-            in debug config 
-            end
-      in (debugD, debug)
-      end
-
-  val mkGlobalDebug : string * string * int -> (Config.Debug.debug * (PassData.t -> bool)) = 
-   fn (tag, description, level) =>
-      let
-        val (debugD, debug) = mkDebug (tag, description)
-        val debug = 
-         fn d => 
-            let
-              val config = PD.getConfig d
-            in debug d orelse 
-               (debugPass config andalso Config.debugLevel (config, passname) >= level)
-            end
-      in (debugD, debug)
-      end
+  val mkLevelDebug = 
+   fn (tag, description, level) => PD.mkLevelDebug (passname, passname^":"^tag, description, level, debugPass)
 
   val (checkPhasesD, checkPhases) =
-      mkGlobalDebug ("check-phases", "Check IR between each phase", 0)
+      mkLevelDebug ("check-phases", "Check IR between each phase", 0)
 
   val (showPhasesD, showPhases) =
-      mkGlobalDebug ("show-phases", "Show IR between each phase", 0)
+      mkLevelDebug ("show-phases", "Show IR between each phase", 0)
 
-  val (showFlatteningD, showFlattening) = mkGlobalDebug ("show-flattening", "Show flattening analysis", 1)
+  val (showFlatteningD, showFlattening) = 
+      mkLevelDebug ("show-flattening", "Show flattening analysis", 1)
 
   val (showAnalysisD, showAnalysis) =
-      mkGlobalDebug ("show-analysis", "Show analysis results", 1)
+      mkLevelDebug ("show-analysis", "Show analysis results", 1)
 
   val (annotateProgramD, annotateProgram) =
       mkDebug ("annotate", "Annotate program variables with class")
 
   val debug = 
-   fn (config, i) => debugPass config andalso (Config.debugLevel (config, passname) >= i)
+   fn (pd, i) => debugPass pd andalso (Config.debugLevel (PD.getConfig pd, passname) >= i)
 
   val debugs = [annotateProgramD, checkPhasesD, debugPassD, showAnalysisD, showFlatteningD, showPhasesD] 
 
@@ -122,49 +76,12 @@ struct
 
   structure Click = 
   struct
-    val localNms = 
-        [
-         ("Flatten", "Argument tuples flattened")
-        ]
-
-    val globalNm = 
-     fn s => passname ^ ":" ^ s
-
-    val nmSet = 
-        let
-          val check = 
-           fn ((nm, info), d) => 
-              if SS.member (d, nm) then
-                fail ("LocalStats", "Duplicate stat")
-              else
-                SS.insert (d, nm)
-          val s = List.fold (localNms, SS.empty, check)
-        in s
-        end
-
-    val clicker = 
-     fn s => 
-        let
-          val () = 
-              if SS.member (nmSet, s) then 
-                ()
-              else
-                fail ("clicker", "Unknown stat")
-          val nm = globalNm s
-          val click = 
-           fn pd => PD.click (pd, nm)
-        in click
-        end
-
-    val stats = List.map (localNms, fn (nm, info) => (globalNm nm, info))
-
-    val flatten = clicker "Flatten"
-
+    val stats = []
+    val {stats, click = flatten} = PD.clicker {stats = stats, passname = passname, 
+                                               name = "Flatten", desc = "Argument tuples flattened"}
   end   (*  structure Click *)
 
   val stats = Click.stats
-              @ MilRepPrep.stats
-
 
   structure Flatten = 
   struct
@@ -243,7 +160,7 @@ struct
                           fn () =>
                              let
                                val ()= 
-                                   if debug (getConfig e, 1) then
+                                   if debug (getPd e, 1) then
                                      LayoutUtils.printLayout 
                                        (Layout.seq [Layout.str "Variables cannot be flattened: ",
                                                     Vector.layout (Identifier.layoutVariable') dests])
@@ -322,7 +239,7 @@ struct
                           fn () =>
                              let
                                val ()= 
-                                   if debug (getConfig e, 1) then
+                                   if debug (getPd e, 1) then
                                      LayoutUtils.printLayout 
                                        (Layout.seq [Layout.str "Global cannot be flattened: ",
                                                     Identifier.layoutVariable' v])
@@ -394,7 +311,7 @@ struct
                       let
                         val summary = getSummary s
                         val () = 
-                            if debug (getConfig e, 1) then
+                            if debug (getPd e, 1) then
                               LayoutUtils.printLayout 
                                 (Layout.seq [Layout.str "Variable use cannot be flattened: ",
                                              Identifier.layoutVariable' v])

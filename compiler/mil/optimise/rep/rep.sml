@@ -23,45 +23,23 @@ struct
                           end)
 
 
+  val mkDebug = 
+   fn (tag, description) => PD.mkDebug (passname^":"^tag, description)
+
   val (debugPassD, debugPass) =
-      Config.Debug.mk (passname ^ ":debug", "Debug rep analysis according to debug level")
+      PD.mkDebug (passname ^ ":debug", "Debug rep analysis according to debug level")
 
-  val mkDebug : string * string -> (Config.Debug.debug * (PassData.t -> bool)) = 
-   fn (tag, description) =>
-      let
-        val (debugD, debug) = 
-            Config.Debug.mk (passname ^ ":" ^ tag, description)
-        val debug = 
-         fn d => 
-            let
-              val config = PD.getConfig d
-            in debug config 
-            end
-      in (debugD, debug)
-      end
-
-  val mkGlobalDebug : string * string * int -> (Config.Debug.debug * (PassData.t -> bool)) = 
-   fn (tag, description, level) =>
-      let
-        val (debugD, debug) = mkDebug (tag, description)
-        val debug = 
-         fn d => 
-            let
-              val config = PD.getConfig d
-            in debug d orelse 
-               (debugPass config andalso Config.debugLevel (config, passname) >= level)
-            end
-      in (debugD, debug)
-      end
+  val mkLevelDebug = 
+   fn (tag, description, level) => PD.mkLevelDebug (passname, passname^":"^tag, description, level, debugPass)
 
   val (checkPhasesD, checkPhases) =
-      mkGlobalDebug ("check-phases", "Check IR between each phase", 0)
+      mkLevelDebug ("check-phases", "Check IR between each phase", 0)
 
   val (showPhasesD, showPhases) =
-      mkGlobalDebug ("show-phases", "Show IR between each phase", 0)
+      mkLevelDebug ("show-phases", "Show IR between each phase", 0)
 
   val (showAnalysisD, showAnalysis) =
-      mkGlobalDebug ("show-analysis", "Show analysis results", 1)
+      mkLevelDebug ("show-analysis", "Show analysis results", 1)
 
   val (annotateProgramD, annotateProgram) =
       mkDebug ("annotate", "Annotate program variables with class")

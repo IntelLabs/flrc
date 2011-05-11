@@ -20,13 +20,14 @@ struct
        (#"B", MilRemoveBranch.pass    ),
        (#"C", MilContify.pass         ),
        (#"D", MilDblDiamond.pass      ),
+       (#"E", MilRepDce.pass          ),
        (#"F", MilFlatten.pass         ),
        (#"f", MilLowerClosures.pass   ),
        (#"I", MilInlineLeaves.pass    ),
        (#"J", MilInlineAggressive.pass),
        (#"K", MilInlineProfile.pass   ),
        (#"L", MilLicm.pass            ),
-       (#"R", MilRep.pass             ), 
+       (#"R", MilRep.pass             ),
        (#"S", MilSimplify.pass        ),
        (#"s", MilLowerPSums.pass      ),
        (#"t", MilLowerPTypes.pass     ),
@@ -156,7 +157,7 @@ struct
   val o0String = filter "fst"
   val o1String = filter "Sfst"
   val o2String = filter "[{S}VIVIB]Sfst"
-  val o3String = filter "[{S}RVCVIFRDCVYLRVIJKBFRV]Sfst"
+  val o3String = filter "[{S}ERVCVIFERDCVYLERVIJKBFERV]Sfst"
 
   val o0Control = Option.valOf (parseControl o0String)
   val o1Control = Option.valOf (parseControl o1String)

@@ -15,6 +15,7 @@ sig
 
   val iInfo' : summary * MilUtils.Id.t -> MilRepNode.node MilRepBase.iInfo option
   val iInfo : summary * MilUtils.Id.t -> MilRepNode.node MilRepBase.iInfo
+  val updateIInfo : summary * (MilRepNode.node MilRepBase.iInfo -> MilRepNode.node MilRepBase.iInfo) -> unit
   val variableClassId : summary * Mil.variable -> int
   val variableUsesKnown : summary * Mil.variable -> bool
   val variableDefsKnown : summary * Mil.variable -> bool
@@ -154,6 +155,14 @@ struct
                  in  fail ("iInfo", "Unknown identifier: "^ s)
                  end)
       in info
+      end
+
+  val updateIInfo =
+   fn (summary, f) => 
+      let
+        val iInfo = getIInfo summary
+        val () = IIdD.modify (iInfo, f)
+      in ()
       end
 
   val variableNode = 

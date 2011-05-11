@@ -18,6 +18,19 @@ sig
   val mk : Config.t * (string * string) list -> t
   val push : t -> t
   val report : t * string -> unit
+  (* Make a feature, enabled by command line *)
+  val mkFeature : string * string -> (Config.Feature.feature * (t -> bool))
+  (* Make a feature which is enabled by command line, or if log level is greater than threshold *)
+  val mkLogFeature : string * string * string * int -> (Config.Feature.feature * (t -> bool))
+  (* Make a debug, enabled by command line *)
+  val mkDebug : string * string -> (Config.Debug.debug * (t -> bool))
+  (* mkLevelDebug (passname, tag, description, level, debugPass)
+   * Make a debug which is enabled if:
+   *  it is set on the command line
+   *  or if the debug level is greater than level and debugPass returns true
+   *)
+  val mkLevelDebug : string * string * string * int * (t -> bool) -> (Config.Debug.debug * (t -> bool)) 
+
 end;
 
 structure PassData :> PASS_DATA =
@@ -60,6 +73,59 @@ struct
         Stats.report (getStats pd)
       else
         ()
+
+  val mkLogFeature : string * string * string * int -> (Config.Feature.feature * (t -> bool)) = 
+   fn (passname, tag, description, level) =>
+      let
+        val (featureD, feature) = 
+            Config.Feature.mk (tag, description)
+        val feature = 
+         fn d => 
+            let
+              val config = getConfig d
+            in feature config orelse 
+               (Config.logLevel (config, passname) >= level)
+            end
+      in (featureD, feature)
+      end
+
+  val mkFeature : string * string -> (Config.Feature.feature * (t -> bool)) = 
+   fn (tag, description) =>
+      let
+        val (featureD, feature) = 
+            Config.Feature.mk (tag, description)
+        val feature = 
+         fn d => feature (getConfig d)
+      in (featureD, feature)
+      end
+
+  val mkDebug : string * string -> (Config.Debug.debug * (t -> bool)) = 
+   fn (tag, description) =>
+      let
+        val (debugD, debug) = 
+            Config.Debug.mk (tag, description)
+        val debug = 
+         fn d => 
+            let
+              val config = getConfig d
+            in debug config 
+            end
+      in (debugD, debug)
+      end
+
+  val mkLevelDebug : string * string * string * int * (t -> bool) -> (Config.Debug.debug * (t -> bool)) = 
+   fn (passname, tag, description, level, debugPass) =>
+      let
+        val (debugD, debug) = mkDebug (tag, description)
+        val debug = 
+         fn d => 
+            let
+              val config = getConfig d
+            in debug d orelse 
+               (debugPass d andalso Config.debugLevel (config, passname) >= level)
+            end
+      in (debugD, debug)
+      end
 
 end;
 

@@ -6,6 +6,7 @@ sig
   type 'data t
   type node = MilRepNode.node
   val add : 'data t * node * 'data -> unit
+  val addEdge : 'data t * node * node -> unit
   val propagate : 'data t -> unit
   val query : 'data t * node -> 'data
   (* 'data must be a lattice with only finite upward chains.
@@ -38,7 +39,8 @@ struct
   type node = MilRepNode.node
 
   datatype 'data nodeLabel = NL of {data : 'data}
-       and 'data t = FG of {pd : PassData.t,
+       and 'data t = FG of {forward : bool,
+                            pd : PassData.t,
                             graph : 'data graph,
                             classNodes : 'data graphNode ID.t,
                             merge : 'data * 'data -> 'data,
@@ -64,16 +66,16 @@ struct
   structure FlowGraph = 
   struct
     val r2t = 
-     fn (FG {pd, graph, classNodes, merge, equal}) => (pd, graph, classNodes, merge, equal)
+     fn (FG {forward, pd, graph, classNodes, merge, equal}) => (forward, pd, graph, classNodes, merge, equal)
     val t2r = 
-     fn  (pd, graph, classNodes, merge, equal) => FG {pd = pd, graph = graph, classNodes = classNodes, 
-                                                      merge = merge, equal =equal}
-
-    val pd = fn fg => (#2 o #1) (FunctionalUpdate.mk5 (r2t, t2r)) fg
-    val graph = fn fg => (#2 o #2) (FunctionalUpdate.mk5 (r2t, t2r)) fg
-    val classNodes = fn fg => (#2 o #3) (FunctionalUpdate.mk5 (r2t, t2r)) fg
-    val merge = fn fg => (#2 o #4) (FunctionalUpdate.mk5 (r2t, t2r)) fg
-    val equal = fn fg => (#2 o #5) (FunctionalUpdate.mk5 (r2t, t2r)) fg
+     fn  (forward, pd, graph, classNodes, merge, equal) => 
+         FG {forward = forward, pd = pd, graph = graph, classNodes = classNodes, merge = merge, equal =equal}
+    val forward    = fn fg => (#2 o #1) (FunctionalUpdate.mk6 (r2t, t2r)) fg
+    val pd         = fn fg => (#2 o #2) (FunctionalUpdate.mk6 (r2t, t2r)) fg
+    val graph      = fn fg => (#2 o #3) (FunctionalUpdate.mk6 (r2t, t2r)) fg
+    val classNodes = fn fg => (#2 o #4) (FunctionalUpdate.mk6 (r2t, t2r)) fg
+    val merge      = fn fg => (#2 o #5) (FunctionalUpdate.mk6 (r2t, t2r)) fg
+    val equal      = fn fg => (#2 o #6) (FunctionalUpdate.mk6 (r2t, t2r)) fg
   end (* structure FlowGraph *)
 
   val getDataForClassNode = 
@@ -141,7 +143,7 @@ struct
               val cn = fn a => valOf (ID.lookup (classNodes, MRN.classId a))
             in List.foreach (edges, (fn (a, b) => addEdge (cn a, cn b)))
             end
-        val fg = FG {pd = pd, graph = g, classNodes = classNodes, merge = merge, equal = equal}
+        val fg = FG {forward = forward, pd = pd, graph = g, classNodes = classNodes, merge = merge, equal = equal}
       in fg
       end
 
@@ -159,6 +161,20 @@ struct
         val cd = getDataForClassNode classNode
         val cd = FlowGraph.merge fg (d, cd)
         val () = setDataForClassNode (classNode, cd)
+      in ()
+      end
+
+  val addEdge : 'data t * node * node -> unit =
+   fn (fg, from, to) => 
+      let
+        val forward = FlowGraph.forward fg
+        val (from, to) = if forward then 
+                           (from, to)
+                         else 
+                           (to, from)
+        val from = classNodeForNode (fg, from)
+        val to = classNodeForNode (fg, to)
+        val edge = IPLG.addEdge (FlowGraph.graph fg, from, to, ())
       in ()
       end
 

@@ -265,6 +265,7 @@ sig
     val toString : t -> string
     val fromString : string -> t option
     val intArbSz : IntArb.size -> t
+    val toIntArbSz : t -> IntArb.size
     val intArb : IntArb.typ -> t
     val wordSize : Config.t -> t
     val ptrSize : Config.t -> t
@@ -1221,6 +1222,14 @@ struct
           | IntArb.S16  => M.Fs16
           | IntArb.S32  => M.Fs32
           | IntArb.S64  => M.Fs64
+
+    val toIntArbSz : t -> IntArb.size = 
+     fn fk => 
+        (case fk
+         of M.Fs8  => IntArb.S8
+          | M.Fs16 => IntArb.S16
+          | M.Fs32 => IntArb.S32
+          | M.Fs64 => IntArb.S64)
 
     val intArb = 
      fn (IA.T (sz, _)) =>
