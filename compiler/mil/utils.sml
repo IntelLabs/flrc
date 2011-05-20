@@ -3600,31 +3600,23 @@ struct
 
     fun isBoolIf t =
         Try.try
-        (fn () =>
-            let
-              val (on, cases) = 
-                  case t
-                   of M.TCase {on, cases, default = NONE} => (on, cases)
-                    | _ => Try.fail ()
-              val () = Try.V.lenEq (cases, 2)
-              val (c1, t1) =
-                  case Vector.sub (cases, 0)
-                   of (M.CIntegral c, t1) => (c, t1)
-                    | _ => Try.fail ()
-              val (c2, t2) =
-                  case Vector.sub (cases, 1)
-                   of (M.CIntegral c, t2) => (c, t2)
-                    | _ => Try.fail ()
-              val c1 = IntArb.toIntInf c1
-              val c2 = IntArb.toIntInf c2
-              val (tt, tf) =
-                  if c1 = IntInf.zero andalso c2 = IntInf.one
-                  then (t2, t1)
-                  else if c1 = IntInf.one andalso c2 = IntInf.zero
-                  then (t1, t2)
-                  else Try.fail ()
-            in {on = on, trueBranch = tt, falseBranch = tf}
-            end)
+          (fn () =>
+              let
+                val (on, cases) = 
+                    case t
+                     of M.TCase {on, cases, default = NONE} => (on, cases)
+                      | _ => Try.fail ()
+                val () = Try.V.lenEq (cases, 2)
+                val (c1, t1) = Vector.sub (cases, 0)
+                val (c2, t2) = Vector.sub (cases, 1)
+                val b1 = Try.<@ Constant.Dec.cBoolean c1
+                val b2 = Try.<@ Constant.Dec.cBoolean c2
+                val (tt, tf) =
+                    if not b1 andalso b2 then (t2, t1) else 
+                    if b1 andalso not b2 then (t1, t2) else 
+                    Try.fail ()
+              in {on = on, trueBranch = tt, falseBranch = tf}
+              end)
 
     val mapOverTargets = 
      fn (t, f) => 
@@ -3751,22 +3743,21 @@ struct
     fun cuts b = Transfer.cuts (transfer b)
 
     fun getBoolTargets (targets : (Mil.constant * Mil.target) Vector.t) =
-        if Vector.length (targets) = 2 then
-          let 
-            fun isTrue (c) = Compare.constant (c, Mil.CInteger (IntInf.fromInt 1)) = EQUAL
-            fun isFalse (c) = Compare.constant (c, Mil.CInteger (IntInf.fromInt 0)) = EQUAL
-            val (c1, Mil.T t1) = Vector.sub (targets, 0)
-            val (c2, Mil.T t2) = Vector.sub (targets, 1)
-          in
-            if (isTrue c1 andalso isFalse c2) then 
-              SOME (#block t1, #block t2)
-            else if (isFalse c1 andalso isTrue c2) then 
-              SOME (#block t2, #block t1)
-            else
-              NONE
-          end
-        else
-          NONE
+        Try.try
+          (fn () =>
+              let
+                val () = Try.V.lenEq (targets, 2)
+                val (c1, Mil.T t1) = Vector.sub (targets, 0)
+                val (c2, Mil.T t2) = Vector.sub (targets, 1)
+                val b1 = Try.<@ Constant.Dec.cBoolean c1
+                val b2 = Try.<@ Constant.Dec.cBoolean c2
+                val (tt, tf) =
+                    if not b1 andalso b2 then (#block t2, #block t1) else 
+                    if b1 andalso not b2 then (#block t1, #block t2) else 
+                    Try.fail ()
+
+              in (tt, tf)
+              end)
 
     val getBoolSuccessors : Mil.block -> (Mil.label * Mil.label) option = 
      fn (M.B {transfer, ...}) => case transfer
@@ -4180,21 +4171,15 @@ struct
   structure Bool =
   struct
 
-    fun t config = Uintp.t config
+    fun t config = M.TBoolean
 
-    fun T config = Uintp.one config
+    fun T config = M.CBoolean true
 
-    fun F config = Uintp.zero config
+    fun F config = M.CBoolean false
 
-    fun fromBool (config, b) = if b then T config else F config
+    fun fromBool (config, b) = M.CBoolean b
 
-    fun toBool (config, c) = 
-        if Constant.eq (c, T config) then 
-          SOME true
-        else if Constant.eq (c, F config) then
-          SOME false
-        else
-          NONE
+    fun toBool (config, c) = Constant.Dec.cBoolean c
 
     fun ifS (c, opnd, {trueT, falseT}) =
         Switch.noDefault (opnd, Vector.new2 ((T c, trueT), (F c, falseT)))
