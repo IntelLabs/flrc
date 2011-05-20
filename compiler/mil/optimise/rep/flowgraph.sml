@@ -9,6 +9,7 @@ sig
   val addEdge : 'data t * node * node -> unit
   val propagate : 'data t -> unit
   val query : 'data t * node -> 'data
+  val cc : MilRepSummary.summary * 'data t -> int MilRepNode.Dict.t
   (* 'data must be a lattice with only finite upward chains.
    * forward: forward flow or backward?
    * merge:
@@ -18,8 +19,8 @@ sig
   val build : {pd : PassData.t,
                forward : bool,
                summary : MilRepSummary.summary,
-               uDefInit : 'data,
-               uUseInit : 'data,
+               uDefInit : 'data option,
+               uUseInit : 'data option,
                initialize : node -> 'data,
                merge : 'data * 'data -> 'data,
                equal : 'data * 'data -> bool} -> 'data t
@@ -99,8 +100,8 @@ struct
    fn {pd, forward, summary, uDefInit, uUseInit, initialize, merge, equal} =>
       let
         val g = IPLG.new ()
-        val uDef = IPLG.newNode (g, NodeLabel.new uDefInit)
-        val uUse = IPLG.newNode (g, NodeLabel.new uUseInit)
+        val uDefO = Option.map (uDefInit, fn uDefInit => IPLG.newNode (g, NodeLabel.new uDefInit))
+        val uUseO = Option.map (uUseInit, fn uUseInit => IPLG.newNode (g, NodeLabel.new uUseInit))
         val addEdge = 
          fn (from, to) => 
             let
@@ -111,7 +112,10 @@ struct
               val edge = IPLG.addEdge (g, from, to, ())
             in ()
             end
-
+        val addUDefEdge = 
+         fn cn => case uDefO of SOME uDef => addEdge (uDef, cn) | NONE      => ()
+        val addUUseEdge = 
+         fn cn => case uUseO of SOME uUse => addEdge (cn, uUse) | NONE      => ()
         val help = 
          fn (id, n, classNodes) => 
             let
@@ -130,8 +134,8 @@ struct
                        let
                          val classNode = IPLG.newNode (g, NodeLabel.new data)
                          val classNodes = ID.insert (classNodes, classId, classNode)
-                         val () = if MRN.defsKnown n then () else addEdge (uDef, classNode)
-                         val () = if MRN.usesKnown n then () else addEdge (classNode, uUse)
+                         val () = if MRN.defsKnown n then () else addUDefEdge classNode
+                         val () = if MRN.usesKnown n then () else addUUseEdge classNode
                        in classNodes
                        end)
             in classNodes
@@ -156,7 +160,6 @@ struct
   val add : 'data t * node * 'data -> unit =
    fn (fg, n, d) => 
       let
-        val classId = MRN.classId n
         val classNode = classNodeForNode (fg, n)
         val cd = getDataForClassNode classNode
         val cd = FlowGraph.merge fg (d, cd)
@@ -220,12 +223,32 @@ struct
   val query = 
    fn (fg, n) => 
       let
-        val classId = MRN.classId n
         val classNode = classNodeForNode (fg, n)
         val label = IPLG.Node.getLabel classNode
         val cd = NodeLabel.data label
       in cd
       end
 
+  val cc : MilRepSummary.summary * 'data t -> int MilRepNode.Dict.t = 
+   fn (summary, fg as FG {classNodes, graph, ...}) => 
+      let
+        val nodeComponentNumber = 
+            let
+              val components = IPLG.cc graph
+              val help2 = fn i => fn (cn, d) => IntDict.insert (d, IPLG.Node.id cn, i)
+              val help = fn (i, component, d) => List.fold (component, d, help2 i)
+              (* Map graph node ids to equivalence class # *)
+              val d : int ID.t = List.foldi (components, IntDict.empty, help)
+              val map = 
+               fn n => case IntDict.lookup (d, IPLG.Node.id (classNodeForNode (fg, n)))
+                        of SOME i => i
+                         | NONE   => fail ("cc", "Bad node")
+            in map
+            end
+        val nodes = MRS.nodes summary
+        val add = fn (n, d) => MRN.Dict.insert (d, n, nodeComponentNumber n)
+        val d = IntDict.fold (nodes, MRN.Dict.empty, fn (_, n, d) => add (n, d))
+      in d
+      end
 
 end (* structure MilRepFlowGraph *)

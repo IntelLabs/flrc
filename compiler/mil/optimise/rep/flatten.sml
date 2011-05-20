@@ -146,6 +146,7 @@ struct
                   type env = env
                   val config = getConfig
                   val indent = 2
+                  val externBind = NONE
                   val variableBind = NONE
                   val labelBind = NONE
                   val variableUse = NONE
@@ -281,8 +282,8 @@ struct
           val fgF1 = FG.build {pd = pd,
                                forward = true,
                                summary = summary,
-                               uDefInit = Lat.top,
-                               uUseInit = Lat.top, 
+                               uDefInit = SOME Lat.top,
+                               uUseInit = SOME Lat.top, 
                                initialize = fn n => Lat.bot,
                                merge = Lat.join,
                                equal = Lat.equal veq
@@ -300,6 +301,7 @@ struct
                   type env = env
                   val config = getConfig
                   val indent = 2
+                  val externBind = NONE
                   val variableBind = NONE
                   val labelBind = NONE
                   val variableUse = NONE
@@ -413,8 +415,8 @@ struct
               FG.build {pd = pd,
                         forward = false,
                         summary = summary,
-                        uDefInit = false,
-                        uUseInit = false, 
+                        uDefInit = SOME false,
+                        uUseInit = SOME false, 
                         initialize = fn n => true,
                         merge = fn (a, b) => (a andalso b),
                         equal = op =
@@ -437,8 +439,8 @@ struct
               FG.build {pd = pd,
                         forward = true,
                         summary = summary,
-                        uDefInit = false,
-                        uUseInit = false, 
+                        uDefInit = SOME false,
+                        uUseInit = SOME false, 
                         initialize = fn n => FG.query (fgB, n),
                         merge = fn (a, b) => (a andalso b),
                         equal = op =

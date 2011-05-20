@@ -4,7 +4,7 @@
 signature MIL_REP_RECONSTRUCT = 
 sig
   val debugs : Config.Debug.debug list
-  val program : PassData.t * MilRepSummary.summary * Mil.t -> Mil.t
+  val program : PassData.t * MilRepSummary.summary * bool * Mil.t -> Mil.t
 end (* signature MIL_REP_RECONSTRUCT *)
 
 structure MilRepReconstruct :> MIL_REP_RECONSTRUCT = 
@@ -37,10 +37,14 @@ struct
 
   datatype state  = S of {summary : MRS.summary}
   datatype env = E of {config : Config.t,
+                       flat : bool,
                        st : Mil.symbolTable}
 
   val getConfig = 
    fn (E {config, ...}) => config
+
+  val getFlat = 
+   fn (E {flat, ...}) => flat
 
   val variableTyp = 
    fn (E{st, ...}, v) => MU.SymbolTable.variableTyp (st, v)
@@ -57,14 +61,27 @@ struct
   val fieldKindForNode = 
    fn n => MRN.fieldKind n
 
-  val typForNode = MRS.nodeTyp
+  val typForNode = 
+   fn (summary, flat, node) =>
+      if flat then
+        MRS.nodeFlatTyp (summary, node)
+      else
+        MRS.nodeTyp (summary, node)
+
+  val typForVariable = 
+   fn (summary, flat, v) =>
+      if flat then
+        MRS.variableFlatTyp (summary, v)
+      else
+        MRS.variableTyp (summary, v)
+  
 
   val buildCodeTyp = 
-   fn (summary, v) => 
+   fn (summary, flat, v) => 
       (case MRS.iInfo' (summary, MU.Id.G v)
         of SOME (MRB.IiCode {cargs, args, returns}) => 
            let
-             val node = fn n => typForNode (summary, n)
+             val node = fn n => typForNode (summary, flat, n)
              val args = Vector.map (args, node)
              val ress = Vector.map (returns, node)
              val cc = MU.CallConv.map (cargs, node)
@@ -155,7 +172,7 @@ struct
         val rets = 
             (case MRS.iInfo (summary, id)
               of MRB.IiCode {returns, ...} => 
-                 Vector.map (returns, fn n => typForNode (summary, n))
+                 Vector.map (returns, fn n => typForNode (summary, getFlat env, n))
                | _ => fail ("buildCodeReturnTypes", "Id has no code entry"))
       in rets
       end
@@ -426,7 +443,7 @@ struct
       end
 
   val updateSymbolTable = 
-   fn (config, summary, st) =>
+   fn (config, summary, flat, st) =>
       let
         val stm = IM.fromExistingNoInfo st
         val vars = MRS.listVariables summary
@@ -435,9 +452,9 @@ struct
             let
               val kind = MU.SymbolTable.variableKind (st, v)
               val typ = 
-                  (case buildCodeTyp (summary, v)
+                  (case buildCodeTyp (summary, flat, v)
                     of SOME t => t
-                     | NONE => MRS.variableTyp (summary, v))
+                     | NONE => typForVariable (summary, flat, v))
               val () = MU.SymbolTableManager.variableSetInfo (stm, v, M.VI {typ = typ, kind = kind})
               val () = 
                   if showTypChanges config then
@@ -452,13 +469,13 @@ struct
       end
       
   val program = 
-   fn (pd, summary, p) => 
+   fn (pd, summary, flat, p) => 
       let
         val () = MRS.resetTyps summary
         val config = PassData.getConfig pd
         val M.P {includes, externs, globals = gs, symbolTable = st, entry} = p
-        val st = updateSymbolTable (config, summary, st)
-        val env = E {config = config, st = st}
+        val st = updateSymbolTable (config, summary, flat, st)
+        val env = E {config = config, flat = flat, st = st}
         val state = S {summary = summary}
         val gs = globals ((state, env), gs)
         val p = M.P {includes = includes, externs = externs, globals = gs, symbolTable = st, entry = entry}

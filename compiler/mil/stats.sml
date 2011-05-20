@@ -81,6 +81,7 @@ struct
                              type env = env
                              fun config (E {config, ...}) = config
                              val indent = 2
+                             val externBind = NONE
                              val variableBind = NONE
                              val labelBind = NONE
                              val variableUse = NONE

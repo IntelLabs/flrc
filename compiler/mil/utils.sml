@@ -184,10 +184,13 @@ sig
       | TsNone                                 (* bottom *)
       | TsMask of Mil.Prims.vectorDescriptor   (* masks for given vector type *)
     val toString : Config.t * t -> string
+    val known : t -> bool
+    val isRef : t -> bool
     val traceabilityIsRef : traceability -> bool
     val traceability : t -> traceability option
     val valueSize : Config.t * t -> ValueSize.t option
     val subTS : Config.t * t * t -> bool
+    val eq : t * t -> bool
   end
 
   structure Prims : 
@@ -295,6 +298,7 @@ sig
     val eq : t * t -> bool
     val fromString : string -> t option
     val nonRefPtr : Config.t -> t
+    val fromTraceSize' : TraceabilitySize.t -> t option
     val fromTraceSize : Config.t * TraceabilitySize.t -> t
     val toTraceSize : Config.t * t -> TraceabilitySize.t (* pre: result determined *)
     val fromTyp : Config.t * Typ.t -> t (* pre: result determined *)
@@ -2206,6 +2210,12 @@ struct
           | TsNone      => NONE
           | TsMask vet  => SOME TBits
 
+    fun known ts = isSome (traceability ts)
+
+    fun isRef ts = case traceability ts
+                    of SOME TRef => true
+                     | _         => false
+
     fun valueSize (config, ts) =
         case ts
          of TsAny       => NONE
@@ -2241,6 +2251,18 @@ struct
           | (_, TsMask _) => false
           | (TsMask _, _) => false
           | (TsRef, TsRef) => true
+
+    fun eq (ts1, ts2) = 
+        case (ts1, ts2)
+         of (TsAny     , TsAny     ) => true
+          | (TsAnyS vs1, TsAnyS vs2) => ValueSize.eq (vs1, vs2)
+          | (TsBits vs1, TsBits vs2) => ValueSize.eq (vs1, vs2)
+          | (TsFloat   , TsFloat   ) => true
+          | (TsDouble  , TsDouble  ) => true
+          | (TsRef     , TsRef     ) => true
+          | (TsNone    , TsNone    ) => true
+          | (TsMask vd1, TsMask vd2) => PrimsUtils.VectorDescriptor.eq (vd1, vd2)
+          | (_         , _         ) => false
 
   end
 
@@ -2523,20 +2545,21 @@ struct
 
     fun nonRefPtr c = M.FkBits (FieldSize.ptrSize c)
 
+    fun fromTraceSize' ts =
+        case ts
+         of TS.TsAny       => NONE
+          | TS.TsAnyS vs   => NONE
+          | TS.TsBits vs   => SOME (M.FkBits (FieldSize.fromValueSize vs))
+          | TS.TsFloat     => SOME (M.FkFloat)
+          | TS.TsDouble    => SOME (M.FkDouble)
+          | TS.TsRef       => SOME (M.FkRef)
+          | TS.TsNone      => NONE
+          | TS.TsMask vs   => NONE
+
     fun fromTraceSize (c, ts) =
-        let
-          fun err () = Fail.fail ("MilUtils.FieldKind", "fromTraceSize", "bad trace size " ^ (TS.toString (c, ts)))
-        in
-          case ts
-           of TS.TsAny       => err ()
-            | TS.TsAnyS vs   => err ()
-            | TS.TsBits vs   => M.FkBits (FieldSize.fromValueSize vs)
-            | TS.TsFloat     => M.FkFloat
-            | TS.TsDouble    => M.FkDouble
-            | TS.TsRef       => M.FkRef
-            | TS.TsNone      => err ()
-            | TS.TsMask vs   => err ()
-        end
+        case fromTraceSize' ts
+         of SOME ts => ts
+          | NONE    => Fail.fail ("MilUtils.FieldKind", "fromTraceSize", "bad trace size " ^ (TS.toString (c, ts)))
 
     fun toTraceSize (c, fk) =
         (case fk

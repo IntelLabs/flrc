@@ -941,6 +941,29 @@ struct
     val rat = optRational
     val integer = optInteger 
 
+    val tupleNormalize = 
+        let
+          val f = 
+           fn ((d, imil, ws), (g, v, {mdDesc, inits})) =>
+              let
+                val fixed = MU.MetaDataDescriptor.fixedFields mdDesc
+                val array as (_, fd) = <@ MU.MetaDataDescriptor.array mdDesc
+                val ic = Vector.length inits
+                val fc = Vector.length fixed
+                val () = Try.require (ic > fc)
+                val extra = ic - fc
+                val extras = Vector.new (extra, fd)
+                val mdDesc = M.MDD {pok = MU.MetaDataDescriptor.pok mdDesc,
+                                    fixed = Vector.concat [fixed, extras], array = SOME array}
+                val mil = M.GTuple {mdDesc = mdDesc, inits = inits}
+                val () = IGlobal.replaceGlobal (imil, g, (v, mil))
+              in []
+              end
+        in try (Click.tupleNormalize, f)
+        end
+
+    val tuple = tupleNormalize
+
     val reduce = 
         Try.lift 
           (fn (s as (d, imil, ws), g) => 
@@ -950,6 +973,7 @@ struct
                       of (v, M.GSimple oper) => <@ simple (s, (g, v, oper))
                        | (v, M.GRat r) => <@ rat (s, (g, v, r))
                        | (v, M.GInteger i) => <@ integer (s, (g, v, i))
+                       | (v, M.GTuple r)   => <@ tuple (s, (g, v, r))
                        | _ => Try.fail ())
               in t
               end)

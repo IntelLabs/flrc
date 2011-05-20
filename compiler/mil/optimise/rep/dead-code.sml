@@ -18,11 +18,13 @@ struct
   structure VS = Mil.VS
   structure LS = Mil.LS
   structure VD = Mil.VD
+  structure ID = IntDict
   structure PD = PassData
   structure MT = MilType
   structure MTT = MT.Type
   structure FG = MilRepFlowGraph
   structure MRS = MilRepSummary
+  structure MRN = MilRepNode
   structure MRO = MilRepObject
   structure MRB = MilRepBase
   structure I = Identifier
@@ -112,6 +114,7 @@ struct
                   type env = SE1.env
                   val config = SE1.getConfig
                   val indent = 2
+                  val externBind = NONE
                   val variableBind = NONE
                   val labelBind = NONE
                   val variableUse = NONE
@@ -356,6 +359,7 @@ struct
                   type env = SE2.env
                   val config = SE2.getConfig
                   val indent = 2
+                  val externBind = NONE
                   val variableBind = NONE
                   val labelBind = NONE
                   val variableUse = NONE
@@ -424,6 +428,7 @@ struct
                   type env = SE3.env
                   val config = SE3.getConfig
                   val indent = 2
+                  val externBind = NONE
                   val variableBind = NONE
                   val labelBind = NONE
                   val variableUse = NONE
@@ -761,6 +766,11 @@ struct
             val filterV = fn v => Vector.keepAll (v, live)
             val filterOV = fn v => Vector.keepAll (v, liveO)
 
+            val doCodes = 
+             fn {possible, exhaustive} => 
+                {possible = VS.keepAll (possible, live),
+                 exhaustive = exhaustive}
+
             val doTarget = 
              fn M.T {block, arguments} => M.T {block = block, arguments = filterOV arguments}
 
@@ -780,68 +790,78 @@ struct
                  of SOME fk => M.TReturn (Vector.new1 (fieldDefault fk))
                   | _       => M.TReturn (filterOV rv)
 
-            val so = 
-                case t
-                 of M.TGoto tg      => SOME (MS.empty, M.TGoto (doTarget tg))
-                  | M.TCase sw      => SOME (MS.empty, M.TCase (doSwitch sw))
-                  | M.TInterProc r  => 
-                    let
-                      val {callee, ret, fx} = r                          
-                      val kill =
-                       fn () =>
-                          let
-                            val () = Click.dce (getPd env)
-                            val tf = 
-                                case ret
-                                 of M.RNormal {rets, block, cuts} => 
-                                    M.TGoto (M.T {block = block, arguments = Vector.new0 ()})
-                                  | M.RTail _ => return (Vector.new0 ())
-                          in SOME (MS.empty, tf)
-                          end
-                      val deadCall = 
-                       fn call => 
-                          (case call
-                            of M.CCode {ptr, ...}          => dead ptr
-                             | M.CClosure {cls, ...}       => dead cls
-                             | M.CDirectClosure {code, ...} => dead code)
-                    in 
-                      case callee
-                       of M.IpEval {typ, eval}  => if live (MU.Eval.thunk eval) then NONE else kill ()
-                        | M.IpCall {call, args} => 
-                          if deadCall call then kill () else
-                          let
-                            val args = filterOV args
-                            val call = 
-                                (case call
-                                  of M.CDirectClosure {code, cls} => 
+            val interProc = 
+             fn {callee, ret, fx} => 
+                if (case callee
+                     of M.IpEval {typ, eval}  => dead (MU.Eval.thunk eval)
+                      | M.IpCall {call, args} => 
+                        (case call
+                          of M.CCode {ptr, ...}           => dead ptr
+                           | M.CClosure {cls, ...}        => dead cls
+                           | M.CDirectClosure {code, ...} => dead code))
+                then 
+                  let
+                    val () = Click.dce (getPd env)
+                    val tf = 
+                        case ret
+                         of M.RNormal {rets, block, cuts} => 
+                            M.TGoto (M.T {block = block, arguments = Vector.new0 ()})
+                          | M.RTail _ => return (Vector.new0 ())
+                  in SOME (MS.empty, tf)
+                  end
+                else 
+                  (case callee
+                    of M.IpEval {typ, eval}  => 
+                       let
+                         val eval = 
+                             case eval
+                              of M.EThunk {thunk, code} => M.EThunk {thunk = thunk, code = doCodes code}
+                               | M.EDirectThunk _       => eval
+                         val callee = M.IpEval {typ = typ, eval = eval}
+                         val ip = M.TInterProc {callee = callee,
+                                                ret = ret, fx = fx}
+                       in SOME (MS.empty, ip)
+                       end
+                     | M.IpCall {call, args} => 
+                       let
+                         val args = filterOV args
+                         val call = 
+                             case call
+                                  of M.CCode {ptr, code}          => M.CCode {ptr = ptr, code = doCodes code}
+                                   | M.CClosure {cls, code}       => M.CClosure {cls = cls, code = doCodes code}
+                                   | M.CDirectClosure {code, cls} => 
                                      if dead cls then
                                        M.CCode {ptr = code, code = {possible = VS.singleton code, exhaustive = true}}
                                      else
                                        call
-                                   | _ => call)
-                            val callee = M.IpCall {call = call, args = args}
-                            val (s, tf) = 
-                                case (ret, getThunk env)
-                                 of (M.RNormal {rets, block, cuts}, _) => 
-                                    let
-                                      val ret = M.RNormal {rets = filterV rets, block = block, cuts = cuts}
-                                    in (MS.empty, M.TInterProc {callee = callee, ret = ret, fx = fx})
-                                    end
-                                  | (M.RTail _, NONE)                  => 
-                                    (MS.empty, M.TInterProc {callee = callee, ret = ret, fx = fx})
-                                  | (M.RTail {exits}, SOME fk)         => 
-                                    let
-                                      val lbl = Identifier.Manager.labelFresh (getStm state)
-                                      val cuts = M.C {exits = exits, targets = LS.empty}
-                                      val ret = M.RNormal {rets = Vector.new0 (), block = lbl, cuts = cuts}
-                                      val call = M.TInterProc {callee = callee, ret = ret, fx = fx}
-                                      val s = MS.transfer (call, lbl, Vector.new0())
-                                      val tf = return (Vector.new0())
-                                    in (s, tf)
-                                    end
-                          in SOME (s, tf)
-                          end
-                    end
+                         val callee = M.IpCall {call = call, args = args}
+                         val (s, tf) = 
+                             case (ret, getThunk env)
+                              of (M.RNormal {rets, block, cuts}, _) => 
+                                 let
+                                       val ret = M.RNormal {rets = filterV rets, block = block, cuts = cuts}
+                                 in (MS.empty, M.TInterProc {callee = callee, ret = ret, fx = fx})
+                                 end
+                               | (M.RTail _, NONE)                  => 
+                                 (MS.empty, M.TInterProc {callee = callee, ret = ret, fx = fx})
+                               | (M.RTail {exits}, SOME fk)         => 
+                                 let
+                                   val lbl = Identifier.Manager.labelFresh (getStm state)
+                                   val cuts = M.C {exits = exits, targets = LS.empty}
+                                   val ret = M.RNormal {rets = Vector.new0 (), block = lbl, cuts = cuts}
+                                   val call = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                                   val s = MS.transfer (call, lbl, Vector.new0())
+                                   val tf = return (Vector.new0())
+                                     in (s, tf)
+                                 end
+                       in SOME (s, tf)
+                       end)
+
+            val so = 
+                case t
+                 of M.TGoto tg      => SOME (MS.empty, M.TGoto (doTarget tg))
+                  | M.TCase sw      => SOME (MS.empty, M.TCase (doSwitch sw))
+                  | M.TInterProc r  => interProc r
                   | M.TReturn rv    => SOME (MS.empty, return rv)
                   | M.TCut r        => SOME (MS.empty, M.TCut (doCut r))
                   | M.THalt _       => NONE
@@ -965,8 +985,8 @@ struct
           val fgB1 = FG.build {pd = pd,
                                forward = false,
                                summary = summary,
-                               uDefInit = true,
-                               uUseInit = true, 
+                               uDefInit = SOME true,
+                               uUseInit = SOME true, 
                                initialize = fn n => false,
                                merge = fn (a, b) => a orelse b,
                                equal = op =
@@ -984,8 +1004,8 @@ struct
           val fgB2 = FG.build {pd = pd,
                                forward = false,
                                summary = summary,
-                               uDefInit = true,
-                               uUseInit = true, 
+                               uDefInit = SOME true,
+                               uUseInit = SOME true, 
                                initialize = fn n => false,
                                merge = fn (a, b) => a orelse b,
                                equal = op =
@@ -1004,8 +1024,8 @@ struct
               FG.build {pd = pd,
                         forward = true,
                         summary = summary,
-                        uDefInit = true,
-                        uUseInit = true, 
+                        uDefInit = SOME true,
+                        uUseInit = SOME true, 
                         initialize = fn n => FG.query (fgB1, n),
                         merge = fn (a, b) => (a orelse b),
                         equal = op =
@@ -1042,7 +1062,7 @@ struct
           ()
 
     val adjustTypes = 
-     fn (pd, summary, fg, stm) => 
+     fn (pd, summary, fg) => 
         let
           val liveN = 
            fn n => FG.query (fg, n)
@@ -1101,19 +1121,18 @@ struct
                 | MRB.IiPSum n           => info
           val () = MRS.updateIInfo (summary, update)
 
-          val adjustType = 
-           fn v => 
+          val doNode =
+           fn (_, n) => 
               let
-                val t = MU.SymbolTableManager.variableTyp (stm, v)
-                val t = MU.FlatTyp.fromTyp (PD.getConfig pd, t)
-                val n = MRS.variableNode (summary, v)
-                val fk = MilRepNode.fieldKind' n
-                val fv = MilRepNode.fieldVariance' n
-                val shape = SOME (MRO.Shape.Build.unknown t)
-                val () = MilRepNode.setData (n, shape, fk, fv)
-              in ()
+                val doIt = 
+                 fn s => MRN.setShape (n, SOME (MRO.Shape.filter (s, deadN)))
+              in 
+                if liveN n then
+                  Option.foreach (MRN.shape' n, doIt)
+                else
+                  ()
               end
-          val () = List.foreach (MRS.listVariables summary, adjustType)
+          val () = ID.foreach (MRS.nodes summary, doNode)
         in ()
         end
 
@@ -1126,7 +1145,7 @@ struct
           val dead = VS.fromList dead
           val stm = I.Manager.fromExistingAll (MU.Program.symbolTable p)
           val globals = Rewrite.globals (pd, summary, stm, fgF1, dead, globals)
-          val () = adjustTypes (pd, summary, fgF1, stm)
+          val () = adjustTypes (pd, summary, fgF1)
           val st = I.Manager.finish stm
           val p = M.P {includes = includes, externs = externs, globals = globals, entry = entry, symbolTable = st}
         in p
@@ -1184,7 +1203,7 @@ struct
 
   val reconstruct = fn (pd, summary, p) => 
                        doPhase (skipReconstruction, 
-                                fn (pd, p) => MilRepReconstruct.program (pd, summary, p),
+                                fn (pd, p) => MilRepReconstruct.program (pd, summary, false, p),
                                 "Reconstruction") (pd, p)
 
   val annotate = fn (pd, summary, p) => 

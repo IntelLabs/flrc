@@ -1863,7 +1863,8 @@ struct
               (* XXX NG: there is a bug in Pillar for arguments and no C implementation - for now punt and hope! *)
               val args = [] (*genOperands (state, env, args)*)
               val cuts = genCutsTo (state, env, cuts)
-              val cut = Pil.S.contCutTo (getConfig env, genVarE (state, env, cont), args, cuts)
+              val c = Pil.E.cast (Pil.T.continuation, genVarE (state, env, cont))
+              val cut = Pil.S.contCutTo (getConfig env, c, args, cuts)
             in cut
             end
           | M.THalt opnd => 

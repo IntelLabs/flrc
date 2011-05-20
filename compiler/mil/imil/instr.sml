@@ -312,6 +312,8 @@ struct
       in ()
       end
 
+  val () = BackPatch.fill (Use.replaceMilIH, replaceMil)
+
   val replaceInstruction = 
    fn (p, i, m) => replaceMil (p, i, IMT.MInstr m)
 

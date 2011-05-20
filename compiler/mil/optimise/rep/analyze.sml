@@ -1128,6 +1128,7 @@ struct
                         val _ = allocateVariable (ser, v)
                       in c
                       end
+                  val externBind = SOME variableBind
                   val variableBind = SOME variableBind
                   val labelBind = 
                    fn (ser as ref (se as (state, env)), c, l) => 
@@ -1209,8 +1210,7 @@ struct
         val se = Initialize.initialize (pd, st, p)
         val () = Chat.log2 (pd, "Analyzing")
         fun doExtern v = unknown (se, variable (se, v))
-        val () = VS.foreach (externs, doExtern)
-        val () = Vector.foreach (includes, fn (M.IF {externs, ...}) => VS.foreach (externs, doExtern))
+        val () = VS.foreach (MilUtils.Program.externVars p, doExtern)
         val () = globals (se, gs)
         val () = escapes (se, variable (se, entry))
         val () = Chat.log2 (pd, "Propagating")

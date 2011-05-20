@@ -104,7 +104,7 @@ struct
 
   val reconstruct = fn (pd, summary, p) => 
                        doPhase (skipReconstruction, 
-                                fn (pd, p) => MilRepReconstruct.program (pd, summary, p),
+                                fn (pd, p) => MilRepReconstruct.program (pd, summary, false, p),
                                 "Reconstruction") (pd, p)
 
   val annotate = fn (pd, summary, p) => 

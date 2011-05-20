@@ -334,6 +334,7 @@ struct
                               type state = state
                               val config = getConfig
                               val indent = 2
+                              val externBind = NONE
                               val variableBind = NONE
                               val labelBind = NONE
                               val variableUse = NONE
