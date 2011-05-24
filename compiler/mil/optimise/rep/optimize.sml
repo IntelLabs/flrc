@@ -27,6 +27,7 @@ struct
   structure IS = IntSet
   structure EC = EquivalenceClass
   structure VS = M.VS
+  structure L = Layout
 
   structure Chat = ChatF (struct 
                             type env = PD.t
@@ -69,6 +70,9 @@ struct
 
   val debugs = [debugPassD, showUnboxingD, showCFAD, showConstantPropD, showPhasesD]
 
+  val debugShow =
+   fn (pd, f) => if debugPass pd then LayoutUtils.printLayout (f ()) else ()
+      
   val opToVar = 
    fn c =>
       case c
@@ -96,6 +100,14 @@ struct
     *)
     (* Invariant: UsFix ts => TS.traceabilityKnown ts *)
     datatype unboxStat = UsTop | UsBox | UsFix of TS.t | UsBot
+
+    val layoutUs = 
+     fn (config, us) => 
+        case us 
+         of UsTop    => L.str "T"
+          | UsBot    => L.str "B"
+          | UsBox    => L.str "BX"
+          | UsFix ts => L.seq [L.str "Fix", L.str (TS.toString (config, ts))]
 
     val usIsTop = fn us => (case us of UsTop => true 
                                      | _     => false)
@@ -164,6 +176,9 @@ struct
       val getConfig = PD.getConfig o getPd
 
     end (* structure SE1 *) 
+
+    val layoutVariable = 
+     fn (s, e, v) => MilLayout.layoutVariable (SE1.getConfig e, SE1.getSi s, v)
 
     val nodeForVariable = 
      fn (s, e, v) => MRS.variableNode (SE1.getSummary s, v)
@@ -288,12 +303,7 @@ struct
                                 | M.RhsTupleSub tf       => 
                                   (case MU.FieldIdentifier.Dec.fiFixed (MU.TupleField.field tf)
                                     of SOME 0 => ()
-                                     | _      => 
-                                       let
-                                         val () = fixed ()
-                                         val () = boxed (MU.TupleField.tup tf)
-                                       in ()
-                                       end)
+                                     | _      => boxed (MU.TupleField.tup tf))
                                 | M.RhsTupleSet r       => boxed (MU.TupleField.tup (#tupField r))
                                 | M.RhsTupleInited _    => ()
                                 | M.RhsIdxGet _         => fixed ()
@@ -362,20 +372,29 @@ struct
         Try.exec 
           (fn () => 
               let
-                val v2 = opToVar (Try.V.sub (inits, 0))
+                val because = 
+                 fn st => 
+                    let
+                      val f = fn () => L.seq [L.str "Can't unbox ", layoutVariable (s, e, v1), L.str ": ", L.str st]
+                    in debugShow (SE1.getPd e, f)
+                    end
+                val fail = fn s => let val () = because s in Try.fail () end
+                val require = fn (b, s) => if b then () else fail s
+                val () = require (Vector.length inits > 0, "not enough elements")
+                val v2 = opToVar (Vector.sub (inits, 0))
                 val ec1 = ecForVar (s, e, v1)
                 val ec2 = ecForVar (s, e, v2)
-                val () = Try.require (not (EC.equal (ec1, ec2)))
+                val () = require (not (EC.equal (ec1, ec2)), "same ec")
                 val us1 = EC.get ec1
                 val us2 = EC.get ec2
                 val () = 
                     case us1
-                     of UsTop => ()
-                      | UsBox => ()
+                     of UsTop => fail "top"
+                      | UsBox => fail "box"
                       | _     => 
                         let
                           val us = joinUS (us1, us2)
-                          val () = Try.require (not (usIsTop us))
+                          val () = require (not (usIsTop us), "incompatible")
                           val _  = EC.join (ec1, ec2)
                           val () = EC.set (ec1, us)
                           val () = addUnboxed (s, e, v1)
@@ -566,12 +585,38 @@ struct
         if showUnboxing (SE1.getPd e) then
           let
             val si = Identifier.SymbolInfo.SiTable (MU.Program.symbolTable p)
-            val vars = MRS.listVariables (SE1.getSummary s)
-            val uvars = List.keepAll (vars, fn v => varIsUnboxed (s, e, v))
             val lv = fn v => MilLayout.layoutVariable (SE1.getConfig e, si, v)
-            val ls = List.map (uvars, lv)
-            val l = Layout.align ls
-            val l = Layout.align [Layout.str "Unboxing:", LayoutUtils.indent l]
+            val vars = MRS.listVariables (SE1.getSummary s)
+            val components = 
+                let
+                  val add = fn (v, components) => 
+                               case ID.lookup (components, ccForVar (s, e, v))
+                                of SOME component => ID.insert (components, ccForVar (s, e, v), v::component)
+                                 | NONE           => ID.insert (components, ccForVar (s, e, v), [v])
+                  val components = List.fold (vars, ID.empty, add)
+                  val lc = fn (i, component) => L.seq [Int.layout i, L.str " => ", List.layout lv component]
+                in List.map (ID.toList components, lc)
+                end
+            val info = 
+                let
+                  val p = 
+                   fn v => 
+                      let
+                        val cc = Int.layout (ccForVar (s, e, v))
+                        val ec = layoutUs (SE1.getConfig e, EC.get (ecForVar (s, e, v)))
+                      in
+                        L.seq [lv v, L.str " is ", cc, L.str " with status ", ec]
+                      end
+                in List.map (vars, p)
+                end
+            val unboxes = 
+                List.keepAllMap (vars, fn v => if varIsUnboxed (s, e, v) then SOME (lv v) else NONE)
+            val l = Layout.align [Layout.str "Components:", 
+                                  LayoutUtils.indent (Layout.align components),
+                                  Layout.str "Variables:", 
+                                  LayoutUtils.indent (Layout.align info),
+                                  Layout.str "Unboxing:", 
+                                  LayoutUtils.indent (Layout.align unboxes)]
             val () = LayoutUtils.printLayout l
           in ()
           end
