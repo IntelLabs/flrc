@@ -1679,7 +1679,8 @@ struct
             let
               val c1 = Vector.sub (cases, 0)
               val c2 = Vector.sub (cases, 1)
-              val (c1, c2) = if isZero (#1 c2) then (c2, c1) else (c1, c2)
+              val (c1, c2) = if isZero (#1 c1) then (c1, c2) else  (* only swap if disjoint *)
+                             if isZero (#1 c2) then (c2, c1) else (c1, c2)
             in doIf (c1, #2 c2)
             end
           | _ =>

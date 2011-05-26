@@ -207,6 +207,7 @@ struct
          ("PruneCuts",        "Cut sets pruned"                ),
          ("PruneFx",          "Fx sets pruned"                 ),
          ("Simple",           "Simple moves eliminated"        ),
+         ("SimpleBoolOp",     "Case to simple bool op"         ),
          ("SwitchToSetCond",  "Cases converted to SetCond"     ),
          ("TCut",             "Cuts eliminated"                ),
          ("TGoto",            "Gotos eliminated"               ),
@@ -290,6 +291,7 @@ struct
     val pruneCuts = clicker "PruneCuts"
     val pruneFx = clicker "PruneFx"
     val simple = clicker "Simple"
+    val simpleBoolOp = clicker "SimpleBoolOp"
     val switchToSetCond = clicker "SwitchToSetCond"
     val tCut = clicker "TCut"
     val tGoto = clicker "TGoto"
@@ -754,6 +756,62 @@ struct
 
      end (* structure NumArith *)
 
+     structure Boolean = 
+     struct
+
+       val doubleNegate = 
+           Try.lift
+             (fn(c, operator, args, get) => 
+                let
+                  val () = <@ PU.LogicOp.Dec.lNot operator
+                  val arg0 = Try.V.sub (args, 0)
+                  val (p, args2) = <@ O.Dec.oPrim o get @@ arg0
+                  val () = <@ PU.LogicOp.Dec.lNot <! PU.Prim.Dec.pBoolean @@ p
+                  val oper = Try.V.sub (args2, 0)
+                in RrBase oper
+                end)
+
+       val fold = 
+           Try.lift
+             (fn(c, operator, args, get) => 
+                let
+                  val toBool = <@ C.Dec.cBool <! O.Dec.oConstant o get
+                  val choose = 
+                      Try.|| (fn () => (toBool (Try.V.sub (args, 0)), fn () => Try.V.sub (args, 1)),
+                              fn () => (toBool (Try.V.sub (args, 1)), fn () => Try.V.sub (args, 0))) 
+                  val (b0, r1) = <@ choose ()
+                  val r = 
+                      case operator
+                       of P.LNot => RrConstant (C.CBool (not b0))
+                        | P.LAnd => if b0 then RrBase (r1 ()) else RrConstant (C.CBool false)
+                        | P.LOr  => if b0 then RrConstant (C.CBool true) else RrBase (r1 ())
+                        | P.LXor => if b0 then RrPrim (P.PBoolean P.LNot, Vector.new1 (r1 ())) else RrBase (r1 ())
+                        | P.LEq  => if b0 then RrBase (r1 ()) else RrPrim (P.PBoolean P.LNot, Vector.new1 (r1 ()))
+                in r
+                end)
+
+       val identity = 
+        fn(c, operator, args, get) => 
+          Try.try 
+            (fn () => 
+                let
+                  val (arg1, arg2) = Try.V.doubleton args
+                  val () = Try.require (MU.Operand.eq (arg1, arg2))
+                  val r = case operator
+                           of P.LNot => Try.fail ()
+                            | P.LAnd => RrBase arg1
+                            | P.LOr  => RrBase arg1
+                            | P.LXor => RrConstant (C.CBool false)
+                            | P.LEq  => RrConstant (C.CBool true)
+                in r
+                end)
+
+       val reduce : Config.t * P.logicOp * Mil.operand Vector.t * (Mil.operand -> Operation.t) 
+                    -> reduction option =
+           identity or fold or doubleNegate
+
+     end (* structure Boolean *)
+
      structure Reduce =
      struct
        datatype t = datatype reduction
@@ -778,7 +836,7 @@ struct
 	      | P.PNumCompare r1 => out NumCompare.reduce (c, r1, args, get)
 	      | P.PNumConvert r1 => out NumConvert.reduce (c, r1, args, get)
 	      | P.PBitwise r1    => RrUnchanged
-	      | P.PBoolean r1    => RrUnchanged
+	      | P.PBoolean r1    => out Boolean.reduce (c, r1, args, get)
               | P.PName r1       => RrUnchanged
 	      | P.PCString r1    => RrUnchanged
               | P.PPtrEq         => out ptrEq (c, args, get))
@@ -1009,6 +1067,123 @@ struct
 
     structure TCase = 
     struct
+
+      val typIsBool = 
+       fn ((d, imil, ws), t) => MilType.Type.equal (MU.Bool.t (PD.getConfig d), t)
+
+      val variableHasBoolTyp = 
+       fn ((d, imil, ws), v) => 
+          typIsBool ((d, imil, ws), MilType.Typer.variable (PD.getConfig d, IMil.T.getSi imil, v))
+
+      val variableHasBoolDef = 
+       fn ((d, imil, ws), v) => 
+          (case <@ Def.toMilDef o Def.get @@ (imil, v)
+            of MU.Def.DefRhs (M.RhsPSetQuery _)      => true
+             | MU.Def.DefRhs (M.RhsPrim {prim, typs, ...}) => 
+               let
+                 val (args, rets) = MilType.PrimsTyper.t (PD.getConfig d, IMil.T.getSi imil, prim, typs)
+               in Vector.length rets = 1 andalso typIsBool ((d, imil, ws), Vector.sub (rets, 0))
+               end
+             | _                                      => false)
+
+      val isBoolVariable =
+       fn ((d, imil, ws), v) => variableHasBoolTyp ((d, imil, ws), v) orelse variableHasBoolDef ((d, imil, ws), v)
+
+      val isBoolOperand =
+       fn ((d, imil, ws), oper) =>
+          case oper
+           of M.SConstant (M.CBoolean _) => true
+            | M.SConstant _              => false
+            | M.SVariable v              => isBoolVariable ((d, imil, ws), v)
+
+      (*
+       * case x of True => L(op1) | False L(op2)  
+       * L(z):
+       *
+       * op1  op2  => z
+       * T    F       x
+       * F    T       !x
+       *
+       * otherwise:
+       *
+       * if op1 is T, we are computing (x or op2)
+       *   x  op2 => z
+       *   1   0  => 1
+       *   1   1  => 1
+       *   0   0  => 0
+       *   0   1  => 1
+       * if op1 is F, we are computing ((!x) and op2)
+       *   x   op2 => z
+       *   1   0   => 0
+       *   1   1   => 0
+       *   0   0   => 0
+       *   0   1   => 1
+       * if op2 is T, we are computing ((!x) or op1)
+       *   x   op1 => z
+       *   1   0   => 0
+       *   1   1   => 1
+       *   0   0   => 1
+       *   0   1   => 1
+       * if op2 is F, we are computing (x and op1)
+       *   x   op1 => z
+       *   1   0   => 0
+       *   1   1   => 1
+       *   0   0   => 0
+       *   0   1   => 0
+       *)
+      val simpleBoolOp =
+          let
+            datatype oper = ONot | OAnd of M.operand | OOr of M.operand
+            val f = 
+             fn ((d, imil, ws), (i, r)) =>
+                let
+                  val config = PD.getConfig d
+                  val {on, trueBranch, falseBranch} = <@ MU.Transfer.isBoolIf (M.TCase r)
+                  val M.T {block = l1, arguments = args1} = trueBranch
+                  val M.T {block = l2, arguments = args2} = falseBranch
+                  val () = Try.require (l1 = l2)
+                  val arg1 = Try.V.singleton args1
+                  val arg2 = Try.V.singleton args2
+                  val () = Try.require (isBoolOperand ((d, imil, ws), arg1))
+                  val () = Try.require (isBoolOperand ((d, imil, ws), arg2))
+                  val opers = 
+                      case (arg1, arg2)
+                       of (M.SConstant (M.CBoolean true) , M.SConstant (M.CBoolean false)) => []
+                        | (M.SConstant (M.CBoolean false), M.SConstant (M.CBoolean true))  => [ONot]
+                        | (M.SConstant (M.CBoolean true) , _                             ) => [OOr arg2]
+                        | (M.SConstant (M.CBoolean false), _                             ) => [ONot, OAnd arg2]
+                        | (_                             , M.SConstant (M.CBoolean true))  => [ONot, OOr arg1]
+                        | (_                             , M.SConstant (M.CBoolean false)) => [OAnd arg1]
+                        | (_                             , _                             ) => Try.fail ()
+                  val nbp = 
+                   fn (lop, args) => 
+                      let
+                        val v = IMil.Var.new (imil, "bln", MU.Bool.t config, M.VkLocal)
+                        val rhs = M.RhsPrim {prim = P.Prim (P.PBoolean lop), 
+                                             createThunks = false,
+                                             typs = Vector.new0 (),
+                                             args = args}
+                        val i = M.I {dests = Vector.new1 v, n = 0, rhs = rhs}
+                      in (i, M.SVariable v)
+                      end
+                  val doOne = 
+                   fn (oper, arg1) => 
+                      case oper
+                       of ONot      => nbp (P.LNot, Vector.new1 arg1)
+                        | OAnd arg2 => nbp (P.LAnd, Vector.new2 (arg1, arg2))
+                        | OOr arg2  => nbp (P.LOr, Vector.new2 (arg1, arg2))
+                  val (milInstrs, operand) = Utils.List.mapFoldl (opers, on, doOne)
+                  val instrs = List.map (milInstrs, fn ni => I.ItemInstr (IInstr.insertBefore (imil, ni, i)))
+                  val tg = 
+                      M.T {block = l1, 
+                           arguments = Vector.new1 operand}
+                  val goto = M.TGoto tg
+                  val () = IInstr.replaceTransfer (imil, i, goto)
+                in I.ItemInstr i :: instrs
+                end
+          in try (Click.simpleBoolOp, f)
+          end
+
       val betaSwitch = 
        fn {get, eq, dec, con} => 
           let
@@ -1140,7 +1315,7 @@ struct
           in try (Click.switchToSetCond, f)
           end
 
-      val reduce = tCase1 or switchToSetCond or etaSwitch
+      val reduce = simpleBoolOp or tCase1 or switchToSetCond or etaSwitch
     end (* structure TCase *)
 
     val tCase = TCase.reduce
