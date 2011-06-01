@@ -482,6 +482,7 @@ sig
     val eq : t * t -> bool
     structure Dict : DICT where type key = t
     val fx : Config.t * t -> Effect.set
+    val isHeapAllocation : t -> bool
     val isInit : t -> bool
     val isInitOf : t * Mil.variable -> bool
     val pObjKind : t -> Mil.pObjKind option
@@ -551,6 +552,7 @@ sig
     val compare : t Compare.t
     val eq : t * t -> bool
     val fx : Config.t * t -> Effect.set
+    val isHeapAllocation : t -> bool
     val isInit : t -> bool
     val isInitOf : t * Mil.variable -> bool
     val pObjKind : t -> Mil.pObjKind option
@@ -3059,7 +3061,21 @@ struct
            | M.RhsClosureInit {cls, ...} => cls
            | _ => NONE)
 
+    val isHeapAllocation = 
+     fn rhs => 
+        case rhs
+         of M.RhsTuple _       => true
+          | M.RhsThunkMk _     => true
+          | M.RhsThunkInit r   => not (isSome (#thunk r))
+          | M.RhsThunkValue _  => true
+          | M.RhsClosureMk _   => true
+          | M.RhsClosureInit r => not (isSome (#cls r))
+          | M.RhsPSetNew _     => true
+          | M.RhsPSum _        => true
+          | _                  => false
+
     val isInit = isSome o getInit
+
     val isInitOf =
      fn (rhs, v) => 
         (case getInit rhs
@@ -3205,6 +3221,8 @@ struct
     val eq = Eq.instruction
 
     fun fx (config, i) = Rhs.fx (config, rhs i)
+
+    val isHeapAllocation = Rhs.isHeapAllocation o rhs
 
     val isInit = Rhs.isInit o rhs
 

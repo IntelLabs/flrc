@@ -1239,43 +1239,43 @@ struct
              fn ((d, imil, ws), (i, {on, cases, default})) =>
                 let
                   (* Turn the constants into operands *)
-            val cases = Vector.map (cases, fn (a, tg) => (M.SConstant a, tg))
-                                   (* Add the default, using the scrutinee as the comparator *)
-            val cases = 
-                case default
-                 of SOME tg => Utils.Vector.cons ((on, tg), cases)
-                  | NONE => cases
-                              (* Ensure all labels are the same, and get an arbitrary one *)
-            val labels = Vector.map (cases, #block o MU.Target.Dec.t o #2)
-            val () = Try.require (Utils.Vector.allEq (labels, op =))
-            val label = Try.V.sub (labels, 0)
-                                  (* Map each row (c, c2, d) to (SOME c, NONE, SOME d), where NONE indicates
-                                   * that the element is equal either to the scrutinee, or to the particular 
-                                   * constant guarding this branch. (Essentially, we mask out these elements,
-                                   * and insist that the rest do not vary between rows) *)
-            val canonize = 
-             fn (a, M.T {block, arguments}) => 
-                let
-                  val mask = 
-                   fn b => if MU.Operand.eq (a, b) orelse MU.Operand.eq (on, b) then
-                             NONE
-                           else 
-                             SOME b
-                  val arguments = Vector.map (arguments, mask)
-                in arguments
-                end
-            val argumentsV = Vector.map (cases, canonize)
-                                        (* Transpose the argument vectors into column vectors, and ensure that
-                                         * each column contains all of the same elements (either all NONE), or
-                                         * all SOME c for the same c *)
-            val argumentsVT = Utils.Vector.transpose argumentsV
-            val columnOk = 
-             fn v => Utils.Vector.allEq (v, fn (a, b) => Option.equals (a, b, MU.Operand.eq))
-            val () = Try.require (Vector.forall (argumentsVT, columnOk))
-            val arguments = Try.V.sub (argumentsV, 0)
-            val arguments = Vector.map (arguments, fn a => Utils.Option.get (a, on))
-            val t = M.TGoto (M.T {block = label, arguments = arguments})
-            val () = IInstr.replaceTransfer (imil, i, t)
+                  val cases = Vector.map (cases, fn (a, tg) => (M.SConstant a, tg))
+                  (* Add the default, using the scrutinee as the comparator *)
+                  val cases = 
+                      case default
+                       of SOME tg => Utils.Vector.cons ((on, tg), cases)
+                        | NONE => cases
+                  (* Ensure all labels are the same, and get an arbitrary one *)
+                  val labels = Vector.map (cases, #block o MU.Target.Dec.t o #2)
+                  val () = Try.require (Utils.Vector.allEq (labels, op =))
+                  val label = Try.V.sub (labels, 0)
+                  (* Map each row (c, c2, d) to (SOME c, NONE, SOME d), where NONE indicates
+                   * that the element is equal either to the scrutinee, or to the particular 
+                   * constant guarding this branch. (Essentially, we mask out these elements,
+                   * and insist that the rest do not vary between rows) *)
+                  val canonize = 
+                   fn (a, M.T {block, arguments}) => 
+                      let
+                        val mask = 
+                         fn b => if MU.Operand.eq (a, b) orelse MU.Operand.eq (on, b) then
+                                   NONE
+                                 else 
+                                   SOME b
+                        val arguments = Vector.map (arguments, mask)
+                      in arguments
+                      end
+                  val argumentsV = Vector.map (cases, canonize)
+                  (* Transpose the argument vectors into column vectors, and ensure that
+                   * each column contains all of the same elements (either all NONE), or
+                   * all SOME c for the same c *)
+                  val argumentsVT = Utils.Vector.transpose argumentsV
+                  val columnOk = 
+                   fn v => Utils.Vector.allEq (v, fn (a, b) => Option.equals (a, b, MU.Operand.eq))
+                  val () = Try.require (Vector.forall (argumentsVT, columnOk))
+                  val arguments = Try.V.sub (argumentsV, 0)
+                  val arguments = Vector.map (arguments, fn a => Utils.Option.get (a, on))
+                  val t = M.TGoto (M.T {block = label, arguments = arguments})
+                  val () = IInstr.replaceTransfer (imil, i, t)
                 in [I.ItemInstr i]
                 end
           in try (Click.etaSwitch, f)
@@ -1639,11 +1639,14 @@ struct
                       (case IBlock.succs (imil, pred)
                         of [_] => ()
                          | _ => Try.fail ())
-                  val tf = IBlock.getTransfer' (imil, pred)
+                  val ti = IBlock.getTransfer (imil, pred)
+                  val tf = <@ IInstr.toTransfer ti
                   (* Since there are no parameters, even switches with multiple out edges
                    * can be merged.
                    *)
                   val _ = <@ MU.Transfer.isIntraProcedural tf
+                  val used = IInstr.getUsedBy (imil, ti)
+                  val () = WS.addItems (ws, used)
                   val b = IInstr.getIBlock (imil, i)
                   val () = IBlock.merge (imil, pred, b)
                 in []
@@ -3019,11 +3022,17 @@ struct
        in ()
        end
 
-  val deadCode = 
+  val itemIsAllocation = 
+   fn (d, imil, i) => 
+      Utils.Option.get (Try.try (fn () => MU.Instruction.isHeapAllocation (<@ Item.toInstruction i)),
+                        false)
+
+  val deadItem = 
    fn (d, imil, ws, i, uses) => 
       let
         val {inits, others} = Item.splitUses' (imil, i, uses)
-        val dead = Vector.isEmpty others
+        val dead = Vector.isEmpty others andalso 
+                   (Vector.isEmpty inits orelse itemIsAllocation (d, imil, i))
         val ok = Effect.subset(Item.fx (imil, i), Effect.ReadOnly)
         val kill = dead andalso ok
         val () = if kill then killItem (d, imil, ws, i, inits) else ()
@@ -3057,7 +3066,7 @@ struct
                   val () = if sEach then LayoutUtils.printLayout (layout ("Trying: ", i)) else ()
                   val l1 = layout ("R: ", i)
                   val uses = Item.getUses (imil, i)
-                  val reduced = deadCode (d, imil, ws, i, uses) orelse ItemR.reduce (d, imil, ws, i, uses)
+                  val reduced = deadItem (d, imil, ws, i, uses) orelse ItemR.reduce (d, imil, ws, i, uses)
                   val () = 
                       if (sReductions andalso reduced) then
                         LayoutUtils.printLayout l1
