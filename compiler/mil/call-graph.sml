@@ -283,19 +283,18 @@ struct
       end
 
   fun addKnownCall (s, c, f) = addCallerCalleeInfo (s, c, VS.singleton f, false)
-  fun addUnknownCall (s, c) = addCallerCalleeInfo (s, c, VS.empty, false)
   fun addCodes (s, c, {possible, exhaustive}) = addCallerCalleeInfo (s, c, possible, not exhaustive)
 
-  fun analyseCodeCall (s, e, cl, codeVar) =
+  fun analyseCodeCall (s, e, cl, codeVar, code) =
       if isCode (e, codeVar) then
         addKnownCall (s, cl, codeVar)
       else
-        addUnknownCall (s, cl)
+        addCodes (s, cl, code)
 
   fun analyseCall (s, e, cl, call) = 
       (case call
-        of M.CCode {ptr, ...} => analyseCodeCall (s, e, cl, ptr)
-         | M.CClosure {code, ...} => addCodes (s, cl, code)
+        of M.CCode {ptr, code, ...}     => analyseCodeCall (s, e, cl, ptr, code)
+         | M.CClosure {code, ...}       => addCodes (s, cl, code)
          | M.CDirectClosure {code, ...} => addKnownCall (s, cl, code))
 
   fun analyseEval (s, e, cl, eval) = 
