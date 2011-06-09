@@ -2856,7 +2856,7 @@ sig
   val operator         : string t 
   val reservedOp       : string -> unit t 
         
-  val charLiteral      : char t 
+  val charLiteral      : int t 
   val stringLiteral    : string t 
   val natural          : IntInf.t t 
   val integer          : IntInf.t t 
@@ -2900,7 +2900,7 @@ struct
   infixr 0 >>
   infixr 0 >>=
 
-  fun digitToInt c = I.fromInt (ord c - ord #"0")
+  fun digitToInt c = I.fromInt (Char.toHexDigit (Char.toUpper c))
 
   val zero    = I.fromInt 0
   val one     = I.fromInt 1
@@ -3002,7 +3002,7 @@ struct
                                     
   fun number base baseDigit = 
       oneOrMore baseDigit >>= (fn digits => 
-      return (List.foldr (digits, zero,
+      return (List.fold (digits, zero,
               fn (d, x) => (I.+ (I.* (base, x), digitToInt d)))))
 
   val decimal = number ten digit
@@ -3010,20 +3010,20 @@ struct
   val octal = (oneChar #"o" || oneChar #"O") >> number eight octDigit
 
   val charEsc = 
-      let fun parseEsc (c, code) = oneChar c >> return code
+      let fun parseEsc (c, code) = oneChar c >> return (ord code)
       in any (List.map (escMap, parseEsc))
       end
   val charNum = 
       (decimal || 
        (oneChar #"o" >> number eight octDigit) ||
        (oneChar #"x" >> number sixteen hexDigit)) >>=
-      (return o chr o I.toInt)
-  val charControl = oneChar #"^" >> upper >>= (fn c => return (chr (ord c - ord #"A")))
+      (return o I.toInt)
+  val charControl = oneChar #"^" >> upper >>= (fn c => return (ord c - ord #"A"))
   val escapeCode = charEsc || charNum || charControl (* || charAscii *)
 
   val charLetter = satisfy (fn c => (c <> #"'" andalso c <> #"\\" andalso ord c > 22))
   val charEscape = oneChar #"\\" >> escapeCode
-  val characterChar = charLetter || charEscape 
+  val characterChar = (charLetter >>= (fn c => return (ord c))) || charEscape 
   val charLiteral = lexeme (between (oneChar #"'") (oneChar #"'") characterChar) 
 
   val escapeEmpty = oneChar #"&"
@@ -3032,7 +3032,7 @@ struct
       oneChar #"\\" >> 
       ((escapeGap   >> return NONE) || 
        (escapeEmpty >> return NONE) ||
-       (escapeCode  >>= return o SOME))
+       (escapeCode  >>= (fn c => return (SOME (chr c)))))
   val stringLetter = satisfy (fn c => c <> #"\"" andalso c <> #"\\" andalso ord c > 22)
   val stringChar = (stringLetter >>= return o SOME) || stringEscape
   val stringLiteral = 

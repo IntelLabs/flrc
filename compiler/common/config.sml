@@ -47,7 +47,7 @@ signature CONFIG = sig
 			  tagOnly: bool},
 		     home : Path.t,
                      host : os,
-		     keep: {cp: bool, obj: bool, pil: bool},
+		     keep: {cp: bool, hcr : bool, obj: bool, pil: bool},
 		     linkStr: string list,
 		     logLev: verbosity,
 		     output: outputKind,
@@ -87,8 +87,9 @@ signature CONFIG = sig
 	      tagOnly: bool}
   val home : t -> Path.t
   val host : t -> os
-  val keep: t * ({cp: bool, obj: bool, pil: bool} -> 'a) -> 'a
+  val keep: t * ({cp: bool, hcr : bool, obj: bool, pil: bool} -> 'a) -> 'a
   val keepCp: t -> bool
+  val keepHcr : t -> bool
   val keepObj: t -> bool
   val keepPil: t -> bool
   val linkStr: t -> string list
@@ -262,7 +263,7 @@ structure Config :> CONFIG = struct
          gc               : gcConfig,
          home             : Path.t,
          host             : os,
-         keep             : {cp : bool, pil : bool, obj : bool},
+         keep             : {cp : bool, hcr : bool, pil : bool, obj : bool},
          linkStr          : string list,
          logLev           : verbosity,
          output           : outputKind,
@@ -341,6 +342,7 @@ structure Config :> CONFIG = struct
     fun keep (c, p) = p (get (c, #keep))
 
     fun keepCp c = keep (c, #cp)
+    fun keepHcr c = keep (c, #hcr)
     fun keepPil c = keep (c, #pil)
     fun keepObj c = keep (c, #obj)
 
