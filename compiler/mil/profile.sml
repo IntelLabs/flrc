@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, July 2008 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 (* Estimate block and edge execution frequencies for Mil programs. The
  * algorithm is based on Wu and Larus (MICRO-27) paper.
@@ -9,7 +9,8 @@
  *   execution frequencies assuming the function is executed only once.
  * - global (absolute) frequency: it is the absolute execution frequency.
  *   It is computed by multiplying the local frequency by the function
- *   execution frequency. *)
+ *   execution frequency.
+ *)
 
 signature MIL_PROFILER = sig
 
@@ -607,8 +608,7 @@ functor MilProfilerF (type env
               let
                 val blk = valOf (MilCfg.nodeGetBlock (cfg, n))
               in
-              (*                MilUtils.Block.isReturnBlock (blk) *)
-                fail ("isReturnBlock", "not implemented")
+                #exits (MilUtils.Block.targets blk)
               end
 
           (* EB: Mil blocks do not have store instructions. Therefore, we will
@@ -645,9 +645,8 @@ functor MilProfilerF (type env
           fun blockHasCall (n) = 
               let
                 val blk = valOf (MilCfg.nodeGetBlock (cfg, n))
-              in
-(*                MilUtils.Block.isCallBlock (blk)*)
-                fail ("blockHasCall", "not implemented")
+                val tfer = MilUtils.Block.transfer blk
+              in isSome (MilUtils.Transfer.Dec.tInterProc tfer)
               end
 
           fun isLoopPreHeader (b) = 

@@ -1,10 +1,11 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, October 2006 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 local
         $(SML_LIB)/mlton/sources.mlb
         ../../common/common.mlb
         ../mil.mlb
+        ../imil/imil.mlb
         cse.sml
         contify.sml
         
@@ -20,19 +21,7 @@ local
         inline-aggressive.sml
         inline-profile.sml
         inline-leaves.sml
-        rep-seq.sml
-        rep-base.sml
-        rep-object.sml
-        rep-prep.sml
-        rep-node.sml
-        rep-summary.sml
-        rep-analyze.sml
-        rep-reconstruct.sml
-        rep-show.sml
-        rep-flowgraph.sml
-        rep-optimize.sml
-        rep.sml
-        flatten.sml
+        rep/rep.mlb
 (*        vectorize.sml*)
         branch-remove.sml
         loop-invert.sml
@@ -46,6 +35,7 @@ in
         structure MilLicm
         structure MilRemoveBranch
         structure MilRep
+        structure MilRepDce
         structure MilSimplify
      (* structure MilVectorize *)
         structure MilNewVectorize

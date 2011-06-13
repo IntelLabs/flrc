@@ -1,8 +1,9 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, October 2006 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 (* Identifier hints, record all hints here:
  *
+ * bln   - Boolean variable
  * cnts  - Thunk contents var (simplify.sml)
  * cont  - Continuation variable (hil-to-chil.sml)
  * cvt   - Numeric conversion result (hil-to-mil/rewrite.sml)

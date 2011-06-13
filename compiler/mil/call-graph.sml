@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, July 2007 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 (* Compute the call graph for Mil.  Namely:
  *   * For each code global, identified by their binding variable, compute:
@@ -283,19 +283,18 @@ struct
       end
 
   fun addKnownCall (s, c, f) = addCallerCalleeInfo (s, c, VS.singleton f, false)
-  fun addUnknownCall (s, c) = addCallerCalleeInfo (s, c, VS.empty, false)
   fun addCodes (s, c, {possible, exhaustive}) = addCallerCalleeInfo (s, c, possible, not exhaustive)
 
-  fun analyseCodeCall (s, e, cl, codeVar) =
+  fun analyseCodeCall (s, e, cl, codeVar, code) =
       if isCode (e, codeVar) then
         addKnownCall (s, cl, codeVar)
       else
-        addUnknownCall (s, cl)
+        addCodes (s, cl, code)
 
   fun analyseCall (s, e, cl, call) = 
       (case call
-        of M.CCode {ptr, ...} => analyseCodeCall (s, e, cl, ptr)
-         | M.CClosure {code, ...} => addCodes (s, cl, code)
+        of M.CCode {ptr, code, ...}     => analyseCodeCall (s, e, cl, ptr, code)
+         | M.CClosure {code, ...}       => addCodes (s, cl, code)
          | M.CDirectClosure {code, ...} => addKnownCall (s, cl, code))
 
   fun analyseEval (s, e, cl, eval) = 
@@ -334,6 +333,7 @@ struct
                               type state = state
                               val config = getConfig
                               val indent = 2
+                              val externBind = NONE
                               val variableBind = NONE
                               val labelBind = NONE
                               val variableUse = NONE

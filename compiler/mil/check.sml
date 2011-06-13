@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation *)
+(* COPYRIGHT_NOTICE_1 *)
 
 signature MIL_CHECK = 
 sig
@@ -174,7 +174,7 @@ struct
       case t
        of M.TAny                       => ()
         | M.TAnyS vs                   => ()
-        | M.TPtr                       => ()
+        | M.TNonRefPtr                 => ()
         | M.TRef                       => ()
         | M.TBits vs                   => ()
         | M.TNone                      => ()
@@ -227,22 +227,22 @@ struct
 
   fun knownTraceSize (s, e, t, msg) =
       case MUT.traceabilitySize (getConfig e, t)
-       of TS.TsAny =>
-          reportError (s, msg () ^ ": bad traceability and size")
-        | TS.TsAnyS _ => reportError (s, msg () ^ ": bad size")
+       of TS.TsAny => reportError (s, msg () ^ ": bad traceability and size")
+        | TS.TsAnyS _ => reportError (s, msg () ^ ": bad traceability")
         | TS.TsBits _ => ()
         | TS.TsFloat => ()
         | TS.TsDouble => ()
-        | TS.TsPtr => reportError (s, msg () ^ ": bad traceability")
-        | TS.TsNonRefPtr => ()
         | TS.TsRef => ()
         | TS.TsNone => ()
         | TS.TsMask _ => ()
 
   (* Can we assign a value of type t2 to a variable of type t1?
    * However, t2 is conversative and maybe overly so.
-   * So we look for clear problems only, such as assigning something that
+   * So we would look for clear problems only, such as assigning something that
    * can only be bits to something that must be a reference.
+   * Unfortunately, unreachable code buggers this up, and we really have to punt here for now.
+   * Maybe in the future we could consider a stricter checker that can be run optionally.  It would do more here
+   * but would have false negatives.
    *)
   fun checkConsistentTyp (s, e, msg, t1, t2) =
       let
@@ -251,14 +251,8 @@ struct
         val ts2 = MUT.traceabilitySize (c, t2)
         fun err () = reportError (s, msg ())
       in
-        case (ts1, ts2)
-         of (*(TS.TsAny, _) => ()
-          | (_, TS.TsAny) => ()
-          | (TS.TsAnyS vs1, _) => ?
-          | (_, TS.TsAnyS vs2) => ?
-          | (TS.TsBits vs1, TS.TsBits vs2) =>
-          | (TS.TsBits vs1, TS.TsNon
-          | _ => err ()*) _ => ()
+        ()
+        (*if ts1 = ts2 orelse ts1 = TS.TsNone orelse ts2 = TS.TsNone then () else err ()*)
       end
 
   fun checkConsistentTyps (s, e, msg, ts1, ts2) =
@@ -338,9 +332,7 @@ struct
   fun labelUseNoArgs (s, e, msg, l) =
       let
         val () = label (s, e, l)
-        fun notInScope () =
-            reportError (s, msg () ^ ": label " ^ I.labelString l ^
-                            " not in scope")
+        fun notInScope () = reportError (s, msg () ^ ": label " ^ I.labelString l ^ " not in scope")
         val () =
             case isLabAvailable (e, l)
              of NONE => notInScope ()
@@ -352,9 +344,7 @@ struct
       let
         val () = label (s, e, l)
         fun msg' () = msg () ^ ": arguments to " ^ I.labelString l
-        fun notInScope () =
-            reportError (s, msg () ^ ": label " ^ I.labelString l ^
-                            " not in scope")
+        fun notInScope () = reportError (s, msg () ^ ": label " ^ I.labelString l ^ " not in scope")
         val () =
             case isLabAvailable (e, l)
              of NONE => notInScope ()
@@ -362,25 +352,17 @@ struct
       in ()
       end
 
-  fun fitsOptRep (s, e, i) =
-      let
-        val ws =
-            case Config.targetWordSize (getConfig e)
-             of Config.Ws32 => 32
-              | Config.Ws64 => 64
-        val upper = IntInf.<< (IntInf.one, Word.fromInt (ws - 2))
-        val lower = IntInf.~ upper
-        val fits = IntInf.<= (lower, i) andalso IntInf.< (i, upper)
-      in fits
-      end
-
   fun optIntegerRep (s, e, msg, i) =
-      assert (s, fitsOptRep (s, e, i),
+      assert (s, MU.Integer.Opt.integerFits i,
               fn () => msg () ^ ": integer constant out of opt rep range")
 
   fun optRatRep (s, e, msg, r) =
-      assert (s, fitsOptRep (s, e, r),
+      assert (s, MU.Rational.Opt.integerFits r,
               fn () => msg () ^ ": rat constant out of opt rep range")
+
+  fun validRefConstant (s, e, msg, i) = 
+      assert (s, MU.HeapModel.validRefConstant (getConfig e, i),
+              fn () => msg () ^ ": ref value not valid as ref constant")
 
   fun constant (s, e, msg, c) =
       case c
@@ -410,6 +392,11 @@ struct
           in M.TViMask descriptor
           end
         | M.CPok _ => MU.Uintp.t (getConfig e)
+        | M.CRef i => 
+          let
+            val () = validRefConstant (s, e, msg, i)
+          in M.TRef
+          end
         | M.COptionSetEmpty => M.TPType {kind = M.TkE, over = M.TNone}
         | M.CTypePH => M.TPType {kind = M.TkI, over = M.TNone}
 
@@ -442,10 +429,7 @@ struct
       in
         case (fd, MUT.traceabilitySize (getConfig e, t))
          of (M.FkRef, TS.TsRef) => ()
-          | (M.FkBits fs, TS.TsBits vs) =>
-            if MU.FieldSize.toValueSize fs = vs then () else err ()
-          | (M.FkBits fs, TS.TsNonRefPtr) =>
-            if fs = MU.FieldSize.ptrSize (getConfig e) then () else err ()
+          | (M.FkBits fs, TS.TsBits vs) => if MU.FieldSize.toValueSize fs = vs then () else err ()
           | (M.FkFloat, TS.TsFloat) => ()
           | (M.FkDouble, TS.TsDouble) => ()
           | (_, TS.TsNone) => ()
@@ -509,11 +493,10 @@ struct
    * than the actual fields of the tuple, checking that the ts have
    * as many fields as the tuple descriptor is done elsewhere.
    *)
-  fun consistentMdDesc (s, e, msg, vtd, ts, ns) =
+  fun consistentMdDesc (s, e, msg, vtd, ts) =
       let
         val M.MDD {pok, fixed, array} = vtd
-        fun tooManyFields () =
-           reportError (s, msg () ^ ": not enough fields in vtable descriptor")
+        fun tooManyFields () = reportError (s, msg () ^ ": not enough fields in vtable descriptor")
         fun msgi i () = msg () ^ ": " ^ Int.toString i
         fun checkOne (i, t) =
             let
@@ -528,15 +511,7 @@ struct
                         in raise Done
                         end
                       | SOME (_, fd) => fd
-              val n = i < Vector.length ns andalso Vector.sub (ns, i)
-              val () =
-                  if n then
-                    case kind
-                     of M.FkRef => ()
-                      | _ => 
-                        consistentFieldKind (s, e, msgi i, kind, t)
-                  else
-                    consistentFieldKind (s, e, msgi i, kind, t)
+              val () = consistentFieldKind (s, e, msgi i, kind, t)
             in ()
             end
         val () = (Vector.foreachi (ts, checkOne) handle Done => ())
@@ -548,22 +523,17 @@ struct
       let
         fun msg' () = msg () ^ ": init"
         val ts = operands (s, e, msg', inits)
-        fun checkOne opnd =
-            case opnd
-             of M.SConstant (M.CIntegral i) =>
-                IntInf.isZero (IntArb.toIntInf i) andalso
-                IntArb.isTyp (i, MU.Uintp.intArbTyp (getConfig e))
-              | _ => false
-        val ns = Vector.map (inits, checkOne)
-        val () = consistentMdDesc (s, e, msg, mdd, ts, ns)
-        val M.MDD {array, ...} = mdd
+        val () = consistentMdDesc (s, e, msg, mdd, ts)
+        val M.MDD {pok, fixed, array, ...} = mdd
         val () =
             case array
              of NONE => ()
               | SOME (lenIdx, _) =>
                 assert (s, 0 <= lenIdx andalso lenIdx < Vector.length ts,
                         fn () => msg () ^ ": length field not inited")
-      in ts
+        val tvs = Vector.map (ts, fn t => (t, M.FvReadWrite))
+        val t = MU.Typ.fixedArray (pok, tvs)
+      in t
       end
 
   fun prim (s, e, msg, prim, typs, args) =
@@ -599,12 +569,19 @@ struct
         val t = variableUse (s, e, msg', tup)
         val ft =
             case field
-             of M.FiFixed idx => M.TNone
+             of M.FiFixed idx =>
+                (case t
+                  of M.TTuple {fixed, array, ...} =>
+                     #1 (if idx < Vector.length fixed then Vector.sub (fixed, idx) else array)
+                   | _ => M.TNone)
               | M.FiVariable opnd =>
                 let
                   fun msg' () = msg () ^ ": index"
                   val _ = operand (s, e, msg', opnd)
-                in M.TNone
+                in
+                  case t
+                   of M.TTuple {array, ...} => #1 array
+                    | _ =>  M.TNone
                 end
               | M.FiVectorFixed {descriptor, mask, index} => 
                 let
@@ -630,11 +607,7 @@ struct
             (case r
               of M.RhsSimple simp => some (simple (s, e, msg, simp))
                | M.RhsPrim {prim = p, createThunks, typs, args} => prim (s, e, msg, p, typs, args)
-               | M.RhsTuple {mdDesc, inits} =>
-                 let
-                   val ts = tupleMake (s, e, msg, mdDesc, inits)
-                 in some M.TNone
-                 end
+               | M.RhsTuple {mdDesc, inits} => some (tupleMake (s, e, msg, mdDesc, inits))
                | M.RhsTupleSub tf => some (tupleField (s, e, msg, tf))
                | M.RhsTupleSet {tupField, ofVal} =>
                  let
@@ -656,22 +629,29 @@ struct
                    val _ = variableUse (s, e, msg1, idx)
                    fun msg2 () = msg () ^ ": of val"
                    val _ = operand (s, e, msg2, ofVal)
-                 in some M.TNone
+                 in some (MU.Uintp.t (getConfig e))
                  end
                | M.RhsCont l =>
                  let
-                   val _ = labelUseNoArgs (s, e, msg, l)
-                 in some M.TNone
+                   (* Dead blocks that get trimmed leave 
+                    * unused labels here. Backend treats them
+                    * as null.
+                    *)
+                   val t =
+                       case isLabAvailable (e, l)
+                        of NONE => M.TNone
+                         | SOME ts => M.TContinuation ts
+                 in some t
                  end
                | M.RhsObjectGetKind v =>
                  let
                    fun msg' () = msg () ^ ": object"
                    val _ = variableUse (s, e, msg', v)
-                 in some M.TNone
+                 in some (MU.Uintp.t (getConfig e))
                  end
                | M.RhsThunkMk {typ, fvs} =>
                  let
-                 in some M.TNone
+                 in some (M.TThunk M.TNone)
                  end
                | M.RhsThunkInit {typ, thunk, fx, code, fvs} =>
                  let
@@ -695,7 +675,7 @@ struct
                    val ts =
                        case thunk
                         of SOME _ => none
-                         | NONE => some M.TNone
+                         | NONE => some (M.TThunk M.TNone)
                  in ts
                  end
                | M.RhsThunkGetFv {typ, fvs, thunk, idx} =>
@@ -860,7 +840,7 @@ struct
                        else err ()
             in (NONE, NONE)
             end
-          | M.TPtr => (NONE, NONE)
+          | M.TNonRefPtr => (NONE, NONE)
           | M.TBits vs => 
             let
               val () = if vs = MU.ValueSize.ptrSize (getConfig e)
@@ -890,7 +870,6 @@ struct
                        else err ()
             in (NONE, NONE)
             end
-          | M.TPtr => (NONE, NONE)
           | M.TRef => (NONE, NONE)
           | M.TPAny => (NONE, NONE)
           | M.TNone => (NONE, NONE)
@@ -951,7 +930,6 @@ struct
                        else err ()
             in M.TNone
             end
-          | M.TPtr => M.TNone
           | M.TRef => M.TNone
           | M.TNone => M.TNone
           | M.TThunk t => t
@@ -1041,15 +1019,12 @@ struct
       in
         case t
          of M.TAny => ()
-          | M.TAnyS vs =>
-            if vs = MU.ValueSize.ptrSize (getConfig e) then () else err ()
-          | M.TPtr => ()
-          | M.TBits vs =>
-            if vs = MU.ValueSize.ptrSize (getConfig e) then () else err ()
+          | M.TAnyS vs => if vs = MU.ValueSize.ptrSize (getConfig e) then () else err ()
+          | M.TNonRefPtr => ()
+          | M.TBits vs => if vs = MU.ValueSize.ptrSize (getConfig e) then () else err ()
           | M.TNone => ()
-          | M.TContinuation ts' =>
-            checkConsistentTyps (s, e, msg', ts', ts)
-          | _ => err ()
+          | M.TContinuation ts' => checkConsistentTyps (s, e, msg', ts', ts)
+          | _ => if MT.Type.subtype (getConfig e, t, M.TBits (MU.ValueSize.ptrSize (getConfig e))) then () else err ()
       end
 
   fun transfer (s, e, msg, t) =
@@ -1159,8 +1134,7 @@ struct
         val cct = MU.CallConv.map (cc, fn v => variable (s, e, v))
         val e = bindVars (s, e, args, M.VkLocal)
         val atyps = variables (s, e, args)
-        fun doOne (i, t) =
-            typ (s, e, fn () => msg () ^ ": return " ^ Int.toString i, t)
+        fun doOne (i, t) = typ (s, e, fn () => msg () ^ ": return " ^ Int.toString i, t)
         val () = Vector.foreachi (rtyps, doOne)
         val e = setRTyps (e, rtyps)
         val () = codeBody (s, e, msg, body)
@@ -1241,7 +1215,7 @@ struct
               | M.GTuple {mdDesc, inits} =>
                 let
                   val M.MDD {pok, fixed, array, ...} = mdDesc
-                  val ts = tupleMake (s, e, msg, mdDesc, inits)
+                  val t = tupleMake (s, e, msg, mdDesc, inits)
                   val fixedLen = Vector.length fixed
                   fun badLen () = reportError (s, msg () ^ ": bad length init")
                   val varLen =
@@ -1254,8 +1228,6 @@ struct
                             | _ => let val () = badLen () in 0 end
                   val () = assert (s, Vector.length inits = fixedLen + varLen,
                                    fn () => msg () ^ ": wrong number of inits")
-                  val tvs = Vector.map (ts, fn t => (t, M.FvReadWrite))
-                  val t = MU.Typ.fixedArray (pok, tvs)
                 in t
                 end
               | M.GRat r => MUP.NumericTyp.tRat
@@ -1317,8 +1289,8 @@ struct
   fun includeFile (s, e, M.IF {name, kind, externs = evs}) =
       let
         val () = assert (s, not (isIncFile (s, name)), fn () => "file " ^ name ^ " include more than once")
-        val () = addIncFile (s, name)
-        val e = externs (s, e, evs)
+        val () = addIncFile (s, name) 
+       val e = externs (s, e, evs)
       in e
       end
 

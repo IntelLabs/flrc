@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, October 2006 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 signature MIL_LAYOUT =
 sig
@@ -252,7 +252,7 @@ struct
        case t
         of M.TAny => L.str "Any"
          | M.TAnyS vs => L.str ("Any" ^ Int.toString (MU.ValueSize.numBits vs))
-         | M.TPtr => L.str "Ptr"
+         | M.TNonRefPtr => L.str "NonRefPtr"
          | M.TRef => L.str "Ref"
          | M.TBits vs => L.str ("Bits" ^ Int.toString (MU.ValueSize.numBits vs))
          | M.TNone => L.str "None"
@@ -435,6 +435,7 @@ struct
            in l
            end
          | M.CPok pok => layoutPObjKind (env, pok)
+         | M.CRef i   => L.seq [L.str "Ref", L.paren (IntInf.layout i)]
          | M.COptionSetEmpty => L.str "Empty"
          | M.CTypePH => L.str "TypePH"
    and layoutConstants (env, cs) = layoutVector (env, layoutConstant, cs)

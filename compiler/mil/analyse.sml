@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, July 2007 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 signature MilAnalyse =
 sig
@@ -11,6 +11,7 @@ sig
   val analyseEval : state * env * Mil.eval ->  unit
   val analyseTransfer : state * env * Mil.transfer -> unit
   val analyseBlock : state * env * Mil.label * Mil.block -> unit
+  val analyseBlocks : state * env * Mil.block Mil.LD.t -> unit
   val analyseGlobal : state * env * Mil.variable * Mil.global -> unit
   val analyseProgram : state * env * Mil.t -> unit
 end;
@@ -20,6 +21,7 @@ functor MilAnalyseF (
   type env
   val config : env -> Config.t
   val indent : int
+  val externBind         : (state * env * Mil.variable -> env) option
   val variableBind       : (state * env * Mil.variable -> env) option
   val labelBind          : (state * env * Mil.label -> env) option
   val variableUse        : (state * env * Mil.variable -> unit) option
@@ -42,6 +44,7 @@ functor MilAnalyseF (
                           end)
 
   val clientBind = variableBind
+  val clientExternBind = externBind
   val clientLabelBind = labelBind
   val clientVariable = variableUse
   val clientJump = analyseJump
@@ -63,6 +66,11 @@ functor MilAnalyseF (
 
   fun analyseBinder (s, e, v) =
       case clientBind
+       of NONE => e
+        | SOME vb => vb (s, e, v)
+
+  fun analyseExtern (s, e, v) =
+      case clientExternBind
        of NONE => e
         | SOME vb => vb (s, e, v)
 
@@ -353,10 +361,13 @@ functor MilAnalyseF (
       in ()
       end
 
+  fun analyseBlocks (s, e, blocks) = 
+      LD.foreach (blocks, fn (l, b) => analyseBlock (s, e, l, b)) 
+
   fun analyseCodeBody (s, e, M.CB {entry, blocks}) =
       let
         val () = analyseJump (s, e, entry)
-        val () = LD.foreach (blocks, fn (l, b) => analyseBlock (s, e, l, b))
+        val () = analyseBlocks (s, e, blocks)
       in ()
       end
 
@@ -414,7 +425,7 @@ functor MilAnalyseF (
   fun analyseProgram (s, e, p) =
       let
         val M.P {includes, externs, globals, symbolTable, entry} = p
-        fun doOne (v, e) = analyseBinder (s, e, v)
+        fun doOne (v, e) = analyseExtern (s, e, v)
         val e = VS.fold (MilUtils.Program.externVars p, e, doOne)
         fun doOne (v, _, e) = analyseBinder (s, e, v)
         val e = VD.fold (globals, e, doOne)

@@ -1,0 +1,24 @@
+local
+        $(SML_LIB)/mlton/sources.mlb
+        ../../../common/common.mlb
+        ../../mil.mlb
+        ../../imil/imil.mlb
+        seq.sml
+        base.sml
+        object.sml
+        prep.sml
+        node.sml
+        summary.sml
+        analyze.sml
+        reconstruct.sml
+        show.sml
+        flowgraph.sml
+        optimize.sml
+        rep.sml
+        flatten.sml
+        dead-code.sml
+in
+        structure MilFlatten
+        structure MilRepDce
+        structure MilRep
+end

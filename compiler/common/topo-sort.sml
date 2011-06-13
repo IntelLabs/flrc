@@ -1,7 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, February 2011 *)
-
-
+(* COPYRIGHT_NOTICE_1 *)
 
 (* Topological sort of key/data pairs based on a dependency function.
  * TopoSort.sort (l, f) returns L, where L is a list of lists of elements

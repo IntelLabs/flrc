@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, October 2006 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 local
         $(SML_LIB)/mlton/sources.mlb
@@ -29,36 +29,22 @@ local
         extended-layout.sml
         name-small-values.sml
         call-graph.sml
-        imil-types.sml
-        imil-enumerate.sml
-        imil-layout.sml
-        imil-common.sml
-        imil-use.sml
-        imil-def.sml
-        imil-var.sml
-        imil-instr.sml
-        imil-global.sml
-        imil-block.sml
-        imil-func.sml
-        imil-item.sml
-        imil-workset.sml
-        imil-t.sml
-        imil.sml
         utils2.sml
         parse.sml
         profile.sml 
         dataflow-analysis.sml
         dependence-analysis.sml
 in
+        signature MIL_FREE_VARS
+        signature RENAMER
+
         functor MilAnalyseF
         functor MilRewriterF
         functor MilStreamF
         functor MilStreamUtilsF
         functor MilTransformF
 
-        structure BothMil
         structure FMil
-        structure IMil
         structure Mil
         structure MilCallGraph
         structure MilCfg

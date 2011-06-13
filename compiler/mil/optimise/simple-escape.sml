@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, December 2007 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 signature MIL_ESCAPE_ANALYSIS = 
 sig
@@ -44,6 +44,7 @@ struct
   structure WS = IMil.WorkSet
   structure L = Layout
 
+  val fail = fn (f, msg) => Fail.fail ("simple-escape.sml", f, msg)
 
   val closureUseIsNonEscaping = 
    fn (d, imil, c, u) =>
@@ -75,9 +76,6 @@ struct
                | M.RhsObjectGetKind _ => true
                | _ => false)
 
-        val doIGlobal =
-            isSome o (MU.Global.Dec.gClosure oo (#2 om IGlobal.toGlobal))
-
         val doIInstr =
             fn i =>
                (case IInstr.getMil (imil, i)
@@ -88,7 +86,7 @@ struct
 
         val res = 
             (case u
-              of IMil.UseGlobal g => doIGlobal g
+              of IMil.UseGlobal g => false
                | IMil.UseInstr i => doIInstr i
                | IMil.Used => false)
       in res
@@ -143,8 +141,11 @@ struct
                    | IMil.MDead => warn ())
               | IMil.UseGlobal g =>
                 (case IGlobal.toGlobal g
-                  of SOME (clos, M.GClosure _) => 
-                     closureIsNonEscaping (d, imil, clos)
+                  of SOME (clos, M.GClosure {code = SOME f, fvs}) => 
+                     if f = fname then 
+                       closureIsNonEscaping (d, imil, clos)
+                     else
+                       fail ("codePtrUseIsNonEscaping", "Code pointer in free vars of closure")
                    | _ => warn())
               | IMil.Used => false
       in nonEscaping

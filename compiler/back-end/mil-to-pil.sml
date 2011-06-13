@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, October 2006 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 (* Convert Mil into C/Pillar *)
 
@@ -174,8 +174,11 @@ struct
    *
    * For types we may generate typedefs, these are held in typDecs.
    *
-   * For registering stuff in the init function, we keep a list of statements
-   * in regs.
+   * For registering stuff in the init function, we keep two list of statements
+   * in regs0 and regs1.  Everything in regs0 will preceed the reporting of
+   * the global objects, and hence cannot put (ppiler generated) globals on 
+   * the stack. Everthing in regs1 will follow the reporting of the globals
+   * and hence can refer to them.
    *
    * For reporting global objects that are allocated in the static data
    * segment we need a list of pil expressions for the addresses of these
@@ -185,7 +188,9 @@ struct
    * the global object.  For roots outside global objects, we need to know
    * the locations of refs.  Since we don't have any of these right now, we
    * record and do nothing.  If refs outside of global objects are generated,
-   * then this scheme needs to be modified.
+   * then this scheme needs to be modified.  
+   * The vtables for the global roots must be registered before the global
+   * objects are reported.
    *
    * We collect a set of local variables for a procedure,
    * and declare them at the head of C function.
@@ -201,7 +206,8 @@ struct
     vtables : I.variable VtiD.t ref,
     xtrGlbs : Pil.D.t list ref,
     typDecs : Pil.D.t list ref,
-    regs    : Pil.S.t list ref,
+    regs0   : Pil.S.t list ref,
+    regs1   : Pil.S.t list ref,
     globals : Pil.E.t list ref,
     gRoots  : unit,
     locals  : VS.t ref,
@@ -232,7 +238,8 @@ struct
          vtables = ref VtiD.empty,
          xtrGlbs = ref [],
          typDecs = ref [],
-         regs = ref [],
+         regs0 = ref [],
+         regs1 = ref [],
          globals = ref [],
          gRoots = (),
          locals = ref VS.empty,
@@ -278,8 +285,11 @@ struct
       in ()
       end
 
-  fun getRegs (S {regs, ...}) = List.rev (!regs)
-  fun addReg (S {regs, ...}, reg) = regs := reg::(!regs)
+  fun getRegs0 (S {regs0, ...}) = List.rev (!regs0)
+  fun addReg0 (S {regs0, ...}, reg) = regs0 := reg::(!regs0)
+
+  fun getRegs1 (S {regs1, ...}) = List.rev (!regs1)
+  fun addReg1 (S {regs1, ...}, reg) = regs1 := reg::(!regs1)
 
   fun getGlobals (S {globals, ...}) = List.rev (!globals)
   fun addGlobal (S {globals, ...}, g) = globals := g::(!globals)
@@ -742,7 +752,7 @@ struct
           val mut = Pil.E.namedConstant (genVtMutability mut)
           val args = [Pil.E.addrOf vt', fs, refsv, vs, vlo, vr, mut]
           val vtr = Pil.E.call (Pil.E.namedConstant RT.MD.register, args)
-          val () = if vtReg env then addReg (state, Pil.S.expr vtr) else ()
+          val () = if vtReg env then addReg0 (state, Pil.S.expr vtr) else ()
         in vt
         end
 
@@ -925,7 +935,7 @@ struct
       case t
        of M.TAny => Fail.fail ("MilToPil", "genTyp", "TAny")
         | M.TAnyS _ => Fail.fail ("MilToPil", "genTyp", "TAnyS")
-        | M.TPtr => Fail.fail ("MilToPil", "genTyp", "TPtr")
+        | M.TNonRefPtr => Fail.fail ("MilToPil", "genTyp", "TNonRefPtr")
         | M.TRef => Pil.T.named RT.T.object
         | M.TBits vs =>
           (case vs
@@ -1040,6 +1050,7 @@ struct
                Pil.E.word32 m
              end) *)
         | M.CPok pok => Pil.E.namedConstant (RT.MD.pObjKindTag pok)
+        | M.CRef i   => Pil.E.cast (genTyp (state, env, M.TRef), Pil.E.intInf i)
         | M.COptionSetEmpty =>
           notCoreMil (env, "genConstant", "COptionSetEmpty")
         | M.CTypePH =>
@@ -1656,6 +1667,8 @@ struct
                 Fail.fail ("MilToPil", "genTransfer", "Mixed constants")
         fun doGenArm (c, t) =
             (genConstant (state, env, c), genGoto (state, env, cb, src, t))
+        fun doRefArm (c, t) =
+            (Pil.E.cast (Pil.T.sintp, genConstant (state, env, c)), genGoto (state, env, cb, src, t))
       in
         case (Vector.length cases, default)
          of (0, NONE) => Fail.fail ("MilToPil", "genCase", "no cases")
@@ -1666,17 +1679,17 @@ struct
             let
               val c1 = Vector.sub (cases, 0)
               val c2 = Vector.sub (cases, 1)
-              val (c1, c2) = if isZero (#1 c2) then (c2, c1) else (c1, c2)
+              val (c1, c2) = if isZero (#1 c1) then (c1, c2) else  (* only swap if disjoint *)
+                             if isZero (#1 c2) then (c2, c1) else (c1, c2)
             in doIf (c1, #2 c2)
             end
           | _ =>
             let
               val (on, doArm) =
                   case #1 (Vector.sub (cases, 0))
-                   of M.CName _ => 
-                      (Pil.E.call (Pil.E.namedConstant RT.Name.getTag, [on]),
-                       doNameArm)
-                    | _ => (Pil.E.cast (Pil.T.sintp, on), doGenArm)
+                   of M.CName _ => (Pil.E.call (Pil.E.namedConstant RT.Name.getTag, [on]), doNameArm)
+                    | M.CRef _  => (Pil.E.cast (Pil.T.sintp, on), doRefArm)
+                    | _         => (Pil.E.cast (Pil.T.sintp, on), doGenArm)
               val arms = Vector.toListMap (cases, doArm)
               val default =
                   case default
@@ -1851,10 +1864,17 @@ struct
               (* XXX NG: there is a bug in Pillar for arguments and no C implementation - for now punt and hope! *)
               val args = [] (*genOperands (state, env, args)*)
               val cuts = genCutsTo (state, env, cuts)
-              val cut = Pil.S.contCutTo (getConfig env, genVarE (state, env, cont), args, cuts)
+              val c = Pil.E.cast (Pil.T.continuation, genVarE (state, env, cont))
+              val cut = Pil.S.contCutTo (getConfig env, c, args, cuts)
             in cut
             end
-          | M.THalt opnd => Pil.S.call (Pil.E.namedConstant RT.halt, [genOperand (state, env, opnd)])
+          | M.THalt opnd => 
+            let
+              val M.F {rtyps, ...} = getFunc env
+              val void = Vector.length rtyps = 0
+              val halt = if void then RT.haltV else RT.halt
+            in Pil.S.call (Pil.E.namedConstant halt, [genOperand (state, env, opnd)])
+            end
           | M.TPSumCase _ => notCoreMil (env, "genTransfer", "TPSumCase")
        end
 
@@ -1921,8 +1941,9 @@ struct
          * #define v ((vt)&vu)
          *)
         val declareAndDefine = 
-         fn (v, vT, vuT) =>
+         fn (v, vuT) =>
             let
+              val vT = genTyp (state, env, getVarTyp (state, v))
               val vu = unboxedVar (state, env, v)
               val v = genVar (state, env, v)
               val dec1 = Pil.D.staticVariable (Pil.varDec (vuT, vu))
@@ -1952,12 +1973,10 @@ struct
                   val M.MDD {pok, ...} = mdDesc
                   val tv = globalTVar (state, env, v)
                   val ts = MTT.operands (getConfig env, getSymbolInfo state, inits)
-                  val tvs = Vector.map (ts, fn t => (t, M.FvReadWrite))
-                  val t = MU.Typ.fixedArray (pok, tvs)
                   val fs = genTyps (state, env, ts)
                   val utt = tupleUnboxedTyp (pok, fs, NONE)
                   val ut = Pil.D.typDef (utt, tv)
-                  val dec = declareAndDefine (v, genTyp (state, env, t), Pil.T.named tv)
+                  val dec = declareAndDefine (v, Pil.T.named tv)
                 in Pil.D.sequence [ut, dec]
                 end
               | M.GRat t => error "GRat"
@@ -1965,8 +1984,7 @@ struct
               | M.GThunkValue {typ, ofVal} => 
                 let
                   val ut = Pil.T.named (RT.Thunk.unboxedTyp typ)
-                  val t  = Pil.T.named (RT.Thunk.boxedTyp typ)
-                  val dec = declareAndDefine (v, t, ut)
+                  val dec = declareAndDefine (v, ut)
                 in dec
                 end
               | M.GSimple s => (* This is supposed to be eliminated?  XXX -leaf *)
@@ -2177,19 +2195,29 @@ struct
       in (code, e)
       end
 
-  fun genGlobal (state, env, var, global) = 
+  fun genGlobal (state, env, var, global, preDefined) = 
       let
         val define = fn (v, g) => Pil.D.constantMacro (genVar (state, env, v), g)
-        val addGlobalDef = 
-         fn (v, vu) => 
+        val addGlobalReg = 
+         fn vu => 
             let
               val vr = Pil.E.addrOf vu
               val () = addGlobal (state, vr)
-              val t = genTyp (state, env, getVarTyp (state, v))
-              val g = Pil.E.cast (t, vr)
-              val d = define (v, g)
-            in d
+            in ()
             end
+
+        val mkGlobalDef = 
+         fn (v, vu, s) => 
+            if preDefined then
+              Pil.D.comment (s ^ " forward defined above")
+            else
+              let
+                val vr = Pil.E.addrOf vu
+                val t = genTyp (state, env, getVarTyp (state, v))
+                val g = Pil.E.cast (t, vr)
+                val d = define (v, g)
+              in d
+              end
 
         val res = 
             case global
@@ -2222,7 +2250,8 @@ struct
                                                  newv :: len' :: inits)
                           in idx
                           end
-                  val d = addGlobalDef (var, newv)
+                  val () = addGlobalReg newv
+                  val d = mkGlobalDef (var, newv, "Idx")
                   val d = Pil.D.sequence [idx, d]
                 in d
                 end
@@ -2242,7 +2271,8 @@ struct
                   val newv  = Pil.E.variable newvId
                   val init = Pil.E.strctInit elts
                   val tuple = Pil.D.staticVariableExpr (Pil.varDec (tv, newvId), init)
-                  val tupleptr = addGlobalDef (var, newv)
+                  val () = addGlobalReg newv
+                  val tupleptr = mkGlobalDef (var, newv, "Tuple")
                   val d = Pil.D.sequence [tuple, tupleptr]
                 in d
                 end
@@ -2254,7 +2284,8 @@ struct
                   val (code_d, den) = genStaticIntInf (state, env, den)
                   val newv  = Pil.E.variable (unboxedVar (state, env, var))
                   val rDef = Pil.D.macroCall (RT.Rat.staticDef, [newv, num, den])
-                  val d = addGlobalDef (var, newv)
+                  val () = addGlobalReg newv
+                  val d = mkGlobalDef (var, newv, "GRat")
                   val d = Pil.D.sequence (c::code_n@code_d@[rDef, d])
                 in d
                 end
@@ -2274,7 +2305,8 @@ struct
                    val s = genSimple (state, env, ofVal)
                    val newv  = Pil.E.variable (unboxedVar (state, env, var))
                    val thnk = Pil.D.macroCall (RT.Thunk.staticValue typ, [newv, s])
-                   val d = addGlobalDef (var, newv)
+                   val () = addGlobalReg newv
+                   val d = mkGlobalDef (var, newv, "Thunk")
                    val d = Pil.D.sequence [thnk, d]
                  in d
                  end
@@ -2307,14 +2339,14 @@ struct
                 in
                   Pil.D.sequence [Pil.D.comment "Global",
                                   Pil.D.sequence ds,
-                                  genGlobal (state, env, v, g)]
+                                  genGlobal (state, env, v, g, false)]
                 end
               | _ =>
                 let
                   val () = incMultipleGlobals state
                   fun doForward (v, g) = genForward (state, env, v, g)
                   val fs = List.map (scc, doForward)
-                  fun doGlobal (v, g) = genGlobal (state, env, v, g)
+                  fun doGlobal (v, g) = genGlobal (state, env, v, g, true)
                   val gs = List.map (scc, doGlobal)
                   val ds = Pil.D.sequence [Pil.D.comment "Forwards",
                                            Pil.D.sequence fs,
@@ -2374,10 +2406,11 @@ struct
         val ord = IM.nameMake (getStm state, Prims.ordString)
         val ord = genName (state, env, ord)
         val or = Pil.E.call (Pil.E.variable RT.Name.registerCoreCharOrd, [ord])
-        val () = addReg (state, Pil.S.expr or)
-        val registrations = getRegs state
+        val () = addReg1 (state, Pil.S.expr or)
+        val registrations0 = getRegs0 state
+        val registrations1 = getRegs1 state
         val () = Stats.addToStat (getStats state, "registrations",
-                                  List.length registrations)
+                                  List.length registrations0 + List.length registrations1)
         (* For each global index, initialise its entries. *)
         fun initIdx (v, g, idxs) =
             case g
@@ -2407,7 +2440,7 @@ struct
             if gcGlobals env then genReportGlobals (state, env) else ([], [])
         (* Run the program *)
         val run = Pil.S.expr (Pil.E.call (genVarE (state, env, entry), []))
-        val body = registrations @ idxs @ globals @ [run]
+        val body = registrations0 @ globals @ registrations1 @ idxs @ [run]
       in
         Pil.D.sequence (xtras @
                         [Pil.D.function (Pil.T.void, RT.pmain, [], [], body)])

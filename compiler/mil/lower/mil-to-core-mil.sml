@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation *)
+(* COPYRIGHT_NOTICE_1 *)
 
 signature MIL_TO_CORE_MIL = 
 sig
@@ -129,7 +129,7 @@ struct
             case t
              of M.TAny => t
               | M.TAnyS _ => t
-              | M.TPtr => t
+              | M.TNonRefPtr => t
               | M.TRef => t
               | M.TBits _ => t
               | M.TNone => t
@@ -562,7 +562,7 @@ struct
             let
               val M.VI {typ, kind} = MSTM.variableInfo (stm, v)
               val typ = doTyp (state, env, typ)
-              val () = MSTM.variableSetInfo (stm, v, typ, kind)
+              val () = MSTM.variableSetInfo (stm, v, M.VI {typ = typ, kind = kind})
             in ()
             end
         val () = List.foreach (vs, doOne)

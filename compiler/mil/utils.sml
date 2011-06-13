@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, October 2006 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 (* Mil utilities *)
 
@@ -136,11 +136,12 @@ sig
   sig
     type t = Mil.pObjKind
     val fromChar : char -> t option
+    val fromTyp : Mil.typ -> t option
     val toChar : t -> char
     val toString : t -> string
+    val isP : t -> bool
     val compare : t Compare.t
     val eq : t * t -> bool
-    val fromTyp : Mil.typ -> t option
   end
 
   structure ValueSize :
@@ -174,21 +175,22 @@ sig
   sig
     datatype traceability = TRef | TBits
     datatype t =
-        TsAny
-      | TsAnyS of ValueSize.t
-      | TsBits of ValueSize.t
+        TsAny                                  (* top *)
+      | TsAnyS of ValueSize.t                  (* traceability unknown, size fixed *)
+      | TsBits of ValueSize.t                  (* not GC, not float, not double, not mask, size fixed *)
       | TsFloat
       | TsDouble
-      | TsPtr
-      | TsNonRefPtr
-      | TsRef
-      | TsNone
-      | TsMask of Mil.Prims.vectorDescriptor
+      | TsRef                                  (* GC pointers to object starts *)
+      | TsNone                                 (* bottom *)
+      | TsMask of Mil.Prims.vectorDescriptor   (* masks for given vector type *)
     val toString : Config.t * t -> string
+    val known : t -> bool
+    val isRef : t -> bool
     val traceabilityIsRef : traceability -> bool
     val traceability : t -> traceability option
     val valueSize : Config.t * t -> ValueSize.t option
     val subTS : Config.t * t * t -> bool
+    val eq : t * t -> bool
   end
 
   structure Prims : 
@@ -218,6 +220,9 @@ sig
     val traceabilitySize : Config.t * t -> TraceabilitySize.t
     val fromTraceabilitySize : TraceabilitySize.t -> t
     val traceability : Config.t * t -> TraceabilitySize.traceability option
+    val isNonRefPtr : t -> bool
+    val isRef : t -> bool
+    val isP : t -> bool
     val isCore : t -> bool
     val compare : t Compare.t
     val eq : t * t -> bool
@@ -228,7 +233,7 @@ sig
     sig
       val tAny : t -> unit option
       val tAnyS : t -> Mil.valueSize  option
-      val tPtr : t -> unit option
+      val tNonRefPtr : t -> unit option
       val tRef : t -> unit option
       val tBits : t -> Mil.valueSize  option
       val tNone : t -> unit option
@@ -263,6 +268,7 @@ sig
     val toString : t -> string
     val fromString : string -> t option
     val intArbSz : IntArb.size -> t
+    val toIntArbSz : t -> IntArb.size
     val intArb : IntArb.typ -> t
     val wordSize : Config.t -> t
     val ptrSize : Config.t -> t
@@ -292,6 +298,7 @@ sig
     val eq : t * t -> bool
     val fromString : string -> t option
     val nonRefPtr : Config.t -> t
+    val fromTraceSize' : TraceabilitySize.t -> t option
     val fromTraceSize : Config.t * TraceabilitySize.t -> t
     val toTraceSize : Config.t * t -> TraceabilitySize.t (* pre: result determined *)
     val fromTyp : Config.t * Typ.t -> t (* pre: result determined *)
@@ -475,6 +482,7 @@ sig
     val eq : t * t -> bool
     structure Dict : DICT where type key = t
     val fx : Config.t * t -> Effect.set
+    val isHeapAllocation : t -> bool
     val isInit : t -> bool
     val isInitOf : t * Mil.variable -> bool
     val pObjKind : t -> Mil.pObjKind option
@@ -544,6 +552,7 @@ sig
     val compare : t Compare.t
     val eq : t * t -> bool
     val fx : Config.t * t -> Effect.set
+    val isHeapAllocation : t -> bool
     val isInit : t -> bool
     val isInitOf : t * Mil.variable -> bool
     val pObjKind : t -> Mil.pObjKind option
@@ -796,6 +805,7 @@ sig
     val compare : t Compare.t
     val eq : t * t -> bool
     val pObjKind : t -> Mil.pObjKind option
+    val immutable : t -> bool
     structure Dec : 
     sig
       val gCode : t -> Mil.code option
@@ -871,7 +881,7 @@ sig
     val variableRelated : t * Mil.variable * string * Typ.t * VariableKind.t -> Mil.variable
     val variableRelatedNoInfo : t * Mil.variable * string -> Mil.variable
     val variableHasInfo : t * Mil.variable -> bool
-    val variableSetInfo : t * Mil.variable * Typ.t * VariableKind.t -> unit
+    val variableSetInfo : t * Mil.variable * VariableInfo.t -> unit
     val nameMake : t * string -> Mil.name
     val labelFresh : t -> Mil.label
     val finish : t -> SymbolTable.t
@@ -1080,7 +1090,13 @@ sig
     (* Flat typs are the nullary super-types of the general types *)
     val fromTyp : Config.t * Mil.typ -> Mil.typ
   end (* structure FlatTyp *)
-              
+
+  (* Compiler assumptions about pointers into the heap *)
+  structure HeapModel : 
+  sig
+    val null : Config.t -> IntInf.t
+    val validRefConstant : Config.t * IntInf.t -> bool
+  end (* structure HeapModel *)
 end;
 
 functor Intp(val sgn : IntArb.signed
@@ -1212,6 +1228,14 @@ struct
           | IntArb.S16  => M.Fs16
           | IntArb.S32  => M.Fs32
           | IntArb.S64  => M.Fs64
+
+    val toIntArbSz : t -> IntArb.size = 
+     fn fk => 
+        (case fk
+         of M.Fs8  => IntArb.S8
+          | M.Fs16 => IntArb.S16
+          | M.Fs32 => IntArb.S32
+          | M.Fs64 => IntArb.S64)
 
     val intArb = 
      fn (IA.T (sz, _)) =>
@@ -1358,9 +1382,9 @@ struct
             | (M.TAnyS x1,         M.TAnyS x2        ) => valueSize (x1, x2)
             | (M.TAnyS _,          _                 ) => LESS
             | (_,                  M.TAnyS _         ) => GREATER
-            | (M.TPtr,             M.TPtr            ) => EQUAL
-            | (M.TPtr,             _                 ) => LESS
-            | (_,                  M.TPtr            ) => GREATER
+            | (M.TNonRefPtr,       M.TNonRefPtr      ) => EQUAL
+            | (M.TNonRefPtr,       _                 ) => LESS
+            | (_,                  M.TNonRefPtr      ) => GREATER
             | (M.TRef,             M.TRef            ) => EQUAL
             | (M.TRef,             _                 ) => LESS
             | (_,                  M.TRef            ) => GREATER
@@ -1479,6 +1503,9 @@ struct
             | (M.CPok pok1,       M.CPok pok2      ) => pObjKind (pok1, pok2)
             | (M.CPok _,          _                ) => LESS
             | (_,                 M.CPok _         ) => GREATER
+            | (M.CRef i1,         M.CRef i2        ) => IntInf.compare (i1, i2)
+            | (M.CRef _,          _                ) => LESS
+            | (_,                 M.CRef _         ) => GREATER
             | (M.COptionSetEmpty, M.COptionSetEmpty) => EQUAL
             | (M.COptionSetEmpty, _                ) => LESS
             | (_,                 M.COptionSetEmpty) => GREATER
@@ -2013,7 +2040,7 @@ struct
         (case t
           of M.TAny                       => NONE
            | M.TAnyS vs                   => NONE
-           | M.TPtr                       => NONE
+           | M.TNonRefPtr                 => NONE
            | M.TRef                       => NONE
            | M.TBits vs                   => NONE
            | M.TNone                      => NONE
@@ -2033,6 +2060,23 @@ struct
            | M.TPSum nts                  => SOME M.PokTagged
            | M.TPType {kind, over}        => SOME M.PokType
            | M.TPRef t                    => SOME M.PokPtr)
+
+     fun isP pok =
+         case pok
+          of M.PokNone      => false
+           | M.PokRat       => true
+           | M.PokFloat     => true
+           | M.PokDouble    => true
+           | M.PokName      => true
+           | M.PokFunction  => true
+           | M.PokArray     => true
+           | M.PokDict      => true
+           | M.PokTagged    => true
+           | M.PokOptionSet => true
+           | M.PokType      => true
+           | M.PokPtr       => true
+           | M.PokCell      => false
+
   end
 
   structure ValueSize =
@@ -2137,8 +2181,6 @@ struct
       | TsBits of ValueSize.t
       | TsFloat
       | TsDouble
-      | TsPtr
-      | TsNonRefPtr
       | TsRef
       | TsNone
       | TsMask of MP.vectorDescriptor
@@ -2150,8 +2192,6 @@ struct
           | TsBits vs   => "Bits" ^ Int.toString (ValueSize.numBits vs)
           | TsFloat     => "Float"
           | TsDouble    => "Double"
-          | TsPtr       => "Ptr"
-          | TsNonRefPtr => "NonRefPtr"
           | TsRef       => "Ref"
           | TsNone      => "None"
           | TsMask vet  => "Mask(" ^ PrimsUtils.VectorDescriptor.toString (config, vet) ^ ")"
@@ -2168,11 +2208,15 @@ struct
           | TsBits vs   => SOME TBits
           | TsFloat     => SOME TBits
           | TsDouble    => SOME TBits
-          | TsPtr       => NONE
-          | TsNonRefPtr => SOME TBits
           | TsRef       => SOME TRef
           | TsNone      => NONE
           | TsMask vet  => SOME TBits
+
+    fun known ts = isSome (traceability ts)
+
+    fun isRef ts = case traceability ts
+                    of SOME TRef => true
+                     | _         => false
 
     fun valueSize (config, ts) =
         case ts
@@ -2181,8 +2225,6 @@ struct
           | TsBits vs   => SOME vs
           | TsFloat     => SOME M.Vs32
           | TsDouble    => SOME M.Vs64
-          | TsPtr       => SOME (ValueSize.ptrSize config)
-          | TsNonRefPtr => SOME (ValueSize.ptrSize config)
           | TsRef       => SOME (ValueSize.ptrSize config)
           | TsNone      => NONE
           | TsMask vet  => NONE
@@ -2210,13 +2252,19 @@ struct
           | (TsMask vit1, TsMask vit2) => PrimsUtils.VectorDescriptor.eq (vit1, vit2)
           | (_, TsMask _) => false
           | (TsMask _, _) => false
-          | (TsPtr, TsPtr) => true
-          | (_, TsPtr) => true
-          | (TsPtr, _) => false
-          | (TsNonRefPtr, TsNonRefPtr) => true
-          | (_, TsNonRefPtr) => false
-          | (TsNonRefPtr, _) => false
           | (TsRef, TsRef) => true
+
+    fun eq (ts1, ts2) = 
+        case (ts1, ts2)
+         of (TsAny     , TsAny     ) => true
+          | (TsAnyS vs1, TsAnyS vs2) => ValueSize.eq (vs1, vs2)
+          | (TsBits vs1, TsBits vs2) => ValueSize.eq (vs1, vs2)
+          | (TsFloat   , TsFloat   ) => true
+          | (TsDouble  , TsDouble  ) => true
+          | (TsRef     , TsRef     ) => true
+          | (TsNone    , TsNone    ) => true
+          | (TsMask vd1, TsMask vd2) => PrimsUtils.VectorDescriptor.eq (vd1, vd2)
+          | (_         , _         ) => false
 
   end
 
@@ -2288,7 +2336,7 @@ struct
         case t
          of M.TAny                       => TS.TsAny
           | M.TAnyS vs                   => TS.TsAnyS vs
-          | M.TPtr                       => TS.TsPtr
+          | M.TNonRefPtr                 => TS.TsBits (ValueSize.ptrSize c)
           | M.TRef                       => TS.TsRef
           | M.TBits vs                   => TS.TsBits vs
           | M.TNone                      => TS.TsNone
@@ -2297,11 +2345,11 @@ struct
           | M.TName                      => TS.TsRef
           | M.TViVector et               => TS.TsBits (ValueSize.vectorSize c)
           | M.TViMask et                 => TS.TsMask et
-          | M.TCode {cc, args, ress}     => TS.TsNonRefPtr
+          | M.TCode {cc, args, ress}     => TS.TsBits (ValueSize.ptrSize c)
           | M.TTuple {pok, fixed, array} => TS.TsRef
-          | M.TCString                   => TS.TsNonRefPtr
+          | M.TCString                   => TS.TsBits (ValueSize.ptrSize c)
           | M.TIdx                       => TS.TsRef
-          | M.TContinuation ts           => TS.TsNonRefPtr
+          | M.TContinuation ts           => TS.TsBits (ValueSize.ptrSize c)
           | M.TThunk t                   => TS.TsRef
           | M.TPAny                      => TS.TsRef
           | M.TClosure {args, ress}      => TS.TsRef
@@ -2316,8 +2364,6 @@ struct
            | TS.TsBits vs   => M.TBits vs
            | TS.TsFloat     => Prims.NumericTyp.tFloat
            | TS.TsDouble    => Prims.NumericTyp.tDouble
-           | TS.TsPtr       => M.TPtr
-           | TS.TsNonRefPtr => M.TPtr
            | TS.TsRef       => M.TRef
            | TS.TsNone      => M.TNone
            | TS.TsMask et   => M.TViMask et)
@@ -2335,11 +2381,46 @@ struct
 
     fun traceability (c, t) = TS.traceability (traceabilitySize (c, t))
 
+    fun isNonRefPtr t =
+        case t
+         of M.TNonRefPtr      => true
+          | M.TCode _         => true
+          | M.TCString        => true
+          | M.TContinuation _ => true
+          | _                 => false
+
+    fun isRef t =
+        case t
+         of M.TRef                                             => true
+          | M.TName                                            => true
+          | M.TNumeric M.Prims.NtRat                           => true
+          | M.TNumeric (M.Prims.NtInteger M.Prims.IpArbitrary) => true
+          | M.TTuple _                                         => true
+          | M.TIdx                                             => true
+          | M.TThunk _                                         => true
+          | M.TPAny                                            => true
+          | M.TClosure _                                       => true
+          | M.TPSum _                                          => true
+          | M.TPType _                                         => true
+          | M.TPRef _                                          => true
+          | _                                                  => false
+
+     fun isP t =
+         case t
+          of M.TName             => true
+           | M.TTuple {pok, ...} => PObjKind.isP pok
+           | M.TPAny             => true
+           | M.TClosure _        => true
+           | M.TPSum _           => true
+           | M.TPType _          => true
+           | M.TPRef _           => true
+           | _                   => false
+
     fun isCore t =
         case t
          of M.TAny                       => true
           | M.TAnyS vs                   => true
-          | M.TPtr                       => true
+          | M.TNonRefPtr                 => true
           | M.TRef                       => true
           | M.TBits vs                   => true
           | M.TNone                      => true
@@ -2371,8 +2452,8 @@ struct
        fn t => (case t of M.TAny => SOME () | _ => NONE)
       val tAnyS = 
        fn t => (case t of M.TAnyS r => SOME r | _ => NONE)
-      val tPtr = 
-       fn t => (case t of M.TPtr => SOME () | _ => NONE)
+      val tNonRefPtr = 
+       fn t => (case t of M.TNonRefPtr => SOME () | _ => NONE)
       val tRef = 
        fn t => (case t of M.TRef => SOME () | _ => NONE)
       val tBits = 
@@ -2466,22 +2547,21 @@ struct
 
     fun nonRefPtr c = M.FkBits (FieldSize.ptrSize c)
 
+    fun fromTraceSize' ts =
+        case ts
+         of TS.TsAny       => NONE
+          | TS.TsAnyS vs   => NONE
+          | TS.TsBits vs   => SOME (M.FkBits (FieldSize.fromValueSize vs))
+          | TS.TsFloat     => SOME (M.FkFloat)
+          | TS.TsDouble    => SOME (M.FkDouble)
+          | TS.TsRef       => SOME (M.FkRef)
+          | TS.TsNone      => NONE
+          | TS.TsMask vs   => NONE
+
     fun fromTraceSize (c, ts) =
-        let
-          fun err () = Fail.fail ("MilUtils.FieldKind", "fromTraceSize", "bad trace size " ^ (TS.toString (c, ts)))
-        in
-          case ts
-           of TS.TsAny       => err ()
-            | TS.TsAnyS vs   => err ()
-            | TS.TsBits vs   => M.FkBits (FieldSize.fromValueSize vs)
-            | TS.TsFloat     => M.FkFloat
-            | TS.TsDouble    => M.FkDouble
-            | TS.TsPtr       => err ()
-            | TS.TsNonRefPtr => nonRefPtr c
-            | TS.TsRef       => M.FkRef
-            | TS.TsNone      => err ()
-            | TS.TsMask vs   => err ()
-        end
+        case fromTraceSize' ts
+         of SOME ts => ts
+          | NONE    => Fail.fail ("MilUtils.FieldKind", "fromTraceSize", "bad trace size " ^ (TS.toString (c, ts)))
 
     fun toTraceSize (c, fk) =
         (case fk
@@ -2505,7 +2585,7 @@ struct
         (case t
           of M.TAny                       => NONE
            | M.TAnyS vs                   => SOME (M.FkBits (vsToFs vs))
-           | M.TPtr                       => SOME (M.FkBits (FieldSize.ptrSize c))
+           | M.TNonRefPtr                 => SOME (M.FkBits (FieldSize.ptrSize c))
            | M.TRef                       => SOME M.FkRef
            | M.TBits vs                   => SOME (M.FkBits (vsToFs vs))
            | M.TNone                      => NONE
@@ -2640,6 +2720,7 @@ struct
           | M.CDouble _       => true
           | M.CViMask _       => true
           | M.CPok _          => true
+          | M.CRef _          => true
           | M.COptionSetEmpty => false
           | M.CTypePH         => false
 
@@ -2659,6 +2740,7 @@ struct
            | M.CDouble _       => NONE
            | M.CViMask _       => NONE
            | M.CPok _          => NONE
+           | M.CRef _          => NONE
            | M.COptionSetEmpty => SOME M.PokOptionSet
            | M.CTypePH         => SOME M.PokType)
 
@@ -2682,6 +2764,8 @@ struct
        fn c => (case c of M.CViMask r => SOME r | _ => NONE)
       val cPok = 
        fn c => (case c of M.CPok r => SOME r | _ => NONE)
+      val cRef = 
+       fn c => (case c of M.CRef i => SOME i | _ => NONE)
       val cOptionSetEmpty = 
        fn c => (case c of M.COptionSetEmpty => SOME () | _ => NONE)
       val cTypePH = 
@@ -2824,7 +2908,7 @@ struct
       val fiVectorVariable = fn fi => (case fi of Mil.FiVectorVariable r => SOME r | _ => NONE)
     end (* structure Dec *)
 
-  end
+  end (* structure FieldIdentifier *)
 
   structure TupleField =
   struct
@@ -2968,14 +3052,30 @@ struct
     val getInit = 
      fn rhs => 
         (case rhs 
-          of M.RhsTupleSet {tupField = M.TF {tup, ...}, ...} => SOME tup
-           | M.RhsTupleInited {tup, ...} => SOME tup
+          of M.RhsTupleSet {tupField = M.TF {tup, tupDesc, ...}, ...} => 
+             if TupleDescriptor.immutable tupDesc then SOME tup else NONE
+           | M.RhsTupleInited {tup, mdDesc} => 
+             if MetaDataDescriptor.immutable mdDesc then SOME tup else NONE
            | M.RhsThunkInit {thunk, ...} => thunk
            | M.RhsThunkValue {thunk, ...} => thunk
            | M.RhsClosureInit {cls, ...} => cls
            | _ => NONE)
 
+    val isHeapAllocation = 
+     fn rhs => 
+        case rhs
+         of M.RhsTuple _       => true
+          | M.RhsThunkMk _     => true
+          | M.RhsThunkInit r   => not (isSome (#thunk r))
+          | M.RhsThunkValue _  => true
+          | M.RhsClosureMk _   => true
+          | M.RhsClosureInit r => not (isSome (#cls r))
+          | M.RhsPSetNew _     => true
+          | M.RhsPSum _        => true
+          | _                  => false
+
     val isInit = isSome o getInit
+
     val isInitOf =
      fn (rhs, v) => 
         (case getInit rhs
@@ -3121,6 +3221,8 @@ struct
     val eq = Eq.instruction
 
     fun fx (config, i) = Rhs.fx (config, rhs i)
+
+    val isHeapAllocation = Rhs.isHeapAllocation o rhs
 
     val isInit = Rhs.isInit o rhs
 
@@ -3516,31 +3618,23 @@ struct
 
     fun isBoolIf t =
         Try.try
-        (fn () =>
-            let
-              val (on, cases) = 
-                  case t
-                   of M.TCase {on, cases, default = NONE} => (on, cases)
-                    | _ => Try.fail ()
-              val () = Try.V.lenEq (cases, 2)
-              val (c1, t1) =
-                  case Vector.sub (cases, 0)
-                   of (M.CIntegral c, t1) => (c, t1)
-                    | _ => Try.fail ()
-              val (c2, t2) =
-                  case Vector.sub (cases, 1)
-                   of (M.CIntegral c, t2) => (c, t2)
-                    | _ => Try.fail ()
-              val c1 = IntArb.toIntInf c1
-              val c2 = IntArb.toIntInf c2
-              val (tt, tf) =
-                  if c1 = IntInf.zero andalso c2 = IntInf.one
-                  then (t2, t1)
-                  else if c1 = IntInf.one andalso c2 = IntInf.zero
-                  then (t1, t2)
-                  else Try.fail ()
-            in {on = on, trueBranch = tt, falseBranch = tf}
-            end)
+          (fn () =>
+              let
+                val (on, cases) = 
+                    case t
+                     of M.TCase {on, cases, default = NONE} => (on, cases)
+                      | _ => Try.fail ()
+                val () = Try.V.lenEq (cases, 2)
+                val (c1, t1) = Vector.sub (cases, 0)
+                val (c2, t2) = Vector.sub (cases, 1)
+                val b1 = Try.<@ Constant.Dec.cBoolean c1
+                val b2 = Try.<@ Constant.Dec.cBoolean c2
+                val (tt, tf) =
+                    if not b1 andalso b2 then (t2, t1) else 
+                    if b1 andalso not b2 then (t1, t2) else 
+                    Try.fail ()
+              in {on = on, trueBranch = tt, falseBranch = tf}
+              end)
 
     val mapOverTargets = 
      fn (t, f) => 
@@ -3667,22 +3761,21 @@ struct
     fun cuts b = Transfer.cuts (transfer b)
 
     fun getBoolTargets (targets : (Mil.constant * Mil.target) Vector.t) =
-        if Vector.length (targets) = 2 then
-          let 
-            fun isTrue (c) = Compare.constant (c, Mil.CInteger (IntInf.fromInt 1)) = EQUAL
-            fun isFalse (c) = Compare.constant (c, Mil.CInteger (IntInf.fromInt 0)) = EQUAL
-            val (c1, Mil.T t1) = Vector.sub (targets, 0)
-            val (c2, Mil.T t2) = Vector.sub (targets, 1)
-          in
-            if (isTrue c1 andalso isFalse c2) then 
-              SOME (#block t1, #block t2)
-            else if (isFalse c1 andalso isTrue c2) then 
-              SOME (#block t2, #block t1)
-            else
-              NONE
-          end
-        else
-          NONE
+        Try.try
+          (fn () =>
+              let
+                val () = Try.V.lenEq (targets, 2)
+                val (c1, Mil.T t1) = Vector.sub (targets, 0)
+                val (c2, Mil.T t2) = Vector.sub (targets, 1)
+                val b1 = Try.<@ Constant.Dec.cBoolean c1
+                val b2 = Try.<@ Constant.Dec.cBoolean c2
+                val (tt, tf) =
+                    if not b1 andalso b2 then (#block t2, #block t1) else 
+                    if b1 andalso not b2 then (#block t1, #block t2) else 
+                    Try.fail ()
+
+              in (tt, tf)
+              end)
 
     val getBoolSuccessors : Mil.block -> (Mil.label * Mil.label) option = 
      fn (M.B {transfer, ...}) => case transfer
@@ -3881,6 +3974,22 @@ struct
            | M.GPSet _              => SOME M.PokOptionSet)
 
 
+    val immutable =
+     fn g =>
+        (case g
+          of M.GCode f              => true
+           | M.GErrorVal _          => true
+           | M.GIdx _               => true
+           | M.GTuple {mdDesc, ...} => MetaDataDescriptor.immutable mdDesc
+           | M.GRat _               => true
+           | M.GInteger _           => true
+           | M.GCString _           => false
+           | M.GThunkValue _        => true
+           | M.GSimple s            => true
+           | M.GClosure _           => true
+           | M.GPSum _              => true
+           | M.GPSet _              => true)
+
     structure O = struct type t = t val compare = compare end
     structure Dict = DictF(O)
 
@@ -4013,8 +4122,8 @@ struct
     fun variableHasInfo (stm, v) =
         IM.variableHasInfo (stm, v)
 
-    fun variableSetInfo (stm, v, t, k) =
-        IM.variableSetInfo (stm, v, M.VI {typ = t, kind = k})
+    fun variableSetInfo (stm, v, info) =
+        IM.variableSetInfo (stm, v, info)
 
     fun nameMake (stm, s) = IM.nameMake (stm, s)
 
@@ -4080,21 +4189,15 @@ struct
   structure Bool =
   struct
 
-    fun t config = Uintp.t config
+    fun t config = M.TBoolean
 
-    fun T config = Uintp.one config
+    fun T config = M.CBoolean true
 
-    fun F config = Uintp.zero config
+    fun F config = M.CBoolean false
 
-    fun fromBool (config, b) = if b then T config else F config
+    fun fromBool (config, b) = M.CBoolean b
 
-    fun toBool (config, c) = 
-        if Constant.eq (c, T config) then 
-          SOME true
-        else if Constant.eq (c, F config) then
-          SOME false
-        else
-          NONE
+    fun toBool (config, c) = Constant.Dec.cBoolean c
 
     fun ifS (c, opnd, {trueT, falseT}) =
         Switch.noDefault (opnd, Vector.new2 ((T c, trueT), (F c, falseT)))
@@ -4560,7 +4663,7 @@ struct
         (case t
           of M.TAny                       => t
            | M.TAnyS vs                   => t
-           | M.TPtr                       => t
+           | M.TNonRefPtr                 => t
            | M.TRef                       => t
            | M.TBits vs                   => t
            | M.TNone                      => t
@@ -4582,5 +4685,15 @@ struct
            | M.TPRef t                    => M.TPAny)
 
   end (* structure FlatTyp *)
+
+  (* Compiler assumptions about pointers into the heap *)
+  structure HeapModel =
+  struct
+    val null : Config.t -> IntInf.t = fn c => 0
+    val isNull : Config.t * IntInf.t -> bool = fn (c, i) => i = 0
+    val lowBitsSet : Config.t * IntInf.t -> bool = fn (c, i) => IntInf.andb (i, 3) <> 0
+    val validRefConstant : Config.t * IntInf.t -> bool = 
+     fn (config, i) => isNull (config, i) orelse lowBitsSet (config, i)
+  end (* structure HeapModel *)
               
 end

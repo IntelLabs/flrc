@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, October 2006 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 (* This file contains two abstractions for building up code bodies for Mil code.
  * Both are intended to contain parts of a code body.
@@ -228,6 +228,9 @@ sig
 
   val uintpLoop : state * env * carriedVars * Mil.operand * Mil.operand * Mil.operand * (Mil.variable -> MilStream.t)
                   -> MilStream.t
+
+  val withCont : state * env * (Mil.label -> exp) * Mil.variable Vector.t * exp * Mil.variable Vector.t
+                 -> MilStream.t
 
 end;
 
@@ -523,6 +526,24 @@ struct
             end
         val body = MS.seq (genBody index, MS.bindRhs (nexti, MU.Uintp.add (config, M.SVariable index, step)))
         val s = doWhile (state, env, cvs, genTest, body)
+      in s
+      end
+
+  fun withCont (state : state,
+                env   : env,
+                e1    : M.label -> exp,
+                args  : M.variable Vector.t,
+                e2    : exp,
+                vs    : M.variable Vector.t)
+      : MS.t =
+      let
+        val lcont = labelFresh state
+        val lexit = labelFresh state
+        val (s1, os1) = e1 lcont
+        val t1 = M.TGoto (M.T {block = lexit, arguments = os1})
+        val (s2, os2) = e2
+        val t2 = M.TGoto (M.T {block = lexit, arguments = os2})
+        val s = MS.seqn [s1, MS.transfer (t1, lcont, args), s2, MS.transfer (t2, lexit, vs)]
       in s
       end
 

@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, October 2006 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 (* Utility stuff not in the MLton library *)
 
@@ -14,11 +14,29 @@ structure Utils = struct
     fun flip2 (a,b) = (b,a) 
 
 
- 
+    structure Iterate = 
+    struct
+      val for : 'a * ('a -> 'a) * ('a -> bool) * 'b * ('a * 'b -> 'b) -> 'b = 
+       fn (init, inc, continue, b, step) =>
+          let
+            val rec loop = 
+             fn (a, b) => 
+                if continue a then
+                  loop (inc a, step (a, b))
+                else
+                  b
+          in loop (init, b)
+          end
+      val foreach : 'a * ('a -> 'a) * ('a -> bool) * ('a -> unit) -> unit = 
+       fn (init, inc, continue, step) => for (init, inc, continue, (), fn (i, ()) => step i)
+          
+    end (* Iterate *)
 
     structure Imperative = 
     struct
       val block : unit list -> unit = fn l => ()
+     (* infix 1 *)
+      val $$ : unit * unit -> unit = fn (a, b) => ()
     end
 
     structure Function = 
@@ -40,7 +58,7 @@ structure Utils = struct
 
       val apply2 : ('a -> 'b) -> ('a * 'a) -> ('b * 'b) = 
        fn f => fn (a, b) => (f a, f b)
-                 
+
       (* infix 3 @@ *)
       val @@ : ('a -> 'b) * 'a -> 'b = 
        fn (f, a) => f a
@@ -136,6 +154,21 @@ structure Utils = struct
           Vector.mapAndFold (Vector.mapi (xs, fn x => x), y, fn ((i, x), y) => f (i, x, y))
       val mapSecond : ('a * 'b) Vector.t * ('b -> 'c) -> ('a * 'c) Vector.t =
        fn (v, f) => Vector.map (v, fn (a, b) => (a, f b))
+      val exists2 : 'a Vector.t * 'b Vector.t * ('a * 'b -> bool) -> bool = 
+          fn (v1, v2, p) => 
+             let
+               val len1 = Vector.length v1
+               val len2 = Vector.length v2
+               val () = if len1 = len2 then ()
+                        else Fail.fail ("utils.sml", "Vector.exists2", "Unequal lengths")
+               val rec loop =
+                fn i => 
+                   if i < len1 then
+                     p (Vector.sub (v1, i), Vector.sub (v2, i)) orelse loop (i+1)
+                   else
+                     false
+             in loop 0
+             end
     end (* structure Vector *)
 
     structure MltonList = List

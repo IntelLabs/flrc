@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, October 2006 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 signature MIL_FREE_VARS =
 sig
@@ -10,6 +10,7 @@ sig
   val eval : t * Mil.eval -> Identifier.VariableSet.t
   val transfer : t * Mil.transfer -> Identifier.VariableSet.t
   val block : t * Mil.label * Mil.block -> Identifier.VariableSet.t
+  val blocks : t * Mil.block Mil.LD.t -> Identifier.VariableSet.t
   val global : t * Mil.variable * Mil.global -> Identifier.VariableSet.t
   val program : t * Mil.t -> Identifier.VariableSet.t
 end;
@@ -43,6 +44,7 @@ struct
                    type env = Config.t
                    fun config c = c
                    val indent = 2
+                   val externBind = SOME varBind
                    val variableBind = SOME varBind
                    val labelBind = NONE
                    val variableUse = SOME varUse
@@ -77,6 +79,7 @@ struct
   val eval = mk1 MA.analyseEval
   val transfer = mk1 MA.analyseTransfer
   val block = mk2 MA.analyseBlock
+  val blocks = mk1 MA.analyseBlocks
   val global = mk2 MA.analyseGlobal
   val program = mk1 MA.analyseProgram
 

@@ -1,5 +1,6 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, May 2008 *)
+(* COPYRIGHT_NOTICE_1 *)
+
 (* Description: Inline functions aggressively. *)
 
 (* 
@@ -233,7 +234,8 @@ struct
         val calls = case func
                      of SOME (f, cfg) => #1 (getInlineableCalls (d, f, cfg, imil))
                       | NONE => nil
-        val () = budgetSize := !budgetSize - codeSize
+        val count = List.length calls
+        val () = budgetSize := !budgetSize - (count * codeSize)
         val () = dbgLayout (d, L.seq [L.str "Policy selected ",
                                       Int.layout (List.length (calls)),
                                       L.str " call sites to inline."])

@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, September 2007 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 signature MIL_COMPILE = 
 sig
@@ -20,13 +20,14 @@ struct
        (#"B", MilRemoveBranch.pass    ),
        (#"C", MilContify.pass         ),
        (#"D", MilDblDiamond.pass      ),
+       (#"E", MilRepDce.pass          ),
        (#"F", MilFlatten.pass         ),
        (#"f", MilLowerClosures.pass   ),
-       (#"I", MilInlineLeaves.pass    ),  
+       (#"I", MilInlineLeaves.pass    ),
        (#"J", MilInlineAggressive.pass),
        (#"K", MilInlineProfile.pass   ),
        (#"L", MilLicm.pass            ),
-       (#"R", MilRep.pass             ), 
+       (#"R", MilRep.pass             ),
        (#"S", MilSimplify.pass        ),
        (#"s", MilLowerPSums.pass      ),
        (#"t", MilLowerPTypes.pass     ),
@@ -154,9 +155,9 @@ struct
   val enabled = fn c => not (String.contains (disabled, c))
   val filter = fn s => String.keepAll (s, enabled)
   val o0String = filter "fst"
-  val o1String = filter "Sfst"
-  val o2String = filter "[{S}VIVIB]Sfst"
-  val o3String = filter "[{S}RVCVIFRDCVLRVIJKBFRV]Sfst"
+  val o1String = filter "SfstS"
+  val o2String = filter "[{S}VIVIBfst]S"
+  val o3String = filter "[{S}REVCVIFREDCVYLREVIJKBFREVfst]S"
 
   val o0Control = Option.valOf (parseControl o0String)
   val o1Control = Option.valOf (parseControl o1String)
@@ -301,7 +302,5 @@ struct
                     features  = PObjectModelCommon.features @ PObjectModelLow.features @ PObjectModelHigh.features @
                                 [writeFinalF],
                     subPasses = subPasses}
-
-  val pass = Pass.mkOptFullPass (description, associates, program) 
-
+  val pass = Pass.mkOptFullPass (description, associates, program)
 end

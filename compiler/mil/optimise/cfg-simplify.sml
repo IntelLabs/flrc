@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, September 2007 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 signature MIL_CFG_SIMPLIFY =
 sig
@@ -52,54 +52,20 @@ struct
 
   structure Click = 
   struct
-    val localNms = 
-        [
-         ("CollapseSwitch",   "Cases collapsed"                ),
-         ("GotoShortcut",     "Goto shortcuts"                 ),
-         ("IPShortcut",       "InterProc shortcuts"            ),
-         ("ReturnShortcut",   "Return shortcuts"               ),
-         ("SwitchTarget",     "Switch shortcuts"               ),
-         ("TailCall",         "Tail calls introduced"          )
-        ]
-
-    val globalNm = 
-     fn s => passname ^ ":" ^ s
-
-    val nmSet = 
-        let
-          val check = 
-           fn ((nm, info), d) => 
-              if SS.member (d, nm) then
-                fail ("LocalStats", "Duplicate stat")
-              else
-                SS.insert (d, nm)
-          val s = List.fold (localNms, SS.empty, check)
-        in s
-        end
-
-    val clicker = 
-     fn s => 
-        let
-          val () = 
-              if SS.member (nmSet, s) then 
-                ()
-              else
-                fail ("clicker", "Unknown stat")
-          val nm = globalNm s
-          val click = 
-           fn pd => PD.click (pd, nm)
-        in click
-        end
-
-    val stats = List.map (localNms, fn (nm, info) => (globalNm nm, info))
-
-    val collapseSwitch = clicker "CollapseSwitch"
-    val gotoShortcut = clicker "GotoShortcut"
-    val iPShortcut = clicker "IPShortcut"
-    val returnShortcut = clicker "ReturnShortcut"
-    val switchTarget = clicker "SwitchTarget"
-    val tailCall = clicker "TailCall"
-  end   (*  structure Click *)
+    val stats = []
+    val {stats, click = collapseSwitch} = PD.clicker {stats = stats, passname = passname,
+                                                      name = "CollapseSwitch", desc = "Cases collapsed"}
+    val {stats, click = gotoShortcut} = PD.clicker {stats = stats, passname = passname,
+                                                    name = "GotoShortcut", desc =   "Goto shortcuts"}
+    val {stats, click = iPShortcut} = PD.clicker {stats = stats, passname = passname,
+                                                  name = "IPShortcut", desc =     "InterProc shortcuts"}
+    val {stats, click = returnShortcut} = PD.clicker {stats = stats, passname = passname,
+                                                      name = "ReturnShortcut", desc = "Return shortcuts"}
+    val {stats, click = switchTarget} = PD.clicker {stats = stats, passname = passname,
+                                                    name = "SwitchTarget", desc =   "Switch shortcuts"}
+    val {stats, click = tailCall} = PD.clicker {stats = stats, passname = passname,
+                                                name = "TailCall", desc =       "Tail calls introduced"}
+  end (* structure Click *)
                    
   datatype arg = 
            VParam of int

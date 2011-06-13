@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, October 2010 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 structure Mil =
 struct
@@ -51,7 +51,7 @@ struct
     (* Core *)
       TAny                        (* All values *)
     | TAnyS         of valueSize  (* All values of given size *)
-    | TPtr                        (* All pointers; traceability unknown *)
+    | TNonRefPtr                  (* All non-GC pointers *)
     | TRef                        (* All GC valid pointers to object starts *)
     | TBits         of valueSize  (* All values of given size except heap pointers, floats, and doubles *)
     | TNone                       (* No values *)
@@ -121,6 +121,7 @@ struct
     | CDouble   of Real64.t
     | CViMask   of {descriptor : Prims.vectorDescriptor, elts : bool Vector.t} (* see vector indexing conventions above *)
     | CPok      of pObjKind
+    | CRef      of IntInf.t   (* Only gc-ignored refs *)
     (* HL *)
     | COptionSetEmpty
     | CTypePH 
@@ -344,4 +345,3 @@ struct
   }
 
 end (* structure Mil *)
-

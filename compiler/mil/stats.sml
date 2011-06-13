@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, July 2007 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 signature MIL_STATS =
 sig
@@ -81,6 +81,7 @@ struct
                              type env = env
                              fun config (E {config, ...}) = config
                              val indent = 2
+                             val externBind = NONE
                              val variableBind = NONE
                              val labelBind = NONE
                              val variableUse = NONE

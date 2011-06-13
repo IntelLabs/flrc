@@ -1,5 +1,5 @@
 (* The Intel P to C/Pillar Compiler *)
-(* Copyright (C) Intel Corporation, October 2006 *)
+(* COPYRIGHT_NOTICE_1 *)
 
 signature MIL_TYPE =
 sig
@@ -7,8 +7,6 @@ sig
   structure Type :
   sig
     type t = Mil.typ
-    val isPPObjKind : Config.t * Mil.pObjKind -> bool
-    val isPType : Config.t * Mil.typ -> bool
     val equal : t * t -> bool
     val subtype : Config.t * t * t -> bool
     val lub : Config.t * t * t -> t
@@ -80,33 +78,6 @@ struct
 
      fun equal (t1, t2) = MUT.compare (t1, t2) = EQUAL
 
-     fun isPPObjKind (c, pok) =
-         case pok
-          of M.PokNone      => false
-           | M.PokRat       => true
-           | M.PokFloat     => true
-           | M.PokDouble    => true
-           | M.PokName      => true
-           | M.PokFunction  => true
-           | M.PokArray     => true
-           | M.PokDict      => true
-           | M.PokTagged    => true
-           | M.PokOptionSet => true
-           | M.PokType      => true
-           | M.PokPtr       => true
-           | M.PokCell      => false
-
-     fun isPType (c, t) =
-         case t
-          of M.TName             => true
-           | M.TTuple {pok, ...} => isPPObjKind (c, pok)
-           | M.TPAny             => true
-           | M.TClosure _        => true
-           | M.TPSum _           => true
-           | M.TPType _          => true
-           | M.TPRef _           => true
-           | _                   => false
-
      fun subtype (c, t1, t2) =
          case (t1, t2)
           of (_, M.TAny) => true
@@ -115,30 +86,8 @@ struct
              (case MUT.valueSize (c, t1)
                of NONE => false
                 | SOME vs' => MU.ValueSize.compare (vs, vs') = EQUAL)
-           | (_, M.TPtr) =>
-             (case MUT.traceabilitySize (c, t1)
-               of TS.TsAny       => false
-                | TS.TsAnyS _    => false
-                | TS.TsBits _    => false
-                | TS.TsFloat     => false
-                | TS.TsDouble    => false
-                | TS.TsPtr       => true
-                | TS.TsNonRefPtr => true
-                | TS.TsRef       => true
-                | TS.TsNone      => true
-                | TS.TsMask _    => false)
-           | (_, M.TRef) =>
-             (case MUT.traceabilitySize (c, t1)
-               of TS.TsAny       => false
-                | TS.TsAnyS _    => false
-                | TS.TsBits _    => false
-                | TS.TsFloat     => false
-                | TS.TsDouble    => false
-                | TS.TsPtr       => false
-                | TS.TsNonRefPtr => false
-                | TS.TsRef       => true
-                | TS.TsNone      => true
-                | TS.TsMask _    => false)
+           | (_, M.TNonRefPtr) => MU.Typ.isNonRefPtr t1
+           | (_, M.TRef) => MU.Typ.isRef t1
            | (_, M.TBits vs) =>
              (case MUT.traceabilitySize (c, t1)
                of TS.TsAny       => false
@@ -146,15 +95,15 @@ struct
                 | TS.TsBits vs'  => MU.ValueSize.compare (vs, vs') = EQUAL
                 | TS.TsFloat     => false
                 | TS.TsDouble    => false
-                | TS.TsPtr       => false
-                | TS.TsNonRefPtr => false
                 | TS.TsRef       => false
-                | TS.TsNone      => false
+                | TS.TsNone      => true
                 | TS.TsMask _    => false)
-           | (M.TNumeric nt1, M.TNumeric nt2) => MU.Prims.Utils.NumericTyp.eq (nt1, nt2)
            | (M.TName, M.TName) => true
-           | (M.TViVector vet1, M.TViVector vet2) => MU.Prims.Utils.VectorSize.eq (#vectorSize vet1, #vectorSize vet2) andalso
-                                                     subtype (c, #elementTyp vet1, #elementTyp vet2)
+           | (M.TNumeric nt1, M.TNumeric nt2) => MU.Prims.Utils.NumericTyp.eq (nt1, nt2)
+           | (M.TBoolean, M.TBoolean) => true
+           | (M.TViVector vet1, M.TViVector vet2) =>
+             MU.Prims.Utils.VectorSize.eq (#vectorSize vet1, #vectorSize vet2) andalso
+             subtype (c, #elementTyp vet1, #elementTyp vet2)
            | (M.TViMask vet1, M.TViMask vet2) => MU.Prims.Utils.VectorDescriptor.eq (vet1, vet2)
            | (M.TCode {cc = cc1, args = args1, ress = ress1}, M.TCode {cc = cc2, args = args2, ress = ress2}) =>
              (* Technically code might be covariant in free variable types.
@@ -187,10 +136,11 @@ struct
                      checkField (a1, a2)
              in checkFields 0
              end
+           | (M.TCString, M.TCString) => true
            | (M.TIdx, M.TIdx) => true
            | (M.TContinuation ts1, M.TContinuation ts2) => subtypes (c, ts2, ts1)
            | (M.TThunk t1, M.TThunk t2) => subtype (c, t1, t2)
-           | (_, M.TPAny) => isPType (c, t1)
+           | (_, M.TPAny) => MU.Typ.isP t1
            | (M.TClosure {args = args1, ress = ress1}, M.TClosure {args = args2, ress = ress2}) =>
              subtypes (c, args2, args1) andalso subtypes (c, ress1, ress2)
            | (M.TPSum nts1, M.TPSum nts2) =>
@@ -268,7 +218,7 @@ struct
                    (case (t1, t2)
                      of (M.TAny, M.TAny) => M.TAny
                       | (M.TAnyS _, M.TAnyS _) => <@ eq (t1, t2)
-                      | (M.TPtr, M.TPtr) => M.TPtr
+                      | (M.TNonRefPtr, M.TNonRefPtr) => M.TNonRefPtr
                       | (M.TRef, M.TRef) => M.TRef
                       | (M.TBits _, M.TBits _) => <@ eq (t1, t2)
                       | (M.TNone, M.TNone) => M.TNone
@@ -310,7 +260,7 @@ struct
                         end
                       | (M.TPRef _, M.TPRef _) => <@ eq (t1, t2)
                       | (M.TAny, _) => Try.fail ()           | (M.TAnyS _, _) => Try.fail ()
-                      | (M.TPtr, _) => Try.fail ()           | (M.TRef, _) => Try.fail ()
+                      | (M.TNonRefPtr, _) => Try.fail ()     | (M.TRef, _) => Try.fail ()
                       | (M.TBits _, _) => Try.fail ()        | (M.TNone, _) => Try.fail ()
                       | (M.TNumeric _, _) => Try.fail ()     | (M.TBoolean, _) => Try.fail ()
                       | (M.TName, _) => Try.fail ()     
@@ -337,16 +287,16 @@ struct
       * TRef is classified by SRef false, whereas TRat is classified by SRef true.
       *)      
      datatype summary = 
-              SRef of bool  (* false => TRef, true => An exact immediate subtype of TRef *)
-            | SPtr of bool  (* false => TPtr, true => An exact immediate subtype of TPtr *)
-            | SPAny of bool (* false => TPAny, true => An exact immediate subtype of TPAny *)
-            | SBits of bool (* false => TBits, true => An exact immediate subtype of TBits *)
-            | SFloat  (* TFloat *)
-            | SDouble (* TDouble *)
-            | SMask   (* TMask *)
-            | SAny    (* TAny *)
-            | SSized  (* TAnyS *)
-            | SNone   (* TNone *)
+              SRef of bool        (* false => TRef, true => An exact immediate subtype of TRef except TPAny *)
+            | SNonRefPtr of bool  (* false => TNonRefPtr, true => An exact immediate subtype of TNonRefPtr *)
+            | SPAny of bool       (* false => TPAny, true => An exact immediate subtype of TPAny *)
+            | SBits of bool       (* false => TBits, true => An exact immediate subtype of TBits except TNonRefPtr *)
+            | SFloat              (* TFloat *)
+            | SDouble             (* TDouble *)
+            | SMask               (* TMask *)
+            | SAny                (* TAny *)
+            | SSized              (* TAnyS *)
+            | SNone               (* TNone *)
 
      val summarizeNumericTyp = 
       fn (config, nt) => 
@@ -366,23 +316,20 @@ struct
          (case t
            of M.TAny                       => SAny
             | M.TAnyS vs                   => SSized
-            | M.TPtr                       => SPtr false
+            | M.TNonRefPtr                 => SNonRefPtr false
             | M.TRef                       => SRef false
             | M.TBits vs                   => SBits false
             | M.TNone                      => SNone
-            | M.TName                      => SRef true
+            | M.TName                      => SPAny true
             | M.TNumeric nt                => summarizeNumericTyp (config, nt)
             | M.TBoolean                   => SBits true
             | M.TViVector et               => SBits true
             | M.TViMask et                 => SMask
-            | M.TCode {cc, args, ress}     => SPtr true
-            | M.TTuple {pok, fixed, array} => if isPType (config, t) then 
-                                                SPAny true
-                                              else
-                                                SRef true
-            | M.TCString                   => SPtr true
+            | M.TCode {cc, args, ress}     => SNonRefPtr true
+            | M.TTuple {pok, fixed, array} => if MU.Typ.isP t then SPAny true else SRef true
+            | M.TCString                   => SNonRefPtr true
             | M.TIdx                       => SRef true
-            | M.TContinuation ts           => SPtr true
+            | M.TContinuation ts           => SNonRefPtr true
             | M.TThunk t                   => SRef true
             | M.TPAny                      => SPAny false
             | M.TClosure {args, ress}      => SPAny true
@@ -438,11 +385,7 @@ struct
                  of (M.TTuple r1, M.TTuple r2) =>
                      (case tTupleWidth (r1, r2)
                        of SOME t => t
-                        | NONE => 
-                          if isPType (config, t1) andalso isPType (config, t2) then 
-                            M.TPAny
-                          else
-                            M.TRef)
+                        | NONE => if MU.Typ.isP t1 andalso MU.Typ.isP t2 then M.TPAny else M.TRef)
 
                   (* Sum widening *)
                   | (M.TPSum d1, M.TPSum d2) => 
@@ -457,7 +400,8 @@ struct
                     end
 
                   (* All other combinations.  Note that by assumption, 
-                   * t1 and t2 have different top level structure, and neither is TNone. *)
+                   * t1 and t2 have different top level structure.
+                   *)
                   | _ => 
                     (case (MU.Typ.valueSize (config, t1), MU.Typ.valueSize (config, t2))
                       of (SOME sz1, SOME sz2) => 
@@ -471,22 +415,22 @@ struct
                               | (_, SMask) => M.TAny 
                               | (SSized, _) => M.TAnyS sz1 (* Same size *)
                               | (_, SSized) => M.TAnyS sz1 (* Same size *)
-                              | (SBits ex1, SBits ex2) => M.TBits sz1 (* Same size, both <= Bits *)
+                              | (SBits _, SBits _) => M.TBits sz1 (* Same size, both <= Bits *)
+                              | (SNonRefPtr _, SBits _) => M.TBits sz1 (* Same size, both <= Bits *)
+                              | (SBits _, SNonRefPtr _) => M.TBits sz1 (* Same size, both <= Bits *)
                               | (SBits _, _) => M.TAnyS sz1 (* Same size, t2 not <= Bits *)
                               | (_, SBits _) => M.TAnyS sz1 (* Same size, t1 not <= Bits *)
+                              | (SNonRefPtr _, SNonRefPtr _) => M.TNonRefPtr (* Same size, both <= NonRefPtr *)
+                              | (SNonRefPtr _, _) => M.TAnyS sz1 (* Same size, t2 not <= Bits *)
+                              | (_, SNonRefPtr _) => M.TAnyS sz1 (* Same size, t1 not <= Bits *)
                               | (SFloat, _) => M.TAnyS M.Vs32 (* Same size, t2 not <= TFloat *)
                               | (_, SFloat) => M.TAnyS M.Vs32 (* Same size, t1 not <= TFloat *)
                               | (SDouble, _) => M.TAnyS M.Vs64 (* Same size, t2 not <= TDouble *)
                               | (_, SDouble) => M.TAnyS M.Vs64 (* Same size, t1 not <= TDouble *)
-                              | (SPtr _, _) => M.TPtr (* Same size, t2 <> TAny, TAnyS, TBits, FP so t2 <= t1*)
-                              | (_, SPtr _) => M.TPtr (* Same size, t1 <> TAny, TAnyS, TBits, FP so t1 <= t2*)
-                              | (SRef _, _) => M.TRef (* Same size, t2 <> TAny, TAnyS, TBits, TPtr, FP so t2 <= t1*)
-                              | (_, SRef _) => M.TRef (* Same size, t1 <> TAny, TAnyS, TBits, TPtr, FP so t1 <= t2*)
-                              | (SPAny _, _) => M.TPAny
-                                                  (* Same size, t2 <> TAny, TAnyS, TBits, TPtr, TRef, FP so t2 <= t1*)
-(*                            | (_, SPAny _) => M.TPAny
-                                                  (* Same size, t1 <> TAny, TAnyS, TBits, TPtr, TRef, FP so t1 <= t2*)
-*)
+                              | (SRef _, _) => M.TRef (* Same size, t2 must be <= TRef *)
+                              | (_, SRef _) => M.TRef (* Same size, t1 must be <= TRef *)
+                              | (SPAny _, _) => M.TPAny (* Same size, t2 must be <= TPAny *)
+(*                            | (_, SPAny _) => M.TPAny (* Same size, t2 must be <= TPAny *) *)
                            )
                          else
                            M.TAny (* Different sizes, not equal *)
@@ -568,7 +512,8 @@ struct
                     end
 
                   (* All other combinations.  Note that by assumption, 
-                   * t1 and t2 have different top level structure *)
+                   * t1 and t2 have different top level structure.
+                   *)
                   | _ => 
                     (case (MU.Typ.valueSize (config, t1), MU.Typ.valueSize (config, t2))
                       of (SOME sz1, SOME sz2) => 
@@ -586,37 +531,30 @@ struct
                               | (_, SDouble) => M.TNone
                               | (SSized, _) => t2 (* Same size *)
                               | (_, SSized) => t1 (* Same size *)
-
                               (* On a bits branch *)
                               | (SBits true, SBits true) => M.TNone (* Unequal exact bit types *)
                               | (SBits false, SBits _) => t2
                               | (SBits _, SBits false) => t1
+                              | (SBits true, SNonRefPtr _) => M.TNone
+                              | (SNonRefPtr _, SBits true) => M.TNone
+                              | (SBits false, SNonRefPtr _) => t2
+                              | (SNonRefPtr _, SBits false) => t1
                               | (SBits _, _) => M.TNone
                               | (_, SBits _) => M.TNone
-
-                              (* On the Ptr branch *)
-
+                              | (SNonRefPtr true, SNonRefPtr true) => M.TNone (* Unequal exact non-ref ptrs *)
+                              | (SNonRefPtr false, SNonRefPtr _) => t2
+                              | (SNonRefPtr _, SNonRefPtr false) => t1
+                              | (SNonRefPtr _, _) => M.TNone
+                              | (_, SNonRefPtr _) => M.TNone
+                              (* On the Ref branch *)
                               | (SPAny true, SPAny true) => M.TNone (* Unequal, exact *)
                               | (SRef true, SRef true)   => M.TNone (* Unequal, exact *)
-                              | (SPtr true, SPtr true)   => M.TNone (* Unequal, exact *)
-
-                              | (SPAny true, SRef true)  => M.TNone (* Unequal, exact *)
-                              | (SRef true, SPAny true)  => M.TNone (* Unequal, exact *)
-
-                              | (SPAny true, SPtr true)  => M.TNone (* Unequal, exact *)
-                              | (SPtr true, SPAny true)  => M.TNone (* Unequal, exact *)
-
-                              | (SRef true, SPtr true)  => M.TNone (* Unequal, exact *)
-                              | (SPtr true, SRef true)  => M.TNone (* Unequal, exact *)
-
+                              | (SPAny _, SRef true)  => M.TNone (* Unequal, exact *)
+                              | (SRef true, SPAny _)  => M.TNone (* Unequal, exact *)
                               | (SPAny false, _) => t1
                               | (_, SPAny false) => t2
-
                               | (SRef false, _)  => t1
                               | (_, SRef false)  => t2
-
-                              | (SPtr false, _)  => t1
-                              | (_, SPtr false)  => t2
                            )
                          else
                            M.TNone (* Different sizes *)
@@ -998,6 +936,7 @@ struct
            | M.CViMask x       => M.TViMask (#descriptor x)
            | M.CPok _          => MU.Uintp.t config
            | M.COptionSetEmpty => M.TPType {kind = M.TkE, over = M.TNone}
+           | M.CRef _          => M.TRef
            | M.CTypePH         => M.TPType {kind = M.TkI, over = M.TNone}
 
      fun simple (config, si, s) =
