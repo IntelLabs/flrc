@@ -198,6 +198,8 @@ sig
 
   val whenFalse : state * env * Mil.operand * MilStream.t -> MilStream.t
 
+  val eval : state * env * Mil.fieldKind * Mil.eval * Mil.cuts * Mil.effects * Mil.variable -> MilStream.t
+
   val call : state * env * Mil.call * Mil.operand Vector.t * Mil.cuts * Mil.effects * Mil.variable Vector.t
              -> MilStream.t
 
@@ -361,6 +363,23 @@ struct
 
   fun whenFalse (state : state, env : env, on : M.operand, s : MS.t) : MS.t =
       ifBool (state, env, on, (MS.empty, Vector.new0 ()), (s, Vector.new0 ()), Vector.new0 ())
+
+  fun eval (state : state,
+            env   : env,
+            typ   : M.fieldKind,
+            e     : M.eval,
+            cuts  : M.cuts,
+            fx    : M.effects,
+            res   : M.variable )
+      : MS.t =
+      let
+        val lret = labelFresh state
+        val e = M.IpEval {eval = e, typ = typ}
+        val r = M.RNormal {rets = Vector.new1 res, block = lret, cuts = cuts}
+        val t = M.TInterProc {callee = e, ret = r, fx = fx}
+        val s = MS.transfer (t, lret, Vector.new0 ())
+      in s
+      end
 
   fun call (state : state,
             env   : env,
