@@ -506,8 +506,9 @@ struct
     structure Rewrite = 
     struct
 
+      datatype rCtxt = RCLive | RCDeadFun | RCDeadThunk of M.typ 
       datatype state = S of {stm : M.symbolTableManager, summary : MRS.summary, fg : bool FG.t}
-      datatype env = E of {pd : PD.t, dead : VS.t, thunk : M.fieldKind option}
+      datatype env = E of {pd : PD.t, dead : VS.t, thunk : rCtxt}
 
       val getStm = fn (S {stm, ...}) => stm
       val getSummary = fn (S {summary, ...}) => summary
@@ -519,6 +520,12 @@ struct
       val setThunk = fn (E {pd, dead, thunk = _}, thunk ) =>  E {pd = pd, dead = dead, thunk = thunk}
 
       structure MS = MilStream
+      structure MSU = MilStreamUtilsF(struct
+                                        type state = state
+                                        type env = env
+                                        val getStm = getStm
+                                        val getConfig = getConfig
+                                      end)
 
       val variableIsDead = 
        fn (state, env, v) => VS.member (getDead env, v)
@@ -558,6 +565,12 @@ struct
           in M.SConstant c
           end
           
+      val typDefault = 
+       fn (state, env, typ) => 
+          (case MU.FieldKind.fromTyp' (getConfig env, typ)
+            of SOME fk => fieldDefault (state, env, fk)
+             | NONE    => fieldDefault (state, env, M.FkRef))
+
       val instr = 
        fn (state, env, i as M.I {dests, n, rhs}) => 
           let
@@ -748,7 +761,6 @@ struct
       val transfer =
        fn (state, env, t) => 
           let
-            val fieldDefault = fn fk => fieldDefault (state, env, fk)
             val dead = fn v => variableIsDead (state, env, v)
             val live = not o dead
             val deadV = fn vs => Vector.forall (vs, dead)
@@ -787,8 +799,8 @@ struct
             val return =
              fn rv => 
                 case getThunk env
-                 of SOME fk => M.TReturn (Vector.new1 (fieldDefault fk))
-                  | _       => M.TReturn (filterOV rv)
+                 of RCDeadThunk typ => M.TReturn (Vector.new1 (typDefault (state, env, typ)))
+                  | _               => M.TReturn (filterOV rv)
 
             val interProc = 
              fn {callee, ret, fx} => 
@@ -818,9 +830,23 @@ struct
                               of M.EThunk {thunk, code} => M.EThunk {thunk = thunk, code = doCodes code}
                                | M.EDirectThunk _       => eval
                          val callee = M.IpEval {typ = typ, eval = eval}
-                         val ip = M.TInterProc {callee = callee,
-                                                ret = ret, fx = fx}
-                       in SOME (MS.empty, ip)
+                         val (s, ip) = 
+                             case (ret, getThunk env)
+                              of (M.RNormal _ , _)    => (MS.empty , 
+                                                          M.TInterProc {callee = callee, ret = ret, fx = fx})
+                               | (M.RTail {exits}, RCDeadFun) => 
+                                 let
+                                   val stm = getStm state
+                                   val t = MU.FieldKind.toTyp typ
+                                   val v = MU.SymbolTableManager.variableFresh (stm, "dead", t, M.VkLocal)
+                                   val cuts = M.C {exits = exits, targets = LS.empty}
+                                   val s = MSU.eval (state, env, typ, eval, cuts, fx, v)
+                                   val ip = M.TReturn (Vector.new0 ())
+                                 in (s, ip)
+                                 end
+                               | (M.RTail _ , _) => (MS.empty , 
+                                                     M.TInterProc {callee = callee, ret = ret, fx = fx})
+                       in SOME (s, ip)
                        end
                      | M.IpCall {call, args} => 
                        let
@@ -837,23 +863,20 @@ struct
                          val callee = M.IpCall {call = call, args = args}
                          val (s, tf) = 
                              case (ret, getThunk env)
-                              of (M.RNormal {rets, block, cuts}, _) => 
+                              of (M.RTail {exits}, RCDeadThunk typ)  => 
                                  let
-                                       val ret = M.RNormal {rets = filterV rets, block = block, cuts = cuts}
+                                   val cuts = M.C {exits = exits, targets = LS.empty}
+                                   val s = MSU.call (state, env, call, args, cuts, fx, Vector.new0 ())
+                                   val tf = M.TReturn (Vector.new1 (typDefault (state, env, typ)))
+                                 in (s, tf)
+                                 end
+                               | (M.RNormal {rets, block, cuts}, _) => 
+                                 let
+                                   val ret = M.RNormal {rets = filterV rets, block = block, cuts = cuts}
                                  in (MS.empty, M.TInterProc {callee = callee, ret = ret, fx = fx})
                                  end
-                               | (M.RTail _, NONE)                  => 
+                               | (M.RTail _, _    )                => 
                                  (MS.empty, M.TInterProc {callee = callee, ret = ret, fx = fx})
-                               | (M.RTail {exits}, SOME fk)         => 
-                                 let
-                                   val lbl = Identifier.Manager.labelFresh (getStm state)
-                                   val cuts = M.C {exits = exits, targets = LS.empty}
-                                   val ret = M.RNormal {rets = Vector.new0 (), block = lbl, cuts = cuts}
-                                   val call = M.TInterProc {callee = callee, ret = ret, fx = fx}
-                                   val s = MS.transfer (call, lbl, Vector.new0())
-                                   val tf = return (Vector.new0())
-                                     in (s, tf)
-                                 end
                        in SOME (s, tf)
                        end)
 
@@ -872,6 +895,7 @@ struct
       val global = 
        fn (state, env, v, g) => 
           let
+            val fg = getFlowGraph state
             val fieldDefault = fn fk => fieldDefault (state, env, fk)
             val dead = fn v => variableIsDead (state, env, v)
             val live = not o dead
@@ -902,24 +926,20 @@ struct
                       val args = filterV args
                       val code = M.F {fx = fx, escapes = escapes, recursive = recursive, cc = cc, 
                                       args = args, rtyps = rtyps, body = body}
+                      val retsLive =
+                          let
+                            val rets = 
+                                case MRS.iInfo (getSummary state, MU.Id.G v)
+                                 of MRB.IiCode {cargs, args, returns} => returns
+                                  | _ => fail ("global", "Bad code descriptor")
+                          in Vector.forall (rets, fn n => FG.query (fg, n))
+                          end
+
                       val env = 
-                          case cc
-                           of M.CcThunk {thunk, fvs} => 
-                              let
-                                val ret =
-                                    case MRS.iInfo (getSummary state, MU.Id.G v)
-                                     of MRB.IiCode {cargs, args, returns} => Vector.sub (returns, 0)
-                                      | _ => fail ("global", "Bad code descriptor")
-                                val env = 
-                                    if FG.query (getFlowGraph state, ret) then
-                                      setThunk (env, NONE)
-                                    else
-                                      (case MU.FieldKind.fromTyp' (getConfig env, Vector.sub (rtyps, 0))
-                                        of SOME fk => setThunk (env, SOME fk)
-                                         | NONE    => setThunk (env, SOME M.FkRef))
-                              in env
-                              end
-                            | _ => setThunk (env, NONE)
+                          case (cc, retsLive)
+                           of (_          , true)  => setThunk (env, RCLive)
+                            | (M.CcThunk _, false) => setThunk (env, RCDeadThunk (Vector.sub (rtyps, 0)))
+                            | (_          , false) => setThunk (env, RCDeadFun)
                     in (env, SOME [(v, M.GCode code)])
                     end
                   | M.GTuple {mdDesc, inits} => 
@@ -973,7 +993,7 @@ struct
        fn (pd, summary, stm, fg, dead, globals) =>
           let
             val state = S {stm = stm, summary = summary, fg = fg}
-            val env = E {pd = pd, dead = dead, thunk = NONE}
+            val env = E {pd = pd, dead = dead, thunk = RCLive}
             val globals = Transform.globals (state, env, Transform.OAny, globals)
           in globals
           end
