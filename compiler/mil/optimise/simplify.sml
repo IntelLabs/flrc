@@ -1649,7 +1649,7 @@ struct
                   val () = WS.addItems (ws, used)
                   val b = IInstr.getIBlock (imil, i)
                   val () = IBlock.merge (imil, pred, b)
-                in []
+                in [I.ItemInstr ti]
                 end
           in try (Click.mergeBlocks, f)
           end
