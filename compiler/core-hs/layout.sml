@@ -60,8 +60,7 @@ struct
       let val parentLayout =
               case parents
                 of [] => L.empty
-                 | _  => L.sequence ("", hierModuleSep, hierModuleSep)
-                                    (map L.str parents)
+                 | _  => L.seq (map (fn x => L.str (x ^ hierModuleSep)) parents)
       in
         L.seq [ layoutPName pname
               , L.str ":"
