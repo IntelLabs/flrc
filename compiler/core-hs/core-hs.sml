@@ -304,25 +304,29 @@ struct
          | (Karrow (a1, r1), Karrow (a2, r2)) => subKindOf (a2, a1) andalso subKindOf (r1, r2)
          | _                                  => eqKind (k1, k2)
 
+  fun compareList ([], []) = Relation.EQUAL
+    | compareList (x::xs, []) = Relation.GREATER
+    | compareList ([], x::xs) = Relation.LESS
+    | compareList (x::xs, y::ys) = case String.compare (x, y)
+                                     of Relation.EQUAL => compareList (xs, ys)
+                                      | r => r
+
+  fun comparePName (P p, P q) = String.compare (p, q)
+
+  fun compareAnMName (M (p, m, n), M (p', m', n')) =
+    case comparePName (p, p')
+      of Relation.EQUAL => (case compareList (m, m')
+         of Relation.EQUAL => String.compare (n, n')
+          | r => r)
+       | r => r
+
+  fun compareMName (NONE, NONE) = Relation.EQUAL
+    | compareMName (SOME _, NONE) = Relation.GREATER
+    | compareMName (NONE, SOME _) = Relation.LESS
+    | compareMName (SOME m, SOME n) = compareAnMName (m, n)
+
   fun compareQName ((m, n), (m', n')) =
       let
-        fun compareList ([], []) = Relation.EQUAL
-          | compareList (x::xs, []) = Relation.GREATER
-          | compareList ([], x::xs) = Relation.LESS
-          | compareList (x::xs, y::ys) = case String.compare (x, y)
-                                           of Relation.EQUAL => compareList (xs, ys)
-                                            | r => r
-        fun comparePName (P p, P q) = String.compare (p, q)
-        fun compareAnMName (M (p, m, n), M (p', m', n')) =
-          case comparePName (p, p')
-            of Relation.EQUAL => (case compareList (m, m')
-               of Relation.EQUAL => String.compare (n, n')
-                | r => r)
-             | r => r
-        fun compareMName (NONE, NONE) = Relation.EQUAL
-          | compareMName (SOME _, NONE) = Relation.GREATER
-          | compareMName (NONE, SOME _) = Relation.LESS
-          | compareMName (SOME m, SOME n) = compareAnMName (m, n)
       in
         case compareMName (m, m')
           of Relation.EQUAL => String.compare (n, n')

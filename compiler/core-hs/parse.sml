@@ -50,7 +50,9 @@ struct
   structure UF = Utils.Function
   structure UO = Utils.Option
   structure SS = StringSet
+  structure MS = SetF (struct type t = C.anMName val compare = CHU.compareAnMName end)
   structure QS = SetF (struct type t = C.identifier C.qualified val compare = CHU.compareQName end)
+  structure QD = DictF (struct type t = C.identifier C.qualified val compare = CHU.compareQName end)
   structure SD = StringDict
 
   fun print' s = ()
@@ -183,7 +185,9 @@ struct
       $ coreType              >>= (fn bodyTy =>
       return (List.foldr (tBinds, bodyTy, C.Tforall))))
 
-  and coreAty () = coreTcon || (P.parens ($ coreType) >>= return o ATy)
+  (* NOTE: quick hack to type check new core syntax *)
+  and coreAty () = coreTcon || (P.parens (optional (oneString "ghczmprim:GHCziPrim.sym") >>
+  let val _ = print' "got sym\n" in P.whiteSpace >> $ coreType end) >>= return o ATy)
 
   and coreAtySaturated () = $ coreAty >>= (fn t =>
       case t
@@ -195,21 +199,20 @@ struct
       P.whiteSpace                    >>
       zeroOrMore ($ coreAtySaturated) >>= (fn maybeRest =>
       let
-        fun fail err m n = Fail.fail (passname, "coreBty", err ^ " expects " ^ Int.toString m ^
-                                       " arguments, but got " ^ Int.toString n)
-        fun app1 k (x :: [])      _   = k x
+        fun fail err m n = error (err ^ " expects " ^ Int.toString m ^ " arguments, but got " ^ Int.toString n)
+        fun app1 k (x :: [])      _   = return (k x)
           | app1 _ args           err = fail err 1 (length args)
-        fun app2 k (x :: y :: []) _   = k (x, y)
+        fun app2 k (x :: y :: []) _   = return (k (x, y))
           | app2 _ args           err = fail err 2 (length args)
         val t = case hd
-                  of ATy t     => List.fold (maybeRest, t, UF.flipIn C.Tapp)
+                  of ATy t     => return (List.fold (maybeRest, t, UF.flipIn C.Tapp))
                    | Trans k   => app2 k maybeRest "trans"
                    | Sym k     => app1 k maybeRest "sym"
                    | Unsafe k  => app2 k maybeRest "unsafe"
                    | LeftCo k  => app1 k maybeRest "left"
                    | RightCo k => app1 k maybeRest "right"
                    | InstCo k  => app2 k maybeRest "inst"
-      in return t
+      in t
       end))
 
   and coreType () =
@@ -515,20 +518,35 @@ struct
         val d = List.fold (prefix, d, Utils.Function.flipIn Path.snoc)
         val d = Path.snoc (d, name)
       in 
-        Path.toUnixString d
+        d
       end
+
+
+  (*
+   * A definition is either for a value or a type.
+   *
+   * The DCon is just a place holder for data constructors
+   * since they are defined as part of a type definition.
+   *)
+  datatype definition = VDef of C.vDef | TDef of C.tDef | DCon
+
+  (*
+   * A defDict is a mapping between names and the definition they represent,
+   * as well as a set of names that they depend on. Alternatively we can
+   * think of it as a dependency graph between definitions.
+   *)
+  type defDict = (definition * QS.t) QD.t
 
   (*
    * Given a program and a base set of qualified names, return 
-   * a program containing only the definitions required to define 
-   * the base set, as well as the set of qualified names this
-   * program depends on.
+   * a mapping from qualified names to their definitions (either
+   * value or type) as well as the set of names they depend on.
    *)
-  val scanModule : C.module * QS.t -> C.module * QS.t = 
-    fn (C.Module (mname, tdefs, vdefgs), m) =>
+  val scanModule : C.module -> defDict = 
+    fn (C.Module (mname, tdefs, vdefgs)) =>
       let
 
-        fun scanQName ((NONE, x), m) = let val y = (SOME mname, x) in (y, QS.insert (m, y)) end
+        fun scanQName ((NONE, x), m) = scanQName ((SOME mname, x), m)
           | scanQName (y, m) = (y, QS.insert (m, y))
 
         fun scanTy (x as (C.Tcon name), m) = 
@@ -785,174 +803,136 @@ struct
 
         and scanAlts env (alts, m) = foldL (alts, m, scanAlt env)
 
-        fun filterVDef m (x as C.Vdef (v, _, _)) = if QS.member (m, v) then SOME x else NONE
+        fun fromVDefg (C.Rec defs) = defs
+          | fromVDefg (C.Nonrec def) = [def]
 
-        fun filterVDefg (C.Rec defs, m) = 
-            let
-              val defs = UO.distribute (List.map (defs, filterVDef m))
-            in
-              case defs 
-                of NONE => NONE
-                 | SOME l => SOME (C.Rec l)
-            end
-          | filterVDefg (C.Nonrec def, m) = 
-            (case filterVDef m def
-              of NONE => NONE
-               | SOME d => SOME (C.Nonrec d))
+        fun fromVDefgs defgs = List.concat (List.map (defgs, fromVDefg))
 
-        fun scanVDefgs [] = ([], m)
-          | scanVDefgs (vdefg :: vdefgs) = 
-            let
-              (* make global definitions fully qualified *)
-              fun toQD (C.Vdef ((p, n), t, e)) = C.Vdef ((case p of NONE => SOME mname | _ => p, n), t, e)
-              fun toQ (C.Rec defs) = C.Rec (List.map (defs, toQD))
-                | toQ (C.Nonrec def) = C.Nonrec (toQD def)
-              val (vdefgs, m) = scanVDefgs vdefgs
-              val vdefg = toQ vdefg
-            in
-              case filterVDefg (vdefg, m)
-                of NONE   => (vdefgs, m)
-                 | SOME _ => let 
-                               val (vdefg, _, m') = scanVDefg QS.empty (vdefg, QS.empty)
-                             in 
-                                (vdefg :: vdefgs, QS.union (m, m'))
-                             end
-            end
+        fun qualify (C.Vdef ((p, n), t, e)) = C.Vdef ((case p of NONE => SOME mname | _ => p, n), t, e)
 
-          fun scanTDefs (tdefs, m) =
-            let 
-              val n = List.length tdefs
-              val { no, yes } = List.partition (tdefs,
-                                  fn (C.Data (n, _, _), _) => QS.member (m, n)
-                                   | (C.Newtype (n, _, _, _), _) => QS.member (m, n))
-            in
-              if List.isEmpty yes
-                then (List.map (tdefs, #1), m)
-                else let 
-                       val (tdefs', ms) = List.unzip yes
-                       val m = List.fold (ms, m, QS.union)
-                       val m = List.fold (tdefs', m, fn (C.Data (n, _, _), m) => QS.insert (m, n)
-                                                      | (C.Newtype (n, _, _, _), m) => QS.insert (m, n))
-                       val (tdefs0, m) = scanTDefs (no, m)
-                     in 
-                       (tdefs0 @ tdefs', m)
-                     end
-            end
-                                           
-        val (vdefgs, m) = scanVDefgs vdefgs
-        val (tdefs, m)  = scanTDefs (List.map (tdefs, fn d => scanTDef (d, QS.empty)), m)
+        val vdefs = List.map (fromVDefgs vdefgs, fn d => scanVDef QS.empty (qualify d, QS.empty))
+        val tdefs = List.map (tdefs, fn d => scanTDef (d, QS.empty))
+        val defd  = List.fold (vdefs, QD.empty, fn ((x as C.Vdef (n, _, _), m), d) => QD.insert (d, n, (VDef x, m)))
+        val defd  = List.fold (tdefs, defd, 
+                        fn ((x as C.Data (n as (p, q), _, cdefs), m), d) => 
+                            let val n' = (p, q ^ "_")
+                            in
+                            List.fold (cdefs, QD.insert (d, n', (TDef x, m)),
+                                fn (C.Constr (c, _, _), d) => QD.insert (d, c,
+                                  (DCon, QS.singleton n')))
+                            end
+                         | ((x as C.Newtype (n as (p, q), c, _, _), m), d) => 
+                            let val n' = (p, q ^ "_")
+                            in 
+                            QD.insert (QD.insert (d, n', (TDef x, m)), c, (DCon,
+                            QS.singleton n'))
+                            end)
       in
-        (C.Module (mname, tdefs, vdefgs), QS.keepAll (m, fn (q, _) => q <> SOME mname))
+        defd
       end
 
-  fun merge progs = 
-      let 
-        val (tdefs, vdefgs) = List.unzip (List.map (progs, fn (C.Module (_, t, v)) => (t, v)))
-      in
-        C.Module (CHU.mainMname, List.concat tdefs, List.concat vdefgs)
-      end
-    
-  (*
-   * graph: maps a module to its program and a set of modules it depends on.
+  (* linearize turns the dependency graph of value definitions into a linear list. 
+   *
+   * Note that the result is not the tightest grouping, we might ended up with
+   * group two independent recursive groups into the same letrec.
    *)
-  fun printGraph (g : (C.module * SS.t) SD.t) =
-    let
-      fun pS s = String.concatWith (SS.toList s, " ")
-      fun pT (v, (_, s)) = v ^ " -> " ^ pS s 
-    in
-      String.concatWith (List.map (SD.toList g, pT), "\n")
-    end
+  fun linearize (defdict : (C.vDef * QS.t) QD.t) : C.vDefg list =
+      let
+        fun lookup n = case QD.lookup (defdict, n) of SOME x => x | NONE => Fail.fail (passname, "linearize:lookup", "impossible!")
+        fun reach (deps, s') =
+            let
+              val deps = QS.keepAll (deps, fn x => QD.contains (defdict, x))
+              val s = QS.union (s', deps)
+              fun visit (n, s) = if QS.member (s', n) then s else reach (#2 (lookup n), s)
+            in
+              QS.fold (deps, s, visit)
+            end
+        fun group ([], _) = []
+          | group (x::(xs as (y::ys)), f) = if f (x, y) then case group (xs, f) of ys::xs => (x :: ys) :: xs | _ => Fail.fail (passname, "linearize:group", "impossible!")
+                                                        else ([x] :: group (xs, f))
+          | group (x::[], _) = [[x]]
 
-  (*
-   * Linearize a dependency graph into a list where every module only depends
-   * on ones that come before it in the list. 
-   *
-   * Return the list of modules. 
-   *
-   *)
-  fun linearize graph =
-    if SD.isEmpty graph
-      then []
-      else 
-        let
-          val n = SD.size graph
-          val (paths, progs) = List.unzip (SD.fold (graph, [], 
-                fn (p, (m, s), ps) => if SS.isEmpty s then (p,m) :: ps else ps))
-          val removal = SS.fromList paths
-          val graph = List.fold (paths, graph, Utils.Function.flipIn SD.remove)
-          val graph = SD.map (graph, fn (p, (m, s)) => (m, SS.difference (s, removal)))
-        in
-          if SD.size graph = n andalso n <> 0
-            then Fail.fail (passname, "linearize", "module dependency graph cannot be linearized: " ^ printGraph graph ^ "\n")
-            else progs @ linearize graph
-        end
+        val names = QD.domain defdict
+        (* transitive closure *)
+        val _ = print (Layout.toString (Layout.seq (Layout.str "linearize defdict:\n" ::
+           List.map (QD.toList defdict, fn (n, (_, s)) => Layout.seq (CoreHsLayout.layoutQName n :: Layout.str " -> " ::
+           Layout.sequence ("","\n",",") (List.map (QS.toList s, CoreHsLayout.layoutQName)) :: [])))))
+
+        val clo = List.map (names, fn n => (n, reach (#2 (lookup n), QS.empty)))
+        val clo = List.insertionSort (clo, fn ((_, x), (_, y)) => QS.size x < QS.size y)
+        val clo = group (clo, fn ((_, x), (_, y)) => QS.size x = QS.size y)
+        val _ = print (Layout.toString (Layout.seq (Layout.str "linearize:\n" ::
+           List.map (clo, fn x => Layout.sequence ("", "\n", ", ") 
+           (List.map (x, fn (n, deps) => Layout.seq [CoreHsLayout.layoutQName n, Layout.str "/", Int.layout (QS.size deps)]))))))
+
+        fun toDefg ns = 
+            let
+              val {no, yes} = List.partition (ns, fn (x as (n, deps)) => QS.member (deps, n))
+              val recs = case yes of [] => [] | _ => [C.Rec (List.map (yes, #1 o lookup o #1))]
+              val nonrecs = List.map (no, C.Nonrec o #1 o lookup o #1)
+            in
+              recs @ nonrecs 
+            end
+      in
+        List.concat (List.map (clo, toDefg))
+      end
+
 
   fun readModule ((), pd, basename) =
       let
         val config = PassData.getConfig pd
          
-        (*
-         * Return a new named after merging with the given set of names, 
-         * and also a set of modules that are are modified due to the merge (and must be re-scanned)
-         *
-         * named: maps a module to a set of names defined in it that we must include.
-         * names: a set of qualified names that we must include.
-         *)
-        fun mergeNames (named, names) =
-          QS.fold (names, (named, SS.empty), fn (x as (q, _), (named, set)) =>
-                    let 
-                      val qname = case q of SOME m => mNameToPath m | NONE => ""
-                    in if qname = ""
-                         then (named, set)
-                         else case SD.lookup (named, qname)
-                                of NONE => (SD.insert (named, qname, QS.singleton x), 
-                                            SS.insert (set, qname))
-                                 | SOME names => if QS.member (names, x) then (named, set)
-                                                   else (SD.insert (named, qname, QS.insert (names, x)), 
-                                                         SS.insert (set, qname))
-                    end)
-        (*
-         * named maps a module to a set of names defined in it that we must include.
-         *)
-        fun readOne (path0 : string, (graph : (C.module * SS.t) SD.t, named : QS.t SD.t)) =
-            let
-              val path = Path.fromUnixString path0
-              val f1 = Config.pathToHostString (config, path) ^ ".hcr"
-              val path = Path.cons ("hcrlib", path)
-              val path = Path.append (Config.pLibDirectory config, path)
-              val f2 = Config.pathToHostString (config, path) ^ ".hcr"
-            in
-              (* skip GHC.Prim *)
-              if String.equals(path0, "ghc-prim/GHC/Prim")
-                then (graph, named)
-                else if File.doesExist f1
-                  then findMore (parseFile (f1, config), graph, named)
-                  else if File.doesExist f2 
-                    then findMore (parseFile (f2, config), graph, named)
-                    else Fail.fail (passname, "readModule", "file " ^ f1 ^ " not found in current directory or in $PLIB/hcrlib")
-            end
+        fun readOne (mname : C.anMName, defd : defDict, scanned : MS.t) =
+            if MS.member (scanned, mname) 
+              then (defd, scanned)
+              else
+                let
+                  val _ = print ("scan " ^ Layout.toString (CoreHsLayout.layoutAnMName mname) ^ " scanned = " ^ Int.toString(MS.size scanned) ^ "\n")
+                  val path = mNameToPath mname
+                  val f1 = Config.pathToHostString (config, path) ^ ".hcr"
+                  val path = Path.cons ("hcrlib", path)
+                  val path = Path.append (Config.pLibDirectory config, path)
+                  val f2 = Config.pathToHostString (config, path) ^ ".hcr"
+                  fun scan module = 
+                      let
+                        val defd' = scanModule module
+                        val scanned = MS.insert (scanned, mname)
+                        val defd  = QD.union (defd, defd', #2)
+                      in
+                        (defd, scanned)
+                      end
+                in
+                  if File.doesExist f1
+                    then scan (parseFile (f1, config))
+                    else if File.doesExist f2 
+                      then scan (parseFile (f2, config))
+                      else Fail.fail (passname, "readModule", "file " ^ f1 ^ " not found in current directory or in $PLIB/hcrlib")
+                end
 
-        and findMore (prog as C.Module (mname, _, _), graph, named) =
-            let
-              val path = mNameToPath mname
-              
-              val set = SS.fromList (SD.domain graph)   (* the existing set of modules we have already looked at *)
-              val names = case SD.lookup (named, path)  (* the definitions in current module that we already need *)
-                            of SOME names => names
-                             | NONE => QS.empty
-              val (prog, names) = scanModule (prog, names) 
-              val _ = print ("scan " ^ path ^ " got names: " ^ QS.fold (names, "", fn (n, s) => s ^ "\n    " ^ Layout.toString
-                            (CoreHsLayout.layoutQName n)) ^ "\n")
-              val (named, modified) = mergeNames (named, names)
-              val set' = QS.fold (names, SS.empty, 
-                            fn ((SOME q, _), s) => 
-                                if q = CHU.primMname then s else SS.insert (s, mNameToPath q)
-                             | (_, s) => s)
-              val graph = SD.insert (graph, path, (prog, set'))
-              val modified = SS.union (modified, SS.difference (set', set))
-            in
-                SS.fold (modified, (graph, named), readOne)
-            end
+        fun traceDef (name, def as (_, depends), state as (defd, traced, scanned)) =
+            case QD.lookup (traced, name)
+              of SOME _ => state
+               | NONE   => 
+                let
+                  val traced = QD.insert (traced, name, def)
+                  fun trace (name as (SOME m, n), state as (defd, traced, scanned)) = 
+                      if m = CHU.primMname then state
+                        else
+                          let
+                            val (defd, scanned) = readOne (m, defd, scanned)
+                            val name' = (SOME m, n ^ "_")
+                          in
+                            case QD.lookup (defd, name)
+                              of SOME def => traceDef (name, def, (defd, traced, scanned))
+                               | NONE => (case QD.lookup (defd, name')
+                                 of SOME def => traceDef (name', def, (defd, traced, scanned))
+                                  | NONE => Fail.fail (passname, "traceDef", Layout.toString (CoreHsLayout.layoutQName name) ^ " not found"))
+                          end
+                    | trace ((NONE,   _), state) = state
+
+                in
+                  QS.fold (depends, (defd, traced, scanned), trace)
+                end
 
         val basename = Config.pathToHostString (config, basename)
         val infile = basename ^ ".hcr"
@@ -961,18 +941,33 @@ struct
             else File.remove infile
         fun process () = 
             let
-              val prog as (C.Module (mname, _, _)) = parseFile (infile, config)
-              val path = mNameToPath mname
-              val (graph, named) = (findMore (prog, SD.empty, SD.singleton ( path, QS.singleton CHU.mainVar)))(* TODO: should be wrapperMainVar *)
-              val names = case SD.lookup (named, "ghc-prim/GHC/Prim") of SOME names => names | NONE => QS.empty
+              val module as (C.Module (mname, _, _)) = parseFile (infile, config)
+              val defd = scanModule module 
+              val scanned = MS.fromList [mname, CHU.primMname]
+            in
+              case QD.lookup (defd, CHU.mainVar) (* TODO: should be wrapperMainVar *)
+                of NONE => Fail.fail (passname, "readModule", "main program not found")
+                 | SOME def => 
+                   let 
+                     val (_, traced, _) = traceDef (CHU.mainVar, def, (defd, QD.empty, scanned))
+                     val _ = print ("traced = " ^ Layout.toString (Layout.sequence ("{", "}",
+                     ",") (List.map(QD.domain traced,
+                     CoreHsLayout.layoutQName))) ^ "\n")
+                     val (tdefs, vdefs) = QD.fold (traced, ([], []), fn (_, (TDef d, _), (ts, vs)) => (d :: ts, vs)
+                                                                      | (n, (VDef d, s), (ts, vs)) => (ts, (n, (d, s)) :: vs)
+                                                                      | (_, _, s) => s)
+              val names = QS.keepAll (List.fold (vdefs, QS.empty, fn ((_, (_, p)), q) => QS.union (p, q)),
+                                        fn (m, _) => m = SOME CHU.primMname)
               val _ = print ("GHC.Prims needed: " ^ QS.fold (names, "", fn (n, s) => s ^ "\n    " ^ Layout.toString
                             (CoreHsLayout.layoutQName n)) ^ "\n")
-            in
-              linearize graph
+              
+                     val vdefgs = linearize (QD.fromList vdefs)
+                   in
+                     C.Module (mname, tdefs, vdefgs)
+                   end
             end
-        val progs = Exn.finally (process, cleanup)
       in
-        merge progs 
+        Exn.finally (process, cleanup)
       end
 
   fun layout (module, config) = CoreHsLayout.layoutModule module
