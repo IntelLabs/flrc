@@ -7,6 +7,15 @@ sig
   sig
     type 'node shape
 
+    (* Filter nodes from shape according to the predicate.  The predicate
+     * is ignored for:
+     *  closure code pointers
+     *  sum carried values
+     *  p set carried values
+     *  thunk carried values
+     *)
+    val filter : 'node shape * ('node -> bool) -> 'node shape
+
     val foreachWithParity : 'node shape * ('node -> unit) * ('node -> unit) -> unit
 
     val fieldKind : Config.t * 'node shape -> Mil.fieldKind option
@@ -572,6 +581,55 @@ struct
            | TThunk _ => 6
            | TCode _ => 7
            | TCont _ => 10)
+
+    val filter = 
+     fn (shape, dead) => 
+        let
+          val live = not o dead
+          val seq = fn s => Seq.filter (s, dead)
+          val vector = fn v => Vector.keepAll (v, live)
+          val iDictMap = 
+           fn (d, doOne) => ID.map (d, fn (i, e) => doOne e)
+          val vDictMap = 
+           fn (d, doOne) => VD.map (d, fn (i, e) => doOne e)
+          val lDictMap = 
+           fn (d, doOne) => LD.map (d, fn (i, e) => doOne e)
+          val iiDictMap = 
+           fn (d, doOne) => IID.map (d, fn (i, e) => doOne e)
+          val pairMap =
+           fn doOne => fn (a, b) => (doOne a, doOne b)
+          val env = 
+           fn e => 
+              case e
+               of EEnv d     => EEnv (iDictMap (d, vector))
+                | EClosure d => EClosure (vDictMap (d, vector))
+
+          val code = 
+           fn (CCode d) => 
+              CCode (iiDictMap (d, fn {calls, filter, named} => 
+                                      {calls = Option.map (calls, pairMap vector),
+                                       filter = filter,
+                                       named = vDictMap (named, pairMap vector)}))
+          val cont = 
+           fn (CCont d) => 
+              CCont (iDictMap (d, fn {cuts, filter, named} => 
+                                     {cuts = Option.map (cuts, vector),
+                                      filter = filter,
+                                      named = lDictMap (named, vector)}))
+
+          val shape = 
+              case shape
+               of TUnknown t        => shape
+                 | TBase t          => shape
+                 | TClosure (n, e)  => TClosure (n, env e)
+                 | TPSet s          => TPSet s
+                 | TPSum (nd)       => TPSum nd
+                 | TTuple (pok, s)  => TTuple (pok, seq s)
+                 | TThunk (n, r, e) => TThunk (n, r, env e)
+                 | TCode c          => TCode (code c)
+                 | TCont c          => TCont (cont c)
+        in shape
+        end
 
     structure Build = 
     struct

@@ -15,12 +15,15 @@ sig
 
   val iInfo' : summary * MilUtils.Id.t -> MilRepNode.node MilRepBase.iInfo option
   val iInfo : summary * MilUtils.Id.t -> MilRepNode.node MilRepBase.iInfo
+  val updateIInfo : summary * (MilRepNode.node MilRepBase.iInfo -> MilRepNode.node MilRepBase.iInfo) -> unit
   val variableClassId : summary * Mil.variable -> int
   val variableUsesKnown : summary * Mil.variable -> bool
   val variableDefsKnown : summary * Mil.variable -> bool
   val variableTyp : summary * Mil.variable -> Mil.typ
+  val variableFlatTyp : summary * Mil.variable -> Mil.typ
   val variableNode : summary * Mil.variable -> MilRepNode.node
   val nodeTyp : summary * MilRepNode.node -> Mil.typ
+  val nodeFlatTyp : summary * MilRepNode.node -> Mil.typ
   val listVariables : summary -> Mil.variable list
   val resetTyps : summary -> unit
   val nodes : summary -> MilRepNode.node IntDict.t
@@ -156,6 +159,14 @@ struct
       in info
       end
 
+  val updateIInfo =
+   fn (summary, f) => 
+      let
+        val iInfo = getIInfo summary
+        val () = IIdD.modify (iInfo, f)
+      in ()
+      end
+
   val variableNode = 
    fn (summary, v) => 
       let
@@ -189,6 +200,15 @@ struct
         val node = variableNode (summary, v)
         val b = Node.defsKnown node
       in b
+      end
+
+  val nodeFlatTyp = 
+   fn (summary, n) => 
+      let
+        val config = getConfig summary
+        val shape = Node.shape n
+        val flatTyp = Shape.flatTypOf (config, shape)
+      in flatTyp
       end
 
   val rec nodeTyp = 
@@ -231,6 +251,9 @@ struct
 
   val variableTyp = 
    fn (summary, v) => nodeTyp (summary, variableNode (summary, v))
+
+  val variableFlatTyp = 
+   fn (summary, v) => nodeFlatTyp (summary, variableNode (summary, v))
 
   val resetTyps = 
    fn summary => IID.clear (getTyps summary)

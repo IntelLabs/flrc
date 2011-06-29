@@ -184,10 +184,13 @@ sig
       | TsNone                                 (* bottom *)
       | TsMask of Mil.Prims.vectorDescriptor   (* masks for given vector type *)
     val toString : Config.t * t -> string
+    val known : t -> bool
+    val isRef : t -> bool
     val traceabilityIsRef : traceability -> bool
     val traceability : t -> traceability option
     val valueSize : Config.t * t -> ValueSize.t option
     val subTS : Config.t * t * t -> bool
+    val eq : t * t -> bool
   end
 
   structure Prims : 
@@ -265,6 +268,7 @@ sig
     val toString : t -> string
     val fromString : string -> t option
     val intArbSz : IntArb.size -> t
+    val toIntArbSz : t -> IntArb.size
     val intArb : IntArb.typ -> t
     val wordSize : Config.t -> t
     val ptrSize : Config.t -> t
@@ -294,6 +298,7 @@ sig
     val eq : t * t -> bool
     val fromString : string -> t option
     val nonRefPtr : Config.t -> t
+    val fromTraceSize' : TraceabilitySize.t -> t option
     val fromTraceSize : Config.t * TraceabilitySize.t -> t
     val toTraceSize : Config.t * t -> TraceabilitySize.t (* pre: result determined *)
     val fromTyp : Config.t * Typ.t -> t (* pre: result determined *)
@@ -477,6 +482,7 @@ sig
     val eq : t * t -> bool
     structure Dict : DICT where type key = t
     val fx : Config.t * t -> Effect.set
+    val isHeapAllocation : t -> bool
     val isInit : t -> bool
     val isInitOf : t * Mil.variable -> bool
     val pObjKind : t -> Mil.pObjKind option
@@ -546,6 +552,7 @@ sig
     val compare : t Compare.t
     val eq : t * t -> bool
     val fx : Config.t * t -> Effect.set
+    val isHeapAllocation : t -> bool
     val isInit : t -> bool
     val isInitOf : t * Mil.variable -> bool
     val pObjKind : t -> Mil.pObjKind option
@@ -1221,6 +1228,14 @@ struct
           | IntArb.S16  => M.Fs16
           | IntArb.S32  => M.Fs32
           | IntArb.S64  => M.Fs64
+
+    val toIntArbSz : t -> IntArb.size = 
+     fn fk => 
+        (case fk
+         of M.Fs8  => IntArb.S8
+          | M.Fs16 => IntArb.S16
+          | M.Fs32 => IntArb.S32
+          | M.Fs64 => IntArb.S64)
 
     val intArb = 
      fn (IA.T (sz, _)) =>
@@ -2197,6 +2212,12 @@ struct
           | TsNone      => NONE
           | TsMask vet  => SOME TBits
 
+    fun known ts = isSome (traceability ts)
+
+    fun isRef ts = case traceability ts
+                    of SOME TRef => true
+                     | _         => false
+
     fun valueSize (config, ts) =
         case ts
          of TsAny       => NONE
@@ -2232,6 +2253,18 @@ struct
           | (_, TsMask _) => false
           | (TsMask _, _) => false
           | (TsRef, TsRef) => true
+
+    fun eq (ts1, ts2) = 
+        case (ts1, ts2)
+         of (TsAny     , TsAny     ) => true
+          | (TsAnyS vs1, TsAnyS vs2) => ValueSize.eq (vs1, vs2)
+          | (TsBits vs1, TsBits vs2) => ValueSize.eq (vs1, vs2)
+          | (TsFloat   , TsFloat   ) => true
+          | (TsDouble  , TsDouble  ) => true
+          | (TsRef     , TsRef     ) => true
+          | (TsNone    , TsNone    ) => true
+          | (TsMask vd1, TsMask vd2) => PrimsUtils.VectorDescriptor.eq (vd1, vd2)
+          | (_         , _         ) => false
 
   end
 
@@ -2514,20 +2547,21 @@ struct
 
     fun nonRefPtr c = M.FkBits (FieldSize.ptrSize c)
 
+    fun fromTraceSize' ts =
+        case ts
+         of TS.TsAny       => NONE
+          | TS.TsAnyS vs   => NONE
+          | TS.TsBits vs   => SOME (M.FkBits (FieldSize.fromValueSize vs))
+          | TS.TsFloat     => SOME (M.FkFloat)
+          | TS.TsDouble    => SOME (M.FkDouble)
+          | TS.TsRef       => SOME (M.FkRef)
+          | TS.TsNone      => NONE
+          | TS.TsMask vs   => NONE
+
     fun fromTraceSize (c, ts) =
-        let
-          fun err () = Fail.fail ("MilUtils.FieldKind", "fromTraceSize", "bad trace size " ^ (TS.toString (c, ts)))
-        in
-          case ts
-           of TS.TsAny       => err ()
-            | TS.TsAnyS vs   => err ()
-            | TS.TsBits vs   => M.FkBits (FieldSize.fromValueSize vs)
-            | TS.TsFloat     => M.FkFloat
-            | TS.TsDouble    => M.FkDouble
-            | TS.TsRef       => M.FkRef
-            | TS.TsNone      => err ()
-            | TS.TsMask vs   => err ()
-        end
+        case fromTraceSize' ts
+         of SOME ts => ts
+          | NONE    => Fail.fail ("MilUtils.FieldKind", "fromTraceSize", "bad trace size " ^ (TS.toString (c, ts)))
 
     fun toTraceSize (c, fk) =
         (case fk
@@ -3027,7 +3061,21 @@ struct
            | M.RhsClosureInit {cls, ...} => cls
            | _ => NONE)
 
+    val isHeapAllocation = 
+     fn rhs => 
+        case rhs
+         of M.RhsTuple _       => true
+          | M.RhsThunkMk _     => true
+          | M.RhsThunkInit r   => not (isSome (#thunk r))
+          | M.RhsThunkValue _  => true
+          | M.RhsClosureMk _   => true
+          | M.RhsClosureInit r => not (isSome (#cls r))
+          | M.RhsPSetNew _     => true
+          | M.RhsPSum _        => true
+          | _                  => false
+
     val isInit = isSome o getInit
+
     val isInitOf =
      fn (rhs, v) => 
         (case getInit rhs
@@ -3173,6 +3221,8 @@ struct
     val eq = Eq.instruction
 
     fun fx (config, i) = Rhs.fx (config, rhs i)
+
+    val isHeapAllocation = Rhs.isHeapAllocation o rhs
 
     val isInit = Rhs.isInit o rhs
 
@@ -3568,31 +3618,23 @@ struct
 
     fun isBoolIf t =
         Try.try
-        (fn () =>
-            let
-              val (on, cases) = 
-                  case t
-                   of M.TCase {on, cases, default = NONE} => (on, cases)
-                    | _ => Try.fail ()
-              val () = Try.V.lenEq (cases, 2)
-              val (c1, t1) =
-                  case Vector.sub (cases, 0)
-                   of (M.CIntegral c, t1) => (c, t1)
-                    | _ => Try.fail ()
-              val (c2, t2) =
-                  case Vector.sub (cases, 1)
-                   of (M.CIntegral c, t2) => (c, t2)
-                    | _ => Try.fail ()
-              val c1 = IntArb.toIntInf c1
-              val c2 = IntArb.toIntInf c2
-              val (tt, tf) =
-                  if c1 = IntInf.zero andalso c2 = IntInf.one
-                  then (t2, t1)
-                  else if c1 = IntInf.one andalso c2 = IntInf.zero
-                  then (t1, t2)
-                  else Try.fail ()
-            in {on = on, trueBranch = tt, falseBranch = tf}
-            end)
+          (fn () =>
+              let
+                val (on, cases) = 
+                    case t
+                     of M.TCase {on, cases, default = NONE} => (on, cases)
+                      | _ => Try.fail ()
+                val () = Try.V.lenEq (cases, 2)
+                val (c1, t1) = Vector.sub (cases, 0)
+                val (c2, t2) = Vector.sub (cases, 1)
+                val b1 = Try.<@ Constant.Dec.cBoolean c1
+                val b2 = Try.<@ Constant.Dec.cBoolean c2
+                val (tt, tf) =
+                    if not b1 andalso b2 then (t2, t1) else 
+                    if b1 andalso not b2 then (t1, t2) else 
+                    Try.fail ()
+              in {on = on, trueBranch = tt, falseBranch = tf}
+              end)
 
     val mapOverTargets = 
      fn (t, f) => 
@@ -3719,22 +3761,21 @@ struct
     fun cuts b = Transfer.cuts (transfer b)
 
     fun getBoolTargets (targets : (Mil.constant * Mil.target) Vector.t) =
-        if Vector.length (targets) = 2 then
-          let 
-            fun isTrue (c) = Compare.constant (c, Mil.CInteger (IntInf.fromInt 1)) = EQUAL
-            fun isFalse (c) = Compare.constant (c, Mil.CInteger (IntInf.fromInt 0)) = EQUAL
-            val (c1, Mil.T t1) = Vector.sub (targets, 0)
-            val (c2, Mil.T t2) = Vector.sub (targets, 1)
-          in
-            if (isTrue c1 andalso isFalse c2) then 
-              SOME (#block t1, #block t2)
-            else if (isFalse c1 andalso isTrue c2) then 
-              SOME (#block t2, #block t1)
-            else
-              NONE
-          end
-        else
-          NONE
+        Try.try
+          (fn () =>
+              let
+                val () = Try.V.lenEq (targets, 2)
+                val (c1, Mil.T t1) = Vector.sub (targets, 0)
+                val (c2, Mil.T t2) = Vector.sub (targets, 1)
+                val b1 = Try.<@ Constant.Dec.cBoolean c1
+                val b2 = Try.<@ Constant.Dec.cBoolean c2
+                val (tt, tf) =
+                    if not b1 andalso b2 then (#block t2, #block t1) else 
+                    if b1 andalso not b2 then (#block t1, #block t2) else 
+                    Try.fail ()
+
+              in (tt, tf)
+              end)
 
     val getBoolSuccessors : Mil.block -> (Mil.label * Mil.label) option = 
      fn (M.B {transfer, ...}) => case transfer
@@ -4148,21 +4189,15 @@ struct
   structure Bool =
   struct
 
-    fun t config = Uintp.t config
+    fun t config = M.TBoolean
 
-    fun T config = Uintp.one config
+    fun T config = M.CBoolean true
 
-    fun F config = Uintp.zero config
+    fun F config = M.CBoolean false
 
-    fun fromBool (config, b) = if b then T config else F config
+    fun fromBool (config, b) = M.CBoolean b
 
-    fun toBool (config, c) = 
-        if Constant.eq (c, T config) then 
-          SOME true
-        else if Constant.eq (c, F config) then
-          SOME false
-        else
-          NONE
+    fun toBool (config, c) = Constant.Dec.cBoolean c
 
     fun ifS (c, opnd, {trueT, falseT}) =
         Switch.noDefault (opnd, Vector.new2 ((T c, trueT), (F c, falseT)))

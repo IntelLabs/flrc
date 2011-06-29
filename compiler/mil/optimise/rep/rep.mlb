@@ -16,7 +16,9 @@ local
         optimize.sml
         rep.sml
         flatten.sml
+        dead-code.sml
 in
         structure MilFlatten
+        structure MilRepDce
         structure MilRep
 end

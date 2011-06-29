@@ -207,6 +207,7 @@ struct
          ("PruneCuts",        "Cut sets pruned"                ),
          ("PruneFx",          "Fx sets pruned"                 ),
          ("Simple",           "Simple moves eliminated"        ),
+         ("SimpleBoolOp",     "Case to simple bool op"         ),
          ("SwitchToSetCond",  "Cases converted to SetCond"     ),
          ("TCut",             "Cuts eliminated"                ),
          ("TGoto",            "Gotos eliminated"               ),
@@ -290,6 +291,7 @@ struct
     val pruneCuts = clicker "PruneCuts"
     val pruneFx = clicker "PruneFx"
     val simple = clicker "Simple"
+    val simpleBoolOp = clicker "SimpleBoolOp"
     val switchToSetCond = clicker "SwitchToSetCond"
     val tCut = clicker "TCut"
     val tGoto = clicker "TGoto"
@@ -754,6 +756,62 @@ struct
 
      end (* structure NumArith *)
 
+     structure Boolean = 
+     struct
+
+       val doubleNegate = 
+           Try.lift
+             (fn(c, operator, args, get) => 
+                let
+                  val () = <@ PU.LogicOp.Dec.lNot operator
+                  val arg0 = Try.V.sub (args, 0)
+                  val (p, args2) = <@ O.Dec.oPrim o get @@ arg0
+                  val () = <@ PU.LogicOp.Dec.lNot <! PU.Prim.Dec.pBoolean @@ p
+                  val oper = Try.V.sub (args2, 0)
+                in RrBase oper
+                end)
+
+       val fold = 
+           Try.lift
+             (fn(c, operator, args, get) => 
+                let
+                  val toBool = <@ C.Dec.cBool <! O.Dec.oConstant o get
+                  val choose = 
+                      Try.|| (fn () => (toBool (Try.V.sub (args, 0)), fn () => Try.V.sub (args, 1)),
+                              fn () => (toBool (Try.V.sub (args, 1)), fn () => Try.V.sub (args, 0))) 
+                  val (b0, r1) = <@ choose ()
+                  val r = 
+                      case operator
+                       of P.LNot => RrConstant (C.CBool (not b0))
+                        | P.LAnd => if b0 then RrBase (r1 ()) else RrConstant (C.CBool false)
+                        | P.LOr  => if b0 then RrConstant (C.CBool true) else RrBase (r1 ())
+                        | P.LXor => if b0 then RrPrim (P.PBoolean P.LNot, Vector.new1 (r1 ())) else RrBase (r1 ())
+                        | P.LEq  => if b0 then RrBase (r1 ()) else RrPrim (P.PBoolean P.LNot, Vector.new1 (r1 ()))
+                in r
+                end)
+
+       val identity = 
+        fn(c, operator, args, get) => 
+          Try.try 
+            (fn () => 
+                let
+                  val (arg1, arg2) = Try.V.doubleton args
+                  val () = Try.require (MU.Operand.eq (arg1, arg2))
+                  val r = case operator
+                           of P.LNot => Try.fail ()
+                            | P.LAnd => RrBase arg1
+                            | P.LOr  => RrBase arg1
+                            | P.LXor => RrConstant (C.CBool false)
+                            | P.LEq  => RrConstant (C.CBool true)
+                in r
+                end)
+
+       val reduce : Config.t * P.logicOp * Mil.operand Vector.t * (Mil.operand -> Operation.t) 
+                    -> reduction option =
+           identity or fold or doubleNegate
+
+     end (* structure Boolean *)
+
      structure Reduce =
      struct
        datatype t = datatype reduction
@@ -778,7 +836,7 @@ struct
 	      | P.PNumCompare r1 => out NumCompare.reduce (c, r1, args, get)
 	      | P.PNumConvert r1 => out NumConvert.reduce (c, r1, args, get)
 	      | P.PBitwise r1    => RrUnchanged
-	      | P.PBoolean r1    => RrUnchanged
+	      | P.PBoolean r1    => out Boolean.reduce (c, r1, args, get)
               | P.PName r1       => RrUnchanged
 	      | P.PCString r1    => RrUnchanged
               | P.PPtrEq         => out ptrEq (c, args, get))
@@ -941,6 +999,29 @@ struct
     val rat = optRational
     val integer = optInteger 
 
+    val tupleNormalize = 
+        let
+          val f = 
+           fn ((d, imil, ws), (g, v, {mdDesc, inits})) =>
+              let
+                val fixed = MU.MetaDataDescriptor.fixedFields mdDesc
+                val array as (_, fd) = <@ MU.MetaDataDescriptor.array mdDesc
+                val ic = Vector.length inits
+                val fc = Vector.length fixed
+                val () = Try.require (ic > fc)
+                val extra = ic - fc
+                val extras = Vector.new (extra, fd)
+                val mdDesc = M.MDD {pok = MU.MetaDataDescriptor.pok mdDesc,
+                                    fixed = Vector.concat [fixed, extras], array = SOME array}
+                val mil = M.GTuple {mdDesc = mdDesc, inits = inits}
+                val () = IGlobal.replaceGlobal (imil, g, (v, mil))
+              in []
+              end
+        in try (Click.tupleNormalize, f)
+        end
+
+    val tuple = tupleNormalize
+
     val reduce = 
         Try.lift 
           (fn (s as (d, imil, ws), g) => 
@@ -950,6 +1031,7 @@ struct
                       of (v, M.GSimple oper) => <@ simple (s, (g, v, oper))
                        | (v, M.GRat r) => <@ rat (s, (g, v, r))
                        | (v, M.GInteger i) => <@ integer (s, (g, v, i))
+                       | (v, M.GTuple r)   => <@ tuple (s, (g, v, r))
                        | _ => Try.fail ())
               in t
               end)
@@ -985,6 +1067,123 @@ struct
 
     structure TCase = 
     struct
+
+      val typIsBool = 
+       fn ((d, imil, ws), t) => MilType.Type.equal (MU.Bool.t (PD.getConfig d), t)
+
+      val variableHasBoolTyp = 
+       fn ((d, imil, ws), v) => 
+          typIsBool ((d, imil, ws), MilType.Typer.variable (PD.getConfig d, IMil.T.getSi imil, v))
+
+      val variableHasBoolDef = 
+       fn ((d, imil, ws), v) => 
+          (case <@ Def.toMilDef o Def.get @@ (imil, v)
+            of MU.Def.DefRhs (M.RhsPSetQuery _)      => true
+             | MU.Def.DefRhs (M.RhsPrim {prim, typs, ...}) => 
+               let
+                 val (args, rets) = MilType.PrimsTyper.t (PD.getConfig d, IMil.T.getSi imil, prim, typs)
+               in Vector.length rets = 1 andalso typIsBool ((d, imil, ws), Vector.sub (rets, 0))
+               end
+             | _                                      => false)
+
+      val isBoolVariable =
+       fn ((d, imil, ws), v) => variableHasBoolTyp ((d, imil, ws), v) orelse variableHasBoolDef ((d, imil, ws), v)
+
+      val isBoolOperand =
+       fn ((d, imil, ws), oper) =>
+          case oper
+           of M.SConstant (M.CBoolean _) => true
+            | M.SConstant _              => false
+            | M.SVariable v              => isBoolVariable ((d, imil, ws), v)
+
+      (*
+       * case x of True => L(op1) | False L(op2)  
+       * L(z):
+       *
+       * op1  op2  => z
+       * T    F       x
+       * F    T       !x
+       *
+       * otherwise:
+       *
+       * if op1 is T, we are computing (x or op2)
+       *   x  op2 => z
+       *   1   0  => 1
+       *   1   1  => 1
+       *   0   0  => 0
+       *   0   1  => 1
+       * if op1 is F, we are computing ((!x) and op2)
+       *   x   op2 => z
+       *   1   0   => 0
+       *   1   1   => 0
+       *   0   0   => 0
+       *   0   1   => 1
+       * if op2 is T, we are computing ((!x) or op1)
+       *   x   op1 => z
+       *   1   0   => 0
+       *   1   1   => 1
+       *   0   0   => 1
+       *   0   1   => 1
+       * if op2 is F, we are computing (x and op1)
+       *   x   op1 => z
+       *   1   0   => 0
+       *   1   1   => 1
+       *   0   0   => 0
+       *   0   1   => 0
+       *)
+      val simpleBoolOp =
+          let
+            datatype oper = ONot | OAnd of M.operand | OOr of M.operand
+            val f = 
+             fn ((d, imil, ws), (i, r)) =>
+                let
+                  val config = PD.getConfig d
+                  val {on, trueBranch, falseBranch} = <@ MU.Transfer.isBoolIf (M.TCase r)
+                  val M.T {block = l1, arguments = args1} = trueBranch
+                  val M.T {block = l2, arguments = args2} = falseBranch
+                  val () = Try.require (l1 = l2)
+                  val arg1 = Try.V.singleton args1
+                  val arg2 = Try.V.singleton args2
+                  val () = Try.require (isBoolOperand ((d, imil, ws), arg1))
+                  val () = Try.require (isBoolOperand ((d, imil, ws), arg2))
+                  val opers = 
+                      case (arg1, arg2)
+                       of (M.SConstant (M.CBoolean true) , M.SConstant (M.CBoolean false)) => []
+                        | (M.SConstant (M.CBoolean false), M.SConstant (M.CBoolean true))  => [ONot]
+                        | (M.SConstant (M.CBoolean true) , _                             ) => [OOr arg2]
+                        | (M.SConstant (M.CBoolean false), _                             ) => [ONot, OAnd arg2]
+                        | (_                             , M.SConstant (M.CBoolean true))  => [ONot, OOr arg1]
+                        | (_                             , M.SConstant (M.CBoolean false)) => [OAnd arg1]
+                        | (_                             , _                             ) => Try.fail ()
+                  val nbp = 
+                   fn (lop, args) => 
+                      let
+                        val v = IMil.Var.new (imil, "bln", MU.Bool.t config, M.VkLocal)
+                        val rhs = M.RhsPrim {prim = P.Prim (P.PBoolean lop), 
+                                             createThunks = false,
+                                             typs = Vector.new0 (),
+                                             args = args}
+                        val i = M.I {dests = Vector.new1 v, n = 0, rhs = rhs}
+                      in (i, M.SVariable v)
+                      end
+                  val doOne = 
+                   fn (oper, arg1) => 
+                      case oper
+                       of ONot      => nbp (P.LNot, Vector.new1 arg1)
+                        | OAnd arg2 => nbp (P.LAnd, Vector.new2 (arg1, arg2))
+                        | OOr arg2  => nbp (P.LOr, Vector.new2 (arg1, arg2))
+                  val (milInstrs, operand) = Utils.List.mapFoldl (opers, on, doOne)
+                  val instrs = List.map (milInstrs, fn ni => I.ItemInstr (IInstr.insertBefore (imil, ni, i)))
+                  val tg = 
+                      M.T {block = l1, 
+                           arguments = Vector.new1 operand}
+                  val goto = M.TGoto tg
+                  val () = IInstr.replaceTransfer (imil, i, goto)
+                in I.ItemInstr i :: instrs
+                end
+          in try (Click.simpleBoolOp, f)
+          end
+
       val betaSwitch = 
        fn {get, eq, dec, con} => 
           let
@@ -1040,43 +1239,43 @@ struct
              fn ((d, imil, ws), (i, {on, cases, default})) =>
                 let
                   (* Turn the constants into operands *)
-            val cases = Vector.map (cases, fn (a, tg) => (M.SConstant a, tg))
-                                   (* Add the default, using the scrutinee as the comparator *)
-            val cases = 
-                case default
-                 of SOME tg => Utils.Vector.cons ((on, tg), cases)
-                  | NONE => cases
-                              (* Ensure all labels are the same, and get an arbitrary one *)
-            val labels = Vector.map (cases, #block o MU.Target.Dec.t o #2)
-            val () = Try.require (Utils.Vector.allEq (labels, op =))
-            val label = Try.V.sub (labels, 0)
-                                  (* Map each row (c, c2, d) to (SOME c, NONE, SOME d), where NONE indicates
-                                   * that the element is equal either to the scrutinee, or to the particular 
-                                   * constant guarding this branch. (Essentially, we mask out these elements,
-                                   * and insist that the rest do not vary between rows) *)
-            val canonize = 
-             fn (a, M.T {block, arguments}) => 
-                let
-                  val mask = 
-                   fn b => if MU.Operand.eq (a, b) orelse MU.Operand.eq (on, b) then
-                             NONE
-                           else 
-                             SOME b
-                  val arguments = Vector.map (arguments, mask)
-                in arguments
-                end
-            val argumentsV = Vector.map (cases, canonize)
-                                        (* Transpose the argument vectors into column vectors, and ensure that
-                                         * each column contains all of the same elements (either all NONE), or
-                                         * all SOME c for the same c *)
-            val argumentsVT = Utils.Vector.transpose argumentsV
-            val columnOk = 
-             fn v => Utils.Vector.allEq (v, fn (a, b) => Option.equals (a, b, MU.Operand.eq))
-            val () = Try.require (Vector.forall (argumentsVT, columnOk))
-            val arguments = Try.V.sub (argumentsV, 0)
-            val arguments = Vector.map (arguments, fn a => Utils.Option.get (a, on))
-            val t = M.TGoto (M.T {block = label, arguments = arguments})
-            val () = IInstr.replaceTransfer (imil, i, t)
+                  val cases = Vector.map (cases, fn (a, tg) => (M.SConstant a, tg))
+                  (* Add the default, using the scrutinee as the comparator *)
+                  val cases = 
+                      case default
+                       of SOME tg => Utils.Vector.cons ((on, tg), cases)
+                        | NONE => cases
+                  (* Ensure all labels are the same, and get an arbitrary one *)
+                  val labels = Vector.map (cases, #block o MU.Target.Dec.t o #2)
+                  val () = Try.require (Utils.Vector.allEq (labels, op =))
+                  val label = Try.V.sub (labels, 0)
+                  (* Map each row (c, c2, d) to (SOME c, NONE, SOME d), where NONE indicates
+                   * that the element is equal either to the scrutinee, or to the particular 
+                   * constant guarding this branch. (Essentially, we mask out these elements,
+                   * and insist that the rest do not vary between rows) *)
+                  val canonize = 
+                   fn (a, M.T {block, arguments}) => 
+                      let
+                        val mask = 
+                         fn b => if MU.Operand.eq (a, b) orelse MU.Operand.eq (on, b) then
+                                   NONE
+                                 else 
+                                   SOME b
+                        val arguments = Vector.map (arguments, mask)
+                      in arguments
+                      end
+                  val argumentsV = Vector.map (cases, canonize)
+                  (* Transpose the argument vectors into column vectors, and ensure that
+                   * each column contains all of the same elements (either all NONE), or
+                   * all SOME c for the same c *)
+                  val argumentsVT = Utils.Vector.transpose argumentsV
+                  val columnOk = 
+                   fn v => Utils.Vector.allEq (v, fn (a, b) => Option.equals (a, b, MU.Operand.eq))
+                  val () = Try.require (Vector.forall (argumentsVT, columnOk))
+                  val arguments = Try.V.sub (argumentsV, 0)
+                  val arguments = Vector.map (arguments, fn a => Utils.Option.get (a, on))
+                  val t = M.TGoto (M.T {block = label, arguments = arguments})
+                  val () = IInstr.replaceTransfer (imil, i, t)
                 in [I.ItemInstr i]
                 end
           in try (Click.etaSwitch, f)
@@ -1116,7 +1315,7 @@ struct
           in try (Click.switchToSetCond, f)
           end
 
-      val reduce = tCase1 or switchToSetCond or etaSwitch
+      val reduce = simpleBoolOp or tCase1 or switchToSetCond or etaSwitch
     end (* structure TCase *)
 
     val tCase = TCase.reduce
@@ -1440,14 +1639,17 @@ struct
                       (case IBlock.succs (imil, pred)
                         of [_] => ()
                          | _ => Try.fail ())
-                  val tf = IBlock.getTransfer' (imil, pred)
+                  val ti = IBlock.getTransfer (imil, pred)
+                  val tf = <@ IInstr.toTransfer ti
                   (* Since there are no parameters, even switches with multiple out edges
                    * can be merged.
                    *)
                   val _ = <@ MU.Transfer.isIntraProcedural tf
+                  val used = IInstr.getUsedBy (imil, ti)
+                  val () = WS.addItems (ws, used)
                   val b = IInstr.getIBlock (imil, i)
                   val () = IBlock.merge (imil, pred, b)
-                in []
+                in [I.ItemInstr ti]
                 end
           in try (Click.mergeBlocks, f)
           end
@@ -2820,11 +3022,17 @@ struct
        in ()
        end
 
-  val deadCode = 
+  val itemIsAllocation = 
+   fn (d, imil, i) => 
+      Utils.Option.get (Try.try (fn () => MU.Instruction.isHeapAllocation (<@ Item.toInstruction i)),
+                        false)
+
+  val deadItem = 
    fn (d, imil, ws, i, uses) => 
       let
         val {inits, others} = Item.splitUses' (imil, i, uses)
-        val dead = Vector.isEmpty others
+        val dead = Vector.isEmpty others andalso 
+                   (Vector.isEmpty inits orelse itemIsAllocation (d, imil, i))
         val ok = Effect.subset(Item.fx (imil, i), Effect.ReadOnly)
         val kill = dead andalso ok
         val () = if kill then killItem (d, imil, ws, i, inits) else ()
@@ -2858,7 +3066,7 @@ struct
                   val () = if sEach then LayoutUtils.printLayout (layout ("Trying: ", i)) else ()
                   val l1 = layout ("R: ", i)
                   val uses = Item.getUses (imil, i)
-                  val reduced = deadCode (d, imil, ws, i, uses) orelse ItemR.reduce (d, imil, ws, i, uses)
+                  val reduced = deadItem (d, imil, ws, i, uses) orelse ItemR.reduce (d, imil, ws, i, uses)
                   val () = 
                       if (sReductions andalso reduced) then
                         LayoutUtils.printLayout l1

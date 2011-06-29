@@ -13,6 +13,7 @@ sig
   type ('a, 'b) t
      
   structure Node : sig
+    val id        : ('a, 'b) node -> int
     val compare   : ('a, 'b) node * ('a, 'b) node -> order
     val equal     : ('a, 'b) node * ('a, 'b) node -> bool
     (* Set of sucessor nodes. No duplicates. *) 
@@ -63,6 +64,7 @@ sig
   (* List of strongly connected components, topologically sorted.  No 
    * edges in the graph point backward in the list *)
   val scc          : ('a, 'b) t -> ('a, 'b) node list list
+  val cc           : ('a, 'b) t -> ('a, 'b) node list list
   val dfsTree      : ('a, 'b) t * ('a, 'b) node -> ('a, 'b) node Tree.t
   val postOrderDfs : ('a, 'b) t * ('a, 'b) node -> ('a, 'b) node List.t
   val domTree      : ('a, 'b) t * ('a, 'b) node -> ('a, 'b) node Tree.t
@@ -119,6 +121,7 @@ struct
   
   structure Node = 
   struct
+    val id = fn N n => #uniqueId n
     val compare  = compareNode
     val equal    = fn (n1, n2) => (compare (n1, n2) = EQUAL)
     val inEdges  = fn (N n) => !(#inEdges n)
@@ -440,6 +443,32 @@ struct
       in
         List.removeAll (nodes (g), visitedNode)
       end
+
+  structure EC = EquivalenceClass
+
+  val cc : ('a, 'b) t -> ('a, 'b) node list list =
+   fn g => 
+      let
+        val ns = nodes g
+        val help = fn (n, (i, nd)) => (i+1, IntDict.insert (nd, getNodeId n, EC.new i))
+        val (_, classes) = List.fold (ns, (0, IntDict.empty), help)
+        val class = fn n => 
+                       (case IntDict.lookup (classes, getNodeId n) 
+                         of SOME ec => ec
+                          | NONE => fail ("cc", "Bad node"))
+        val es = edges g
+        val join = fn e => ignore (EC.join (class (Edge.from e), class (Edge.to e)))
+        val () = List.foreach (edges g, join)
+        val add = fn (d, i, n) => 
+                     (case IntDict.lookup (d, i)
+                       of SOME l => IntDict.insert (d, i, n::l)
+                        | NONE   => IntDict.insert (d, i, [n]))
+        val help = fn (n, d) => add (d, EC.get (class n), n)
+        val d = List.fold (ns, IntDict.empty, help)
+        val cc = IntDict.range d
+      in cc
+      end
+
 
   val postOrderDfs : ('a, 'b) t * ('a, 'b) node -> ('a, 'b) node List.t =
    fn (g, start) =>

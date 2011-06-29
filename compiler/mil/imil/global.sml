@@ -132,6 +132,7 @@ struct
         val () = IMT.iGlobalSetMil (g, m)
       in ()
       end
+  val () = BackPatch.fill (Use.replaceMilGH, replaceMil)
       
   val replaceGlobal = 
    fn (p, g, a) => replaceMil (p, g, IMT.GGlobal a)

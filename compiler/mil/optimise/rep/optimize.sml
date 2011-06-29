@@ -14,13 +14,20 @@ struct
   val fail = 
    fn (fname, msg) => Fail.fail ("optimize.sml", fname, msg)
 
+  structure I = Identifier
   structure M = Mil
   structure MU = MilUtils
   structure MRS = MilRepSummary
+  structure MRN = MilRepNode
+  structure MRB = MilRepBase
   structure FG = MilRepFlowGraph
   structure PD = PassData
   structure SS = StringSet
   structure ID = IntDict
+  structure IS = IntSet
+  structure EC = EquivalenceClass
+  structure VS = M.VS
+  structure L = Layout
 
   structure Chat = ChatF (struct 
                             type env = PD.t
@@ -47,25 +54,13 @@ struct
   val stats = Click.stats
 
   val (debugPassD, debugPass) =
-      Config.Debug.mk (passname ^ ":debug", "Debug rep analysis according to debug level")
+      PD.mkDebug (passname ^ ":debug", "Debug rep analysis according to debug level")
 
-  val mkDebug : string * string * int -> (Config.Debug.debug * (PassData.t -> bool)) = 
-   fn (tag, description, level) =>
-      let
-        val (debugD, debug) = 
-            Config.Debug.mk (passname ^ ":" ^ tag, description)
-        val debug = 
-         fn d => 
-            let
-              val config = PD.getConfig d
-            in debug config orelse 
-               (debugPass config andalso Config.debugLevel (config, passname) >= level)
-            end
-      in (debugD, debug)
-      end
+  val mkDebug = 
+   fn (tag, description, level) => PD.mkLevelDebug (passname, passname^":"^tag, description, level, debugPass)
 
   val debug = 
-   fn (config, i) => debugPass config andalso (Config.debugLevel (config, passname) >= i)
+   fn (pd, i) => debugPass pd andalso (Config.debugLevel (PD.getConfig pd, passname) >= i)
 
   val (showUnboxingD, showUnboxing) = mkDebug ("show-unboxing", "Show unboxing analysis", 1)
   val (showConstantPropD, showConstantProp) = mkDebug ("show-constant-prop", "Show constant propagation analysis", 1)
@@ -75,69 +70,209 @@ struct
 
   val debugs = [debugPassD, showUnboxingD, showCFAD, showConstantPropD, showPhasesD]
 
+  val debugShow =
+   fn (pd, f) => if debugPass pd then LayoutUtils.printLayout (f ()) else ()
+      
+  val opToVar = 
+   fn c =>
+      case c
+       of M.SVariable v => v
+        | _ => fail ("opToVar", "Not in named form")
+      
   structure Unbox = 
   struct
     val skip = MilRepBase.noTupleUnbox
 
-    (* We could loosen this to subtyping, except that float < bits, and int < bits, 
-     * but calling conventions and other issues could give us problems if
-     * we unbox something which contains both.
-     *)
-    structure TLat = FlatLatticeFn (struct 
-                                      type element = Mil.typ
-                                      val equal = MilType.Type.equal 
-                                    end)
+    structure TS = MU.TraceabilitySize
 
-    datatype 'data state = S of {summary : MRS.summary,
-                                 flowgraph : 'data FG.t}
+   (* Algorithm:
+    *  1) Forward -> defs appropriate
+    *  2) Backward -> uses appropriate
+    *  3) Forward -> candidates
+    *  4) For every potential unboxing a = {b}, add edge from b -> a in flow graph
+    *     For every subscript from potential unboxing a = b[0] add edge from b -> a in flow graph
+    *     For every def, add traceability
+    *     Mark cycles Top
+    *     Propagate forward
+    *  5) Backward -> all defs appropriate
+    *  6) Forward -> final unboxes
+    *  7) Build same graph as in 4, propogate types forward
+    *)
+    (* Invariant: UsFix ts => TS.traceabilityKnown ts *)
+    datatype unboxStat = UsTop | UsBox | UsFix of TS.t | UsBot
 
-    datatype env = E of {pd : PD.t}
+    val layoutUs = 
+     fn (config, us) => 
+        case us 
+         of UsTop    => L.str "T"
+          | UsBot    => L.str "B"
+          | UsBox    => L.str "BX"
+          | UsFix ts => L.seq [L.str "Fix", L.str (TS.toString (config, ts))]
 
-    val getSummary = fn (S {summary, ...}) => summary
-    val getFlowgraph = fn (S {flowgraph, ...}) => flowgraph
-    val getPd = fn (E {pd, ...}) => pd
-    val getConfig = PD.getConfig o getPd
+    val usIsTop = fn us => (case us of UsTop => true 
+                                     | _     => false)
+    val joinUS = 
+     fn (us1, us2) => 
+        case (us1, us2)
+         of (UsTop  , _      ) => UsTop
+          | (_      , UsTop  ) => UsTop
+          | (UsBot  , _      ) => us2
+          | (_      , UsBot  ) => us1
+          | (UsBox  , UsBox  ) => UsBox
+          | (UsFix s, UsFix t) => if TS.eq (s, t) then UsFix s else UsTop
+          | (UsBox  , UsFix t) => if TS.isRef t then UsBox else UsTop
+          | (UsFix s, UsBox  ) => if TS.isRef s then UsBox else UsTop
 
-    val typOfVariable = 
-     fn ((s, e), v) => 
+    val typFromUs = 
+     fn us => 
+        case us
+         of UsTop   => fail ("typFromUs", "Shouldn't have unboxed top node")
+          | UsBot   => fail ("typFromUs", "Shouldn't have unboxed bottom node")
+          | UsFix t => MU.Typ.fromTraceabilitySize t
+          | UsBox   => MU.Typ.fromTraceabilitySize TS.TsRef
+
+    val fkFromUs = 
+     fn us => 
+        case us
+         of UsTop   => fail ("typFromUs", "Shouldn't have unboxed top node")
+          | UsBot   => fail ("typFromUs", "Shouldn't have unboxed bottom node")
+          | UsFix t => MU.FieldKind.fromTraceSize' t
+          | UsBox   => SOME M.FkRef
+
+    val mkUs = 
+     fn (box, ts) => 
+        if box andalso TS.isRef ts then
+          UsBox
+        else if TS.known ts then
+          UsFix ts
+        else
+          UsTop
+
+    structure SE1 = 
+    struct
+
+      datatype state = S of {summary : MilRepSummary.summary,
+                             si : Mil.symbolInfo,
+                             ccs : int MRN.Dict.t,
+                             ecs : unboxStat EC.t ID.t,
+                             unboxed : IS.t ref}
+
+      datatype env = E of {pd : PD.t}
+
+      val ((setSummary, getSummary),
+           (setSi, getSi),
+           (setCcs, getCcs),
+           (setEcs, getEcs),
+           (setUnboxed, getUnboxed)) = 
+          let
+            val r2t = fn S {summary, si, ccs, ecs, unboxed} => (summary, si, ccs, ecs, unboxed)
+            val t2r = fn (summary, si, ccs, ecs, unboxed) => 
+                         S {summary = summary, si = si, ccs = ccs, ecs = ecs, unboxed = unboxed} 
+          in FunctionalUpdate.mk5 (r2t, t2r)
+          end
+
+      val getPd = fn (E {pd, ...}) => pd
+
+      val getConfig = PD.getConfig o getPd
+
+    end (* structure SE1 *) 
+
+    val layoutVariable = 
+     fn (s, e, v) => MilLayout.layoutVariable (SE1.getConfig e, SE1.getSi s, v)
+
+    val nodeForVariable = 
+     fn (s, e, v) => MRS.variableNode (SE1.getSummary s, v)
+
+    val typForVariable = 
+     fn (s, e, v) => MilType.Typer.variable (SE1.getConfig e, SE1.getSi s, v)
+
+    val tsForVariable = 
+     fn (s, e, v) => MU.Typ.traceabilitySize (SE1.getConfig e, typForVariable (s, e, v))
+
+    val ccForNode = 
+     fn (s, e, n) => 
+        (case MRN.Dict.lookup (SE1.getCcs s, n)
+          of SOME cc => cc
+           | NONE    => fail ("ccForNode", "Bad node"))
+
+    val ccForVar = 
+     fn (s, e, v) => ccForNode (s, e, nodeForVariable (s, e, v))
+
+    val ecForNode = 
+     fn (s, e, n) => 
+        (case ID.lookup (SE1.getEcs s, ccForNode (s, e, n))
+          of SOME cc => cc
+           | NONE    => fail ("ecForNode", "Bad node"))
+ 
+    val ecForVar =
+     fn (s, e, v) => ecForNode (s, e, nodeForVariable (s, e, v))
+
+    val addToEcForNode = 
+     fn (s, e, n, l) =>
         let
-          val summary = getSummary s
-          val t = MRS.variableTyp (summary, v)
-        in t
-        end
-
-    val unboxTuple = 
-     fn (s, e, noUnbox, dests, {mdDesc, inits}) => 
-        let
-          val summary = getSummary s
-          val unboxed = 
-              Try.try
-                (fn () =>
-                    let
-                      val dest = Try.V.singleton dests
-                      (* We only require that there be at least one field 
-                       * here.  We permit the tuple to have other fields
-                       * and/or be mutable, so long as the only uses are
-                       * subscripts from the 0 field
-                       *)
-                      val oper = Try.V.sub (inits, 0)
-                      val v = Try.<@ MU.Simple.Dec.sVariable oper
-                      val t = MRS.variableTyp (summary, v)
-                      val node = MRS.variableNode (summary, dest)
-                      val () = FG.add (getFlowgraph s, node, TLat.elt t)
-                    in ()
-                    end)
-          val () = if isSome unboxed then ()
-                   else noUnbox ()
+          val ec = ecForNode (s, e, n)
+          val () = EC.set (ec, joinUS (l, EC.get ec))
         in ()
         end
 
+    val addToEcForVar = 
+     fn (s, e, v, l) => addToEcForNode (s, e, nodeForVariable (s, e, v), l)
+
+    val addFixedNode =
+     fn (s, e, n, ts) => addToEcForNode (s, e, n, mkUs (false, ts))
+
+    val addFixed =
+     fn (s, e, v) => 
+        let
+          val ts = tsForVariable (s, e, v)
+          val () = addToEcForVar (s, e, v, mkUs (false, ts))
+        in ()
+        end
+
+    val addBoxedNode =
+     fn (s, e, n, ts) => addToEcForNode (s, e, n, mkUs (true, ts))
+
+    val addBoxed =
+     fn (s, e, v) => 
+        let
+          val ts = tsForVariable (s, e, v)
+          val () = addToEcForVar (s, e, v, mkUs (true, ts))
+        in ()
+        end
+
+    val addTopNode =
+     fn (s, e, n) => addToEcForNode(s, e, n, UsTop)
+
+    val addUnboxedCc =
+     fn (s, e, i) => 
+        let
+          val unboxed = SE1.getUnboxed s
+          val () = unboxed := IS.insert (!unboxed, i)
+        in ()
+        end
+
+    val addUnboxed =
+     fn (s, e, v) => addUnboxedCc (s, e, ccForVar (s, e, v))
+
+    val addUnboxedNode = 
+     fn (s, e, n) => addUnboxedCc (s, e, ccForNode (s, e, n))
+
+    val ccIsUnboxed = 
+     fn (s, e, i) => IS.member (!(SE1.getUnboxed s), i)
+
+    val nodeIsUnboxed = 
+     fn (s, e, n) => ccIsUnboxed (s, e, ccForNode (s, e, n))
+
+    val varIsUnboxed = 
+     fn (s, e, v) => ccIsUnboxed (s, e, ccForVar (s, e, v))
+
     structure Analyze1 =
     MilAnalyseF(struct
-                  type state = TLat.t state
-                  type env = env
-                  val config = getConfig
+                  type state = SE1.state
+                  type env = SE1.env
+                  val config = SE1.getConfig
                   val indent = 2
+                  val externBind = NONE
                   val variableBind = NONE
                   val labelBind = NONE
                   val variableUse = NONE
@@ -147,52 +282,147 @@ struct
                   val analyseInstruction' = 
                    fn (s, e, M.I {dests, n, rhs}) => 
                        let
-                         val summary = getSummary s
-                         val noUnbox = 
-                          fn () =>
-                             let
-                               val ()= 
-                                   if debug (getConfig e, 1) then
-                                     LayoutUtils.printLayout 
-                                       (Layout.seq [Layout.str "Variables cannot be unboxed: ",
-                                                    Vector.layout (Identifier.layoutVariable') dests])
-                                   else 
-                                     ()
-                               val mark = 
-                                fn v => FG.add (getFlowgraph s, MRS.variableNode (summary, v), TLat.top)
-                             in Vector.foreach (dests, mark)
-                             end
-
+                         val fixed = fn () => Vector.foreach (dests, fn v => addFixed (s, e, v))
+                         val boxed = fn v => addBoxed (s, e, v)
+                         val boxedV = fn vv => Vector.foreach (vv, boxed)
+                         val boxedO = boxed o opToVar
+                         val boxedOV = fn vv => Vector.foreach (vv, boxedO)
                          val () = 
                              (case rhs
                                of M.RhsSimple s         => 
                                   (case s
                                     of M.SVariable _    => ()
-                                     | _                => noUnbox ())
-                                | M.RhsPrim _           => noUnbox ()
-                                | M.RhsTuple r          => unboxTuple (s, e, noUnbox, dests, r)
-                                | M.RhsTupleSub _       => ()
-                                | M.RhsTupleSet _       => ()
+                                     | _                => fixed ())
+                                | M.RhsPrim r           => 
+                                  let
+                                    val () = fixed ()
+                                    val () = boxedOV (#args r)
+                                  in ()
+                                  end
+                                | M.RhsTuple r          => if Vector.length (#inits r) > 0 then () else boxedV dests
+                                | M.RhsTupleSub tf       => 
+                                  (case MU.FieldIdentifier.Dec.fiFixed (MU.TupleField.field tf)
+                                    of SOME 0 => ()
+                                     | _      => boxed (MU.TupleField.tup tf))
+                                | M.RhsTupleSet r       => boxed (MU.TupleField.tup (#tupField r))
                                 | M.RhsTupleInited _    => ()
-                                | M.RhsIdxGet _         => noUnbox ()
-                                | M.RhsCont _           => noUnbox ()
-                                | M.RhsObjectGetKind _  => noUnbox ()
-                                | M.RhsThunkMk _        => noUnbox ()
-                                | M.RhsThunkInit _      => noUnbox ()
+                                | M.RhsIdxGet _         => fixed ()
+                                | M.RhsCont _           => fixed ()
+                                | M.RhsObjectGetKind v  => 
+                                  let
+                                    val () = fixed ()
+                                    val () = boxed v
+                                  in ()
+                                  end
+                                | M.RhsThunkMk _        => fixed ()
+                                | M.RhsThunkInit _      => fixed ()
                                 | M.RhsThunkGetFv _     => ()
-                                | M.RhsThunkValue _     => noUnbox ()
+                                | M.RhsThunkValue _     => fixed ()
                                 | M.RhsThunkGetValue _  => ()
                                 | M.RhsThunkSpawn _     => ()
-                                | M.RhsClosureMk _      => noUnbox ()
-                                | M.RhsClosureInit _    => noUnbox ()
+                                | M.RhsClosureMk _      => fixed ()
+                                | M.RhsClosureInit _    => fixed ()
                                 | M.RhsClosureGetFv _   => ()
-                                | M.RhsPSetNew _        => noUnbox ()
-                                | M.RhsPSetGet _        => noUnbox ()
-                                | M.RhsPSetCond _       => noUnbox ()
-                                | M.RhsPSetQuery _      => noUnbox ()
-                                | M.RhsPSum _           => noUnbox ()
+                                | M.RhsPSetNew p        => let val () = fixed () val () = boxedO p in () end
+                                | M.RhsPSetGet _        => ()
+                                | M.RhsPSetCond r       => let val () = fixed () val () = boxedO (#ofVal r) in () end
+                                | M.RhsPSetQuery _      => fixed ()
+                                | M.RhsPSum _           => fixed ()
                                 | M.RhsPSumProj _       => ())
 
+                       in e
+                       end
+                  val analyseInstruction = SOME analyseInstruction'
+                  val analyseTransfer' = 
+                   fn (s, e, t) => 
+                      let 
+                        val boxed = fn v => addBoxed (s, e, v)
+                        val boxedO = boxed o opToVar
+                        (* We may compare pointers to various cref constants *)
+                        val () = 
+                            (case t
+                              of M.TCase {on , ...} => boxedO on
+                               | _ => ())
+                      in e
+                      end
+
+                  val analyseTransfer = SOME analyseTransfer'
+                  val analyseBlock = NONE
+                  val analyseGlobal' = 
+                   fn (s, e, v, g) => 
+                       let
+                         val fixed = fn () => addFixed (s, e, v)
+                         val boxed = fn v => addBoxed (s, e, v)
+                         val () = 
+                             (case g
+                               of M.GTuple r                => 
+                                  if Vector.length (#inits r) > 0 then () else boxed v
+                                | M.GSimple (M.SVariable _) => ()
+                                | M.GErrorVal t             => ()
+                                | M.GPSet s                 => let val () = fixed () val () = boxed (opToVar s) 
+                                                               in () end
+                                | _                         => fixed ())
+                       in e
+                       end
+                  val analyseGlobal = SOME analyseGlobal'
+                end)
+
+    val tryToUnboxTuple = 
+     fn (s, e, v1, inits) =>
+        Try.exec 
+          (fn () => 
+              let
+                val because = 
+                 fn st => 
+                    let
+                      val f = fn () => L.seq [L.str "Can't unbox ", layoutVariable (s, e, v1), L.str ": ", L.str st]
+                    in debugShow (SE1.getPd e, f)
+                    end
+                val fail = fn s => let val () = because s in Try.fail () end
+                val require = fn (b, s) => if b then () else fail s
+                val () = require (Vector.length inits > 0, "not enough elements")
+                val v2 = opToVar (Vector.sub (inits, 0))
+                val ec1 = ecForVar (s, e, v1)
+                val ec2 = ecForVar (s, e, v2)
+                val () = require (not (EC.equal (ec1, ec2)), "same ec")
+                val us1 = EC.get ec1
+                val us2 = EC.get ec2
+                val () = 
+                    case us1
+                     of UsTop => fail "top"
+                      | UsBox => fail "box"
+                      | _     => 
+                        let
+                          val us = joinUS (us1, us2)
+                          val () = require (not (usIsTop us), "incompatible")
+                          val _  = EC.join (ec1, ec2)
+                          val () = EC.set (ec1, us)
+                          val () = addUnboxed (s, e, v1)
+                        in ()
+                        end
+              in ()
+              end)
+
+    structure Analyze2 =
+    MilAnalyseF(struct
+                  type state = SE1.state
+                  type env = SE1.env
+                  val config = SE1.getConfig
+                  val indent = 2
+                  val externBind = NONE
+                  val variableBind = NONE
+                  val labelBind = NONE
+                  val variableUse = NONE
+                  val analyseJump = NONE
+                  val analyseCut = NONE
+                  val analyseConstant = NONE
+                  val analyseInstruction' = 
+                   fn (s, e, M.I {dests, n, rhs}) => 
+                       let
+                         val () = 
+                             case rhs
+                              of M.RhsTuple r => tryToUnboxTuple (s, e, Vector.sub (dests, 0), #inits r)
+                               | _            => ()
                        in e
                        end
                   val analyseInstruction = SOME analyseInstruction'
@@ -201,460 +431,301 @@ struct
                   val analyseGlobal' = 
                    fn (s, e, v, g) => 
                        let
-                         val summary = getSummary s
-                         val noUnbox = 
-                          fn () =>
-                             let
-                               val ()= 
-                                   if debug (getConfig e, 1) then
-                                     LayoutUtils.printLayout 
-                                       (Layout.seq [Layout.str "Global cannot be unboxed: ",
-                                                    Identifier.layoutVariable' v])
-                                   else 
-                                     ()
-                                val () = FG.add (getFlowgraph s, MRS.variableNode (summary, v), TLat.top)
-                             in ()
-                             end
-
                          val () = 
-                             (case g
-                               of M.GTuple r                => unboxTuple (s, e, noUnbox, Vector.new1 v, r)
-                                | M.GSimple (M.SVariable _) => ()
-                                | M.GErrorVal t             => 
-                                  let
-                                    val unboxed = 
-                                        Try.try
-                                          (fn () =>
-                                              let
-                                                val {pok, fixed, array} = Try.<@ MU.Typ.Dec.tTuple t
-                                                val (t, fv) = Try.V.singleton fixed
-                                                val () = Try.require (MU.FieldVariance.immutable fv)
-                                                val node = MRS.variableNode (summary, v)
-                                                val () = FG.add (getFlowgraph s, node, TLat.elt t)
-                                              in ()
-                                              end)
-                                    val () = if isSome unboxed then ()
-                                             else noUnbox ()
-                                  in ()
-                                  end
-                                | _                         => noUnbox ())
+                             case g
+                              of M.GTuple r => tryToUnboxTuple (s, e, v, #inits r)
+                               | _          => ()
                        in e
                        end
                   val analyseGlobal = SOME analyseGlobal'
                 end)
 
-    val forward1 = 
-     fn (pd, summary, p) => 
+    val unboxTuple = 
+     fn (s, e, v1, inits) => 
         let
-          val fgF1 = FG.build {pd = pd,
-                               forward = true,
-                               summary = summary,
-                               uDefInit = TLat.top,
-                               uUseInit = TLat.top, 
-                               initialize = fn n => TLat.bot,
-                               merge = TLat.join,
-                               equal = TLat.equal MilType.Type.equal
-                              }
-          val state = S {summary = summary, flowgraph = fgF1}
-          val env = E {pd = pd}
-          val () = Analyze1.analyseProgram (state, env, p)
-          val () = FG.propagate fgF1
-        in fgF1
+          val summary = SE1.getSummary s
+          val oper = Vector.sub (inits, 0)
+          val v2 = opToVar oper
+          val n1 = nodeForVariable (s, e, v1)
+          val n2 = nodeForVariable (s, e, v2)
+          val edge = (n2, n1)
+          val () = MRS.addEdge (summary, edge)
+          val () = Click.unboxTuple (SE1.getPd e)
+        in oper
         end
 
-    structure Analyze2 =
-    MilAnalyseF(struct
-                  type state = bool state
-                  type env = env
-                  val config = getConfig
-                  val indent = 2
-                  val variableBind = NONE
-                  val labelBind = NONE
-                  val variableUse = NONE
-                  val analyseJump = NONE
-                  val analyseCut = NONE
-                  val analyseConstant = NONE
-                  val analyseInstruction' = 
-                   fn (s, e, M.I {dests, n, rhs}) => 
-                       let
-                         val summary = getSummary s
-                         val noUnbox = 
-                          fn v => 
-                             let
-                               val () = 
-                                   if debug (getConfig e, 1) then
-                                     LayoutUtils.printLayout 
-                                       (Layout.seq [Layout.str "Variable use cannot be unboxed: ",
-                                                    Identifier.layoutVariable' v])
+
+    structure Rewrite = 
+    MilTransformF (struct
+                    structure MS = MilStream
+                    type env   = SE1.env
+                    type state = SE1.state
+                    val config = SE1.getConfig
+                    val indent = 2
+                    val label       = fn (_, env, _, _) => (env, NONE)
+                    val instr = 
+                     fn (s, e, i as M.I {dests, n, rhs}) => 
+                        let
+                          val summary = SE1.getSummary s
+                          val so = 
+                              (case rhs
+                                of M.RhsTuple r => 
+                                   if varIsUnboxed (s, e, Vector.sub (dests, 0)) then
+                                     let
+                                       val oper = unboxTuple (s, e, Vector.sub (dests, 0), #inits r)
+                                       val s = MS.instruction (M.I {dests = dests, n = n, rhs = M.RhsSimple oper})
+                                     in SOME s
+                                     end
                                    else 
-                                     ()
-                               val () = FG.add (getFlowgraph s, MRS.variableNode (summary, v), false)
-                             in ()
-                             end
-
-                         val noUnboxO = 
-                          fn c =>
-                             let
-                               val v = 
-                                   (case c
-                                     of M.SVariable v => v
-                                      | _ => fail ("analyseInstruction'", "Not in named form"))
-                             in noUnbox v
-                             end
-
-                         val () = 
-                             (case rhs
-                               of M.RhsPrim {args, ...}         => Vector.foreach (args, noUnboxO)
-                                | M.RhsTupleSet {tupField, ...} => noUnbox (MU.TupleField.tup tupField)
-                                | M.RhsTupleSub tf              => 
-                                  (case MU.FieldIdentifier.Dec.fiFixed (MU.TupleField.field tf)
-                                    of SOME 0 => ()
-                                     | _      => noUnbox (MU.TupleField.tup tf))
-                                | M.RhsObjectGetKind v          => noUnbox v
-                                | M.RhsPSetNew oper             => noUnboxO oper
-                                | M.RhsPSetCond r               => noUnboxO (#ofVal r)
-                                | _                             => ())
-                       in e
-                       end
-                  val analyseInstruction = SOME analyseInstruction'
-                  val analyseTransfer' = 
-                   fn (s, e, t) => 
-                      let 
-                        val summary = getSummary s
-                        val noUnboxO = 
-                         fn oper => 
-                             let
-                               val v = 
-                                   (case oper
-                                     of M.SVariable v => v
-                                      | _ => fail ("analyseTransfer'", "Not in named form"))
-
-                               val () = 
-                                   if debug (getConfig e, 1) then
-                                     LayoutUtils.printLayout 
-                                       (Layout.seq [Layout.str "Variable in comparison cannot be unboxed: ",
-                                                    Identifier.layoutVariable' v])
+                                     NONE
+                                 | M.RhsTupleSub tf => 
+                                   let
+                                     val v1 = MU.TupleField.tup tf
+                                     val res = 
+                                         if varIsUnboxed (s, e, v1) then
+                                           let
+                                             val n1 = MRS.variableNode (summary, v1)
+                                             val rhs = M.RhsSimple (M.SVariable v1)
+                                             val v2 = Vector.sub (dests, 0)
+                                             val n2 = MRS.variableNode (summary, v2)
+                                             val edge = (n1, n2)
+                                             val () = MRS.addEdge (summary, edge)
+                                             val i = M.I {dests = dests, n = n, rhs = rhs}
+                                             val s = MS.instruction i
+                                           in SOME s
+                                           end
+                                         else
+                                           NONE
+                                   in res
+                                   end
+                                 | M.RhsTupleInited {tup, ...} => 
+                                   if varIsUnboxed (s, e, tup) then
+                                     SOME MS.empty
                                    else 
-                                     ()
-                               val () = FG.add (getFlowgraph s, MRS.variableNode (summary, v), false)
-                             in ()
-                             end
-                        (* Lowered option sets may compare pointers to zero *)
-                        val () = 
-                            (case t
-                              of M.TCase {on , ...} => noUnboxO on
-                               | _ => ())
-                      in e
-                      end
-                  val analyseTransfer = SOME analyseTransfer'
-                  val analyseBlock = NONE
-                  val analyseGlobal' = 
-                   fn (s, e, v, g) => 
-                       let
-                         val summary = getSummary s
-                         val noUnbox = 
-                          fn v => 
-                             let
-                               val () = 
-                                   if debug (getConfig e, 1) then
-                                     LayoutUtils.printLayout 
-                                       (Layout.seq [Layout.str "Global use cannot be unboxed: ",
-                                                    Identifier.layoutVariable' v])
-                                   else 
-                                     ()
-                               val () = FG.add (getFlowgraph s, MRS.variableNode (summary, v), false)
-                             in ()
-                             end
+                                     NONE
+                                 | _ => NONE)
+                        in (e, so)
+                        end
+                    val transfer    = fn (_, env, _) => (env, NONE)
+                    val global      = 
+                     fn (s, e, v, g) => 
+                        let
+                          val summary = SE1.getSummary s
+                          val so = 
+                              case g
+                               of M.GTuple r => 
+                                  if varIsUnboxed (s, e, v) then 
+                                    let
+                                      val oper = unboxTuple (s, e, v, #inits r)
+                                      val l = [(v, M.GSimple oper)]
+                                    in SOME l
+                                    end
+                                  else
+                                    NONE
+                                | M.GErrorVal t => 
+                                  if varIsUnboxed (s, e, v) then
+                                    let
+                                      val t = typFromUs (EC.get (ecForVar (s, e, v)))
+                                      val l = [(v, M.GErrorVal t)]
+                                    in SOME l
+                                    end
+                                  else
+                                    NONE
+                                | _ => NONE
+                        in (e, so)
+                        end
+                   end)
 
-                         val noUnboxO = 
-                          fn c =>
-                             let
-                               val v = 
-                                   (case c
-                                     of M.SVariable v => v
-                                      | _ => fail ("analyseGlobal'", "Not in named form"))
-                             in noUnbox v
-                             end
-
-                         val () = 
-                             (case g
-                               of M.GPSet s       => noUnboxO s
-                                | _ => ())
-                       in e
-                       end
-                  val analyseGlobal = SOME analyseGlobal'
-
-                end)
-
-    (* XXX This is overly conservative.  Not all nodes are required to have a consistent view.
-     * Doesn't matter for unification based though.  -leaf
-     *)
-    val backward = 
-     fn (pd, summary, p, fgF1) => 
+    val doUnknowns = 
+     fn (s, e) => 
         let
-          val fgB = 
-              FG.build {pd = pd,
-                        forward = false,
-                        summary = summary,
-                        uDefInit = false,
-                        uUseInit = false, 
-                        initialize = fn n => true,
-                        merge = fn (a, b) => (a andalso b),
-                        equal = op =
-                       }
-
-          val nodes = MRS.nodes summary
-          val help = fn (i, n) => 
-                        (case TLat.get (FG.query (fgF1, n))
-                          of NONE => FG.add (fgB, n, false)
-                           | _ => ())
-          val () = ID.foreach (nodes, help)
-          val state = S {summary = summary, flowgraph = fgB}
-          val env = E {pd = pd}
-          val () = Analyze2.analyseProgram (state, env, p)
-          val () = FG.propagate fgB
-        in fgB
+          val summary = SE1.getSummary s
+          val doNode = 
+           fn (n, t) =>  
+              if MRN.usesKnown n andalso MRN.defsKnown n then ()
+              else
+                let
+                  val ts = MU.Typ.traceabilitySize (SE1.getConfig e, t)
+                  val () = addBoxedNode (s, e, n, ts)
+                in ()
+                end
+          val doReturns =
+           fn (ns, ts) => Vector.foreach2 (ns, ts, doNode)
+          val doIt = 
+           fn v => 
+              let
+                val () =
+                    case MRS.iInfo' (summary, MU.Id.G v)
+                     of SOME (MRB.IiCode r) => 
+                        (case typForVariable (s, e, v) 
+                          of M.TCode {cc, args, ress} => doReturns (#returns r, ress)
+                           | _                        => Vector.foreach (#returns r, fn n => addTopNode (s, e, n)))
+                      | _                   =>  ()
+                val n = nodeForVariable (s, e, v)
+                val t = typForVariable (s, e, v)
+                val () = doNode (n, t)
+              in ()
+              end
+          val variables = MRS.listVariables summary
+          val () = List.foreach (variables, doIt)
+        in ()
         end
-
-    val forward2 = 
-     fn (pd, summary, fgB) => 
+    
+    val analyze = 
+     fn (s, e, p) => 
         let
-          val fgF2 = 
-              FG.build {pd = pd,
-                        forward = true,
-                        summary = summary,
-                        uDefInit = false,
-                        uUseInit = false, 
-                        initialize = fn n => FG.query (fgB, n),
-                        merge = fn (a, b) => (a andalso b),
-                        equal = op =
-                       }
-          val () = FG.propagate fgF2
-        in fgF2
+          val () = doUnknowns (s, e)
+          val () = Analyze1.analyseProgram (s, e, p)
+          val () = Analyze2.analyseProgram (s, e, p)
+        in ()
         end
-
 
     val show = 
-     fn (pd, summary, fg, p) => 
-        if showUnboxing pd then
+     fn (s, e, p) => 
+        if showUnboxing (SE1.getPd e) then
           let
             val si = Identifier.SymbolInfo.SiTable (MU.Program.symbolTable p)
-            val vars = MRS.listVariables summary
-            val unboxes = List.map (vars, fn v => (v, FG.query (fg, MRS.variableNode (summary, v))))
-            val lv = fn v => MilLayout.layoutVariable (PD.getConfig pd, si, v)
-            val ls = List.keepAllMap (unboxes, fn (v, unbox) => if unbox then SOME (lv v) else NONE)
-            val l = Layout.align ls
-            val l = Layout.align [Layout.str "Unboxing:", LayoutUtils.indent l]
+            val lv = fn v => MilLayout.layoutVariable (SE1.getConfig e, si, v)
+            val vars = MRS.listVariables (SE1.getSummary s)
+            val components = 
+                let
+                  val add = fn (v, components) => 
+                               case ID.lookup (components, ccForVar (s, e, v))
+                                of SOME component => ID.insert (components, ccForVar (s, e, v), v::component)
+                                 | NONE           => ID.insert (components, ccForVar (s, e, v), [v])
+                  val components = List.fold (vars, ID.empty, add)
+                  val lc = fn (i, component) => L.seq [Int.layout i, L.str " => ", List.layout lv component]
+                in List.map (ID.toList components, lc)
+                end
+            val info = 
+                let
+                  val p = 
+                   fn v => 
+                      let
+                        val cc = Int.layout (ccForVar (s, e, v))
+                        val ec = layoutUs (SE1.getConfig e, EC.get (ecForVar (s, e, v)))
+                      in
+                        L.seq [lv v, L.str " is ", cc, L.str " with status ", ec]
+                      end
+                in List.map (vars, p)
+                end
+            val unboxes = 
+                List.keepAllMap (vars, fn v => if varIsUnboxed (s, e, v) then SOME (lv v) else NONE)
+            val l = Layout.align [Layout.str "Components:", 
+                                  LayoutUtils.indent (Layout.align components),
+                                  Layout.str "Variables:", 
+                                  LayoutUtils.indent (Layout.align info),
+                                  Layout.str "Unboxing:", 
+                                  LayoutUtils.indent (Layout.align unboxes)]
             val () = LayoutUtils.printLayout l
           in ()
           end
         else
           ()
 
-    structure Rewrite = 
-    MilTransformF (struct
-                    structure MS = MilStream
-                    type env   = env
-                    type state = bool state
-                    val config = getConfig
-                    val indent = 2
-                    val label       = fn (_, env, _, _) => (env, NONE)
-                    val unboxTuple = 
-                     fn (state, env, dests, {mdDesc, inits}) => 
-                        Try.try 
-                          (fn () => 
-                              let
-                                val summary = getSummary state
-                                val fg = getFlowgraph state
-                                val v = Try.V.singleton dests
-                                val node = MRS.variableNode (summary, v)
-                                val () = Try.require (FG.query (fg, node))
-                                val oper = Vector.sub (inits, 0)
-                                val v' = Try.<@ MU.Simple.Dec.sVariable oper
-                                val node' = MRS.variableNode (summary, v')
-                                val edge = (node', node)
-                                val () = MRS.addEdge (summary, edge)
-                                val () = Click.unboxTuple (getPd env)
-                              in oper
-                              end)
-
-                    val instr = 
-                     fn (state, env, i as M.I {dests, n, rhs}) => 
-                        let
-                          val summary = getSummary state
-                          val fg = getFlowgraph state
-                          val res = 
-                              (case rhs
-                                of M.RhsTuple r => 
-                                   let
-                                     val operO = unboxTuple (state, env, dests, r)
-                                     val help = 
-                                      fn oper => MS.instruction (M.I {dests = dests, n = n, rhs = M.RhsSimple oper})
-                                     val c = Option.map (operO, help)
-                                   in (env, c)
-                                   end
-                                 | M.RhsTupleSub tf => 
-                                   let
-                                     val v = MU.TupleField.tup tf
-                                     val node = MRS.variableNode (summary, v)
-                                     val res = 
-                                         if FG.query (fg, node) then
-                                           let
-                                             val rhs = M.RhsSimple (M.SVariable v)
-                                             val () = 
-                                                 (case MU.Instruction.dest i
-                                                   of SOME v' => 
-                                                      let
-                                                        val node' = MRS.variableNode (summary, v')
-                                                        val edge = (node, node')
-                                                        val () = MRS.addEdge (summary, edge)
-                                                      in ()
-                                                      end
-                                                    | NONE => ())
-                                             val i = M.I {dests = dests, n = n, rhs = rhs}
-                                             val s = MS.instruction i
-                                           in (env, SOME s)
-                                           end
-                                         else
-                                           (env, NONE)
-                                           
-                                   in res
-                                   end
-                                 | M.RhsTupleInited {tup, ...} => 
-                                   let
-                                     val node = MRS.variableNode (summary, tup)
-                                   in
-                                     if FG.query (fg, node) then
-                                       (env, SOME MS.empty)
-                                     else 
-                                       (env, NONE)
-                                   end
-                                 | _ => (env, NONE))
-                        in res
-                        end
-                    val transfer    = fn (_, env, _) => (env, NONE)
-                    val global      = 
-                     fn (state, env, v, g) => 
-                        let
-                          val summary = getSummary state
-                          val fg = getFlowgraph state
-                          val res = 
-                              (case g
-                                of M.GTuple r => 
-                                   let
-                                     val operO = unboxTuple (state, env, Vector.new1 v, r)
-                                     val c = Option.map (operO, fn oper => [(v, M.GSimple oper)])
-                                   in (env, c)
-                                   end
-                                 | M.GErrorVal t => 
-                                   let
-                                     val node = MRS.variableNode (summary, v)
-                                     val res = 
-                                         if FG.query (fg, node) then
-                                           let
-                                             val t = 
-                                                 case MU.Typ.Dec.tTuple t
-                                                  of SOME {pok, fixed, array = (M.TNone, M.FvReadWrite)} =>
-                                                     #1 (Vector.sub (fixed, 0))
-                                                   | _ => fail ("global", "Not an unboxable error value")
-                                           in (env, SOME [(v, M.GErrorVal t)])
-                                           end
-                                         else
-                                           (env, NONE)
-                                   in res
-                                   end
-                                 | _ => (env, NONE))
-                        in res
-                        end
-                   end)
 
     val replaceNodeDataWithoutShape = 
-     fn (pd, summary, fgF1, n) => 
-        let        
-          val t = 
-              (case TLat.get (FG.query (fgF1, n))
-                of SOME t => t
-                 | NONE => fail ("rewrite", "Unbox with conflicting type!"))
-          val fk = MU.FieldKind.fromTyp' (PD.getConfig pd, t)
+     fn (s, e, done, n) => 
+        let
+          val us = EC.get (ecForNode (s, e, n))
+          val t = typFromUs us
+          val fk = fkFromUs us
           val fv = MilRepNode.fieldVariance' n
-          val t = MU.FlatTyp.fromTyp (PD.getConfig pd, t)
           val shape = SOME (MilRepObject.Shape.Build.unknown t)
           val () = MilRepNode.setData (n, shape, fk, fv)
-        in ()
+          val done = MRN.Set.insert (done, n)
+        in done
         end
 
-    val replaceNodeDataWithShape = 
-     fn (pd, summary, fgF1, n, s) => 
+    val rec replaceNodeDataWithShape = 
+     fn (s, e, done, n, shp) => 
         let   
           val fallback = 
-           fn () => 
-              let
-                val () = Chat.warn1 (pd, "Approximating node type")
-                val () = replaceNodeDataWithoutShape (pd, summary, fgF1, n)
-              in ()
-              end
+           fn () => replaceNodeDataWithoutShape (s, e, done, n)
+
           val replace = 
            fn inner => 
               let
+                val done = replaceNodeData (s, e, done, inner)
                 val fk = MilRepNode.fieldKind' inner
                 val fv = MilRepNode.fieldVariance' n
                 val shape = MilRepNode.shape' inner
                 val () = MilRepNode.setData (n, shape, fk, fv)
-              in ()
+                val done = MRN.Set.insert (done, n)
+              in done
               end
-          val () = 
-              (case MilRepObject.Shape.Dec.tuple s
-                of NONE => fallback ()
-                 | SOME {pok, fields, array} => 
-                   (case Utils.Vector.lookup (fields, 0)
-                     of NONE => 
-                        (case array 
-                          of SOME inner => replace inner
-                           | NONE => fallback ())
-                      | SOME inner => replace inner))
-        in ()
+          val done = 
+              case MilRepObject.Shape.Dec.tuple shp
+               of NONE => fallback ()
+                | SOME {pok, fields, array} => 
+                  (case Utils.Vector.lookup (fields, 0)
+                    of NONE => 
+                       (case array 
+                         of SOME inner => replace inner
+                          | NONE => fallback ())
+                     | SOME inner => replace inner)
+        in done
         end
 
-    val replaceNodeData = 
-     fn (pd, summary, fgF1, fgF2, n) => 
+    and rec replaceNodeData = 
+     fn (s, e, done, n) => 
+        if MRN.Set.member (done, n) then done else
         let
-          val () = 
-              if FG.query (fgF2, n) then
-                (case MilRepNode.shape' n
-                  of SOME s => replaceNodeDataWithShape (pd, summary, fgF1, n, s)
-                   | NONE => replaceNodeDataWithoutShape (pd, summary, fgF1, n))
+          val done = 
+              if nodeIsUnboxed (s, e, n) then
+                case MilRepNode.shape' n
+                 of SOME sh => replaceNodeDataWithShape (s, e, done, n, sh)
+                  | NONE    => replaceNodeDataWithoutShape (s, e, done, n)
               else
-                ()
-        in ()
+                done
+        in done
         end
 
     val replaceAllNodeData = 
-     fn (pd, summary, fgF1, fgF2) =>
+     fn (s, e) =>
         let
+          val summary = SE1.getSummary s
           val nodes = MRS.nodes summary
-          val help = fn (i, n) => replaceNodeData (pd, summary, fgF1, fgF2, n)
-          val () = ID.foreach (nodes, help)
+          val help = fn (i, n, done) => replaceNodeData (s, e, done, n)
+          val _ = ID.fold (nodes, MRN.Set.empty, help)
         in ()
         end
 
     val rewrite = 
-     fn (pd, summary, p, fgF1, fgF2) => 
+     fn (s, e, p) => 
         let
-          val state = S {summary = summary, flowgraph = fgF2}
-          val env = E {pd = pd}
-          val p = Rewrite.program (state, env, Rewrite.OAny, p)
-          val () = replaceAllNodeData (pd, summary, fgF1, fgF2)
+          val p = Rewrite.program (s, e, Rewrite.OAny, p)
+          val () = replaceAllNodeData (s, e)
         in p
         end
 
     val program = 
      fn (pd, summary, p) => 
         let
-          val fgF1 = forward1 (pd, summary, p)
-          val fgB = backward (pd, summary, p, fgF1)
-          val fgF2 = forward2 (pd, summary, fgB)
-          val () = show (pd, summary, fgF2, p)
-          val p = rewrite (pd, summary, p, fgF1, fgF2)
+          val M.P {symbolTable, ...} = p
+          val fg = FG.build {pd = pd,
+                             forward = true,
+                             summary = summary,
+                             uDefInit = NONE,
+                             uUseInit = NONE, 
+                             initialize = fn n => (),
+                             merge = fn _ => (),
+                             equal = fn _ => true
+                            }
+
+          val ccs = FG.cc (summary, fg)
+          val ecs = 
+              let
+                val addCC = 
+                 fn (n, i, ecs) => if ID.contains (ecs, i) then ecs else ID.insert (ecs, i, EC.new UsBot)
+              in MRN.Dict.fold (ccs, ID.empty, addCC)
+              end
+          val s = SE1.S {summary = summary, si = I.SymbolInfo.SiTable symbolTable,
+                         ccs = ccs, ecs = ecs, unboxed = ref IS.empty}
+          val e = SE1.E {pd = pd}
+          val () = analyze (s, e, p)
+          val () = show (s, e, p)
+          val p = rewrite (s, e, p)
           val () = MRS.resetTyps summary
         in p
         end
@@ -698,6 +769,7 @@ struct
                   type env = env
                   val config = getConfig
                   val indent = 2
+                  val externBind = NONE
                   val variableBind = NONE
                   val labelBind = NONE
                   val variableUse = NONE
@@ -834,8 +906,8 @@ struct
           val fgF = FG.build {pd = pd,
                               forward = true,
                               summary = summary,
-                              uDefInit = CLat.top,
-                              uUseInit = CLat.bot, 
+                              uDefInit = SOME CLat.top,
+                              uUseInit = SOME CLat.bot, 
                               initialize = fn n => CLat.bot,
                               merge = CLat.join,
                               equal = CLat.equal elementEq
@@ -984,6 +1056,7 @@ struct
                   type env = env
                   val config = getConfig
                   val indent = 2
+                  val externBind = NONE
                   val variableBind = NONE
                   val labelBind = NONE
                   val variableUse = NONE
@@ -1222,8 +1295,8 @@ struct
           val fgF = FG.build {pd = pd,
                               forward = true,
                               summary = summary,
-                              uDefInit = Lat.escaping,
-                              uUseInit = Lat.bot, 
+                              uDefInit = SOME Lat.escaping,
+                              uUseInit = SOME Lat.bot, 
                               initialize = fn n => Lat.bot,
                               merge = Lat.join precise,
                               equal = Lat.equal 
@@ -1271,6 +1344,7 @@ struct
                   type env = env
                   val config = getConfig
                   val indent = 2
+                  val externBind = NONE
                   val variableBind = NONE
                   val labelBind = NONE
                   val variableUse = NONE
@@ -1314,6 +1388,7 @@ struct
                   type env = env
                   val config = getConfig
                   val indent = 2
+                  val externBind = NONE
                   val variableBind = NONE
                   val labelBind = NONE
                   val variableUse = NONE
@@ -1416,8 +1491,8 @@ struct
           val fgB = FG.build {pd = pd,
                               forward = false,
                               summary = summary,
-                              uDefInit = Lat.bot,
-                              uUseInit = Lat.top,
+                              uDefInit = SOME Lat.bot,
+                              uUseInit = SOME Lat.top,
                               initialize = fn n => Lat.bot,
                               merge = Lat.join,
                               equal = Lat.equal (VS.equal)

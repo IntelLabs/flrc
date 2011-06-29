@@ -57,13 +57,26 @@ struct
         val closureNotIn2nd = 
             fn ops => Vector.forall (ops, not o isThisClosure o #2)
 
+        val doCall = 
+         fn call => 
+            case call
+             of M.CCode _                    => false
+              | M.CClosure _                 => false
+              | M.CDirectClosure {cls, ... } => isThisClosure (M.SVariable cls)
+
+        val doEval = 
+         fn eval => 
+            case eval
+             of M.EThunk _                   => false
+              | M.EDirectThunk {thunk, code} => isThisClosure (M.SVariable thunk)
+
         val doTransfer = 
          fn t => 
             (case t
               of M.TInterProc {callee, ...} => 
                  (case callee 
-                   of M.IpCall {args, ...} => closureNotIn args
-                    | M.IpEval _ => true)
+                   of M.IpCall {call, args} => doCall call andalso closureNotIn args 
+                    | M.IpEval {eval, typ}  => doEval eval)
                | _ => false)
 
         val doRhs = 

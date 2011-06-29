@@ -1024,7 +1024,7 @@ struct
           | M.TBits vs => if vs = MU.ValueSize.ptrSize (getConfig e) then () else err ()
           | M.TNone => ()
           | M.TContinuation ts' => checkConsistentTyps (s, e, msg', ts', ts)
-          | _ => err ()
+          | _ => if MT.Type.subtype (getConfig e, t, M.TBits (MU.ValueSize.ptrSize (getConfig e))) then () else err ()
       end
 
   fun transfer (s, e, msg, t) =

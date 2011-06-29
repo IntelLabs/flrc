@@ -29,6 +29,8 @@ structure IMilUse :
 sig
   include IMIL_USE
   val emitGlobalH : (t * (Mil.variable * Mil.global) -> iGlobal) BackPatch.t
+  val replaceMilGH : (t * iGlobal * mGlobal -> unit) BackPatch.t
+  val replaceMilIH : (t * iInstr * mInstr -> unit) BackPatch.t
 end = 
 struct
   open IMilPublicTypes
@@ -76,6 +78,12 @@ struct
 
   val emitGlobalH : (IMT.t * (Mil.variable * Mil.global), iGlobal) BP.func = BP.new ()
   val emitGlobal = BP.apply emitGlobalH
+
+  val replaceMilGH : (IMT.t * iGlobal * mGlobal, unit) BP.func = BP.new ()
+  val replaceMilG = BP.apply replaceMilGH
+
+  val replaceMilIH : (IMT.t * iInstr * mInstr, unit) BP.func = BP.new ()
+  val replaceMilI = BP.apply replaceMilIH
 
   local
     structure MRC = MilRewriterClient
@@ -209,33 +217,13 @@ struct
       end
   end
 
-  val replaceVarInVars = 
-   fn (p, vars, u, v, oper) =>
-      let
-        val () = 
-            case oper
-             of M.SVariable v' => 
-                let
-                  val () = IVD.remove (vars, v)
-                  val u  = addUse (p, v', u)
-                  val () = IVD.insert (vars, v', u)
-                in ()
-                end
-              | M.SConstant _ => IVD.remove (vars, v)
-      in ()
-      end
-
-
   val replaceUseI = 
    fn (p, i, v, oper) =>
       let
         val mil = IMT.iInstrGetMil i
-        val vars = IMT.iInstrGetVars i
 
         val mil  = replaceVarInMilInstr (p, v, oper, mil)
-        val () = replaceVarInVars (p, vars, IMT.UseInstr i, v, oper)
-
-        val () = IMT.iInstrSetMil (i, mil)
+        val () = replaceMilI (p, i, mil)
       in ()
       end
 
@@ -243,12 +231,8 @@ struct
    fn (p, g, v, oper) =>
       let
         val mil = IMT.iGlobalGetMil g
-        val vars = IMT.iGlobalGetVars g
-
         val mil  = replaceVarInMilGlobal (p, v, oper, mil)
-        val () = replaceVarInVars (p, vars, IMT.UseGlobal g, v, oper)
-
-        val () = IMT.iGlobalSetMil (g, mil)
+        val () = replaceMilG (p, g, mil)
       in ()
       end
 

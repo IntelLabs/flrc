@@ -44,6 +44,7 @@ struct
                    type env = Config.t
                    fun config c = c
                    val indent = 2
+                   val externBind = SOME varBind
                    val variableBind = SOME varBind
                    val labelBind = NONE
                    val variableUse = SOME varUse

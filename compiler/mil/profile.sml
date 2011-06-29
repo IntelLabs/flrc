@@ -608,8 +608,7 @@ functor MilProfilerF (type env
               let
                 val blk = valOf (MilCfg.nodeGetBlock (cfg, n))
               in
-              (*                MilUtils.Block.isReturnBlock (blk) *)
-                fail ("isReturnBlock", "not implemented")
+                #exits (MilUtils.Block.targets blk)
               end
 
           (* EB: Mil blocks do not have store instructions. Therefore, we will
@@ -646,9 +645,8 @@ functor MilProfilerF (type env
           fun blockHasCall (n) = 
               let
                 val blk = valOf (MilCfg.nodeGetBlock (cfg, n))
-              in
-(*                MilUtils.Block.isCallBlock (blk)*)
-                fail ("blockHasCall", "not implemented")
+                val tfer = MilUtils.Block.transfer blk
+              in isSome (MilUtils.Transfer.Dec.tInterProc tfer)
               end
 
           fun isLoopPreHeader (b) = 

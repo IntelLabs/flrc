@@ -21,6 +21,7 @@ functor MilAnalyseF (
   type env
   val config : env -> Config.t
   val indent : int
+  val externBind         : (state * env * Mil.variable -> env) option
   val variableBind       : (state * env * Mil.variable -> env) option
   val labelBind          : (state * env * Mil.label -> env) option
   val variableUse        : (state * env * Mil.variable -> unit) option
@@ -43,6 +44,7 @@ functor MilAnalyseF (
                           end)
 
   val clientBind = variableBind
+  val clientExternBind = externBind
   val clientLabelBind = labelBind
   val clientVariable = variableUse
   val clientJump = analyseJump
@@ -64,6 +66,11 @@ functor MilAnalyseF (
 
   fun analyseBinder (s, e, v) =
       case clientBind
+       of NONE => e
+        | SOME vb => vb (s, e, v)
+
+  fun analyseExtern (s, e, v) =
+      case clientExternBind
        of NONE => e
         | SOME vb => vb (s, e, v)
 
@@ -418,7 +425,7 @@ functor MilAnalyseF (
   fun analyseProgram (s, e, p) =
       let
         val M.P {includes, externs, globals, symbolTable, entry} = p
-        fun doOne (v, e) = analyseBinder (s, e, v)
+        fun doOne (v, e) = analyseExtern (s, e, v)
         val e = VS.fold (MilUtils.Program.externVars p, e, doOne)
         fun doOne (v, _, e) = analyseBinder (s, e, v)
         val e = VD.fold (globals, e, doOne)

@@ -33,8 +33,10 @@ sig
   val inEdges : t * iBlock -> (iBlock * iBlock) list
   val outEdges : t * iBlock -> (iBlock * iBlock) list
 
-  (* merge (t, b1, b2) => delete the transfer of b1 and the
-   * label of b2, and merge the instruction streams of b1 and b2*)
+  (* merge (t, b1, b2) => replace the transfer of b1 with the
+   * transfer of b2, and move all of the instructions from b2 
+   * to the end of b1.
+   *)
   val merge : t * iBlock * iBlock -> unit
   (* prepend (t, i, b) => i is inserted after the label of b *)
   val prepend  : t * Mil.instruction * iBlock -> iInstr

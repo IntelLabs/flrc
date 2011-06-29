@@ -5,6 +5,10 @@ signature MIL_REP_NODE =
 sig
   type id = int
   type node
+
+  structure Dict : DICT where type key = node
+  structure Set : SET where type element = node
+
   (* No class object constraint *)
   val mkBottom : id * Mil.fieldKind option * Mil.fieldVariance option * node MilRepObject.Shape.shape option 
                  -> node
@@ -26,13 +30,12 @@ sig
   val fieldKind' : node -> Mil.fieldKind option
   val fieldKind : node -> Mil.fieldKind
   val fieldDescriptor : node -> Mil.fieldDescriptor
-
   val setData : node 
                 * node MilRepObject.Shape.shape option 
                 * Mil.fieldKind option 
                 * Mil.fieldVariance option 
                 -> unit
-
+  val setShape : node * node MilRepObject.Shape.shape option -> unit
   val layout : Config.t * Mil.symbolInfo * node * ((id -> Layout.t option) option) -> Layout.t
 
   structure Unify :
@@ -147,12 +150,29 @@ struct
   val nodeGetShape = nodeDataGetShape o (op !) o nodeGetNodeData
   val nodeGetVariance = nodeDataGetVariance o (op !) o nodeGetNodeData
 
+  structure Ord = 
+  struct
+    type t = node
+    val compare = fn (n1, n2) => Int.compare (nodeGetId n1, nodeGetId n2)
+  end (* structure Ord *)
+  structure Dict = DictF (Ord)
+
+  structure Set = SetF (Ord)
 
   val setData =
    fn (n, s, fk, vs) => 
       let
         val ndR = nodeGetNodeData n
         val nd = ND {fk = fk, shape = s, variance = vs}
+        val () = ndR := nd
+      in ()
+      end
+
+  val setShape = 
+   fn (n, s) => 
+      let
+        val ndR as ref (ND {fk, shape, variance}) = nodeGetNodeData n
+        val nd = ND {fk = fk, shape = s, variance = variance}
         val () = ndR := nd
       in ()
       end

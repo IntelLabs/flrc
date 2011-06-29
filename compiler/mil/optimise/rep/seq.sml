@@ -72,6 +72,8 @@ signature MIL_REP_SEQ = sig
 
   val foreach : 'a t * ('a -> unit) -> unit
 
+  val filter : 'a t * ('a -> bool) -> 'a t
+
   (* Given a sequence of possibly fixed length, return
    * the sequence denoting all extensions with the same prefix
    * elements.
@@ -234,6 +236,19 @@ struct
                                foreach(s2, f))
          | SeqZ => ()
          | SeqBot => ())
+
+  val rec filter = 
+   fn (seq, f) => 
+      (case seq
+        of Seq e => if f e then SeqZ else seq
+         | SeqCons (e, s2) => 
+           let
+             val s2 = filter (s2, f)
+           in
+             if f e then s2 else SeqCons (e, s2)
+           end
+         | SeqZ => seq
+         | SeqBot => seq)
 
   val rec seq2OpenSeq = 
    fn seq => 
