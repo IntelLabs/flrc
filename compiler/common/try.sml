@@ -38,9 +38,13 @@ sig
 
   val ||   : ('a -> 'b t) * ('a -> 'b t) -> ('a -> 'b option) (* use infix 4 *)
   val or   : ('a -> 'b option) * ('a -> 'b option) -> ('a -> 'b option) (* use infix 4 *)
+  val orL  : ('a -> 'b option) list -> ('a -> 'b option)
   val oo   : ('b -> 'c option) * ('a -> 'b option) -> ('a -> 'c option)  (* use infix 3 *)
   val om   : ('b -> 'c t) * ('a -> 'b option) -> ('a -> 'c option)  (* use infix 3 *)
- 
+
+  val combine : ('a -> 'b t) list * ('a -> 'b) -> ('a -> 'b)
+  val combineDo : (unit -> 'a t) list * (unit -> 'a) -> 'a
+
   (* Fail (via an exception) *)
   val fail : unit -> 'a t
   (* Reify the option type into failure *)
@@ -97,6 +101,8 @@ struct
         of NONE => f2 args
          | r => r)
 
+  fun orL fs = List.fold (fs, fn _ => NONE, or)
+
   val oo = 
    fn (f, g) => 
    fn x => 
@@ -110,7 +116,13 @@ struct
       (case g x
         of SOME y => SOME (f y)
          | NONE => NONE)
-      
+
+  fun combine (fs, g) =
+      List.foldr (fs, g, fn (f, g) => fn arg => case try (fn () => f arg) of NONE => g arg | SOME res => res)
+
+  fun combineDo (fs, g) =
+      List.foldr (fs, g, fn (f, g) => fn () => case try f of NONE => g () | SOME res => res) ()
+
   fun fail () = raise Fail
   fun <- t = 
       (case t
