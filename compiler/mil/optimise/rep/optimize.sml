@@ -127,15 +127,15 @@ struct
      fn us => 
         case us
          of UsTop   => fail ("typFromUs", "Shouldn't have unboxed top node")
-          | UsBot   => fail ("typFromUs", "Shouldn't have unboxed bottom node")
+          | UsBot   => MU.Typ.fromTraceabilitySize TS.TsRef
           | UsFix t => MU.Typ.fromTraceabilitySize t
           | UsBox   => MU.Typ.fromTraceabilitySize TS.TsRef
 
     val fkFromUs = 
      fn us => 
         case us
-         of UsTop   => fail ("typFromUs", "Shouldn't have unboxed top node")
-          | UsBot   => fail ("typFromUs", "Shouldn't have unboxed bottom node")
+         of UsTop   => fail ("fkFromUs", "Shouldn't have unboxed top node")
+          | UsBot   => SOME M.FkRef
           | UsFix t => MU.FieldKind.fromTraceSize' t
           | UsBox   => SOME M.FkRef
 
