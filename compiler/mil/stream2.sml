@@ -132,7 +132,7 @@ sig
                * Mil.variable Vector.t
                -> Mil.label * Mil.label * t
 
-    (*  Given two streams, merge them to a common exit point
+     (*  Given two streams, merge them to a common exit point
      * (if they exit), and emit the two blocks.  The merge function 
      * is called  with the two labels to produce an entry transfer point.
      *  join (state, vs, (S1, rs1), (S2, rs2), F) ==
@@ -153,6 +153,14 @@ sig
                * (t * (Mil.operand Vector.t))
                * (state * env * Mil.label * Mil.label -> Mil.transfer)
                -> t * Mil.label * Mil.label
+
+    (* Just like join, but for a list.  *)
+    val joinn : state
+               * env
+               * Mil.variable Vector.t
+               * (t * (Mil.operand Vector.t)) list
+               * (state * env * Mil.label list -> Mil.transfer)
+               -> t * Mil.label list
            
    (* Stream should already be terminated.
     * close (state, S, vs) = (l, f)
@@ -666,6 +674,21 @@ struct
            val (l, f) = close (state, env, s, vs)
          in (l, f)
          end
+
+     fun joinn (state, env, vs, prs, mergefn) =
+         let
+           val mergeId = nextBlock state
+           val (ps, rs) = List.unzip prs
+           val gotos = List.map (rs, fn arg => M.TGoto (M.T {block = mergeId, arguments = arg}))
+           val (is, fs) = List.unzip (List.map (List.zip (ps, gotos), 
+                          fn (p, goto) => closeWith (state, env, p, Vector.new0 (), goto)))
+           val frag = F.mergen (state, env, fs)
+           val t = mergefn (state, env, is)
+           val head = EBlock (AL.empty, t)
+           val tail = EOpen (mergeId, vs, AL.empty)
+           val s = EXT {head = head, tail = tail, frag = frag}
+       in (s, is)
+       end
 
      fun join (state, env, vs, (p1, rs1), (p2, rs2), mergefn) =
          let

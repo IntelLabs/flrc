@@ -466,8 +466,9 @@ struct
                in (c, t)
                end)
 
-  val tcRealWorld : tcon qualified = pv "RealWorld"
-  val tRealWorld  : ty        = Tcon tcRealWorld
+  val tcRealWorld   : tcon qualified = pv "RealWorld"
+  val vRealWorldzh : var qualified = pvz "realWorld"
+  val tRealWorld    : ty        = Tcon tcRealWorld
 
   val tcStatezh : tcon qualified = pvz "State"
   val tStatezh  : ty -> ty  = fn t => Tapp (Tcon tcStatezh, t)
@@ -476,6 +477,7 @@ struct
 
   val opsState : (var * ty) list = [("realWorldzh", tRWS)]
 
+  val tcArrayzh            : tcon qualified = pvz "Array"
   val tcByteArrayzh        : tcon qualified = pvz "ByteArray"
   val ktByteArrayzh        : kind      = Kunlifted
   val tcMutableArrayzh     : tcon qualified = pvz "MutableArray"
@@ -483,6 +485,8 @@ struct
   val tcMutableByteArrayzh : tcon qualified = pvz "MutableByteArray"
   val ktMutableByteArrayzh : kind      = Karrow (Klifted, Kunlifted)
 
+  val tcMVarzh             : tcon qualified = pvz "MVar"
+  val tcMutVarzh           : tcon qualified = pvz "MutVar"
   val errorVals : (var * ty) list = []
 
  

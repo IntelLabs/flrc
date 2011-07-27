@@ -149,9 +149,12 @@ sig
       type t = Mil.Prims.floatOp
       val faACos  : t -> unit option
       val faASin  : t -> unit option
+      val faATan  : t -> unit option
       val faCeil  : t -> unit option
       val faCos   : t -> unit option
+      val faExp   : t -> unit option
       val faFloor : t -> unit option
+      val faLn    : t -> unit option
       val faRcp   : t -> unit option
       val faSin   : t -> unit option
       val faSqrt  : t -> unit option
@@ -545,9 +548,12 @@ sig
     sig
       val faACos  : t -> unit option
       val faASin  : t -> unit option
+      val faATan  : t -> unit option
       val faCeil  : t -> unit option
       val faCos   : t -> unit option
+      val faExp   : t -> unit option
       val faFloor : t -> unit option
+      val faLn    : t -> unit option
       val faRcp   : t -> unit option
       val faSin   : t -> unit option
       val faSqrt  : t -> unit option
@@ -873,9 +879,12 @@ struct
       type t = Mil.Prims.floatOp
       val faASin  = fn fl => (case fl of Mil.Prims.FaASin => SOME () | _ => NONE)
       val faACos  = fn fl => (case fl of Mil.Prims.FaACos => SOME () | _ => NONE)
+      val faATan  = fn fl => (case fl of Mil.Prims.FaATan => SOME () | _ => NONE)
       val faCeil  = fn fl => (case fl of Mil.Prims.FaCeil => SOME () | _ => NONE)
       val faCos   = fn fl => (case fl of Mil.Prims.FaCos => SOME () | _ => NONE)
+      val faExp   = fn fl => (case fl of Mil.Prims.FaExp => SOME () | _ => NONE)
       val faFloor = fn fl => (case fl of Mil.Prims.FaFloor => SOME () | _ => NONE)
+      val faLn    = fn fl => (case fl of Mil.Prims.FaLn => SOME () | _ => NONE)
       val faRcp   = fn fl => (case fl of Mil.Prims.FaRcp => SOME () | _ => NONE)
       val faSin   = fn fl => (case fl of Mil.Prims.FaSin => SOME () | _ => NONE)
       val faSqrt  = fn fl => (case fl of Mil.Prims.FaSqrt => SOME () | _ => NONE)
@@ -1160,18 +1169,18 @@ struct
     val fromStrToStr : (string -> 'a option) * ('a -> string) -> (Config.t, string, string) PUP.t -> 'a u = 
      fn (from, to) => fn p => PUP.leftIsoPartialIn (from, to) (PUP.layout L.str p)
 
-                                                   (* literal s is a unit parse/unparse pair that parses exactly s to produce (), 
-                                                    * and lays out () as L.str s.
-                                                    * Note: matches prefixes of words
-                                                    *)
+    (* literal s is a unit parse/unparse pair that parses exactly s to produce (), 
+     * and lays out () as L.str s.
+     * Note: matches prefixes of words
+     *)
     val literal : string -> unit u = 
      fn s => PUP.leftIso (fn s => (), fn () => s) (PUP.layout L.str (exactlyS s) )
 
                          
-                         (* keyword s is a unit parse/unparse pair that parses an alphabetic string
-                          * s to produce (), and layouts out () as s.  A maximal alphabetic string
-                          * is parsed.
-                          *)
+    (* keyword s is a unit parse/unparse pair that parses an alphabetic string
+     * s to produce (), and layouts out () as s.  A maximal alphabetic string
+     * is parsed.
+     *)
     val keyword : string -> unit u = 
      fn s => 
         let
@@ -1186,11 +1195,11 @@ struct
      fn (con, dec, s) => 
         let
           val p = PUP.leftIsoPartialOut (fn () => con, dec) (literal s)
-                                        (*        val p = debugParser (p, 
-                                                                       (fn {line, col} => print ("Trying to parse "^s^" at line "^Int.toString line^" and col "^Int.toString col^"\n")),
-                                                                       (fn _ => print ("Succeed in parsing "^s^"\n")),
-                                                                       (fn _ => print ("Failed to parse "^s^"\n")),
-                                                                       (fn _ => print ("Error when parsing "^s^"\n"))) *)
+(*        val p = debugParser (p, 
+                               (fn {line, col} => print ("Trying to parse "^s^" at line "^Int.toString line^" and col "^Int.toString col^"\n")),
+                               (fn _ => print ("Succeed in parsing "^s^"\n")),
+                               (fn _ => print ("Failed to parse "^s^"\n")),
+                               (fn _ => print ("Error when parsing "^s^"\n"))) *)
         in p
         end
 
@@ -1337,28 +1346,34 @@ struct
 	  val aTimesSat  = base  (Mil.Prims.ATimesSat, Dec.ArithOp.aTimesSat, "TimesSat")
           val aDivMod    = unary (Mil.Prims.ADivMod, Dec.ArithOp.aDivMod, literal "DivMod" -&& divKind)
         in aAbs || aNegate || aNegateSat || aDivide || aDiv 
-                || aMax || aMinus || aMin || aMinusSat || aMod || aPlus || aPlusSat 
-                || aTimes || aTimesSat || aDivMod 
+                || aMax || aMinusSat || aMinus || aMin || aMod || aPlusSat || aPlus 
+                || aTimesSat || aTimes || aDivMod 
         end
         
     val floatOp          : Mil.Prims.floatOp u =
         let
           val faACos  = base  (Mil.Prims.FaACos,  Dec.FloatOp.faACos,  "ACos")
           val faASin  = base  (Mil.Prims.FaASin,  Dec.FloatOp.faASin,  "ASin")
+          val faATan  = base  (Mil.Prims.FaATan,  Dec.FloatOp.faATan,  "ATan")
           val faCeil  = base  (Mil.Prims.FaCeil,  Dec.FloatOp.faCeil,  "Ceil")
-          val faCos   = base  (Mil.Prims.FaCos,  Dec.FloatOp.faCos,  "Cos")
-          val faFloor = base  (Mil.Prims.FaFloor,  Dec.FloatOp.faFloor,  "Floor")
-          val faRcp   = base  (Mil.Prims.FaRcp,  Dec.FloatOp.faRcp,  "Rcp")
-          val faSin   = base  (Mil.Prims.FaSin,  Dec.FloatOp.faSin,  "Sin")
+          val faCos   = base  (Mil.Prims.FaCos,   Dec.FloatOp.faCos,   "Cos")
+          val faExp   = base  (Mil.Prims.FaExp,   Dec.FloatOp.faExp,   "Exp")
+          val faFloor = base  (Mil.Prims.FaFloor, Dec.FloatOp.faFloor, "Floor")
+          val faLn    = base  (Mil.Prims.FaLn,    Dec.FloatOp.faLn,    "Ln")
+          val faRcp   = base  (Mil.Prims.FaRcp,   Dec.FloatOp.faRcp,   "Rcp")
+          val faSin   = base  (Mil.Prims.FaSin,   Dec.FloatOp.faSin,   "Sin")
           val faSqrt  = base  (Mil.Prims.FaSqrt,  Dec.FloatOp.faSqrt,  "Sqrt")
-          val faTan   = base  (Mil.Prims.FaTan,  Dec.FloatOp.faTan,  "Tan")
-          val faTrunc = base  (Mil.Prims.FaTrunc,  Dec.FloatOp.faTrunc,  "Trunc")
-          val faPow   = base  (Mil.Prims.FaPow,  Dec.FloatOp.faPow,  "Pow")
+          val faTan   = base  (Mil.Prims.FaTan,   Dec.FloatOp.faTan,   "Tan")
+          val faTrunc = base  (Mil.Prims.FaTrunc, Dec.FloatOp.faTrunc, "Trunc")
+          val faPow   = base  (Mil.Prims.FaPow,   Dec.FloatOp.faPow,   "Pow")
           val res = faACos 
                       || faASin 
+                      || faATan
                       || faCeil 
                       || faCos 
+                      || faExp 
                       || faFloor 
+                      || faLn 
                       || faRcp 
                       || faSin 
                       || faSqrt 
@@ -1868,15 +1883,18 @@ struct
               (case fo
                 of Prims.FaACos  => 0
                  | Prims.FaASin  => 1
-                 | Prims.FaCeil  => 2
-                 | Prims.FaCos   => 3
-                 | Prims.FaFloor => 4
-                 | Prims.FaRcp   => 5
-                 | Prims.FaSin   => 6
-                 | Prims.FaSqrt  => 7
-                 | Prims.FaTan   => 8
-                 | Prims.FaTrunc => 9
-                 | Prims.FaPow   => 10)
+                 | Prims.FaATan  => 2
+                 | Prims.FaCeil  => 3
+                 | Prims.FaCos   => 4
+                 | Prims.FaExp   => 5
+                 | Prims.FaFloor => 6
+                 | Prims.FaLn    => 7
+                 | Prims.FaRcp   => 8
+                 | Prims.FaSin   => 9
+                 | Prims.FaSqrt  => 10
+                 | Prims.FaTan   => 11
+                 | Prims.FaTrunc => 12
+                 | Prims.FaPow   => 13)
         in IFO.base o number
         end
 
@@ -2503,9 +2521,12 @@ struct
             (case fo 
               of Prims.FaACos  => ArAtoA
                | Prims.FaASin  => ArAtoA
+               | Prims.FaATan  => ArAtoA
                | Prims.FaCeil  => ArAtoA
                | Prims.FaCos   => ArAtoA
+               | Prims.FaExp   => ArAtoA
                | Prims.FaFloor => ArAtoA
+               | Prims.FaLn    => ArAtoA
                | Prims.FaRcp   => ArAtoA
                | Prims.FaSin   => ArAtoA
                | Prims.FaSqrt  => ArAtoA

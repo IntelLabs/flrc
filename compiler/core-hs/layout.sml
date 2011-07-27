@@ -1,6 +1,7 @@
 signature CORE_HS_LAYOUT =
 sig
   val escape               : string -> string
+  val qNameToString        : string CoreHs.qualified -> string
 
   val layoutQName          : string CoreHs.qualified -> Layout.t
   val layoutPName          : CoreHs.pName            -> Layout.t
@@ -72,6 +73,7 @@ struct
     | layoutMName (SOME m) = L.seq [layoutAnMName m, L.str "."]
 
   fun layoutQName (m, v) = L.seq [layoutMName m, L.str v]
+  fun qNameToString name = Layout.toString (layoutQName name)
 
   fun layoutKind (Karrow (k1, k2)) = L.paren (L.seq [ layoutAKind k1
                                                     , L.str "->"
@@ -110,7 +112,7 @@ struct
        L.seq (L.separate (map layoutTBind tbs, " ") @ [L.str " . ", layoutTy t])
 
   and layoutTy (Tforall (tb, t)) =
-      L.seq [L.str "%formall", layoutForall [tb] t]
+      L.seq (L.separate ([L.str "%forall ", layoutForall [tb] t], " "))
     | layoutTy (TransCoercion (t1, t2)) =
       L.seq (L.separate ([L.str "%trans", layoutATy t1, layoutATy t2], " "))
     | layoutTy (SymCoercion t) =
@@ -204,7 +206,7 @@ struct
       L.mayAlign [ L.str ("%note \"" ^ escape s ^ "\"")
                  , layoutExp e]
     | layoutExp (External (n, t)) =
-      L.mayAlign [ L.str ("%external ccall " ^ escape n ^ "\"")
+      L.mayAlign [ L.str ("%external ccall \"" ^ escape n ^ "\"")
                  , layoutATy t]
     | layoutExp e = layoutFExp e
 

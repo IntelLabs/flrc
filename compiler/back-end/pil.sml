@@ -344,8 +344,12 @@ struct
     fun cutsTo (config, cuts) =
         if outputKind config = Config.OkPillar andalso
            not (List.isEmpty cuts) then
-          [LU.indent (L.seq [L.str "also cuts to ",
-                             L.sequence ("", "", ",") cuts])]
+          let
+            val cuts = L.sequence ("", "", ",") cuts
+            val cuts = if Config.toolset config = Config.TsIpc then L.paren cuts else cuts
+            val ls = [LU.indent (L.seq [L.str "also cuts to ", cuts])]
+          in ls
+          end
         else
           []
 
