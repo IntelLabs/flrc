@@ -248,7 +248,6 @@ struct
                 | SOME true  => joinUS (status, mkUs TS.TsRef)
           val cand = SOME false
           val () = EC.set (ec, {cand = cand, status = status})
-          val () = EC.set (ec, {cand = cand, status = status})
         in ()
         end
 
@@ -409,12 +408,13 @@ struct
                   val analyseGlobal' = 
                    fn (s, e, v, g) => 
                        let
+                         val candidate = fn v => addCandidateVar (s, e, v)
                          val fixed = fn () => addFixed (s, e, v)
                          val boxed = fn v => addBoxedIfRef (s, e, v)
                          val () = 
                              (case g
                                of M.GTuple r                => 
-                                  if Vector.length (#inits r) > 0 then () else boxed v
+                                  if Vector.length (#inits r) > 0 then candidate v else boxed v
                                 | M.GSimple (M.SVariable _) => ()
                                 | M.GErrorVal t             => ()
                                 | M.GPSet s                 => let val () = fixed () val () = boxed (opToVar s) 
@@ -626,17 +626,8 @@ struct
         in ()
         end
     
-    val analyze = 
-     fn (s, e, p) => 
-        let
-          val () = doUnknowns (s, e)
-          val () = Analyze1.analyseProgram (s, e, p)
-          val () = Analyze2.analyseProgram (s, e, p)
-        in ()
-        end
-
     val show = 
-     fn (s, e, p) => 
+     fn (s, e, p, tag) => 
         if showUnboxing (SE1.getPd e) then
           let
             val si = Identifier.SymbolInfo.SiTable (MU.Program.symbolTable p)
@@ -677,6 +668,9 @@ struct
                                   LayoutUtils.indent (Layout.align info),
                                   Layout.str "Unboxing:", 
                                   LayoutUtils.indent (Layout.align unboxes)]
+            val l = Layout.align
+                      [Layout.str tag,
+                       LayoutUtils.indent  l]
             val () = LayoutUtils.printLayout l
           in ()
           end
@@ -751,6 +745,17 @@ struct
         in ()
         end
 
+    val analyze = 
+     fn (s, e, p) => 
+        let
+          val () = doUnknowns (s, e)
+          val () = Analyze1.analyseProgram (s, e, p)
+          val () = show (s, e, p, "Initial")
+          val () = Analyze2.analyseProgram (s, e, p)
+          val () = show (s, e, p, "Final")
+        in ()
+        end
+
     val rewrite = 
      fn (s, e, p) => 
         let
@@ -785,7 +790,6 @@ struct
                          ccs = ccs, ecs = ecs, unboxed = ref IS.empty}
           val e = SE1.E {pd = pd}
           val () = analyze (s, e, p)
-          val () = show (s, e, p)
           val p = rewrite (s, e, p)
           val () = MRS.resetTyps summary
         in p
