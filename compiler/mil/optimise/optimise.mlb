@@ -24,7 +24,7 @@ local
         rep/rep.mlb
         branch-remove.sml
         loop-invert.sml
-        new-vectorize.sml
+        vectorize.sml
 in
         structure MilContify
         structure MilCse
@@ -36,7 +36,7 @@ in
         structure MilRep
         structure MilRepDce
         structure MilSimplify
-        structure MilNewVectorize
+        structure MilVectorize
         structure MilInlineAggressive   
         structure MilInlineProfile   
         structure MilLoopInvert
