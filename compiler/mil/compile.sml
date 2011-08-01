@@ -33,8 +33,7 @@ struct
        (#"t", MilLowerPTypes.pass     ),
        (#"V", MilCse.pass             ),
        (#"Y", MilLoopInvert.pass      ),
-       (#"z", MilNewVectorize.pass    )
-   (*  (#"Z", MilVectorize.pass       )*)
+       (#"Z", MilNewVectorize.pass       )
       ]
 
   val subPasses = List.map (passes, #2)
