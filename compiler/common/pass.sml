@@ -427,6 +427,8 @@ struct
         val cmd = Config.pathToHostString (config, cmd)
         val () = logger (config, String.concatWith (cmd::args, " "))
         val args = cmd::args
+        val () = MLton.GC.collect ()
+        val () = MLton.GC.pack ()
         val doit = 
          fn () => ((Process.wait (MLton.Process.spawnp {file = cmd, args = args}))
                    handle any => Fail.fail ("Pass", "run", "Command could not be run: "^Exn.toString any))
@@ -438,6 +440,7 @@ struct
                    silently doit
                  else
                    doit ()
+        val () = MLton.GC.unpack ()
       in ()
       end
 
