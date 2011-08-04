@@ -1424,22 +1424,23 @@ struct
               val l1 = doPre header
               val l2 = doIvs header
               val l3 = doTcs header
-              val l4 = 
-                  let
-                    val l4 = layoutBlocks (c, si, blocks)
-                    val l4 =L.mayAlign [L.str "Blocks:", LU.indent l4]
-                  in SOME l4
-                  end
+              val l4 = doExits header
               val l5 = 
+                  let
+                    val l5 = layoutBlocks (c, si, blocks)
+                    val l5 =L.mayAlign [L.str "Blocks:", LU.indent l5]
+                  in SOME l5
+                  end
+              val l6 = 
                   if Vector.length children > 0 then
                     let
-                      val l5 = Vector.toListMap (children, layout)
-                      val l5 = L.align [L.str "Loops:", LU.indent (L.align l5)]
-                    in SOME l5
+                      val l6 = Vector.toListMap (children, layout)
+                      val l6 = L.align [L.str "Loops:", LU.indent (L.align l6)]
+                    in SOME l6
                     end
                   else 
                     NONE
-              val ll = Utils.List.concatOption [l0, l1, l2, l3, l4, l5]
+              val ll = Utils.List.concatOption [l0, l1, l2, l3, l4, l5, l6]
               val l = L.align ll
             in l
             end
