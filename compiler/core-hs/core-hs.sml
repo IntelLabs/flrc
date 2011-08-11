@@ -379,7 +379,7 @@ struct
   val tUtuple : ty list -> ty =
     fn ts => List.fold (ts, (Tcon (tcUtuple (length ts))), UF.flipIn Tapp)
 
-  val rec isUtupleTy : ty -> bool =
+  val rec isUtupleTy : ty -> int option =
     fn Tapp (t, _) => isUtupleTy t
      | Tcon (p, s) =>
           (case (p, explode s)
@@ -389,12 +389,13 @@ struct
                    let val mid = List.firstN (rest, (length rest) - 1)
                        val num = Int.fromString (implode mid)
                    in case num 
-                     of SOME n => List.forall (mid, Char.isDigit) andalso 1 <= n andalso n <= maxUtuple
-                      | NONE   => false
+                     of SOME n => if List.forall (mid, Char.isDigit) andalso 1 <= n andalso n <= maxUtuple
+                                    then SOME n else NONE
+                      | NONE   => NONE 
                    end
-                 else false
-              | _ => false)
-     | _            => false
+                 else NONE
+              | _ => NONE)
+     | _            => NONE
 
   val dcUtuple : int -> dcon qualified =
     fn n => (SOME primMname, "Z" ^ Int.toString n ^ "H")

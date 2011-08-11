@@ -53,6 +53,8 @@ struct
     | semiMap f [x] = [f x]
     | semiMap f l   = map (fn v => L.seq [f v, L.str ";"]) l
 
+  val separate = L.sequence ("", "", " ") 
+
   fun layoutPName (P n) = L.str n
 
   val hierModuleSep = CU.zEncodeString "."
@@ -75,9 +77,8 @@ struct
   fun layoutQName (m, v) = L.seq [layoutMName m, L.str v]
   fun qNameToString name = Layout.toString (layoutQName name)
 
-  fun layoutKind (Karrow (k1, k2)) = L.paren (L.seq [ layoutAKind k1
-                                                    , L.str "->"
-                                                    , layoutKind k2])
+  fun layoutKind (Karrow (k1, k2)) = L.paren (L.mayAlign [ L.seq [layoutAKind k1, L.str " ->"]
+                                                         , layoutKind k2])
     | layoutKind (Keq (t1, t2)) = layoutEqKind (t1, t2)
     | layoutKind k = layoutAKind k
 
@@ -95,13 +96,12 @@ struct
     | layoutATy t = L.paren (layoutTy t)
 
   and layoutAppTy (Tapp (t1, t2)) ts = layoutAppTy t1 (t2::ts)
-    | layoutAppTy t ts = L.seq (L.separate (map layoutATy (t::ts), " "))
+    | layoutAppTy t ts = separate (map layoutATy (t::ts))
 
   and layoutBTy (Tapp (t1, t2)) =
       (case t1
         of Tapp (Tcon tc, t3) => if tc = CU.tcArrow
-                                   then L.paren (L.mayAlign [layoutBTy t3
-                                                            , L.str "->"
+                                   then L.paren (L.mayAlign [ L.seq [layoutBTy t3, L.str " ->"]
                                                             , layoutTy t2])
                                    else layoutAppTy t1 [t2]
          | otherwise => layoutAppTy t1 [t2])
@@ -109,30 +109,30 @@ struct
 
   and layoutForall tbs (Tforall (tb, t)) = layoutForall (tbs @ [tb]) t
     | layoutForall tbs t =
-       L.seq (L.separate (map layoutTBind tbs, " ") @ [L.str " . ", layoutTy t])
+       L.seq [separate (map layoutTBind tbs), L.str " . ", layoutTy t]
 
   and layoutTy (Tforall (tb, t)) =
-      L.seq (L.separate ([L.str "%forall ", layoutForall [tb] t], " "))
+      L.seq [L.str "%forall ", layoutForall [tb] t]
     | layoutTy (TransCoercion (t1, t2)) =
-      L.seq (L.separate ([L.str "%trans", layoutATy t1, layoutATy t2], " "))
+      L.seq [L.str "%trans ", separate [layoutATy t1, layoutATy t2]]
     | layoutTy (SymCoercion t) =
-      L.seq (L.separate ([L.str "%sym", layoutATy t], " "))
+      L.seq [L.str "%sym ", layoutATy t]
     | layoutTy (UnsafeCoercion (t1, t2)) =
-      L.seq (L.separate ([L.str "%unsafe", layoutATy t1, layoutATy t2], " "))
+      L.seq [L.str "%unsafe ", separate [layoutATy t1, layoutATy t2]]
     | layoutTy (LeftCoercion t) =
-      L.seq (L.separate ([L.str "%left", layoutATy t], " "))
+      L.seq [L.str "%left ", layoutATy t]
     | layoutTy (RightCoercion t) =
-      L.seq (L.separate ([L.str "%right", layoutATy t], " "))
+      L.seq [L.str "%right ", layoutATy t]
     | layoutTy (InstCoercion (t1, t2)) =
-      L.seq (L.separate ([L.str "%inst", layoutATy t1, layoutATy t2], " "))
+      L.seq [L.str "%inst ", separate [layoutATy t1, layoutATy t2]]
     | layoutTy t = layoutBTy t
 
   and layoutTBind (t, Klifted) = L.str t
-    | layoutTBind (t, k) = L.paren (L.seq [L.str t, L.str "::", layoutKind k])
+    | layoutTBind (t, k) = L.paren (L.seq [L.str t, L.str " :: ", layoutKind k])
 
-  fun layoutAtTBind (t, k) = L.seq [L.str "@", layoutTBind (t, k)]
+  fun layoutAtTBind (t, k) = L.seq [L.str "@ ", layoutTBind (t, k)]
 
-  fun layoutVBind (x, t) = L.paren (L.seq[L.str x, L.str "::", layoutTy t])
+  fun layoutVBind (x, t) = L.paren (L.seq[L.str x, L.str " :: ", layoutTy t])
 
   fun layoutBind (Tb tb) = L.seq [L.str "@ ", layoutTBind tb]
     | layoutBind (Vb vb) = layoutVBind vb
@@ -148,19 +148,18 @@ struct
       L.str ("\"" ^ escape s ^ "\"")
 
   fun layoutLit (Literal (l, t)) =
-      L.paren (L.seq[layoutCoreLit l, L.str "::", layoutTy t])
+      L.paren (L.seq[layoutCoreLit l, L.str " :: ", layoutTy t])
 
   fun layoutCoercionKind (DefinedCoercion (tbs, t1, t2)) =
-      L.seq (L.str "<C " :: (L.separate (map layoutTBind tbs, " ") @
-             [L.str " ", L.paren (layoutKind (Keq (t1, t2))), L.str ">"]))
+      L.sequence ("<C", ">", " ") (map layoutTBind tbs @ [L.paren (layoutKind (Keq (t1, t2)))])
 
   fun layoutKindOrCoercion (Kind k) =
-      L.seq [L.str "<K ", layoutKind k, L.str ">"]
+      L.sequence ("<K", ">", " ") [layoutKind k]
     | layoutKindOrCoercion (Coercion ck) = layoutCoercionKind ck
 
   fun layoutAlt (Acon (c, tbs, vbs, e)) =
-      L.mayAlign [ L.seq (L.separate ((layoutQName c :: map layoutAtTBind tbs) @
-                                     (map layoutVBind vbs) @ [L.str " ->"], " "))
+      L.mayAlign [ L.seq [ layoutQName c, L.str " ", separate (map layoutAtTBind tbs)
+                         , separate (map layoutVBind vbs), L.str " ->"]
                  , L.indent (layoutExp e, tabSize)]
     | layoutAlt (Alit (l, e)) =
       L.mayAlign [ L.seq [layoutLit l, L.str " -> "]
@@ -187,7 +186,7 @@ struct
 
   and layoutLamExp bs (Lam (b, e)) = layoutLamExp (bs @ [b]) e
     | layoutLamExp bs e =
-      L.mayAlign [ L.seq (L.separate ((map layoutBind bs) @ [ L.str " ->" ], " "))
+      L.mayAlign [ L.seq [separate (map layoutBind bs),  L.str " ->" ]
                  , L.indent (layoutExp e, tabSize)]
 
   and layoutExp (Lam (b, e)) =
@@ -196,7 +195,7 @@ struct
       L.mayAlign [ L.seq [L.str "%let ", layoutVDefg vd]
                  , L.seq [L.str "%in ", layoutExp e]]
     | layoutExp (Case (e, vb, t, alts)) =
-      L.mayAlign [ L.seq [L.str "%case ", layoutATy t, L.str " ", layoutAExp e]
+      L.mayAlign [ L.seq [L.str "%case ", separate [layoutATy t, layoutAExp e]]
                  , L.seq [L.str "%of ", layoutVBind vb]
                  , L.indent (L.sequence ("{", "}", ";") (map layoutAlt alts), tabSize)]
     | layoutExp (Cast (e, t)) =
@@ -211,8 +210,8 @@ struct
     | layoutExp e = layoutFExp e
 
   and layoutVDef (Vdef (qv, t, e)) =
-      L.seq (L.separate ([ layoutQName qv, L.str "::", layoutTy t, L.str "="
-                         , L.indent (layoutExp e, tabSize)], " "))
+      L.mayAlign [ L.seq [ layoutQName qv, L.str " :: ", layoutTy t, L.str " =" ]
+                 , L.indent (layoutExp e, tabSize)]
 
   and layoutVDefg (Rec vdefs) =
       L.mayAlign [L.str "%rec",
@@ -223,21 +222,18 @@ struct
 
   fun layoutCDef (Constr (qdcon, tbinds, tys)) =
       L.mayAlign [ L.seq [layoutQName qdcon , L.str " "]
-                 , L.seq (L.separate (map layoutAtTBind tbinds, " "))
-                 , L.seq (L.separate (map layoutATy tys, " "))]
+                 , separate (map layoutAtTBind tbinds)
+                 , separate (map layoutATy tys)]
 
   fun layoutTDef (Data (qtcon, tbinds, cdefs)) =
-      L.mayAlign [ L.seq ([L.str "%data ", layoutQName qtcon, L.str " "]
-                          @ L.separate (map layoutTBind tbinds, " ")
-                          @ [L.str " = "])
+      L.mayAlign [ L.seq [L.str "%data ", layoutQName qtcon, L.str " ", 
+                          separate (map layoutTBind tbinds), L.str " = "]
                  , L.indent (L.seq [ L.str "{"
                                    , L.align (semiMap layoutCDef cdefs)
                                    , L.str "}"], tabSize)]
     | layoutTDef (Newtype (qtcon, coercion, tbinds, tyopt)) =
-      L.mayAlign [ L.seq (L.separate ([ L.str "%newtype"
-                                      , layoutQName qtcon
-                                      , layoutQName coercion]
-                                      @ map layoutTBind tbinds, " "))
+      L.mayAlign [ L.seq [ L.str "%newtype ", layoutQName qtcon, L.str " ", layoutQName coercion
+                         , separate (map layoutTBind tbinds)]
                  , L.indent (L.seq [L.str " = ", layoutTy tyopt], tabSize) ]
 
 

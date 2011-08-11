@@ -854,14 +854,14 @@ struct
 
         val names = QD.domain defdict
         (* transitive closure *)
-        val _ = print (Layout.toString (Layout.seq (Layout.str "linearize defdict:\n" ::
+        val _ = print' (Layout.toString (Layout.seq (Layout.str "linearize defdict:\n" ::
            List.map (QD.toList defdict, fn (n, (_, s)) => Layout.seq (CoreHsLayout.layoutQName n :: Layout.str " -> " ::
            Layout.sequence ("","\n",",") (List.map (QS.toList s, CoreHsLayout.layoutQName)) :: [])))))
 
         val clo = List.map (names, fn n => (n, reach (#2 (lookup n), QS.empty)))
         val clo = List.insertionSort (clo, fn ((_, x), (_, y)) => QS.size x < QS.size y)
         val clo = group (clo, fn ((_, x), (_, y)) => QS.size x = QS.size y)
-        val _ = print (Layout.toString (Layout.seq (Layout.str "linearize:\n" ::
+        val _ = print' (Layout.toString (Layout.seq (Layout.str "linearize:\n" ::
            List.map (clo, fn x => Layout.sequence ("", "\n", ", ") 
            (List.map (x, fn (n, deps) => Layout.seq [CoreHsLayout.layoutQName n, Layout.str "/", Int.layout (QS.size deps)]))))))
 
@@ -887,7 +887,7 @@ struct
               then (defd, scanned)
               else
                 let
-                  val _ = print ("scan " ^ Layout.toString (CoreHsLayout.layoutAnMName mname) ^ " scanned = " ^ Int.toString(MS.size scanned) ^ "\n")
+                  val _ = print' ("scan " ^ Layout.toString (CoreHsLayout.layoutAnMName mname) ^ " scanned = " ^ Int.toString(MS.size scanned) ^ "\n")
                   val path = mNameToPath mname
                   val f1 = Config.pathToHostString (config, path) ^ ".hcr"
                   val path = Path.cons ("hcrlib", path)
@@ -950,7 +950,7 @@ struct
                  | SOME def => 
                    let 
                      val (_, traced, _) = traceDef (CHU.mainVar, def, (defd, QD.empty, scanned))
-                     val _ = print ("traced = " ^ Layout.toString (Layout.sequence ("{", "}",
+                     val _ = print' ("traced = " ^ Layout.toString (Layout.sequence ("{", "}",
                      ",") (List.map(QD.domain traced,
                      CoreHsLayout.layoutQName))) ^ "\n")
                      val (tdefs, vdefs) = QD.fold (traced, ([], []), fn (_, (TDef d, _), (ts, vs)) => (d :: ts, vs)
