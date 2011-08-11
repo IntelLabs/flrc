@@ -85,28 +85,13 @@ struct
 
     structure TS = MU.TraceabilitySize
 
-   (* Algorithm:
-    *  1) Forward -> defs appropriate
-    *  2) Backward -> uses appropriate
-    *  3) Forward -> candidates
-    *  4) For every potential unboxing a = {b}, add edge from b -> a in flow graph
-    *     For every subscript from potential unboxing a = b[0] add edge from b -> a in flow graph
-    *     For every def, add traceability
-    *     Mark cycles Top
-    *     Propagate forward
-    *  5) Backward -> all defs appropriate
-    *  6) Forward -> final unboxes
-    *  7) Build same graph as in 4, propogate types forward
-    *)
-    (* Invariant: UsFix ts => TS.traceabilityKnown ts *)
-    datatype unboxStat = UsTop | UsBox | UsFix of TS.t | UsBot
+    datatype unboxStat = UsTop | UsFix of TS.t | UsBot
 
     val layoutUs = 
      fn (config, us) => 
         case us 
          of UsTop    => L.str "T"
           | UsBot    => L.str "B"
-          | UsBox    => L.str "BX"
           | UsFix ts => L.seq [L.str "Fix", L.str (TS.toString (config, ts))]
 
     val usIsTop = fn us => (case us of UsTop => true 
@@ -118,10 +103,7 @@ struct
           | (_      , UsTop  ) => UsTop
           | (UsBot  , _      ) => us2
           | (_      , UsBot  ) => us1
-          | (UsBox  , UsBox  ) => UsBox
           | (UsFix s, UsFix t) => if TS.eq (s, t) then UsFix s else UsTop
-          | (UsBox  , UsFix t) => if TS.isRef t then UsBox else UsTop
-          | (UsFix s, UsBox  ) => if TS.isRef s then UsBox else UsTop
 
     val typFromUs = 
      fn us => 
@@ -129,7 +111,6 @@ struct
          of UsTop   => fail ("typFromUs", "Shouldn't have unboxed top node")
           | UsBot   => MU.Typ.fromTraceabilitySize TS.TsRef
           | UsFix t => MU.Typ.fromTraceabilitySize t
-          | UsBox   => MU.Typ.fromTraceabilitySize TS.TsRef
 
     val fkFromUs = 
      fn us => 
@@ -137,13 +118,10 @@ struct
          of UsTop   => fail ("fkFromUs", "Shouldn't have unboxed top node")
           | UsBot   => SOME M.FkRef
           | UsFix t => MU.FieldKind.fromTraceSize' t
-          | UsBox   => SOME M.FkRef
 
     val mkUs = 
-     fn (box, ts) => 
-        if box andalso TS.isRef ts then
-          UsBox
-        else if TS.known ts then
+     fn ts => 
+        if TS.known ts then
           UsFix ts
         else
           UsTop
@@ -151,11 +129,18 @@ struct
     structure SE1 = 
     struct
 
+      type ecData = {status : unboxStat, cand : bool option} 
+      (* extended traceability, and candidate status 
+       * cand = NONE       => available for addition to the candidate set
+       * cand = SOME true  => in the candidate set
+       * cand = SOME false => not a candidate, and not available for addition to the candidate set 
+       *)
+
       datatype state = S of {summary : MilRepSummary.summary,
                              si : Mil.symbolInfo,
-                             ccs : int MRN.Dict.t,
-                             ecs : unboxStat EC.t ID.t,
-                             unboxed : IS.t ref}
+                             ccs : int MRN.Dict.t,      (* maps node to cc id *)
+                             ecs : ecData EC.t ID.t,    (* maps cc id to ec *)
+                             unboxed : IS.t ref}        (* set of ccs to be unboxed *)
 
       datatype env = E of {pd : PD.t}
 
@@ -207,43 +192,86 @@ struct
     val ecForVar =
      fn (s, e, v) => ecForNode (s, e, nodeForVariable (s, e, v))
 
-    val addToEcForNode = 
+    val addUsToEcForNode = 
      fn (s, e, n, l) =>
         let
           val ec = ecForNode (s, e, n)
-          val () = EC.set (ec, joinUS (l, EC.get ec))
+          val {cand, status} = EC.get ec
+          val status = joinUS (l, status)
+          val () = EC.set (ec, {cand = cand, status = status})
         in ()
         end
 
-    val addToEcForVar = 
-     fn (s, e, v, l) => addToEcForNode (s, e, nodeForVariable (s, e, v), l)
+    val addUsToEcForVar = 
+     fn (s, e, v, l) => addUsToEcForNode (s, e, nodeForVariable (s, e, v), l)
 
     val addFixedNode =
-     fn (s, e, n, ts) => addToEcForNode (s, e, n, mkUs (false, ts))
+     fn (s, e, n, ts) => addUsToEcForNode (s, e, n, mkUs ts)
 
     val addFixed =
      fn (s, e, v) => 
         let
           val ts = tsForVariable (s, e, v)
-          val () = addToEcForVar (s, e, v, mkUs (false, ts))
-        in ()
-        end
-
-    val addBoxedNode =
-     fn (s, e, n, ts) => addToEcForNode (s, e, n, mkUs (true, ts))
-
-    val addBoxed =
-     fn (s, e, v) => 
-        let
-          val ts = tsForVariable (s, e, v)
-          val () = addToEcForVar (s, e, v, mkUs (true, ts))
+          val () = addUsToEcForVar (s, e, v, mkUs ts)
         in ()
         end
 
     val addTopNode =
-     fn (s, e, n) => addToEcForNode(s, e, n, UsTop)
+     fn (s, e, n) => addUsToEcForNode(s, e, n, UsTop)
 
-    val addUnboxedCc =
+    val addCandidateVar = 
+     fn (s, e, v) =>
+        let
+          val n = nodeForVariable (s, e, v)
+          val ec = ecForNode (s, e, n)
+          val {cand, status} = EC.get ec
+          val (cand, status) = 
+              case cand
+               of NONE       => (SOME true, status)  (* available for addition *) 
+                | SOME false => (cand     , joinUS (status, mkUs TS.TsRef))    
+                                                     (* not available for addition, add in TRef *)
+                | SOME true  => (cand     , status)
+                                                     (* already in the candidate set*)
+          val () = EC.set (ec, {cand = cand, status = status})
+        in ()
+        end
+
+    val removeCandidateNode = 
+     fn (s, e, n) =>
+        let
+          val ec = ecForNode (s, e, n)
+          val {cand, status} = EC.get ec
+          val status = (* If it was a candidate, remove it and add in TRef *)
+              case cand
+               of NONE       => status
+                | SOME false => status
+                | SOME true  => joinUS (status, mkUs TS.TsRef)
+          val cand = SOME false
+          val () = EC.set (ec, {cand = cand, status = status})
+        in ()
+        end
+
+    val removeCandidateVar = 
+     fn (s, e, v) => removeCandidateNode (s, e, nodeForVariable (s, e, v))
+
+    val isCandidateVar = 
+     fn (s, e, v) => 
+        case #cand (EC.get (ecForNode (s, e, nodeForVariable (s, e, v))))
+         of NONE   => false
+          | SOME b => b
+
+    val addBoxedNodeIfRef =
+     fn (s, e, n, ts) => 
+        let
+          val () = if TS.isRef ts then removeCandidateNode (s, e, n) else ()
+          val () = addFixedNode (s, e, n, ts)
+        in ()
+        end
+
+    val addBoxedIfRef = 
+        fn (s, e, v) => addBoxedNodeIfRef (s, e, nodeForVariable (s, e, v), tsForVariable (s, e, v))
+
+    val unboxCc =
      fn (s, e, i) => 
         let
           val unboxed = SE1.getUnboxed s
@@ -251,11 +279,11 @@ struct
         in ()
         end
 
-    val addUnboxed =
-     fn (s, e, v) => addUnboxedCc (s, e, ccForVar (s, e, v))
+    val unboxVar =
+     fn (s, e, v) => unboxCc (s, e, ccForVar (s, e, v))
 
-    val addUnboxedNode = 
-     fn (s, e, n) => addUnboxedCc (s, e, ccForNode (s, e, n))
+    val unboxNode = 
+     fn (s, e, n) => unboxCc (s, e, ccForNode (s, e, n))
 
     val ccIsUnboxed = 
      fn (s, e, i) => IS.member (!(SE1.getUnboxed s), i)
@@ -265,6 +293,31 @@ struct
 
     val varIsUnboxed = 
      fn (s, e, v) => ccIsUnboxed (s, e, ccForVar (s, e, v))
+
+    val ecGetRawStatus = 
+     fn (s, e, ec) => 
+        let
+          val {status, cand} = EC.get ec
+        in status
+        end
+
+    val ecGetModifiedStatus = 
+     fn (s, e, ec) => 
+        let
+          val {status, cand} = EC.get ec
+          val status = 
+              case cand 
+               of SOME true => joinUS (status, mkUs TS.TsRef)
+                | _         => status
+        in status
+        end
+
+    val ecGetCand = 
+     fn (s, e, ec) => 
+        let
+          val {status, cand} = EC.get ec
+        in cand
+        end
 
     structure Analyze1 =
     MilAnalyseF(struct
@@ -282,8 +335,9 @@ struct
                   val analyseInstruction' = 
                    fn (s, e, M.I {dests, n, rhs}) => 
                        let
+                         val candidateV = fn vv => Vector.foreach (vv, fn v => addCandidateVar (s, e, v))
                          val fixed = fn () => Vector.foreach (dests, fn v => addFixed (s, e, v))
-                         val boxed = fn v => addBoxed (s, e, v)
+                         val boxed = fn v => addBoxedIfRef (s, e, v)
                          val boxedV = fn vv => Vector.foreach (vv, boxed)
                          val boxedO = boxed o opToVar
                          val boxedOV = fn vv => Vector.foreach (vv, boxedO)
@@ -299,7 +353,10 @@ struct
                                     val () = boxedOV (#args r)
                                   in ()
                                   end
-                                | M.RhsTuple r          => if Vector.length (#inits r) > 0 then () else boxedV dests
+                                | M.RhsTuple r          => if Vector.length (#inits r) > 0 then 
+                                                             candidateV dests 
+                                                           else 
+                                                             boxedV dests
                                 | M.RhsTupleSub tf       => 
                                   (case MU.FieldIdentifier.Dec.fiFixed (MU.TupleField.field tf)
                                     of SOME 0 => ()
@@ -336,7 +393,7 @@ struct
                   val analyseTransfer' = 
                    fn (s, e, t) => 
                       let 
-                        val boxed = fn v => addBoxed (s, e, v)
+                        val boxed = fn v => addBoxedIfRef (s, e, v)
                         val boxedO = boxed o opToVar
                         (* We may compare pointers to various cref constants *)
                         val () = 
@@ -351,12 +408,13 @@ struct
                   val analyseGlobal' = 
                    fn (s, e, v, g) => 
                        let
+                         val candidate = fn v => addCandidateVar (s, e, v)
                          val fixed = fn () => addFixed (s, e, v)
-                         val boxed = fn v => addBoxed (s, e, v)
+                         val boxed = fn v => addBoxedIfRef (s, e, v)
                          val () = 
                              (case g
                                of M.GTuple r                => 
-                                  if Vector.length (#inits r) > 0 then () else boxed v
+                                  if Vector.length (#inits r) > 0 then candidate v else boxed v
                                 | M.GSimple (M.SVariable _) => ()
                                 | M.GErrorVal t             => ()
                                 | M.GPSet s                 => let val () = fixed () val () = boxed (opToVar s) 
@@ -372,34 +430,31 @@ struct
         Try.exec 
           (fn () => 
               let
+                val () = Try.require (isCandidateVar (s, e, v1))
+                val leaveBoxed = fn () => let val () = removeCandidateVar (s, e, v1) in Try.fail () end
                 val because = 
                  fn st => 
                     let
                       val f = fn () => L.seq [L.str "Can't unbox ", layoutVariable (s, e, v1), L.str ": ", L.str st]
                     in debugShow (SE1.getPd e, f)
                     end
-                val fail = fn s => let val () = because s in Try.fail () end
+                val fail = fn s => let val () = because s in leaveBoxed () end
                 val require = fn (b, s) => if b then () else fail s
                 val () = require (Vector.length inits > 0, "not enough elements")
                 val v2 = opToVar (Vector.sub (inits, 0))
                 val ec1 = ecForVar (s, e, v1)
                 val ec2 = ecForVar (s, e, v2)
                 val () = require (not (EC.equal (ec1, ec2)), "same ec")
-                val us1 = EC.get ec1
-                val us2 = EC.get ec2
-                val () = 
-                    case us1
-                     of UsTop => fail "top"
-                      | UsBox => fail "box"
-                      | _     => 
-                        let
-                          val us = joinUS (us1, us2)
-                          val () = require (not (usIsTop us), "incompatible")
-                          val _  = EC.join (ec1, ec2)
-                          val () = EC.set (ec1, us)
-                          val () = addUnboxed (s, e, v1)
-                        in ()
-                        end
+                val us1 = ecGetRawStatus (s, e, ec1)
+                val us2M = ecGetModifiedStatus (s, e, ec2)
+                val us2R = ecGetRawStatus (s, e, ec2)
+                val usM = joinUS (us1, us2M)
+                val () = require (not (usIsTop usM), "incompatible")
+                val status = joinUS (us1, us2R)
+                val cand = ecGetCand (s, e, ec2)
+                val _  = EC.join (ec1, ec2)
+                val () = EC.set (ec1, {status = status, cand = cand})
+                val () = unboxVar (s, e, v1)
               in ()
               end)
 
@@ -525,7 +580,7 @@ struct
                                 | M.GErrorVal t => 
                                   if varIsUnboxed (s, e, v) then
                                     let
-                                      val t = typFromUs (EC.get (ecForVar (s, e, v)))
+                                      val t = typFromUs (ecGetModifiedStatus (s, e, ecForVar (s, e, v)))
                                       val l = [(v, M.GErrorVal t)]
                                     in SOME l
                                     end
@@ -546,7 +601,7 @@ struct
               else
                 let
                   val ts = MU.Typ.traceabilitySize (SE1.getConfig e, t)
-                  val () = addBoxedNode (s, e, n, ts)
+                  val () = addBoxedNodeIfRef (s, e, n, ts)
                 in ()
                 end
           val doReturns =
@@ -571,17 +626,8 @@ struct
         in ()
         end
     
-    val analyze = 
-     fn (s, e, p) => 
-        let
-          val () = doUnknowns (s, e)
-          val () = Analyze1.analyseProgram (s, e, p)
-          val () = Analyze2.analyseProgram (s, e, p)
-        in ()
-        end
-
     val show = 
-     fn (s, e, p) => 
+     fn (s, e, p, tag) => 
         if showUnboxing (SE1.getPd e) then
           let
             val si = Identifier.SymbolInfo.SiTable (MU.Program.symbolTable p)
@@ -603,9 +649,14 @@ struct
                    fn v => 
                       let
                         val cc = Int.layout (ccForVar (s, e, v))
-                        val ec = layoutUs (SE1.getConfig e, EC.get (ecForVar (s, e, v)))
+                        val {status, cand} = EC.get (ecForVar (s, e, v))
+                        val status = layoutUs (SE1.getConfig e, status)
+                        val cand = case cand
+                                    of NONE       => "available but never in cand"
+                                     | SOME true  => "in cand"
+                                     | SOME false => "not in cand"
                       in
-                        L.seq [lv v, L.str " is ", cc, L.str " with status ", ec]
+                        L.seq [lv v, L.str " in cc ", cc, L.str " with status ", status, L.str " is ", L.str cand]
                       end
                 in List.map (vars, p)
                 end
@@ -617,6 +668,9 @@ struct
                                   LayoutUtils.indent (Layout.align info),
                                   Layout.str "Unboxing:", 
                                   LayoutUtils.indent (Layout.align unboxes)]
+            val l = Layout.align
+                      [Layout.str tag,
+                       LayoutUtils.indent  l]
             val () = LayoutUtils.printLayout l
           in ()
           end
@@ -627,7 +681,7 @@ struct
     val replaceNodeDataWithoutShape = 
      fn (s, e, done, n) => 
         let
-          val us = EC.get (ecForNode (s, e, n))
+          val us = ecGetModifiedStatus (s, e, ecForNode (s, e, n))
           val t = typFromUs us
           val fk = fkFromUs us
           val fv = MilRepNode.fieldVariance' n
@@ -691,6 +745,17 @@ struct
         in ()
         end
 
+    val analyze = 
+     fn (s, e, p) => 
+        let
+          val () = doUnknowns (s, e)
+          val () = Analyze1.analyseProgram (s, e, p)
+          val () = show (s, e, p, "Initial")
+          val () = Analyze2.analyseProgram (s, e, p)
+          val () = show (s, e, p, "Final")
+        in ()
+        end
+
     val rewrite = 
      fn (s, e, p) => 
         let
@@ -716,15 +781,15 @@ struct
           val ccs = FG.cc (summary, fg)
           val ecs = 
               let
+                val default = {status = UsBot, cand = NONE}
                 val addCC = 
-                 fn (n, i, ecs) => if ID.contains (ecs, i) then ecs else ID.insert (ecs, i, EC.new UsBot)
+                 fn (n, i, ecs) => if ID.contains (ecs, i) then ecs else ID.insert (ecs, i, EC.new default)
               in MRN.Dict.fold (ccs, ID.empty, addCC)
               end
           val s = SE1.S {summary = summary, si = I.SymbolInfo.SiTable symbolTable,
                          ccs = ccs, ecs = ecs, unboxed = ref IS.empty}
           val e = SE1.E {pd = pd}
           val () = analyze (s, e, p)
-          val () = show (s, e, p)
           val p = rewrite (s, e, p)
           val () = MRS.resetTyps summary
         in p

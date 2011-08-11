@@ -737,7 +737,10 @@ struct
      val dataOp = 
       fn (c, p, desc, targs) => 
          let
-           val t = Vector.sub (targs, 0)
+           val t = if Vector.length targs > 0 then 
+                     Vector.sub (targs, 0)
+                   else
+                     fail ("dataOp", "Type argument required for dataOp typing")
            val size = PU.VectorDescriptor.vectorSize desc
            val tv = tVector (size, t)
            val res = 

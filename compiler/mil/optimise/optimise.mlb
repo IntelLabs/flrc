@@ -22,10 +22,9 @@ local
         inline-profile.sml
         inline-leaves.sml
         rep/rep.mlb
-(*        vectorize.sml*)
         branch-remove.sml
         loop-invert.sml
-        new-vectorize.sml
+        vectorize.sml
 in
         structure MilContify
         structure MilCse
@@ -37,8 +36,7 @@ in
         structure MilRep
         structure MilRepDce
         structure MilSimplify
-     (* structure MilVectorize *)
-        structure MilNewVectorize
+        structure MilVectorize
         structure MilInlineAggressive   
         structure MilInlineProfile   
         structure MilLoopInvert

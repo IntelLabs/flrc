@@ -197,9 +197,6 @@ struct
         val futures = 
             if useFutures config then ["P_USE_PARALLEL_FUTURES"] else []
 
-        val vi = 
-            if Config.vi config then ["P_USE_VNI"] else []
-
         val instr =
             List.concat
               [if instrumentAllocation config
@@ -249,8 +246,7 @@ struct
                | CcIpc    => ["PPILER_BACKEND_IPC"])
 
         val ds = 
-            List.concat [vi, 
-                         [ws], 
+            List.concat [[ws], 
                          gc, 
                          futures, 
                          debug, 

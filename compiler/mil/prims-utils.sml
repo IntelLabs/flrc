@@ -1218,7 +1218,7 @@ struct
      fn s => 
         let
           val t = PUP.leftIsoPartialOut (fn () => true, fn b => if b then SOME () else NONE) (literal s)
-          val f = PUP.leftIsoPartialOut (fn () => false, fn b => if b then SOME () else NONE) (literal "")
+          val f = PUP.leftIsoPartialOut (fn () => false, fn b => if b then NONE else SOME ()) (literal "")
         in t || f
         end
 

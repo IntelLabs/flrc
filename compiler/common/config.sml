@@ -71,7 +71,6 @@ signature CONFIG = sig
 		     thunkScheme: thunkScheme,
 		     timeExecution: string option,
 		     toolset: toolset,
-                     vi: bool,
                      va: vectorArch,
 		     warnLev: verbosity}
   val agc: t -> agcProg
@@ -128,7 +127,6 @@ signature CONFIG = sig
   val timeExecution: t -> string option
   val toolset: t -> toolset
   val verbose: t -> bool
-  val vi: t -> bool
   val va: t -> vectorArch
   val warnLevel: t * 'a -> int
   structure Control : sig
@@ -283,7 +281,6 @@ structure Config :> CONFIG = struct
          thunkScheme      : thunkScheme,
          timeExecution    : string option,
          toolset          : toolset,
-         vi               : bool,
          va               : vectorArch,
          warnLev          : verbosity
     }
@@ -313,7 +310,6 @@ structure Config :> CONFIG = struct
     fun thunkScheme c                 = get (c, #thunkScheme)
     fun timeExecution c               = get (c, #timeExecution)
     fun toolset c                     = get (c, #toolset)
-    fun vi c                          = get (c, #vi)
     fun va c                          = get (c, #va)
 
     (*** Derived Getters ***)
