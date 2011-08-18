@@ -216,6 +216,7 @@ struct
          ("ThunkInitCode",    "Thunk code ptrs killed"         ), 
          ("ThunkSpawnFX",     "Spawn fx pruned"                ),
          ("ThunkToThunkVal",  "Thunks made Thunk Values"       ),
+         ("ThunkEvalBeta",    "ThunkEvals beta reduced"        ),
          ("ThunkValueBeta",   "ThunkValues beta reduced"       ),
          ("ThunkValueEta",    "ThunkValues eta reduced"        ),
          ("TupleBeta",        "Tuple subscripts reduced"       ),
@@ -300,6 +301,7 @@ struct
     val thunkInitCode = clicker "ThunkInitCode"
     val thunkSpawnFx = clicker "ThunkSpawnFX"
     val thunkToThunkVal = clicker "ThunkToThunkVal"
+    val thunkEvalBeta = clicker "ThunkEvalBeta"
     val thunkValueBeta = clicker "ThunkValueBeta"
     val thunkValueEta = clicker "ThunkValueEta"
     val tupleBeta = clicker "TupleBeta"
@@ -1408,6 +1410,41 @@ struct
           in try (Click.callInline, f)
           end
 
+      (* Replace a thunkEval by direct function call if this thunk is not used anywhere else *)
+      val thunkEvalBeta = 
+          let
+            val f = 
+             fn ((d, imil, ws), (i, {callee, ret, fx})) =>
+                let
+                  (* check if its a direct thunk eval *)
+                  val { thunk, code } = <- (MU.Eval.Dec.eDirectThunk o #eval <! MU.InterProc.Dec.ipEval @@ callee)
+                  (* check if thunk is not used anywhere else *)
+                  val { others, ... } = Use.splitUses (imil, thunk)
+                  val () = Try.require (Vector.length others = 1)
+                  val { code, fx, fvs, ... } = <@ getThunkInitFromVariable (imil, thunk)
+                  (* Check thunk is not one of fvs. *)
+                  (* TODO: but this doesn't check if a variable is indirectly assigned the value of a thunk *)
+                  val () = Try.require (not (Vector.exists (fvs, fn (_, x) => case x of M.SVariable x => x = thunk | _ => false)))
+                  val code = <- code
+                  val iFunc = IFunc.getIFuncByName (imil, code)
+                  (* Check thunk argument is not used in iFunc *)
+                  val { thunk = thunk', ... } = <- (MU.CallConv.Dec.ccThunk (IFunc.getCallConv (imil, iFunc)))
+                  val () = Try.require (Vector.isEmpty (Use.getUses (imil, thunk')))
+                  (* make a new copy of the function, and change its callConv *)
+                  val (code, iFunc) = IFunc.copy (imil, iFunc)
+                  val { fvs = fvs', ... } = <- (MU.CallConv.Dec.ccThunk (IFunc.getCallConv (imil, iFunc)))
+                  val () = IFunc.setCallConv (imil, iFunc, M.CcCode)
+                  val () = IFunc.setArgs (imil, iFunc, fvs')
+                  (* replace eval with call *)
+                  val call = M.CCode { ptr = code, code = { possible = VS.singleton code, exhaustive = true }}
+                  val callee = M.IpCall { call = call, args = Vector.map (fvs, #2) }
+                  val t = M.TInterProc { callee = callee, ret = ret, fx = fx }
+                  val () = IInstr.replaceTransfer (imil, i, t)
+                in [I.ItemInstr i, I.ItemFunc iFunc]
+                end
+          in try (Click.thunkEvalBeta, f)
+          end
+
       val thunkValueBeta = 
           let
             val f = 
@@ -1557,6 +1594,7 @@ struct
           end
 
       val reduce = callInline
+                     or thunkEvalBeta
                      or thunkValueBeta
                      or makeDirect 
                      or pruneCuts
