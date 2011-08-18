@@ -31,6 +31,7 @@ struct
   structure MRC = MilRewriterClient
   structure VD = Mil.VD
   structure LD = Mil.LD
+  structure I = Identifier
   structure IM = Identifier.Manager
   structure L = Layout
   structure LU = LayoutUtils
@@ -445,7 +446,8 @@ struct
   val updateSymbolTable = 
    fn (config, summary, flat, st) =>
       let
-        val stm = IM.fromExistingNoInfo st
+        (* Keep old info for any variables not in the summary *)
+        val stm = IM.fromExistingAll st
         val vars = MRS.listVariables summary
         val help = 
          fn v => 
