@@ -11,6 +11,9 @@ end;
 signature REDUCE = 
 sig
   type t
+  (* NONE   => no reduction
+   * SOME l => was a reduction, and l should be added to workset
+   *)
   val reduce : (PassData.t * IMil.t * IMil.WorkSet.ws) * t -> IMil.item List.t option
 end
 
@@ -58,15 +61,11 @@ struct
   val <- = Try.<-
   val <@ = Try.<@
   val <! = Try.<!
-  val << = Try.<<
-  val oo = Try.oo
-  val om = Try.om
   val or = Try.or
   val || = Try.||
   val @@ = Utils.Function.@@
 
-  infix 3 << @@ oo om <! <\ 
-  infixr 3 />
+  infix 3 @@ <! 
   infix 4 or || 
 
  (* Reports a fail message and exit the program.
@@ -2936,7 +2935,8 @@ struct
           val f = 
            fn ((d, imil, ws), (i, dests, {typ, sum, tag})) => 
               let
-                val {ofVal, ...} = <@ MU.Def.Out.pSum <! Def.toMilDef o Def.get @@ (imil, sum)
+                val {ofVal, tag = tag2, ...} = <@ MU.Def.Out.pSum <! Def.toMilDef o Def.get @@ (imil, sum)
+                val () = Try.require (tag = tag2)
                 val v = Try.V.singleton dests
                 val () = Use.replaceUses (imil, v, ofVal)
                 val () = IInstr.delete (imil, i)

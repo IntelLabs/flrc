@@ -17,7 +17,7 @@ sig
   val toItem        : use -> item option
   val toIInstr      : use -> iInstr option
   val toIGlobal     : use -> iGlobal option
-  val toInstruction : use -> Mil.instruction  option
+  val toInstruction : use -> Mil.instruction option
   val toRhs         : use -> Mil.rhs option
   val toTransfer    : use -> Mil.transfer option
   val toLabel       : use -> (Mil.label * Mil.variable vector) option

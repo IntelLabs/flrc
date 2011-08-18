@@ -37,7 +37,8 @@ sig
   val isRec : t * iInstr -> bool
 
   (* Get the predecessor or successor blocks of the block
-   * in which the given instruction resides.  *)
+   * in which the given instruction resides.
+   *)
   val preds : t * iInstr -> iBlock list
   val succs : t * iInstr -> iBlock list
 
