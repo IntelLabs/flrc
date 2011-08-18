@@ -74,7 +74,7 @@ sig
          | ItemFunc of iFunc
 
 
-  structure T : IMIL_T                       
+  structure T : IMIL_T
   structure IGlobal : IMIL_GLOBAL
   structure IInstr : IMIL_INSTR
   structure IBlock : IMIL_BLOCK
