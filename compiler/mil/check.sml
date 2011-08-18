@@ -425,9 +425,12 @@ struct
 
   fun consistentFieldKind (s, e, msg, fd, t) =
       let
-        fun err () = reportError (s, msg () ^ ": field kind mismatch")
+        val efd = MUT.traceabilitySize (getConfig e, t)
+        fun err () = reportError (s, msg () ^ ": field kind mismatch, expect " ^
+                    MU.FieldKind.toString fd ^ " but got " ^ 
+                    MU.TraceabilitySize.toString (getConfig e, efd)  ^ "\n")
       in
-        case (fd, MUT.traceabilitySize (getConfig e, t))
+        case (fd, efd) (* MUT.traceabilitySize (getConfig e, t)) *)
          of (M.FkRef, TS.TsRef) => ()
           | (M.FkBits fs, TS.TsBits vs) => if MU.FieldSize.toValueSize fs = vs then () else err ()
           | (M.FkFloat, TS.TsFloat) => ()
