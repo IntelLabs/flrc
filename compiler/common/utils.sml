@@ -2111,7 +2111,7 @@ sig
   val $$ : ('a -> 'b t) -> 'a -> 'b t
 end (* signature PARSER *)
 
-(* Simple infinite lookahead parser combinators 
+(* Simple parser combinators 
  *)
 functor ParserF
   (type elt
@@ -2644,6 +2644,7 @@ struct
 end (* ParserUnParserF *)
 
 structure FileParserUnParser = ParserUnParserF(structure Parser = FileParser);
+structure StringParserUnParser = ParserUnParserF(structure Parser = StringParser);
 
 signature BIJECTION = 
 sig

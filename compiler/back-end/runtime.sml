@@ -616,7 +616,7 @@ struct
         let
           val vs = getVectorSizeName (config, PU.VectorDescriptor.vectorSize vd)
           val fk = getFieldKindName (config, fk)
-        in Pil.identifier ("pLsrVector" ^ vs ^ fk ^ name)
+        in Pil.identifier ("pLsrPrimV" ^ vs ^ fk ^ name)
         end
         
     val vectorLoadF   = vectorLoadStoreHelp "LoadF"

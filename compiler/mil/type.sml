@@ -41,7 +41,6 @@ structure MilType :> MIL_TYPE =
 struct
 
    structure IA = IntArb
-   structure VI = VectorInstructions
    structure ID = IntDict
    structure IS = IntSet
    structure I = Identifier

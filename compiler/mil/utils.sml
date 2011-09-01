@@ -154,7 +154,9 @@ sig
     val intArb : IntArb.typ -> t
     val wordSize : Config.t -> t
     val ptrSize : Config.t -> t
-    val vectorSize : Config.t -> t
+    val maxSize : t  (* The ValueSize of the largest value *)
+    val minSize : t  (* The ValueSize of the smallest value *)
+    val compareByBitcount : t Compare.t
     val compare : t Compare.t
     val eq : t * t -> bool
   end
@@ -1162,7 +1164,6 @@ end
 structure MilUtils :> MIL_UTILS =
 struct
 
-  structure VI = VectorInstructions
   structure I = Identifier
   structure IM = I.Manager
   structure SI = I.SymbolInfo
@@ -2123,14 +2124,12 @@ struct
           of Config.Ws32 => M.Vs32
            | Config.Ws64 => M.Vs64)
 
-    val wordSize = ptrSize
+    val maxSize : t = M.Vs1024 (* The ValueSize of the largest value *)
+    val minSize : t = M.Vs8    (* The ValueSize of the smallest value *)
+    val compareByBitcount : t Compare.t = 
+        fn (a, b) => Int.compare (numBits a, numBits b)
 
-    fun vectorSize config =
-        case Config.va config
-         of Config.ViREF => M.Vs128
-          | Config.ViSSE => M.Vs128
-          | Config.ViAVX => M.Vs256
-          | Config.ViLRB => M.Vs512
+    val wordSize = ptrSize
 
     val compare = Compare.valueSize
     val eq = Eq.valueSize
@@ -2343,7 +2342,7 @@ struct
           | M.TNumeric nt                => Prims.NumericTyp.traceabilitySize (c, nt)
           | M.TBoolean                   => TS.TsBits (ValueSize.wordSize c)
           | M.TName                      => TS.TsRef
-          | M.TViVector et               => TS.TsBits (ValueSize.vectorSize c)
+          | M.TViVector et               => TS.TsBits (Prims.Utils.VectorSize.toValueSize (#vectorSize et))
           | M.TViMask et                 => TS.TsMask et
           | M.TCode {cc, args, ress}     => TS.TsBits (ValueSize.ptrSize c)
           | M.TTuple {pok, fixed, array} => TS.TsRef

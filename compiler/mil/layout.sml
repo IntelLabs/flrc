@@ -107,7 +107,6 @@ struct
 
    type 'a layout = Config.t * Mil.symbolInfo * 'a -> Layout.t
 
-   structure VI = VectorInstructions
    structure I = Identifier
    structure VS = I.VariableSet
    structure VD = I.VariableDict
@@ -453,10 +452,6 @@ struct
 
    fun layoutFieldIdentifier (env, fi) =
        let
-         fun wrapViElemType (l, t) =
-             if showViElemType env
-             then L.mayAlign [L.seq [l, L.str ":"], LU.indent (VI.layoutElemTypeShort t)]
-             else l
          val l =
              case fi
               of M.FiFixed idx => 

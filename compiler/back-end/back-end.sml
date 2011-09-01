@@ -214,11 +214,14 @@ struct
             if vtableChange config then ["P_DO_VTABLE_CHANGE"] else []
 
         val va = 
-            case (Config.va config)
-             of Config.ViREF => ["P_USE_VI_REF"]
-              | Config.ViSSE => ["P_USE_VI_SSE"]
-              | Config.ViAVX => ["P_USE_VI_AVX"]
-              | Config.ViLRB => ["P_USE_VI_LRB"]
+            let
+              val Config.VC {isa, ...} = Config.vectorConfig config
+            in
+              case isa
+               of Config.ViAVX   => ["P_USE_VI_AVX"]
+                | Config.ViSSE _ => ["P_USE_VI_SSE"]
+                | _              => []
+            end
 
         val numericDefines =
             (if PObjectModelLow.Rat.useUnsafeIntegers config then 
