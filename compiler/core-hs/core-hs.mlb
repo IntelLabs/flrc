@@ -8,19 +8,24 @@ local
         core-hs.sml
         layout.sml
         parse.sml
-        anorm-hs.sml
+        anorm-lazy.sml
+        anorm-strict.sml
         ghc-prim.sml
-        anorm.sml
-        lift.sml
-        tomil.sml
+        to-lazy.sml
+        to-strict.sml
+        fvs.sml
+        to-mil.sml
 in
         structure CoreHs
-        structure ANormHs
+        structure ANormLazy
+        structure ANormStrict
         structure CoreHsLayout
-        structure ANormHsLayout
+        structure ANormLazyLayout
+        structure ANormStrictLayout
         structure CoreHsParse
-        structure CoreHsANorm
-        structure ANormHsLift
-        structure ANormHsToMil
+        structure CoreToANormLazy
+        structure ANormLazyToStrict 
         structure GHCPrim
+        structure ANormStrictFVS
+        structure ANormStrictToMil
 end
