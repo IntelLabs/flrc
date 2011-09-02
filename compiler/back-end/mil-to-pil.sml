@@ -21,7 +21,6 @@ struct
   fun unimplemented (f, msg) = Fail.unimplemented (passname, f, msg)
 
   structure L = Layout
-  structure VI = VectorInstructions
   structure I = Identifier
   structure IM = I.Manager
   structure VS = I.VariableSet
@@ -52,7 +51,6 @@ struct
 
   fun outputKind env = Config.output (getConfig env)
   fun parStyle env = Config.parStyle (getConfig env)
-  fun targetVectorSize env = Config.targetVectorSize (getConfig env)
 
   fun vtTagOnly          env = #tagOnly         (Config.gc (getConfig env))
   fun vtReg              env = #registerVtables (Config.gc (getConfig env))

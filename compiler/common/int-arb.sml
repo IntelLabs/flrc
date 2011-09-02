@@ -27,6 +27,7 @@ sig
   val compareTyps : typ * typ -> order
   val isTyp : t * typ -> bool
   val sameTyps : t * t -> bool
+  val typIsSigned : typ -> bool
   val typOf : t -> typ
   val fromInt : typ * int -> t
   val toInt : t -> int option
@@ -142,6 +143,8 @@ struct
   fun isTyp (X (t1, _), t2) = equalTyps (t1, t2)
 
   fun sameTyps (X (t1, _), X (t2, _)) = equalTyps (t1, t2)
+
+  fun typIsSigned (T (sz, signed)) = signed = Signed
 
   fun typOf (X (t, _)) = t
 

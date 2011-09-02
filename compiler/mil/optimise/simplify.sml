@@ -1440,6 +1440,13 @@ struct
                   val { fvs = fvs', ... } = <- (MU.CallConv.Dec.ccThunk (IFunc.getCallConv (imil, iFunc)))
                   val () = IFunc.setCallConv (imil, iFunc, M.CcCode)
                   val () = IFunc.setArgs (imil, iFunc, fvs')
+                  (* change the function variable's type too *)
+                  val fname = IFunc.getFName (imil, iFunc)
+                  val (typ, kind) = Var.getInfo (imil, fname)
+                  val { cc = cc', ress = ress', ... } = <- (MU.Typ.Dec.tCode typ)
+                  val { fvs = fvs', ... } = <- (MU.CallConv.Dec.ccThunk cc')
+                  val typ = Mil.TCode { cc = M.CcCode, args = fvs', ress = ress' } 
+                  val () = Var.setInfo (imil, fname, typ, kind)
                   (* replace eval with call *)
                   val call = M.CCode { ptr = code, code = { possible = VS.singleton code, exhaustive = true }}
                   val callee = M.IpCall { call = call, args = Vector.map (fvs, #2) }

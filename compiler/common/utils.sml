@@ -2183,7 +2183,7 @@ struct
 
 end
 
-(* Simple infinite lookahead parser combinators 
+(* Simple parser combinators 
  *)
 functor ParserF
   (type elt
@@ -2732,6 +2732,7 @@ struct
 end (* ParserUnParserF *)
 
 structure FileParserUnParser = ParserUnParserF(structure Parser = FileParser);
+structure StringParserUnParser = ParserUnParserF(structure Parser = StringParser);
 
 signature BIJECTION = 
 sig

@@ -62,7 +62,6 @@ local
         end
         rename.sml
         effect.sml
-        vector-instruction.sml
         prims.sml
 in
         signature CHAT
@@ -72,6 +71,8 @@ in
         signature IMP_POLY_LABELED_GRAPH
         signature LATTICE
         signature ORD
+        signature PARSER
+        signature PARSER_UN_PARSER
         signature SET
         signature LANGUAGE_DEF
 
@@ -132,11 +133,11 @@ in
         structure Rename
         structure Stats
         structure StringDict
+        structure StringParserUnParser
         structure StringSet
         functor TopoSortF
         structure Try
         structure UnParser
         structure Utils
-        structure VectorInstructions
         structure Word32
 end

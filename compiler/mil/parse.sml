@@ -48,7 +48,6 @@ struct
   structure ND = I.NameDict
   structure LD = I.LabelDict
   structure LS = I.LabelSet
-  structure VI = VectorInstructions
   structure M = Mil
   structure MU = MilUtils
   structure PU = MU.Prims.Utils
