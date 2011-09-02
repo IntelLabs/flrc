@@ -31,8 +31,25 @@ signature CONFIG = sig
                    | TsIcc (* Intel C compiler *)
   datatype verbosity = VSilent | VQuiet | VInfo | VTop
   datatype wordSize = Ws32 | Ws64
-  datatype vectorSize = Vs128 | Vs256 | Vs512
-  datatype vectorArch = ViREF | ViSSE | ViAVX | ViLRB
+  datatype vectorISA = ViANY            (* unconstrained *)
+                     | ViAVX            (* AVX *)
+                     | ViEMU            (* emulated *)
+                     | ViSSE of int*int (* SSE x.y *)
+
+  (* isa: The target ISA
+   * instructions : explicitly enabled/disabled/emulated instructions 
+   *  - overrides the isa setting
+   * sizes : explicitly enabled/disabled/emulated sizes
+   *  - overrides the isa setting
+   *)
+  datatype vectorConfig = VC of {isa          : vectorISA,
+                                 instructions : {disabled : string List.t, 
+                                                 emulated : string List.t, 
+                                                 enabled  : string List.t},
+                                 sizes        : {disabled : string List.t, 
+                                                 emulated : string List.t, 
+                                                 enabled  : string List.t}
+                                }
   datatype t = C of {agc: agcProg,
 		     control_: string StringDict.t,
 		     core: Path.t,
@@ -71,7 +88,7 @@ signature CONFIG = sig
 		     thunkScheme: thunkScheme,
 		     timeExecution: string option,
 		     toolset: toolset,
-                     va: vectorArch,
+                     vectorConfig : vectorConfig,
 		     warnLev: verbosity}
   val agc: t -> agcProg
   val core: t -> Path.t
@@ -121,12 +138,11 @@ signature CONFIG = sig
   val stopLt: stopPoint * stopPoint -> bool
   val targetWordSize: t -> wordSize
   val targetWordSize': t -> IntArb.size
-  val targetVectorSize: t -> vectorSize
   val thunkScheme: t -> thunkScheme
   val timeExecution: t -> string option
   val toolset: t -> toolset
   val verbose: t -> bool
-  val va: t -> vectorArch
+  val vectorConfig: t -> vectorConfig
   val warnLevel: t * 'a -> int
   structure Control : sig
     type control
@@ -216,9 +232,16 @@ structure Config :> CONFIG = struct
 
     datatype wordSize = Ws32 | Ws64
 
-    datatype vectorSize = Vs128 | Vs256 | Vs512 
+    datatype vectorISA = ViEMU | ViSSE of int*int | ViAVX | ViANY
 
-    datatype vectorArch = ViREF | ViSSE | ViAVX | ViLRB
+    datatype vectorConfig = VC of {isa          : vectorISA,
+                                   instructions : {disabled : string List.t, 
+                                                   emulated : string List.t, 
+                                                   enabled  : string List.t},
+                                   sizes        : {disabled : string List.t, 
+                                                   emulated : string List.t, 
+                                                   enabled  : string List.t}
+                                  }
 
     type passInfo = {
          enable   : bool,
@@ -278,7 +301,7 @@ structure Config :> CONFIG = struct
          thunkScheme      : thunkScheme,
          timeExecution    : string option,
          toolset          : toolset,
-         va               : vectorArch,
+         vectorConfig     : vectorConfig,
          warnLev          : verbosity
     }
 
@@ -307,7 +330,7 @@ structure Config :> CONFIG = struct
     fun thunkScheme c                 = get (c, #thunkScheme)
     fun timeExecution c               = get (c, #timeExecution)
     fun toolset c                     = get (c, #toolset)
-    fun va c                          = get (c, #va)
+    fun vectorConfig c                = get (c, #vectorConfig)
 
     (*** Derived Getters ***)
 
@@ -383,13 +406,6 @@ structure Config :> CONFIG = struct
         case targetWordSize config
          of Ws32 => IntArb.S32
           | Ws64 => IntArb.S64
-
-    val targetVectorSize = 
-        fn config => case va config 
-                      of ViREF => Vs128
-                       | ViSSE => Vs128
-                       | ViAVX => Vs256
-                       | ViLRB => Vs512
 
    (* These are for controlling internal compiler warnings.  Warnings are used
     * for unexpected conditions which do not prevent correct compilation. 

@@ -19,7 +19,6 @@ struct
 
   structure SS = StringSet
   structure IA = IntArb
-  structure VI = VectorInstructions
   structure I = Identifier
   structure IM = I.Manager
   structure VS = I.VariableSet
