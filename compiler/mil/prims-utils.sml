@@ -1387,7 +1387,7 @@ struct
               val t2r = fn ((masked, descriptor), operator) => 
                            {descriptor = descriptor, masked = masked, operator = operator}
               val masked = booleanOptionalLiteral "?"
-              val p = literal "VPointWise" -&& masked &&& square vectorDescriptor &&& angle prim
+              val p = literal "PointWise" -&& masked &&& square vectorDescriptor &&& angle prim
             in unary (Mil.Prims.ViPointwise, Dec.Vector.viPointwise, rec2 (t2r, r2t) p)
             end
         val viConvert     = 
@@ -1396,7 +1396,7 @@ struct
                fn {from = {descriptor = d1, typ = t1}, to = {descriptor = d2, typ = t2}} => ((d1, d2), (t1, t2))
               val t2r = 
                fn ((d1, d2), (t1, t2)) => {from = {descriptor = d1, typ = t1}, to = {descriptor = d2, typ = t2}}
-              val p = literal "VConvert" -&& square vectorDescriptor &&& square vectorDescriptor &&& 
+              val p = literal "Convert" -&& square vectorDescriptor &&& square vectorDescriptor &&& 
                               angle (numericTyp &&- literal "To" &&& numericTyp)
             in unary (Mil.Prims.ViConvert, Dec.Vector.viConvert, rec3 (t2r, r2t) p)
             end
@@ -1405,7 +1405,7 @@ struct
             let
               val r2t = fn {descriptor = d1, typ = t1, operator = op1} => (d1, (t1, op1))
               val t2r = fn (d1, (t1, op1)) => {descriptor = d1, typ = t1, operator = op1} 
-              val p = literal "VCompare" -&& square vectorDescriptor &&& angle (numericTyp &&& compareOp)
+              val p = literal "Compare" -&& square vectorDescriptor &&& angle (numericTyp &&& compareOp)
             in unary (Mil.Prims.ViCompare, Dec.Vector.viCompare, rec2 (t2r, r2t) p)
             end
 
@@ -1413,7 +1413,7 @@ struct
             let
               val r2t = fn {descriptor = d1, associativity = a1, operator = p1} => ((a1, d1), p1)
               val t2r = fn ((a1, d1), p1) => {descriptor = d1, associativity = a1, operator = p1}
-              val p = literal "VReduction" -&& assoc &&& square vectorDescriptor &&& prim
+              val p = literal "Reduction" -&& assoc &&& square vectorDescriptor &&& prim
             in unary (Mil.Prims.ViReduction, Dec.Vector.viReduction, rec2 (t2r, r2t) p)
             end
 
@@ -1425,14 +1425,14 @@ struct
               val p = literal name -&& square vectorDescriptor &&& angle operator
             in rec2 (t2r, r2t) p
             end
-        val viData        = unary (Mil.Prims.ViData, Dec.Vector.viData, mk ("VData", dataOp))
-        val viMaskData    = unary (Mil.Prims.ViMaskData, Dec.Vector.viMaskData, mk ("VMaskData", dataOp))
-        val viMaskBoolean = unary (Mil.Prims.ViMaskBoolean, Dec.Vector.viMaskBoolean, mk ("VMaskBoolean", logicOp))
+        val viData        = unary (Mil.Prims.ViData, Dec.Vector.viData, mk ("Data", dataOp))
+        val viMaskData    = unary (Mil.Prims.ViMaskData, Dec.Vector.viMaskData, mk ("MaskData", dataOp))
+        val viMaskBoolean = unary (Mil.Prims.ViMaskBoolean, Dec.Vector.viMaskBoolean, mk ("MaskBoolean", logicOp))
         val viMaskConvert = 
             let 
               val r2t = fn {from = f1, to = t1} => (f1, t1)
               val t2r = fn (f1, t1) => {from = f1, to = t1} 
-              val p = literal "VMaskConvert" -&& square vectorDescriptor &&& square vectorDescriptor &&- literal "<>"
+              val p = literal "MaskConvert" -&& square vectorDescriptor &&& square vectorDescriptor &&- literal "<>"
             in unary (Mil.Prims.ViMaskConvert, Dec.Vector.viMaskConvert, rec2 (t2r, r2t) p)
             end
 
@@ -1529,8 +1529,8 @@ struct
   val t                : Mil.Prims.t u = 
       let
         val prim    = unary (Mil.Prims.Prim,  Dec.T.prim,  prim)
-        val runtime = unary (Mil.Prims.Runtime,  Dec.T.runtime,  runtime)
-        val vector  = unary (Mil.Prims.Vector,  Dec.T.vector,  vector)
+        val runtime = unary (Mil.Prims.Runtime,  Dec.T.runtime,  literal "Rt" -&& runtime)
+        val vector  = unary (Mil.Prims.Vector,  Dec.T.vector,  literal "V" -&& vector)
         val res = prim || runtime || vector
       in
         res
@@ -1547,7 +1547,7 @@ struct
           val g = UnParser.run layout
         in case g a
             of SOME l => l
-             | NONE   => Fail.fail ("PrimsLayout", "lift", "Layout failed")
+             | NONE   => Fail.fail ("PrimsLayout", "Rtlift", "Layout failed")
         end
     val vectorSize       : Mil.Prims.vectorSize t       = lift vectorSize
     val vectorDescriptor : Mil.Prims.vectorDescriptor t = lift vectorDescriptor
