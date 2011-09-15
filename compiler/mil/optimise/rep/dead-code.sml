@@ -108,6 +108,11 @@ struct
       val getConfig = PD.getConfig o getPd
     end
 
+    (* This pass builds the initial flow graph.  The flow graph derived from the
+     * flow analysis is extended to account for the dependencies induced 
+     * by the operations. Everything that is used for observable purposes
+     * (effects, control flow) is marked as live.
+     *)
     structure Analyze1 =
     MilAnalyseF(struct
                   type state = SE1.state
@@ -192,7 +197,8 @@ struct
                                        let
                                          val {index, descriptor, ...} = r
                                          val count = MU.Prims.Utils.VectorDescriptor.elementCount descriptor
-                                       in Utils.Iterate.foreach (index, fn i => i + 1, fn i => i < index + count, doFixed)
+                                       in Utils.Iterate.foreach 
+                                            (index, fn i => i + 1, fn i => i < index + count, doFixed)
                                        end
                                      | M.FiVectorVariable _ => doVariable ()
                              in ()
@@ -353,6 +359,10 @@ struct
       val getConfig = PD.getConfig o getPd
     end
 
+    (* This analysis computes which tuple introductions might lead to a pointer comparison.
+     * Mutable tuples which are used in pointer comparisons cannot have all of their mutable
+     * fields eliminated or they will lose their generative semantics.
+     *)
     structure Analyze2 =
     MilAnalyseF(struct
                   type state = SE2.state
@@ -422,6 +432,10 @@ struct
       val getConfig = PD.getConfig o getPd
     end
 
+    (* This analysis looks at each tuple introduction, and uses the results of the
+     * previous analysis to force a mutable field to be kept live if all of the 
+     * mutable fields are scheduled to be otherwise killed 
+     *)
     structure Analyze3 =
     MilAnalyseF(struct
                   type state = SE3.state
@@ -1000,7 +1014,8 @@ struct
           in globals
           end
     end (* structure Rewrite *)
-
+    (* Compute the dependency graph and initial liveness approximation
+     *)
     val backward1 = 
      fn (pd, summary, p) => 
         let
@@ -1020,6 +1035,7 @@ struct
         in fgB1
         end
 
+    (* Compute the set of tuple introductions which reach a pointer comparison *)
     val backward2 = 
      fn (pd, summary, p) => 
         let
@@ -1039,6 +1055,10 @@ struct
         in fgB2
         end
 
+    (* For every tuple introduction which are both live and compared but for which
+     * there are no live mutable fields, choose an arbitrary mutable field to keep 
+     * live and propogate it forward.
+     *)
     val forward1 = 
      fn (pd, summary, p, fgB1, fgB2) => 
         let
@@ -1052,11 +1072,15 @@ struct
                         merge = fn (a, b) => (a orelse b),
                         equal = op =
                        }
-          val state = SE3.S {summary = summary, flowgraph = fgB2, compared = fgB2}
+          val state = SE3.S {summary = summary, flowgraph = fgB1, compared = fgB2}
           val env = SE3.E {pd = pd}
           val () = Analyze3.analyseProgram (state, env, p)
           val () = FG.propagate fgF1
-        in fgF1
+          val nodes = MRS.nodes summary
+          val add = fn (i, n) => if FG.query (fgF1, n) then FG.add (fgB1, n, true) else ()
+          val () = IntDict.foreach (nodes, add)
+          val () = FG.propagate fgB1
+        in fgB1
         end
 
     val deadVars = 
