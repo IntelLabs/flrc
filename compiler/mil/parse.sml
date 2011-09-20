@@ -784,9 +784,9 @@ struct
         val doAux = parenSemiComma (P.$$ f (state, env), P.$$ f (state, env))
         fun doIt s =
             case s
-             of "Code" => P.succeed M.CcCode
-              | "Closure" => P.bind doAux (fn (x, y) => P.succeed (M.CcClosure {cls = x, fvs = y}))
-              | "Thunk" => P.bind doAux (fn (x, y) => P.succeed (M.CcThunk {thunk = x, fvs = y}))
+             of "CcCode" => P.succeed M.CcCode
+              | "CcClosure" => P.bind doAux (fn (x, y) => P.succeed (M.CcClosure {cls = x, fvs = y}))
+              | "CcThunk" => P.bind doAux (fn (x, y) => P.succeed (M.CcThunk {thunk = x, fvs = y}))
               | _ => P.fail
         val p = P.bind identifierF doIt
       in p
