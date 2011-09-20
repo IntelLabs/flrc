@@ -8,6 +8,7 @@ local
         core-hs.sml
         layout.sml
         parse.sml
+        anorm-prim.sml
         anorm-lazy.sml
         anorm-strict.sml
         ghc-prim.sml
@@ -17,9 +18,11 @@ local
         to-mil.sml
 in
         structure CoreHs
+        structure ANormPrim
         structure ANormLazy
         structure ANormStrict
         structure CoreHsLayout
+        structure ANormPrimLayout
         structure ANormLazyLayout
         structure ANormStrictLayout
         structure CoreHsParse

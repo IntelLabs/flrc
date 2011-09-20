@@ -55,6 +55,13 @@ struct
   structure QD = DictF (struct type t = C.identifier C.qualified val compare = CHU.compareQName end)
   structure SD = StringDict
 
+  structure Debug =
+  struct
+    val (debugPassD, debugPass) = Config.Debug.mk (passname, "debug CoreHs parser")
+    fun debug   (config, s) = if Config.debug andalso debugPass config then print s else ()
+    fun verbose (config, s) = if Config.verbose config then print s else ()
+  end
+
   fun print' s = ()
 
   fun reservedH w = oneChar #"%" >> $$ P.reserved w
@@ -950,17 +957,16 @@ struct
                  | SOME def => 
                    let 
                      val (_, traced, _) = traceDef (CHU.mainVar, def, (defd, QD.empty, scanned))
-                     val _ = print' ("traced = " ^ Layout.toString (Layout.sequence ("{", "}",
-                     ",") (List.map(QD.domain traced,
-                     CoreHsLayout.layoutQName))) ^ "\n")
+                     val _ = print' ("traced = " ^ Layout.toString (Layout.sequence ("{", "}", ",") (List.map(QD.domain traced, CoreHsLayout.layoutQName))) ^ "\n")
                      val (tdefs, vdefs) = QD.fold (traced, ([], []), fn (_, (TDef d, _), (ts, vs)) => (d :: ts, vs)
                                                                       | (n, (VDef d, s), (ts, vs)) => (ts, (n, (d, s)) :: vs)
                                                                       | (_, _, s) => s)
-              val names = QS.keepAll (List.fold (vdefs, QS.empty, fn ((_, (_, p)), q) => QS.union (p, q)),
-                                        fn (m, _) => m = SOME CHU.primMname)
-              val _ = print ("GHC.Prims needed: " ^ QS.fold (names, "", fn (n, s) => s ^ "\n    " ^ Layout.toString
-                            (CoreHsLayout.layoutQName n)) ^ "\n")
-              
+                     val names = QS.keepAll (List.fold (vdefs, QS.empty, fn ((_, (_, p)), q) => QS.union (p, q)),
+                                               fn (m, _) => m = SOME CHU.primMname)
+                     val _ = Debug.verbose (config, "GHC.Prims needed: " ^ 
+                                            QS.fold (names, "", fn (n, s) => s ^ "\n    " ^ 
+                                            Layout.toString (CoreHsLayout.layoutQName n)) ^ "\n")
+                      
                      val vdefgs = linearize (QD.fromList vdefs)
                    in
                      C.Module (mname, tdefs, vdefgs)
@@ -980,7 +986,7 @@ struct
                      mustBeAfter = [],
                      stats       = stats}
 
-  val associates = {controls = [], debugs = [], features = [], subPasses = []}
+  val associates = {controls = [], debugs = [Debug.debugPassD], features = [], subPasses = []}
 
   val pass = Pass.mkFilePass (description, associates, readModule)
 

@@ -379,9 +379,8 @@ struct
   val tUtuple : ty list -> ty =
     fn ts => List.fold (ts, (Tcon (tcUtuple (length ts))), UF.flipIn Tapp)
 
-  val rec isUtupleTy : ty -> int option =
-    fn Tapp (t, _) => isUtupleTy t
-     | Tcon (p, s) =>
+  val isUtupleDc : dcon qualified -> int option =
+    fn (p, s) =>
           (case (p, explode s)
              of (SOME pm, #"Z" :: rest) =>
                if pm = primMname andalso List.last rest = #"H"
@@ -395,18 +394,14 @@ struct
                    end
                  else NONE
               | _ => NONE)
-     | _            => NONE
+
+  val rec isUtupleTy : ty -> int option =
+    fn Tapp (t, _) => isUtupleTy t
+     | Tcon tcon => isUtupleDc tcon
+     | _ => NONE
 
   val dcUtuple : int -> dcon qualified =
     fn n => (SOME primMname, "Z" ^ Int.toString n ^ "H")
-
-  val isUtupleDc : dcon qualified -> bool =
-    fn dc => 
-      let 
-        fun check i = if i > maxUtuple then false
-                              else dcUtuple i = dc orelse check (i + 1)
-      in check maxUtuple
-      end
 
   val dcUtupleTy : int -> ty =
     fn n =>
