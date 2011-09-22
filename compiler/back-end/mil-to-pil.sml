@@ -933,7 +933,7 @@ struct
       case t
        of M.TAny => Fail.fail ("MilToPil", "genTyp", "TAny")
         | M.TAnyS _ => Fail.fail ("MilToPil", "genTyp", "TAnyS")
-        | M.TNonRefPtr => Fail.fail ("MilToPil", "genTyp", "TNonRefPtr")
+        | M.TNonRefPtr =>  Pil.T.ptr Pil.T.void (* Fail.fail ("MilToPil", "genTyp", "TNonRefPtr") *)
         | M.TRef => Pil.T.named RT.T.object
         | M.TBits vs =>
           (case vs

@@ -496,6 +496,7 @@ struct
   val tCharzh      : ty = Tcon (primId "Char#")
   val tFloatzh     : ty = Tcon (primId "Float#")
   val tDoublezh    : ty = Tcon (primId "Double#")
+  val tIntegerzh   : ty = Tcon (primId "Integer#")
 
   val tcStablePtrzh : tcon qualified = pvz "StablePtr"
   val tcIO          : tcon qualified = (SOME (CHU.mkBaseMname "IOBase"), "IO")

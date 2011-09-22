@@ -521,7 +521,10 @@ struct
 
   fun mNameToPath (C.M (C.P pname, prefix, name)) =
       let
-        val d = Path.fromString (CHU.zDecodeString pname)
+        val d = CHU.zDecodeString pname
+        (* look for main package in current directory *)
+        val d = if d = "main" then "." else d
+        val d = Path.fromString d
         val d = List.fold (prefix, d, Utils.Function.flipIn Path.snoc)
         val d = Path.snoc (d, name)
       in 
