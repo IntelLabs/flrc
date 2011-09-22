@@ -352,6 +352,7 @@ struct
   val merge =
    fn (p, b1, b2) => 
       let
+        val () = if b1 = b2 then fail ("merge", "Tried to merge block with itself") else ()
         val iTrans = getTransfer (p, b2)
         val trans = Instr.getMil (p, iTrans)
         val () = Instr.delete (p, iTrans)

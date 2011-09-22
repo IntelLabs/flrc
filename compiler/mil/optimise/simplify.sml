@@ -1056,6 +1056,7 @@ struct
                     (case oEdges
                       of [(_, succ)] => succ
                        | _ => Try.fail ())
+                val () = Try.require (b <> succ)
                 val () = 
                     (case IBlock.preds (imil, succ)
                       of [_] => ()
@@ -1685,6 +1686,8 @@ struct
                       (case IInstr.preds (imil, i)
                         of [pred] => pred
                          | _ => Try.fail ())
+                  val b = IInstr.getIBlock (imil, i)
+                  val () = Try.require (b <> pred)
                   val () = 
                       (case IBlock.succs (imil, pred)
                         of [_] => ()
@@ -1697,7 +1700,6 @@ struct
                   val _ = <@ MU.Transfer.isIntraProcedural tf
                   val used = IInstr.getUsedBy (imil, ti)
                   val () = WS.addItems (ws, used)
-                  val b = IInstr.getIBlock (imil, i)
                   val () = IBlock.merge (imil, pred, b)
                 in [I.ItemInstr ti]
                 end
