@@ -3008,7 +3008,18 @@ struct
            | (_, Emulated)      => Emulated
            | (Enabled, Enabled) => Enabled)
 
-    val avx = 
+    val ISASizes = 
+     fn (config, isa) => 
+        let
+          val allSizes = [Prims.Vs64, Prims.Vs128, Prims.Vs256, Prims.Vs512, Prims.Vs1024]
+        in case isa
+            of Config.ViEMU   => VSD.fromList (List.map (allSizes, fn sz => (sz, Emulated)))
+             | Config.ViANY   => VSD.fromList (List.map (allSizes, fn sz => (sz, Enabled)))
+             | Config.ViAVX   => VSD.fromList [(Prims.Vs256, Enabled)]
+             | Config.ViSSE _ => VSD.fromList [(Prims.Vs128, Enabled)]
+        end
+
+    val avxInstructions = 
      fn config => 
         let
           val float32 = Prims.NtFloat (Prims.FpSingle)
@@ -3032,10 +3043,10 @@ struct
         in instructions
         end
 
-    val initial = 
+    val ISAInstructions = 
      fn (config, isa) => 
         (case isa
-          of Config.ViAVX => avx config
+          of Config.ViAVX => avxInstructions config
            | _            => VD.empty)
 
     val build' = 
@@ -3051,7 +3062,7 @@ struct
                     case StringParse.Parser.parse (StringParse.vectorSize config, (s, 0))
                      of StringParse.Parser.Success (_, r) => VSD.insert (dict, r, status)
                       | _                                 => let val () = fail ("bad size: "^s) in dict end
-                val dict = VSD.empty
+                val dict = ISASizes (config, isa)
                 val dict = List.fold (#disabled sizes, dict, add Disabled)
                 val dict = List.fold (#emulated sizes, dict, add Emulated)
                 val dict = List.fold (#enabled sizes, dict, add Enabled)
@@ -3066,7 +3077,7 @@ struct
                     case StringParse.Parser.parse (StringParse.vector config, (s, 0))
                      of StringParse.Parser.Success (_, r) => VD.insert (dict, r, status)
                       | _                                 => let val () = fail ("bad instruction: "^s) in dict end
-                val dict = initial (config, isa)
+                val dict = ISAInstructions (config, isa)
                 val dict = List.fold (#disabled instructions, dict, add Disabled)
                 val dict = List.fold (#emulated instructions, dict, add Emulated)
                 val dict = List.fold (#enabled instructions, dict, add Enabled)
@@ -3102,18 +3113,7 @@ struct
      fn (t, sz) => 
         case VSD.lookup (getSizes t, sz)
          of SOME s => s
-          | NONE   => 
-            (case getISA t
-              of Config.ViANY   => Enabled
-               | Config.ViAVX   => 
-                 (case sz
-                   of Prims.Vs256 => Enabled
-                    | _               => Disabled)
-               | Config.ViEMU   => Emulated
-               | Config.ViSSE _ => 
-                 (case sz
-                   of Prims.Vs128 => Enabled
-                    | _               => Disabled))
+          | NONE   => Disabled
 
     val disabledSize : t * Prims.vectorSize -> bool = 
      fn (t, sz) => sizeStatus (t, sz) = Disabled
