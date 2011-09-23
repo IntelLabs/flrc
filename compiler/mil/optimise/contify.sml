@@ -373,11 +373,13 @@ struct
     datatype state = S of {
       pd   : PassData.t,
       stm  : M.symbolTableManager,
-      self : (M.variable * selfEntry) ref,
+      self : (M.variable * selfEntry * M.variable M.callConv) ref,
       blks : M.block LD.t ref
     }
 
-    fun stateMk (pd, stm, entry) = S {pd = pd, stm = stm, self = ref (entry, SeNone), blks = ref LD.empty}
+    fun stateMk (pd, stm, entry) = S {pd = pd, stm = stm, 
+                                      self = ref (entry, SeNone, M.CcCode), (* entry, entry label, cc *)
+                                      blks = ref LD.empty}
 
     fun getStm (S {stm, ...}) = stm
 
@@ -394,24 +396,24 @@ struct
      *)
     fun isSelf (s as S {self, ...}, f) =
         let
-          val (f', se) = !self
+          val (f', se, cc) = !self
         in
           if f = f' then
             case se
              of SeNone =>
                 let
                   val l = newLabel s
-                  val () = self := (f', SeCreate l)
+                  val () = self := (f', SeCreate l, cc)
                 in
-                  SOME l
+                  SOME (l, cc)
                 end
-              | SeExists l => SOME l
-              | SeCreate l => SOME l
+              | SeExists l => SOME (l, cc)
+              | SeCreate l => SOME (l, cc)
           else
             NONE
         end
 
-    fun setSelf (S {self, ...}, f, se) = self := (f, se)
+    fun setSelf (S {self, ...}, f, se, cc) = self := (f, se, cc)
 
     fun getBlock (S {blks, ...}, l) = Option.valOf (LD.lookup (!blks, l))
 
@@ -522,19 +524,39 @@ struct
      * a self tail call and compute an optional label to jump to, or
      * NONE if this call is not a self tailcall
      *)
-    fun isSelfTailcall (state, c) =
+    fun isSelfTailcall (state, env, c) =
         case c
-         of M.CCode {ptr, ...}           => isSelf (state, ptr)
+         of M.CCode {ptr, ...}           => 
+            (case isSelf (state, ptr)
+              of SOME (l, M.CcCode) => SOME (l, Vector.new0 (), Vector.new0 ())
+               | SOME _             => Fail.fail ("MilContify", "isSelfTailCall", "Code: mismatched calling convention")
+               | NONE               => NONE)
           | M.CClosure _                 => NONE
-          | M.CDirectClosure {code, ...} => isSelf (state, code)
+          | M.CDirectClosure {code, cls} => 
+            (case isSelf (state, code)
+              of SOME (l, M.CcClosure {cls = _, fvs}) => 
+                 let
+                   val fvs = Vector.map (fvs, fn v => cloneVar (state, v))
+                   val ts = Vector.map (fvs, fn v => MU.SymbolTableManager.variableTyp (getStm state, v))
+                   val fks = Vector.map (ts, fn t => MU.FieldKind.fromTyp (getConfig env, t))
+                   val get = fn (i, v) => MU.Instruction.new (v, M.RhsClosureGetFv {fvs = fks, cls = cls, idx = i})
+                   val instrs = Vector.mapi (fvs, get)
+                   val args = Vector.map (Utils.Vector.cons (cls, fvs), M.SVariable)
+                 in SOME (l, instrs, args)
+                 end
+               | SOME _                         => 
+                 Fail.fail ("MilContify", "isSelfTailCall", "Closure: mismatched calling convention")
+               | NONE                           => NONE)
+
 
     (* Given a Mil inter proc that is a tail inter proc, determine if it is
      * a self tail inter proc and compute an optional label and arguments to jump to,
      * or NONE if this inter proc is not a self tail inter proc.
      *)
-    fun isSelfTailInterProc (state, ip) =
+    fun isSelfTailInterProc (state, env, ip) =
         case ip
-         of M.IpCall {call, args, ...} => Option.map (isSelfTailcall (state, call), fn l => (l, args))
+         of M.IpCall {call, args, ...} => 
+            Option.map (isSelfTailcall (state, env, call), fn (l, is, vs) => (l, is, Vector.concat [vs, args]))
           | M.IpEval _ => NONE
 
     (* In inlined code rewrite the cuts annotation *)
@@ -556,69 +578,75 @@ struct
           | M.IpEval _ => NONE
 
     fun doTransfer (state, env, t) =
-        case t
-         of M.TGoto _ => t
-          | M.TCase _ => t
-          | M.TInterProc {callee, ret, fx} =>
-            (case doInterProc (state, env, callee, ret)
-              of NONE =>
-                 (* Callee is not inlined *)
-                 (case ret
-                   of M.RNormal {rets, block, cuts} =>
-                      (* Normal inter proc, rewrite the cuts *)
-                      let
-                        val ret = M.RNormal {rets = rets, block = block, cuts = rewriteCuts (state, env, cuts)}
-                        val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
-                      in t
-                      end
-                      (* Tail inter proc, check if this CB is inlined and if it is a self tail inter proc *)
-                    | M.RTail {exits} =>
-                      case getReturn env
-                       of NONE =>
-                          (* This CB does not return to a label in the final CB, check for self tail inter proc *)
-                          (case isSelfTailInterProc (state, callee)
-                            of NONE => (* Not a self tail inter proc, no changes *) t
-                             | SOME (l, args) =>
-                               (* Self tail inter proc, jump to reentry label *)
-                               let
-                                 val () = click (state, "selfTail")
-                               in
-                                 M.TGoto (M.T {block = l, arguments = args})
-                               end)
-                          (* This CB is inlined and returns to r, must convert tail back to normal *)
-                        | SOME r => 
-                          let
-                            val () = click (state, "untail")
-                            (* Generate return vars and a label that jumps to r with those return vars as args *)
-                            val vs = MU.Block.parameters (getBlock (state, r))
-                            val rvs = Vector.map (vs, fn v => cloneVar (state, v))
-                            val l = newLabel state
-                            val t = M.TGoto (M.T {block = r, arguments = Vector.map (rvs, M.SVariable)})
-                            val blk = M.B {parameters = Vector.new0 (), instructions = Vector.new0 (), transfer = t}
-                            val () = addBlock (state, l, blk)
-                            (* Rewrite cuts and make normal inter proc *)
-                            val cuts = rewriteCuts (state, env, M.C {exits = exits, targets = LS.empty})
-                            val ret = M.RNormal {rets = rvs, block = l, cuts = cuts}
-                            val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
-                          in t
-                          end)
-                 (* Callee is inlined, jump to its entry label *)
-               | SOME (l, os) => M.TGoto (M.T {block = l, arguments = os}))
-          | M.TReturn os =>
-            (* If we have a return label for this fragment, then jump to it
-             * instead of returning.
-             *)
-            (case getReturn env
-              of NONE => M.TReturn os
-               | SOME r =>
-                 let
-                   val () = click (state, "retJump")
-                 in
-                   M.TGoto (M.T {block = r, arguments = os})
-                 end)
-          | M.TCut {cont, args, cuts} => M.TCut {cont = cont, args = args, cuts = rewriteCuts (state, env, cuts)}
-          | M.THalt _ => t
-          | M.TPSumCase _ => t
+        let
+          val just = fn t => (Vector.new0 (), t)
+          val nochange = just t
+        in
+          case t
+           of M.TGoto _ => nochange
+            | M.TCase _ => nochange
+            | M.TInterProc {callee, ret, fx} =>
+              (case doInterProc (state, env, callee, ret)
+                of NONE =>
+                   (* Callee is not inlined *)
+                     (case ret
+                       of M.RNormal {rets, block, cuts} =>
+                          (* Normal inter proc, rewrite the cuts *)
+                            let
+                              val ret = M.RNormal {rets = rets, block = block, cuts = rewriteCuts (state, env, cuts)}
+                              val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                            in just t
+                            end
+                            (* Tail inter proc, check if this CB is inlined and if it is a self tail inter proc *)
+                        | M.RTail {exits} =>
+                          case getReturn env
+                           of NONE =>
+                              (* This CB does not return to a label in the final CB, check for self tail inter proc *)
+                                (case isSelfTailInterProc (state, env, callee)
+                                  of NONE => (* Not a self tail inter proc, no changes *) just t
+                                   | SOME (l, is, args) =>
+                                     (* Self tail inter proc, jump to reentry label *)
+                                       let
+                                         val () = click (state, "selfTail")
+                                       in
+                                         (is, M.TGoto (M.T {block = l, arguments = args}))
+                                       end)
+                                (* This CB is inlined and returns to r, must convert tail back to normal *)
+                            | SOME r => 
+                              let
+                                val () = click (state, "untail")
+                                (* Generate return vars and a label that jumps to r with those return vars as args *)
+                                val vs = MU.Block.parameters (getBlock (state, r))
+                                val rvs = Vector.map (vs, fn v => cloneVar (state, v))
+                                val l = newLabel state
+                                val t = M.TGoto (M.T {block = r, arguments = Vector.map (rvs, M.SVariable)})
+                                val blk = M.B {parameters = Vector.new0 (), instructions = Vector.new0 (), transfer = t}
+                                val () = addBlock (state, l, blk)
+                                (* Rewrite cuts and make normal inter proc *)
+                                val cuts = rewriteCuts (state, env, M.C {exits = exits, targets = LS.empty})
+                                val ret = M.RNormal {rets = rvs, block = l, cuts = cuts}
+                                val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                              in just t
+                              end)
+                     (* Callee is inlined, jump to its entry label *)
+                 | SOME (l, os) => just (M.TGoto (M.T {block = l, arguments = os})))
+            | M.TReturn os =>
+              (* If we have a return label for this fragment, then jump to it
+               * instead of returning.
+               *)
+                (case getReturn env
+                  of NONE => just (M.TReturn os)
+                   | SOME r =>
+                     let
+                       val () = click (state, "retJump")
+                     in
+                       just (M.TGoto (M.T {block = r, arguments = os}))
+                     end)
+            | M.TCut {cont, args, cuts} => 
+              just (M.TCut {cont = cont, args = args, cuts = rewriteCuts (state, env, cuts)})
+            | M.THalt _ => nochange
+            | M.TPSumCase _ => nochange
+        end
 
     fun doInstr (state, env, i as M.I {dests, n, rhs}) =
         case rhs
@@ -638,7 +666,8 @@ struct
         let
           val M.B {parameters, instructions, transfer} = b
           val instructions = Vector.map (instructions, fn i => doInstr (state, env, i))
-          val t = doTransfer (state, env, transfer)
+          val (instructions', t) = doTransfer (state, env, transfer)
+          val instructions = Vector.concat [instructions, instructions']
           val b = M.B {parameters = parameters, instructions = instructions, transfer = t}
           val () = addBlock (state, l, b)
         in ()
@@ -693,12 +722,16 @@ struct
         end
 
     (* Find a self entry in the code body using a heuristic *)
-    fun findSelfEntry (state, env, args, entry, blocks) =
+    fun findSelfEntry (state, env, cc, args, entry, blocks) =
         let
           fun checkSame (v, opnd) =
               case opnd
                of M.SVariable v' => v = v'
                 | _              => false
+          val args = 
+              case cc
+               of M.CcClosure {cls, fvs} => Utils.Vector.cons (cls, Vector.concat [fvs, args])
+                | _                      => args
         in
           case LD.lookup (blocks, entry)
            of SOME (M.B {instructions, transfer = M.TGoto (M.T {block, arguments, ...}), ...}) =>
@@ -714,20 +747,32 @@ struct
     (* We decided to make a self entry label for optimising self tail calls.
      * Now build the block for this label and adjust the entry code to use it.
      *)
-    fun makeSelfEntry (state, env, args, entry, selfEntry) =
+    fun makeSelfEntry (state, env, cc, args, entry, selfEntry) =
         let
           val nentry = newLabel state
           val nargs = Vector.map (args, fn x => cloneVar (state, x))
-          val nargso = Vector.map (nargs, M.SVariable)
+          val (cc, nformals, nactuals, args) = 
+              case cc
+               of M.CcClosure {cls, fvs} => 
+                  let
+                    val ncls = cloneVar (state, cls)
+                    val nfvs = Vector.map (fvs, fn v => cloneVar (state, v))
+                    val cc = M.CcClosure {cls = ncls, fvs = nfvs}
+                    val args = Utils.Vector.cons (cls, Vector.concat [fvs, args])
+                    val nactuals = Utils.Vector.cons (ncls, Vector.concat [nfvs, nargs])
+                  in (cc, nargs, nactuals, args)
+                  end
+                | _                      => (cc, nargs, nargs, args)
+          val nactualso = Vector.map (nactuals, M.SVariable)
           val neb = M.B {parameters = Vector.new0 (),
                          instructions = Vector.new0 (),
-                         transfer = M.TGoto (M.T {block = selfEntry, arguments = nargso})}
+                         transfer = M.TGoto (M.T {block = selfEntry, arguments = nactualso})}
           val () = addBlock (state, nentry, neb)
           val seb = M.B {parameters = args,
                          instructions = Vector.new0 (),
                          transfer = M.TGoto (M.T {block = entry, arguments = Vector.new0 ()})}
           val () = addBlock (state, selfEntry, seb)
-        in (nargs, nentry)
+        in (cc, nformals, nentry)
         end
 
     (* Transform a code global that is kept *)
@@ -800,10 +845,10 @@ struct
           (* Set up the new environment *)
           val env = envReset (env, funEntries)
           val se =
-              case findSelfEntry (state, env, args, entry, blocks)
+              case findSelfEntry (state, env, cc, args, entry, blocks)
                of NONE   => SeNone
                 | SOME l => SeExists l
-          val () = setSelf (state, x, se)
+          val () = setSelf (state, x, se, cc)
           (* Transform this global's cb *)
           val () = transformCB (state, env, body)
           (* Add in the return labels - do this before inlining as these blocks are looked up *)
@@ -818,10 +863,10 @@ struct
           (* Inline and transform the included cbs *)
           val () = List.foreach (List.rev fs, fn x => addCode (state, env, x))
           (* Create the self entry if necessary *)
-          val (args, entry) =
+          val (cc, args, entry) =
               case getSelfEntry state
-               of SeCreate l => makeSelfEntry (state, env, args, entry, l)
-                | _          => (args, entry)
+               of SeCreate l => makeSelfEntry (state, env, cc, args, entry, l)
+                | _          => (cc, args, entry)
           (* Build result *)
           val body = M.CB {entry = entry, blocks = getBlocks state}
           val f =
