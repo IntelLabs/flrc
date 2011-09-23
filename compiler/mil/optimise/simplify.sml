@@ -1040,6 +1040,35 @@ struct
 
   end (* structure GlobalR *)
 
+  val tryMergeBlock =
+      let
+        val f = 
+         fn ((d, imil, ws), (pred, succ)) =>
+            let
+              val l1 = IBlock.getLabel (imil, pred)
+              val t1 = IBlock.getTransfer (imil, pred)
+              val l2 = IBlock.getLabel (imil, succ)
+              val t2 = IBlock.getTransfer (imil, succ)
+              val (_, parms) = <@ IInstr.toLabel l2
+              val () = Try.V.isEmpty parms
+              val () = 
+                  (case IBlock.preds (imil, succ)
+                    of [pred'] => Try.require (pred' = pred)
+                     |       _ => Try.fail ())
+              val () = 
+                  (case IBlock.succs (imil, pred)
+                    of [succ'] => Try.require (succ' = succ)
+                     |       _ => Try.fail ())
+              val () = Try.require (succ <> pred)
+              val _ = <@ MU.Transfer.isIntraProcedural <! IInstr.toTransfer @@ t1
+              val used = IInstr.getUsedBy (imil, t1)
+              val () = WS.addItems (ws, used)
+              val () = IBlock.merge (imil, pred, succ)
+            in List.map ([l1, t1, l2, t2], I.ItemInstr)
+            end
+      in try (Click.mergeBlocks, f)
+      end
+
   structure TransferR : REDUCE =
   struct
     type t = I.iInstr * M.transfer
@@ -1049,22 +1078,14 @@ struct
           val f = 
            fn ((d, imil, ws), (i, M.T {block, arguments})) =>
               let
-                val () = Try.V.isEmpty arguments
-                val b = IInstr.getIBlock (imil, i)
-                val oEdges = IBlock.outEdges (imil, b)
+                val pred = IInstr.getIBlock (imil, i)
                 val succ = 
-                    (case oEdges
+                    (case IBlock.outEdges (imil, pred)
                       of [(_, succ)] => succ
                        | _ => Try.fail ())
-                val () = Try.require (b <> succ)
-                val () = 
-                    (case IBlock.preds (imil, succ)
-                      of [_] => ()
-                       | _ => Try.fail ())
-                val () = IBlock.merge (imil, b, succ)
-              in []
+              in <@ tryMergeBlock ((d, imil, ws), (pred, succ))
               end
-        in try (Click.tGoto, f)
+        in Try.lift f
         end
 
     structure TCase = 
@@ -1681,29 +1702,14 @@ struct
             val f = 
              fn ((d, imil, ws), (i, (l, parms))) => 
                 let
-                  val () = Try.V.isEmpty parms
                   val pred = 
                       (case IInstr.preds (imil, i)
                         of [pred] => pred
                          | _ => Try.fail ())
-                  val b = IInstr.getIBlock (imil, i)
-                  val () = Try.require (b <> pred)
-                  val () = 
-                      (case IBlock.succs (imil, pred)
-                        of [_] => ()
-                         | _ => Try.fail ())
-                  val ti = IBlock.getTransfer (imil, pred)
-                  val tf = <@ IInstr.toTransfer ti
-                  (* Since there are no parameters, even switches with multiple out edges
-                   * can be merged.
-                   *)
-                  val _ = <@ MU.Transfer.isIntraProcedural tf
-                  val used = IInstr.getUsedBy (imil, ti)
-                  val () = WS.addItems (ws, used)
-                  val () = IBlock.merge (imil, pred, b)
-                in [I.ItemInstr ti]
+                  val succ = IInstr.getIBlock (imil, i)
+                in <@ tryMergeBlock ((d, imil, ws), (pred, succ))
                 end
-          in try (Click.mergeBlocks, f)
+          in Try.lift f
           end
 
       val killParameters =
