@@ -62,7 +62,7 @@ struct
     fun verbose (config, s) = if Config.verbose config then print s else ()
   end
 
-  fun print' s = ()
+  fun print' s = () 
 
   fun reservedH w = oneChar #"%" >> $$ P.reserved w
 
@@ -295,14 +295,15 @@ struct
 
   val coreLit = coreLiteral >>= (return o C.Lit)
 
+  (* TODO: handle the difference between ccall and stdcall *)
   val coreExternal =
       (reservedH "external" >>
-       (P.symbol "prim" || P.symbol "ccall") >>
+       (P.symbol "prim" || P.symbol "ccall" || P.symbol "stdcall") >>
        P.stringLiteral      >>= (fn s =>
        $ coreAtySaturated   >>= (fn t =>
        return (C.External (s, t))))) ||
       (reservedH "dynexternal" >>
-       (P.symbol "prim" || P.symbol "ccall") >>
+       (P.symbol "prim" || P.symbol "ccall" || P.symbol "stdcall") >>
        $ coreAtySaturated      >>= (fn t =>
        return (C.External ("[dynamic]", t))))
 
@@ -924,6 +925,8 @@ struct
               of SOME _ => state
                | NONE   => 
                 let
+                  val () = print' ("traceDef: " ^ Layout.toString (CoreHsLayout.layoutQName name) ^ " => " ^ QS.fold (depends,
+                                  "", fn (n, s) => Layout.toString (CoreHsLayout.layoutQName n) ^ " " ^ s) ^ "\n")
                   val traced = QD.insert (traced, name, def)
                   fun trace (name as (SOME m, n), state as (defd, traced, scanned)) = 
                       if m = CHU.primMname then state

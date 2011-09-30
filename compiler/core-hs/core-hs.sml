@@ -348,7 +348,7 @@ struct
   val primMname = mkPrimMname "Prim"
   val errMname  = mkBaseMname "Err"
   val mainPrefix = []
-  val boolMname = mkPrimMname "Bool"
+  val boolMname = mkPrimMname "Types"
   val mainMname = M (mainPkg, mainPrefix, "Main")
   val mainVar = qual mainMname "main"
   val wrapperMainMname = M (mainPkg, mainPrefix, "ZCMain")
