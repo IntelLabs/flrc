@@ -3050,7 +3050,8 @@ struct
   val charNum = 
       (decimal || 
        (oneChar #"o" >> number eight octDigit) ||
-       (oneChar #"x" >> number sixteen hexDigit)) >>=
+       (* we only handle two characters after \x since this is what is expected from GHC's -fext-core *)
+       (oneChar #"x" >> hexDigit >>= (fn c => hexDigit >>= (fn d => return (16 * digitToInt c + digitToInt d))))) >>=
       (return o I.toInt)
   val charControl = oneChar #"^" >> upper >>= (fn c => return (ord c - ord #"A"))
   val escapeCode = charEsc || charNum || charControl (* || charAscii *)
@@ -3066,7 +3067,10 @@ struct
       oneChar #"\\" >> 
       ((escapeGap   >> return NONE) || 
        (escapeEmpty >> return NONE) ||
-       (escapeCode  >>= (fn c => return (SOME (chr c)))))
+       (escapeCode  >>= (fn c => if c > 255 (* TODO: may need to support for wide character in the future *)
+                                   then Fail.fail ("Utils", "TokenParserF:stringEscape", 
+                                                   "got wide char " ^ Int.toString c ^ "\n") 
+                                   else return (SOME (chr c)))))
   val stringLetter = satisfy (fn c => c <> #"\"" andalso c <> #"\\" andalso ord c > 22)
   val stringChar = (stringLetter >>= return o SOME) || stringEscape
   val stringLiteral = 
