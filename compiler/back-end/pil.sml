@@ -261,8 +261,9 @@ struct
     fun word32 w = (L.str ("0x" ^ (Word32.toString w)), 16)
     fun wordInf w = (L.str ("0x" ^ (IntInf.format (w, StringCvt.HEX))), 16)
 
+    val two2thirtyone = IntInf.<< (1, Word.fromInt 31)
     fun intInf i = 
-        if i >= 0 then
+        if i >= 0 andalso i < two2thirtyone then
           (IntInf.layout i, 16)
         else
           wordInf i
