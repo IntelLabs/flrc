@@ -184,6 +184,7 @@ struct
          ("EtaSwitch",        "Cases eta reduced"              ),
          ("Globalized",       "Objects globalized"             ),
          ("IdxGet",           "Index gets reduced"             ),
+         ("InitMerge",        "Alloc/inits merged"             ),
          ("KillInterProc",    "Calls/Evals killed"             ),
          ("KillParameters",   "Block parameter lists trimmed"  ),
          ("LoopFlatten",      "Loop arguments flattened"       ),
@@ -269,6 +270,7 @@ struct
     val etaSwitch = clicker "EtaSwitch"
     val globalized = clicker "Globalized"
     val idxGet = clicker "IdxGet"
+    val initMerge = clicker "InitMerge"
     val killInterProc = clicker "KillInterProc"
     val killParameters = clicker "KillParameters"
     val loopFlatten = clicker "LoopFlatten"
@@ -2708,7 +2710,62 @@ struct
         in try (Click.objectGetKind, f)
         end
         
-    val thunkMk = fn (state, (i, dests, r)) => NONE
+    val thunkMk = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dests, r)) => 
+              let
+                val {inits, others} = IInstr.splitUses (imil, i)
+                (* The thunk mk has one initialization*)
+                val init = <@ Use.toIInstr (Try.V.singleton inits)
+                (* The initialization is the next instruction *)
+                val () = Try.require (init = <@ IInstr.next (imil, i))
+                (* One destination variable *)
+                val dv = Try.V.singleton dests
+                val rhs = 
+                    case <@ IInstr.toRhs init
+                     of M.RhsThunkInit {typ, thunk, fx, code, fvs} =>
+                        let
+                          val () = if dv <> (Try.<- thunk) then fail ("thunkMk", "Bad init") else ()
+                          (* Make sure the thunk does not appear in its own free variables *)
+                          val () = 
+                              let
+                                val checkForSelf = 
+                                 fn (fk, oper) => 
+                                    (case oper of M.SVariable v => Try.require (v <> dv)
+                                                | M.SConstant _ => ())
+                              in Vector.foreach (fvs, checkForSelf)
+                              end
+                         (* Build an allocate/init *)
+                          val rhs = M.RhsThunkInit {typ = typ,
+                                                    thunk = NONE,
+                                                    fx = fx,
+                                                    code = code,
+                                                    fvs = fvs}
+                        in rhs
+                        end
+                      | M.RhsThunkValue {typ, thunk, ofVal} => 
+                        let
+                          val () = if dv <> (Try.<- thunk) then fail ("thunkMk", "Bad init (val)") else ()
+                          (* Make sure the thunk is not cyclic *)
+                          val () = 
+                              case ofVal of M.SVariable v => Try.require (v <> dv)
+                                          | M.SConstant _ => () 
+                         (* Build an allocate/init *)
+
+                          val rhs = M.RhsThunkValue {typ = typ, thunk = NONE, ofVal = ofVal}
+                        in rhs
+                        end
+                      | _ => Try.fail ()
+                (* Kill the init *)
+                val () = IInstr.delete (imil, init)
+                (* Replace the allocation with an allocate/init *)
+                val mil = MU.Instruction.new' (dests, rhs)
+                val () = IInstr.replaceInstruction (imil, i, mil)
+              in [I.ItemInstr i]
+              end
+        in try (Click.initMerge, f)
+        end
 
     val thunkInit = 
         let
@@ -2808,7 +2865,40 @@ struct
         in try (Click.thunkSpawnFx, f)
         end
 
-    val pFunctionMk = fn (state, (i, dests, r)) => NONE
+    val pFunctionMk = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dests, r)) => 
+              let
+                val {inits, others} = IInstr.splitUses (imil, i)
+                (* The closure mk has one initialization*)
+                val init = <@ Use.toIInstr (Try.V.singleton inits)
+                (* The initialization is the next instruction *)
+                val () = Try.require (init = <@ IInstr.next (imil, i))
+                (* One destination variable *)
+                val dv = Try.V.singleton dests
+                val {cls, code, fvs} = <@ MU.Rhs.Dec.rhsClosureInit <! IInstr.toRhs @@ init
+                val () = if dv <> (<- cls) then fail ("closureMk", "Bad init") else ()
+                (* Make sure the function does not appear in its own free variables *)
+                val () = 
+                    let
+                      val checkForSelf = 
+                       fn (fk, oper) => 
+                          (case oper of M.SVariable v => Try.require (v <> dv)
+                                      | M.SConstant _ => ())
+                    in Vector.foreach (fvs, checkForSelf)
+                    end
+                (* Build an allocate/init *)
+                val rhs = M.RhsClosureInit {cls = NONE, code = code, fvs = fvs}
+                (* Kill the init *)
+                val () = IInstr.delete (imil, init)
+                (* Replace the allocation with an allocate/init *)
+                val mil = MU.Instruction.new' (dests, rhs)
+                val () = IInstr.replaceInstruction (imil, i, mil)
+              in [I.ItemInstr i]
+              end
+        in try (Click.initMerge, f)
+        end
 
     val pFunctionInit = 
         let

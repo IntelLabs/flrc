@@ -334,9 +334,9 @@ struct
                 else
                   NONE
               | M.RhsPSum {tag, typ, ofVal} => 
-                lowerToRhs (state, env, lowerPTypes, doPSum, dests, (tag, typ, ofVal))
+                lowerToRhs (state, env, lowerPSums, doPSum, dests, (tag, typ, ofVal))
               | M.RhsPSumProj {typ, sum, tag} =>
-                lowerToRhs (state, env, lowerPTypes, doPSumProj, dests, (typ, sum, tag))
+                lowerToRhs (state, env, lowerPSums, doPSumProj, dests, (typ, sum, tag))
               | _ => NONE
       in (env, res)
       end
