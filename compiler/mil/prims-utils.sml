@@ -156,6 +156,9 @@ signature PRIMS_DEC =
       val faSqrt  : t -> unit option
       val faTan   : t -> unit option
       val faTrunc : t -> unit option
+      val faSinh  : t -> unit option
+      val faCosh  : t -> unit option
+      val faTanh  : t -> unit option
       val faPow   : t -> unit option
     end (* structure FloatOp *)
 
@@ -659,6 +662,9 @@ sig
       val faSqrt  : t -> unit option
       val faTan   : t -> unit option
       val faTrunc : t -> unit option
+      val faTanh  : t -> unit option
+      val faSinh  : t -> unit option
+      val faCosh  : t -> unit option
       val faPow   : t -> unit option
     end (* structure Dec *)
   end (* structure FloatOp *)
@@ -1241,6 +1247,9 @@ struct
         val faSqrt  = base  (Mil.Prims.FaSqrt,  Dec.FloatOp.faSqrt,  "Sqrt")
         val faTan   = base  (Mil.Prims.FaTan,   Dec.FloatOp.faTan,   "Tan")
         val faTrunc = base  (Mil.Prims.FaTrunc, Dec.FloatOp.faTrunc, "Trunc")
+        val faTanH  = base  (Mil.Prims.FaTanH,  Dec.FloatOp.faTanh,  "TanH")
+        val faCosH  = base  (Mil.Prims.FaCosH,  Dec.FloatOp.faCosh,  "CosH")
+        val faSinH  = base  (Mil.Prims.FaSinH,  Dec.FloatOp.faSinh,  "SinH")
         val faPow   = base  (Mil.Prims.FaPow,   Dec.FloatOp.faPow,   "Pow")
         val res = faACos 
                     || faASin 
@@ -1255,6 +1264,9 @@ struct
                     || faSqrt 
                     || faTan 
                     || faTrunc 
+                    || faTanH
+                    || faCosH
+                    || faSinH
                     || faPow
       in
         res
@@ -1716,6 +1728,9 @@ struct
       val faSqrt  = fn fl => (case fl of Prims.FaSqrt => SOME () | _ => NONE)
       val faTan   = fn fl => (case fl of Prims.FaTan => SOME () | _ => NONE)
       val faTrunc = fn fl => (case fl of Prims.FaTrunc => SOME () | _ => NONE)
+      val faTanh  = fn fl => (case fl of Prims.FaTanH => SOME () | _ => NONE)
+      val faCosh  = fn fl => (case fl of Prims.FaCosH => SOME () | _ => NONE)
+      val faSinh  = fn fl => (case fl of Prims.FaSinH => SOME () | _ => NONE)
       val faPow   = fn fl => (case fl of Prims.FaPow => SOME () | _ => NONE)
     end (* structure FloatOp *)
 
@@ -2026,7 +2041,10 @@ struct
                  | Prims.FaSqrt  => 10
                  | Prims.FaTan   => 11
                  | Prims.FaTrunc => 12
-                 | Prims.FaPow   => 13)
+                 | Prims.FaTanH  => 13
+                 | Prims.FaCosH  => 14
+                 | Prims.FaSinH  => 15
+                 | Prims.FaPow   => 16)
         in IFO.base o number
         end
 
@@ -2731,6 +2749,9 @@ struct
                | Prims.FaSqrt  => ArAtoA
                | Prims.FaTan   => ArAtoA
                | Prims.FaTrunc => ArAtoA
+               | Prims.FaTanH  => ArAtoA
+               | Prims.FaCosH  => ArAtoA
+               | Prims.FaSinH  => ArAtoA
                | Prims.FaPow   => ArAAtoA))
 
     val bitwiseOp        : Prims.bitwiseOp t =

@@ -31,7 +31,8 @@ struct
 
   datatype floatOp = 
     (* Unary *)
-      FaACos | FaASin | FaATan | FaCeil | FaCos | FaExp | FaFloor | FaLn | FaRcp | FaSin | FaSqrt | FaTan | FaTrunc 
+      FaACos | FaASin | FaATan | FaCeil | FaCos | FaExp | FaFloor | FaLn | FaRcp | FaSin | FaSqrt | FaTan | FaTrunc
+    | FaTanH | FaCosH | FaSinH
     (* Binary *)
     | FaPow
 
