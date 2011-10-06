@@ -74,6 +74,8 @@ struct
 
   val backendYields = MilToPil.backendYields
 
+  val lightweightThunks = MilToPil.lightweightThunks
+
   val (instrumentAllocationF, instrumentAllocation) =
       Config.Feature.mk ("Plsr:instrument-allocation",
                          "gather allocation statistics")
@@ -197,6 +199,9 @@ struct
         val futures = 
             if useFutures config then ["P_USE_PARALLEL_FUTURES"] else []
 
+        val thunks = 
+            if lightweightThunks config then ["PLSR_LIGHTWEIGHT_THUNKS"] else []
+
         val instr =
             List.concat
               [if instrumentAllocation config
@@ -252,6 +257,7 @@ struct
             List.concat [[ws], 
                          gc, 
                          futures, 
+                         thunks,
                          debug, 
                          pbase, 
                          instr, 

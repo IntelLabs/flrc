@@ -190,6 +190,7 @@ sig
 
     val boxedTyp    : Mil.fieldKind -> Pil.identifier 
     val unboxedTyp  : Mil.fieldKind -> Pil.identifier 
+    val returnTyp   : Mil.fieldKind -> Pil.identifier
 
     val staticValue : Mil.fieldKind -> Pil.identifier 
     val new         : Mil.fieldKind -> Pil.identifier 
@@ -200,10 +201,13 @@ sig
     val isEvaled    : Mil.fieldKind -> Pil.identifier 
     val eval        : Mil.fieldKind -> Pil.identifier 
     val evalDirect  : Mil.fieldKind -> Pil.identifier 
+    val call        : Mil.fieldKind -> Pil.identifier 
+    val callDirect  : Mil.fieldKind -> Pil.identifier 
     val return      : Mil.fieldKind -> Pil.identifier 
     val cut         : Mil.fieldKind -> Pil.identifier 
     val fixedSize   : Mil.fieldKind -> Pil.identifier 
     val vTable      : Mil.fieldKind -> Pil.identifier 
+    val blackHole   : Mil.fieldKind -> Pil.identifier
   end
 
   val exit      : Pil.identifier 
@@ -701,6 +705,7 @@ struct
 
     fun boxedTyp    fk = Pil.identifier ("PlsrThunkB"           ^ typ fk)
     fun unboxedTyp  fk = Pil.identifier ("PlsrThunkU"           ^ typ fk)
+    fun returnTyp   fk = Pil.identifier ("PlsrThunkReturnType"  ^ typ fk)
 
     fun staticValue fk = Pil.identifier ("pLsrThunkStaticValue" ^ typ fk)
     fun new         fk = Pil.identifier ("pLsrThunkNew"         ^ typ fk)
@@ -711,10 +716,13 @@ struct
     fun isEvaled    fk = Pil.identifier ("pLsrThunkIsEvaled"    ^ typ fk)
     fun eval        fk = Pil.identifier ("pLsrThunkEval"        ^ typ fk)
     fun evalDirect  fk = Pil.identifier ("pLsrThunkEvalDirect"  ^ typ fk)
+    fun call        fk = Pil.identifier ("pLsrThunkCall"        ^ typ fk)
+    fun callDirect  fk = Pil.identifier ("pLsrThunkCallDirect"  ^ typ fk)
     fun return      fk = Pil.identifier ("pLsrThunkReturn"      ^ typ fk)
     fun cut         fk = Pil.identifier ("pLsrThunkCut"         ^ typ fk)
     fun fixedSize   fk = Pil.identifier ("pLsrThunkFixedSize"   ^ typ fk)
     fun vTable      fk = Pil.identifier ("pLsrThunkValVTable"   ^ typ fk)
+    fun blackHole   fk = Pil.identifier ("pLsrThunkBlackHole"   ^ typ fk)
   end
 
   val exit = Pil.identifier "pLsrExit"
