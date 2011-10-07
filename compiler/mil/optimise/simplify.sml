@@ -330,30 +330,32 @@ struct
    fn (clicker, reduce) => Click.wrap (clicker, Try.lift reduce)
 
 
-   val getUniqueInit =
+   val getUniqueInitIInstr =
        Try.lift
        (fn (imil, v) =>
            let
              val {inits, others} = Use.splitUses (imil, v)
-             val init = <@ Use.toInstruction o Try.V.singleton @@ inits
+             val init = <@ Use.toIInstr o Try.V.singleton @@ inits
            in init
            end)
 
+   val getUniqueInitInstruction = IInstr.toInstruction <! getUniqueInitIInstr
+
    val getThunkValueContentsFromVariable = 
        (#ofVal <! MU.Def.Out.thunkValue <! Def.toMilDef o Def.get) 
-         || (#ofVal <! MU.Rhs.Dec.rhsThunkValue o MU.Instruction.rhs <! getUniqueInit)
+         || (#ofVal <! MU.Rhs.Dec.rhsThunkValue o MU.Instruction.rhs <! getUniqueInitInstruction)
 
    val getClosureInitCodeFromVariable = 
        (<@ #code <! MU.Def.Out.pFunction <! Def.toMilDef o Def.get)
-         || (<@ #code <! MU.Rhs.Dec.rhsClosureInit o MU.Instruction.rhs <! getUniqueInit)
+         || (<@ #code <! MU.Rhs.Dec.rhsClosureInit o MU.Instruction.rhs <! getUniqueInitInstruction)
 
    val getClosureInitFvsFromVariable = 
        (#fvs <! MU.Def.Out.pFunction <! Def.toMilDef o Def.get)
-         || (#fvs <! MU.Rhs.Dec.rhsClosureInit o MU.Instruction.rhs <! getUniqueInit)
+         || (#fvs <! MU.Rhs.Dec.rhsClosureInit o MU.Instruction.rhs <! getUniqueInitInstruction)
 
    val getThunkInitFromVariable = 
        (<@ MU.Rhs.Dec.rhsThunkInit <! Def.toRhs o Def.get)
-         || (<@ MU.Rhs.Dec.rhsThunkInit o MU.Instruction.rhs <! getUniqueInit)
+         || (<@ MU.Rhs.Dec.rhsThunkInit o MU.Instruction.rhs <! getUniqueInitInstruction)
 
 
    structure PrimsReduce :
@@ -1596,17 +1598,29 @@ struct
                   val { thunk, code } = <- (MU.Eval.Dec.eDirectThunk o #eval <! MU.InterProc.Dec.ipEval @@ callee)
                   (* check if thunk is not used anywhere else *)
                   val { inits, others, ... } = Use.splitUses (imil, thunk)
-                  val () = Try.require (Vector.length inits = 1)
+                  val () = Try.require (Vector.length inits <= 1)
                   val () = Try.require (Vector.length others = 1)
-                  (* check if init and eval appears in the same basic block *) 
-                  fun getIBlock instr = IInstr.getIBlock (imil, instr)
-                  val b0 = getIBlock <! Use.toIInstr @@ (Vector.sub (inits, 0))
-                  val b1 = getIBlock <! Use.toIInstr @@ (Vector.sub (others, 0))
-                  val () = Try.require (b0 = b1)
-
                   val { code, fx, fvs, ... } = <@ getThunkInitFromVariable (imil, thunk)
+                  (* check if init and eval appears in the same basic block *) 
+                  val () = 
+                      let
+                        fun getIBlock instr = IInstr.getIBlock (imil, instr)
+                        val b0 = 
+                            let
+                              (* Find either the unique init, or the defining alloc/init *)
+                              val f = (<@ getUniqueInitIInstr) || (<@ Def.toIInstr o Def.get)
+                              val initII =  <@ f (imil, thunk)
+                            in getIBlock initII
+                            end
+                        val b1 = getIBlock <! Use.toIInstr @@ (Vector.sub (others, 0))
+                      in Try.require (b0 = b1)
+                      end
                   (* Check thunk is not one of fvs. *)
-                  val () = Try.require (not (Vector.exists (fvs, fn (_, x) => case x of M.SVariable x => x = thunk | _ => false)))
+                  val () = 
+                      let
+                        val check = fn (_, x) => case x of M.SVariable x => x <> thunk | _ => true
+                      in Try.require (Vector.forall (fvs, check))
+                      end
                   val code = <- code
                   val iFunc = IFunc.getIFuncByName (imil, code)
                   (* Check thunk argument is not used in iFunc *)
@@ -2990,7 +3004,8 @@ struct
                       of MU.Def.DefRhs (M.RhsThunkValue {ofVal, ...})  => ofVal
                        | MU.Def.DefGlobal (M.GThunkValue {ofVal, ...}) => ofVal
                        | MU.Def.DefRhs (M.RhsThunkMk _) =>
-                         #ofVal <! MU.Rhs.Dec.rhsThunkValue o MU.Instruction.rhs <! getUniqueInit @@ (imil, thunk)
+                         #ofVal <! MU.Rhs.Dec.rhsThunkValue o MU.Instruction.rhs 
+                                                              <! getUniqueInitInstruction @@ (imil, thunk)
                        | _ => Try.fail ())
                 val () = Use.replaceUses (imil, dv, ofVal)
                 val () = IInstr.delete (imil, i)
