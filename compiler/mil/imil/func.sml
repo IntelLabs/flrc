@@ -32,6 +32,7 @@ sig
   val unreachable  : t * iFunc -> iBlock list
   val setCallConv : t * iFunc * Mil.variable Mil.callConv -> unit
   val markNonEscaping : t * iFunc -> unit
+  val markEscaping : t * iFunc -> unit
   val markNonRecursive : t * iFunc -> unit
   val setArgs : t * iFunc * Mil.variable Vector.t -> unit
   val setRtyps : t * iFunc * Mil.typ Vector.t -> unit
@@ -324,6 +325,9 @@ struct
 
   val markNonEscaping =
    fn (p, c) => IMT.iFuncSetEscapes (c, false)
+
+  val markEscaping =
+   fn (p, c) => IMT.iFuncSetEscapes (c, true)
 
   val markNonRecursive =
    fn (p, c) => IMT.iFuncSetRecursive (c, false)

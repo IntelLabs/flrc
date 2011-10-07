@@ -7,6 +7,7 @@ signature MIL_TO_PIL =
 sig
   val instrumentAllocationSites : Config.t -> bool
   val backendYields : Config.t -> bool
+  val lightweightThunks : Config.t -> bool
   val assertSmallInts : Config.t -> bool  
   val features : Config.Feature.feature list
   val program : PassData.t * string * Mil.t -> Layout.t
@@ -308,6 +309,11 @@ struct
   fun getConts (S {conts, ...}) = !conts
   fun addCont (S {conts, ...}, cl, cv) = conts := LD.insert (!conts, cl, cv)
 
+  val (lightweightThunksF, lightweightThunks) =
+      Config.Feature.mk ("Plsr:lightweight-thunks",
+                         "Use lightweight sequential thunks")
+                        
+
   (*** Object Model ***)
 
   (* This structure defines the object model, ie, the layout of objects in
@@ -409,11 +415,12 @@ struct
      *)
 
     fun thunkBase (state, env, fk) =
-        (case parStyle env
-          of Config.PNone => 3 
-           | Config.PAll  => 5
-           | Config.PAuto => 5
-           | Config.PPar  => 5) * wordSize (state, env)
+        (if lightweightThunks (getConfig env) then 2
+         else case parStyle env
+               of Config.PNone => 3
+                | Config.PAll  => 5
+                | Config.PAuto => 5
+                | Config.PPar  => 5) * wordSize (state, env)
 
     fun thunkFixedSize (state, env, fk) =
         let
@@ -911,12 +918,15 @@ struct
 
   fun genReturnType (state, env, conv, rts) = 
       case rewriteThunks (env, conv)
-       of SOME _ => Pil.T.named RT.T.futureStatus
-        | NONE =>
-          case Vector.length rts
-           of 0 => Pil.T.void
-            | 1 => genTyp (state, env, Vector.sub (rts,0))
-            | _ => fail ("genReturnType", "Single returns only")
+       of SOME _ => 
+          (case Vector.length rts
+            of 1 => Pil.T.named (RT.Thunk.returnTyp (typToFieldKind (env, Vector.sub (rts, 0))))
+             | _ => fail ("genReturnType", "Thunk code requires exactly 1 return type"))
+        | NONE   => 
+          (case Vector.length rts
+            of 0 => Pil.T.void
+             | 1 => genTyp (state, env, Vector.sub (rts,0))
+             | _ => fail ("genReturnType", "Single returns only"))
   and genCodeType (state, env, (conv, ats, rts)) =
       let
         val rt = genReturnType (state, env, conv, rts)
@@ -1766,9 +1776,9 @@ struct
       let
         val (thunk, slowf, slowargs) =
             case e
-             of M.EThunk {thunk, ...} => (thunk, RT.Thunk.eval fk, [thunk])
+             of M.EThunk {thunk, ...} => (thunk, RT.Thunk.call fk, [thunk])
               | M.EDirectThunk {thunk, code, ...} =>
-                (thunk, RT.Thunk.evalDirect fk, [code, thunk])
+                (thunk, RT.Thunk.callDirect fk, [code, thunk])
         val (cuts, t, cont, g) =
             case ret
              of M.RNormal {rets, block, cuts} =>
@@ -2045,7 +2055,8 @@ struct
         val fvsl = Vector.toList fvs
         val unpacks = List.mapi (fvsl, getField)
         val zeros = List.concat (List.mapi (fvsl, zeroField))
-      in (dec::decs, unpacks, zeros)
+        val bh = Pil.S.expr (Pil.E.call (Pil.E.variable (RT.Thunk.blackHole rfk), [te]))
+      in (dec::decs, unpacks, zeros@[bh])
       end
 
   fun doCallConv (state, env, f, cc, args) = 
@@ -2520,6 +2531,7 @@ struct
        instrumentBlocksF, 
        instrumentFunctionsF,
        assertSmallIntsF,
-       backendYieldsF]
+       backendYieldsF,
+       lightweightThunksF]
 
 end;
