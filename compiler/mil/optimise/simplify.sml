@@ -211,12 +211,13 @@ struct
          ("SwitchToSetCond",  "Cases converted to SetCond"     ),
          ("TCut",             "Cuts eliminated"                ),
          ("TGoto",            "Gotos eliminated"               ),
+         ("ThunkEta",         "Thunks eta reduced"             ),
+         ("ThunkEvalBeta",    "ThunkEvals beta reduced"        ),
          ("ThunkGetFv",       "Thunk fv projections reduced"   ),
          ("ThunkGetValue",    "ThunkGetValue ops reduced"      ),
          ("ThunkInitCode",    "Thunk code ptrs killed"         ), 
          ("ThunkSpawnFX",     "Spawn fx pruned"                ),
          ("ThunkToThunkVal",  "Thunks made Thunk Values"       ),
-         ("ThunkEvalBeta",    "ThunkEvals beta reduced"        ),
          ("ThunkValueBeta",   "ThunkValues beta reduced"       ),
          ("ThunkValueEta",    "ThunkValues eta reduced"        ),
          ("TupleBeta",        "Tuple subscripts reduced"       ),
@@ -297,12 +298,13 @@ struct
     val switchToSetCond = clicker "SwitchToSetCond"
     val tCut = clicker "TCut"
     val tGoto = clicker "TGoto"
+    val thunkEta = clicker "ThunkEta"
+    val thunkEvalBeta = clicker "ThunkEvalBeta"
     val thunkGetFv = clicker "ThunkGetFv"
     val thunkGetValue = clicker "ThunkGetValue"
     val thunkInitCode = clicker "ThunkInitCode"
     val thunkSpawnFx = clicker "ThunkSpawnFX"
     val thunkToThunkVal = clicker "ThunkToThunkVal"
-    val thunkEvalBeta = clicker "ThunkEvalBeta"
     val thunkValueBeta = clicker "ThunkValueBeta"
     val thunkValueEta = clicker "ThunkValueEta"
     val tupleBeta = clicker "TupleBeta"
@@ -328,30 +330,32 @@ struct
    fn (clicker, reduce) => Click.wrap (clicker, Try.lift reduce)
 
 
-   val getUniqueInit =
+   val getUniqueInitIInstr =
        Try.lift
        (fn (imil, v) =>
            let
              val {inits, others} = Use.splitUses (imil, v)
-             val init = <@ Use.toInstruction o Try.V.singleton @@ inits
+             val init = <@ Use.toIInstr o Try.V.singleton @@ inits
            in init
            end)
 
+   val getUniqueInitInstruction = IInstr.toInstruction <! getUniqueInitIInstr
+
    val getThunkValueContentsFromVariable = 
        (#ofVal <! MU.Def.Out.thunkValue <! Def.toMilDef o Def.get) 
-         || (#ofVal <! MU.Rhs.Dec.rhsThunkValue o MU.Instruction.rhs <! getUniqueInit)
+         || (#ofVal <! MU.Rhs.Dec.rhsThunkValue o MU.Instruction.rhs <! getUniqueInitInstruction)
 
    val getClosureInitCodeFromVariable = 
        (<@ #code <! MU.Def.Out.pFunction <! Def.toMilDef o Def.get)
-         || (<@ #code <! MU.Rhs.Dec.rhsClosureInit o MU.Instruction.rhs <! getUniqueInit)
+         || (<@ #code <! MU.Rhs.Dec.rhsClosureInit o MU.Instruction.rhs <! getUniqueInitInstruction)
 
    val getClosureInitFvsFromVariable = 
        (#fvs <! MU.Def.Out.pFunction <! Def.toMilDef o Def.get)
-         || (#fvs <! MU.Rhs.Dec.rhsClosureInit o MU.Instruction.rhs <! getUniqueInit)
+         || (#fvs <! MU.Rhs.Dec.rhsClosureInit o MU.Instruction.rhs <! getUniqueInitInstruction)
 
    val getThunkInitFromVariable = 
        (<@ MU.Rhs.Dec.rhsThunkInit <! Def.toRhs o Def.get)
-         || (<@ MU.Rhs.Dec.rhsThunkInit o MU.Instruction.rhs <! getUniqueInit)
+         || (<@ MU.Rhs.Dec.rhsThunkInit o MU.Instruction.rhs <! getUniqueInitInstruction)
 
 
    structure PrimsReduce :
@@ -903,8 +907,7 @@ struct
                                           (case eval
                                             of M.EDirectThunk {thunk, code} => 
                                                let
-                                                 val () = if (fname = code) then () else
-                                                          fail ("ThunkToThunkVal", "Strange code ptr use")
+                                                 val () = Try.require (fname = code)
                                                  val eval = 
                                                      (case action
                                                        of Globalize (gv, oper, iGlobal) => 
@@ -961,7 +964,159 @@ struct
         in try (Click.thunkToThunkVal, f)
         end
 
-    val reduce = thunkToThunkVal
+    (* Look for thunks of the form: x = thunk {eval y}
+     * Turn them into x = y.
+     *)
+    val thunkEta = 
+        let
+          val f = 
+           fn ((d, imil, ws), c) => 
+              let
+                val config = PD.getConfig d
+                val fname = IFunc.getFName (imil, c)
+                val {thunk, fvs} = <@ MU.CallConv.Dec.ccThunk o IFunc.getCallConv @@ (imil, c)
+                (* Check that the operations are total.  For transfers, we don't require totality, 
+                 * just that there is only one and that it doesn't form a loop. 
+                 *)
+               val () = 
+                    let
+                      val instrs = IMil.Enumerate.IFunc.operations (imil, c)
+                      val total = fn i => (IInstr.fx (imil, i)) = Effect.Total
+                    in Try.require (List.forall (instrs, total))
+                    end
+                val transfers = IMil.Enumerate.IFunc.transfers (imil, c)
+                (* Check for a single transfer, which is an eval of a free variable.
+                 * Find the index of this free variable. Also return the code pointer
+                 * of the eval if it was a direct eval.
+                 *)
+                val (idx, cptrO) = 
+                    let
+                      val t = 
+                          case transfers
+                           of [t] => t
+                            | _ => Try.fail ()
+                      val {callee, ret, fx} = <@ MU.Transfer.Dec.tInterProc <! IInstr.toTransfer @@ t
+                      (* Require that the eval is in tail position, to ensure that the return value
+                       * is the return value of the eval, and to ensure that the eval doesn't branch
+                       * backwards on return.
+                       *)
+                      val _ = <@ MU.Return.Dec.rTail ret
+                      val eval = #eval <! MU.InterProc.Dec.ipEval @@ callee
+                      val cptrO = Option.map (MU.Eval.Dec.eDirectThunk eval, fn {thunk, code} => code)
+                      val () = Option.foreach (cptrO, fn cptr => ignore (<@ IFunc.getIFuncByName' (imil, cptr)))
+                      val evalThunk = MU.Eval.thunk eval
+                      (* Not a recursive eval (we can't eta reduce x = thunk {eval x}) *)
+                      val () = Try.require (evalThunk <> thunk)
+                     (* The evaled thunk must be one of the free variables - find its index *)
+                      val idx = <@ Vector.index (fvs, fn v => v = evalThunk)
+                    in (idx, cptrO)
+                    end
+
+                val changed = ref false
+                val all = ref true
+                (* Look at every use of the code pointer.  Any non back patched thunk
+                 * initialization of the code pointer can be eta reduced.  Back patched
+                 * thunks can't be eta reduced since we don't have scope information
+                 * to tell us that the free variable is in scope at the allocation site. 
+                 * Flags indicate whether any reductions were done (changed) and whether
+                 * all inits were successfully reduced (all).
+                 *)
+                val fix = 
+                    Try.lift
+                      (fn u => 
+                          let
+                            val ii = <@ Use.toIInstr u
+                            val i = <@ IInstr.toInstruction ii
+                            val v = Try.V.singleton (MU.Instruction.dests i)
+                            val rhs = MU.Instruction.rhs i
+                            val {typ, thunk, fx, code, fvs} = <@ MU.Rhs.Dec.rhsThunkInit rhs
+                            val allSoFar = !all
+                            val () = all := false
+                            val () = Try.require (thunk = NONE)
+                            val () = Try.require (<- code = fname)
+                            val (_, fvO) = Try.V.sub (fvs, idx)
+                            val fv = <@ MU.Simple.Dec.sVariable fvO
+                            val () = WS.addUses (ws, IInstr.getUses (imil, ii))
+                            val () = WS.addItems (ws, IInstr.getUsedBy (imil, ii))
+                            val () = Use.replaceUses (imil, v, fvO)
+                            val () = IInstr.delete (imil, ii)
+                            val () = changed := true
+                            val () = all := allSoFar
+                          in ()
+                          end)
+                val uses = Use.getUses (imil, fname)
+                val () = Vector.foreach (uses, ignore o fix)
+                val () = Try.require (!changed)
+                (* If we reach here, we've done at least one eta reduction.
+                 * The code information on evals may now be incorrect.  If we only
+                 * reduced some of the thunk inits, then we must
+                 * must conservatively remove fname from all eval code sets 
+                 * (and direct evals), and mark fname as escaping.
+                 *)
+                val () = if !all then () else IFunc.markEscaping (imil, c)
+                (* If the eta reduced thunk has unknown calls (possibly because
+                 * we are about to introduce them), we must also mark the code
+                 * pointer from the inner eval (if present) as escaping, since
+                 * some or all of those calls are now calls to the inner code.
+                 *)
+                val () = 
+                    if IFunc.getEscapes(imil, c) then
+                      Option.foreach (cptrO, fn cptr => IFunc.markEscaping (imil, IFunc.getIFuncByName (imil, cptr)))
+                    else
+                      ()
+                (* If we didn't get all of the inits, drop the inner code pointer *)
+                val cptrO = if !all then cptrO else NONE
+                val fixCodes = 
+                    Try.lift
+                      (fn u => 
+                          let
+                            val ii = <@ Use.toIInstr u
+                            val t = <@ IInstr.toTransfer ii
+                            val {callee, ret, fx} = <@ MU.Transfer.Dec.tInterProc t
+                            val {typ, eval} = <@ MU.InterProc.Dec.ipEval callee
+                            (* If we successfully eta reduced all inits, and we have 
+                             * the code pointer from the inner eval, we can just
+                             * replace the outer code pointer with the inner
+                             * code pointer. Otherwise we must mark it as 
+                             * an unknown call and remove the outer code
+                             * pointer from the set
+                             *)
+                            val eval = 
+                                case eval
+                                 of M.EDirectThunk {thunk, code} => 
+                                    let
+                                      val () = Try.require (fname = code)
+                                      val eval = 
+                                          case cptrO
+                                           of SOME cptr => M.EDirectThunk {thunk = thunk, code = cptr}
+                                            | _         => M.EThunk {thunk = thunk, code = MU.Codes.all}
+                                    in eval
+                                    end
+                                  | M.EThunk {thunk, code = {possible, exhaustive}} => 
+                                    let
+                                      val possible = VS.remove (possible, fname)
+                                      val code = 
+                                          case cptrO
+                                           of SOME cptr => {possible = VS.insert (possible, cptr), 
+                                                            exhaustive = exhaustive}
+                                            | _         => {possible = possible, exhaustive = false}
+                                    in M.EThunk {thunk = thunk, code = code}
+                                    end
+                            val callee = M.IpEval {typ = typ, eval = eval}
+                            val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                            val () = WS.addUses (ws, IInstr.getUses (imil, ii))
+                            val () = WS.addItems (ws, IInstr.getUsedBy (imil, ii))
+                            val () = IInstr.replaceTransfer (imil, ii, t)
+                          in I.ItemInstr ii
+                          end)
+                val is = Vector.keepAllMap (uses, fixCodes)
+                val l = (I.ItemFunc c)::(Vector.toList is)
+              in l
+              end
+        in try (Click.thunkEta, f)
+        end
+
+    val reduce = thunkToThunkVal or thunkEta
 
   end (* structure FuncR *)
 
@@ -1443,17 +1598,29 @@ struct
                   val { thunk, code } = <- (MU.Eval.Dec.eDirectThunk o #eval <! MU.InterProc.Dec.ipEval @@ callee)
                   (* check if thunk is not used anywhere else *)
                   val { inits, others, ... } = Use.splitUses (imil, thunk)
-                  val () = Try.require (Vector.length inits = 1)
+                  val () = Try.require (Vector.length inits <= 1)
                   val () = Try.require (Vector.length others = 1)
-                  (* check if init and eval appears in the same basic block *) 
-                  fun getIBlock instr = IInstr.getIBlock (imil, instr)
-                  val b0 = getIBlock <! Use.toIInstr @@ (Vector.sub (inits, 0))
-                  val b1 = getIBlock <! Use.toIInstr @@ (Vector.sub (others, 0))
-                  val () = Try.require (b0 = b1)
-
                   val { code, fx, fvs, ... } = <@ getThunkInitFromVariable (imil, thunk)
+                  (* check if init and eval appears in the same basic block *) 
+                  val () = 
+                      let
+                        fun getIBlock instr = IInstr.getIBlock (imil, instr)
+                        val b0 = 
+                            let
+                              (* Find either the unique init, or the defining alloc/init *)
+                              val f = (<@ getUniqueInitIInstr) || (<@ Def.toIInstr o Def.get)
+                              val initII =  <@ f (imil, thunk)
+                            in getIBlock initII
+                            end
+                        val b1 = getIBlock <! Use.toIInstr @@ (Vector.sub (others, 0))
+                      in Try.require (b0 = b1)
+                      end
                   (* Check thunk is not one of fvs. *)
-                  val () = Try.require (not (Vector.exists (fvs, fn (_, x) => case x of M.SVariable x => x = thunk | _ => false)))
+                  val () = 
+                      let
+                        val check = fn (_, x) => case x of M.SVariable x => x <> thunk | _ => true
+                      in Try.require (Vector.forall (fvs, check))
+                      end
                   val code = <- code
                   val iFunc = IFunc.getIFuncByName (imil, code)
                   (* Check thunk argument is not used in iFunc *)
@@ -2837,7 +3004,8 @@ struct
                       of MU.Def.DefRhs (M.RhsThunkValue {ofVal, ...})  => ofVal
                        | MU.Def.DefGlobal (M.GThunkValue {ofVal, ...}) => ofVal
                        | MU.Def.DefRhs (M.RhsThunkMk _) =>
-                         #ofVal <! MU.Rhs.Dec.rhsThunkValue o MU.Instruction.rhs <! getUniqueInit @@ (imil, thunk)
+                         #ofVal <! MU.Rhs.Dec.rhsThunkValue o MU.Instruction.rhs 
+                                                              <! getUniqueInitInstruction @@ (imil, thunk)
                        | _ => Try.fail ())
                 val () = Use.replaceUses (imil, dv, ofVal)
                 val () = IInstr.delete (imil, i)
