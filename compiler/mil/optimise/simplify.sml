@@ -984,9 +984,10 @@ struct
                     end
                 val transfers = IMil.Enumerate.IFunc.transfers (imil, c)
                 (* Check for a single transfer, which is an eval of a free variable.
-                 * Find the index of this free variable. 
+                 * Find the index of this free variable. Also return the code pointer
+                 * of the eval if it was a direct eval.
                  *)
-                val idx = 
+                val (idx, cptrO) = 
                     let
                       val t = 
                           case transfers
@@ -998,19 +999,25 @@ struct
                        * backwards on return.
                        *)
                       val _ = <@ MU.Return.Dec.rTail ret
-                      val evalThunk = MU.Eval.thunk o #eval <! MU.InterProc.Dec.ipEval @@ callee
+                      val eval = #eval <! MU.InterProc.Dec.ipEval @@ callee
+                      val cptrO = Option.map (MU.Eval.Dec.eDirectThunk eval, fn {thunk, code} => code)
+                      val () = Option.foreach (cptrO, fn cptr => ignore (<@ IFunc.getIFuncByName' (imil, cptr)))
+                      val evalThunk = MU.Eval.thunk eval
                       (* Not a recursive eval (we can't eta reduce x = thunk {eval x}) *)
                       val () = Try.require (evalThunk <> thunk)
                      (* The evaled thunk must be one of the free variables - find its index *)
                       val idx = <@ Vector.index (fvs, fn v => v = evalThunk)
-                    in idx
+                    in (idx, cptrO)
                     end
 
                 val changed = ref false
+                val all = ref true
                 (* Look at every use of the code pointer.  Any non back patched thunk
                  * initialization of the code pointer can be eta reduced.  Back patched
                  * thunks can't be eta reduced since we don't have scope information
                  * to tell us that the free variable is in scope at the allocation site. 
+                 * Flags indicate whether any reductions were done (changed) and whether
+                 * all inits were successfully reduced (all).
                  *)
                 val fix = 
                     Try.lift
@@ -1021,6 +1028,8 @@ struct
                             val v = Try.V.singleton (MU.Instruction.dests i)
                             val rhs = MU.Instruction.rhs i
                             val {typ, thunk, fx, code, fvs} = <@ MU.Rhs.Dec.rhsThunkInit rhs
+                            val allSoFar = !all
+                            val () = all := false
                             val () = Try.require (thunk = NONE)
                             val () = Try.require (<- code = fname)
                             val (_, fvO) = Try.V.sub (fvs, idx)
@@ -1028,17 +1037,33 @@ struct
                             val () = WS.addUses (ws, IInstr.getUses (imil, ii))
                             val () = WS.addItems (ws, IInstr.getUsedBy (imil, ii))
                             val () = Use.replaceUses (imil, v, fvO)
+                            val () = IInstr.delete (imil, ii)
                             val () = changed := true
+                            val () = all := allSoFar
                           in ()
                           end)
                 val uses = Use.getUses (imil, fname)
                 val () = Vector.foreach (uses, ignore o fix)
                 val () = Try.require (!changed)
                 (* If we reach here, we've done at least one eta reduction.
-                 * The code information on evals may now be incorrect - we must
+                 * The code information on evals may now be incorrect.  If we only
+                 * reduced some of the thunk inits, then we must
                  * must conservatively remove fname from all eval code sets 
-                 * (and direct evals) 
+                 * (and direct evals), and mark fname as escaping.
                  *)
+                val () = if !all then () else IFunc.markEscaping (imil, c)
+                (* If the eta reduced thunk has unknown calls (possibly because
+                 * we are about to introduce them), we must also mark the code
+                 * pointer from the inner eval (if present) as escaping, since
+                 * some or all of those calls are now calls to the inner code.
+                 *)
+                val () = 
+                    if IFunc.getEscapes(imil, c) then
+                      Option.foreach (cptrO, fn cptr => IFunc.markEscaping (imil, IFunc.getIFuncByName (imil, cptr)))
+                    else
+                      ()
+                (* If we didn't get all of the inits, drop the inner code pointer *)
+                val cptrO = if !all then cptrO else NONE
                 val fixCodes = 
                     Try.lift
                       (fn u => 
@@ -1047,17 +1072,32 @@ struct
                             val t = <@ IInstr.toTransfer ii
                             val {callee, ret, fx} = <@ MU.Transfer.Dec.tInterProc t
                             val {typ, eval} = <@ MU.InterProc.Dec.ipEval callee
+                            (* If we successfully eta reduced all inits, and we have 
+                             * the code pointer from the inner eval, we can just
+                             * replace the outer code pointer with the inner
+                             * code pointer. Otherwise we must mark it as 
+                             * an unknown call and remove the outer code
+                             * pointer from the set
+                             *)
                             val eval = 
                                 case eval
                                  of M.EDirectThunk {thunk, code} => 
                                     let
                                       val () = Try.require (fname = code)
-                                    in M.EThunk {thunk = thunk, code = MU.Codes.all}
+                                      val eval = 
+                                          case cptrO
+                                           of SOME cptr => M.EDirectThunk {thunk = thunk, code = cptr}
+                                            | _         => M.EThunk {thunk = thunk, code = MU.Codes.all}
+                                    in eval
                                     end
                                   | M.EThunk {thunk, code = {possible, exhaustive}} => 
                                     let
                                       val possible = VS.remove (possible, fname)
-                                      val code = {possible = possible, exhaustive = false}
+                                      val code = 
+                                          case cptrO
+                                           of SOME cptr => {possible = VS.insert (possible, cptr), 
+                                                            exhaustive = exhaustive}
+                                            | _         => {possible = possible, exhaustive = false}
                                     in M.EThunk {thunk = thunk, code = code}
                                     end
                             val callee = M.IpEval {typ = typ, eval = eval}
