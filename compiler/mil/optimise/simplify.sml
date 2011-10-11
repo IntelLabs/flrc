@@ -3675,7 +3675,7 @@ struct
        stats       = stats}
 
   val associates = {controls  = [],
-                    debugs    = debugs (*@ MilFunKnown.debugs*),
+                    debugs    = debugs @ MilCfgSimplify.debugs (*@ MilFunKnown.debugs*),
                     features  = features,
                     subPasses = []}
 
