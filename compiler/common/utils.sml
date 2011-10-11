@@ -169,6 +169,8 @@ structure Utils = struct
                      false
              in loop 0
              end
+      val replaceAll : 'a Vector.t * ('a -> 'a option) -> 'a Vector.t = 
+       fn (v, f) => Vector.map (v, fn a => case f a of SOME a => a | NONE => a)
     end (* structure Vector *)
 
     structure MltonList = List

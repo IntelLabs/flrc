@@ -7,6 +7,7 @@ sig
   val function' : PassData.t * IMil.t * IMil.WorkSet.ws * IMil.iFunc -> unit
   val function  : PassData.t * IMil.t * IMil.iFunc -> unit
   val stats : (string * string) list
+  val debugs : Config.Debug.debug list
 end;
 
 structure MilCfgSimplify :> MIL_CFG_SIMPLIFY =
@@ -25,6 +26,8 @@ struct
   structure IFunc = IM.IFunc
   structure T = IM.T
   structure SS = StringSet
+  structure L = Layout
+  structure LU = LayoutUtils
 
   val <- = Try.<-
   val <@ = Try.<@
@@ -45,6 +48,9 @@ struct
   val fail = 
    fn (f, m) => Fail.fail ("cfg-simplify.sml", f, m)
 
+  val (showD, show) =
+      Config.Debug.mk (passname ^ ":show", "Show shortcuts")
+
   structure Chat = ChatF(type env = PD.t
                          val extract = PD.getConfig
                          val name = passname
@@ -63,6 +69,8 @@ struct
                                                       name = "ReturnShortcut", desc = "Return shortcuts"}
     val {stats, click = switchTarget} = PD.clicker {stats = stats, passname = passname,
                                                     name = "SwitchTarget", desc =   "Switch shortcuts"}
+    val {stats, click = switchReduce} = PD.clicker {stats = stats, passname = passname,
+                                                    name = "SwitchReduce", desc =   "Switch reductions"}
     val {stats, click = tailCall} = PD.clicker {stats = stats, passname = passname,
                                                 name = "TailCall", desc =       "Tail calls introduced"}
   end (* structure Click *)
@@ -74,41 +82,54 @@ struct
   type pattern = arg Vector.t
   type target = M.label * pattern
 
+  type 'a switch = {on : arg, cases : ('a * target) Vector.t, default : target option}
   datatype cont = 
            CReturn of pattern
          | CGoto of target
-(*         | CCase of {on : operand,
-                     cases : target Vector.t,
-                     default : target option}*)
-
+         | CCase of M.constant switch
+         | CSumCase of M.name switch
 
   val layoutArg = 
    fn (imil, v) =>
       (case v
-        of VParam i => Layout.seq [Layout.str "Arg_", Int.layout i]
-         | VFree oper => Layout.seq [Layout.str "Oper_", 
-                                     MilLayout.layoutOperand (T.getConfig imil, T.getSi imil, oper)])
+        of VParam i => L.seq [L.str "Arg_", Int.layout i]
+         | VFree oper => L.seq [L.str "Oper_", 
+                                MilLayout.layoutOperand (T.getConfig imil, T.getSi imil, oper)])
 
-  val printPattern = 
-   fn (imil, args) => LayoutUtils.printLayout (Vector.layout (fn arg => layoutArg (imil, arg)) args)
+  val layoutPattern = 
+   fn (imil, args) => Vector.layout (fn arg => layoutArg (imil, arg)) args
 
-  val printTarget = 
-   fn (imil, (l, p)) => 
-      (print (Identifier.labelString l);
-       printPattern (imil, p))
+  val layoutTarget = 
+   fn (imil, (l, p)) => L.seq [L.str (Identifier.labelString l), 
+                               layoutPattern (imil, p)]
       
-  val printCont = 
+  val layoutSwitch = 
+   fn (imil, f, {on, cases, default}) => 
+      let
+        val on = layoutArg (imil, on)
+        val doCase = fn (a, t) => L.seq [f (T.getConfig imil, T.getSi imil, a), 
+                                         L.str " => ", layoutTarget (imil, t)]
+        val cases = Vector.toListMap (cases, doCase)
+        val default = Option.layout (fn t => layoutTarget (imil, t)) default
+        val header = L.seq [L.str "case ", on, L.str " of "]
+      in L.align [header, LU.indent (L.mayAlign (cases @ [default]))]
+      end
+
+  val layoutCont = 
    fn (imil, c) =>
       (case c
-        of NONE => print "None"
+        of NONE => L.str "None"
          | SOME c => 
            (case c
-             of CReturn p => 
-                (print "Return ";
-                 printPattern (imil, p))
-              | CGoto t => 
-                (print "Goto ";printTarget (imil, t))))
-      
+             of CReturn p   => L.seq [L.str "Return ", layoutPattern (imil, p)]
+              | CGoto t     => L.seq [L.str "Goto ", layoutTarget (imil, t)]
+              | CCase sw    => L.seq [L.str "Case ", layoutSwitch (imil, MilLayout.layoutConstant, sw)]
+              | CSumCase sw => L.seq [L.str "SCase ", layoutSwitch (imil, MilLayout.layoutName, sw)]
+           )
+      )
+
+  val printCont = LU.printLayout o layoutCont
+
   val eqArg = 
    fn args => 
       (case args
@@ -187,141 +208,246 @@ struct
                   end
               val () = Vector.foreach (parms, paramIsPassThru)
 
+              val doTarget = 
+               fn (M.T {block, arguments}) => 
+                  let
+                    val () = Try.require (block <> l)
+                    val pattern = generalize (parms, arguments)
+                    val t = (block, pattern)
+                  in t
+                  end
+              val doSwitch = 
+               fn {on, cases, default} => 
+                  let
+                    val on = generalize1 (parms, on)
+                    val cases = Vector.map (cases, (fn (d, t) => (d, doTarget t)))
+                    val default = Option.map (default, doTarget)
+                  in {on = on, cases = cases, default = default}
+                  end
               val res = 
                   (case tfer
-                    of M.TGoto (M.T {block, arguments}) => 
-                       let
-                         val () = Try.require (block <> l)
-                         val pattern = generalize (parms, arguments)
-                         val sc = CGoto (block, pattern)
-                       in sc
-                       end
-                     | M.TCase _ => Try.fail ()
-                     | M.TInterProc _ => Try.fail ()
+                    of M.TGoto t           => CGoto (doTarget t)
+                     | M.TCase sw          => CCase (doSwitch sw)
+                     | M.TInterProc _      => Try.fail ()
                      | M.TReturn arguments => 
                        let 
                          val pattern = generalize (parms, arguments)
                          val sc = CReturn pattern
                        in sc
                        end 
-                     | M.TCut _ => Try.fail ()
-                     | M.THalt _ => Try.fail ()
-                     | M.TPSumCase _ => Try.fail ())
+                     | M.TCut _            => Try.fail ()
+                     | M.THalt _           => Try.fail ()
+                     | M.TPSumCase sw      => CSumCase (doSwitch sw))
             in res
             end)
 
+
+  (* Given a switch which is targeted by branch (block, arguments),
+   * attempt to use arguments to shorcut the switch and replace the branch.
+   * .e.g
+   *  Goto L1(True)
+   * L1(b)
+   *   case b of True => L2() | False => L3()
+   * rewrites to
+   *  Goto L2()
+   * 
+   *)
+  val rewriteGotoOfSwitch =
+   fn ((d, imil, ws, seen), M.T {block, arguments}, get, eq, {on, cases, default}) => 
+      Try.try
+        (fn () =>
+            let
+              val on = instantiate1 (on, arguments)
+              val c = <@ get on
+              val (l, p) = 
+                  case Vector.peek (cases, fn (c', t) => eq (c, c'))
+                   of SOME (_, t) => t
+                    | NONE        => <- default
+              val () = Try.require (block <> l)
+              val arguments = instantiate (p, arguments)
+              val () = Click.switchReduce d
+            in M.T {block = l, arguments = arguments}
+            end)
+
+  val rewriteGotoOfCCase =
+   fn (s, t, sw) => 
+      let
+        val get = MU.Operand.Dec.sConstant
+        val eq = MU.Constant.eq
+      in rewriteGotoOfSwitch (s, t, get, eq, sw)
+      end
+
+  val rewriteGotoOfCSumCase =
+   fn (s as (d, imil, ws, seen), t, sw) => 
+      let
+        val get = 
+            Try.lift
+            (fn oper => 
+                let
+                  val v = <@ MU.Operand.Dec.sVariable oper
+                  val tag = #tag <! MU.Def.Out.pSum <! IMil.Def.toMilDef o IMil.Def.get @@ (imil, v)
+                in tag
+                end)
+        val eq = MU.Eq.name
+      in rewriteGotoOfSwitch (s, t, get, eq, sw)
+      end
+
+  val rewriteGoto = 
+   fn (s as (d, imil, ws, seen), t as M.T {block, arguments}) => 
+      Try.try
+        (fn () => 
+            let
+              val contO = <@ ILD.lookup (seen, block)
+              val cont = <- contO
+              val t = 
+                  case cont
+                   of CGoto (l, p) => 
+                      let
+                        val () = Try.require (l <> block)
+                        val outargs = instantiate (p, arguments)
+                        val tg = M.T {block = l,
+                                      arguments = outargs}
+                        val t = M.TGoto tg
+                        val () = Click.gotoShortcut d
+                      in t
+                      end
+                    | CReturn p => 
+                      let
+                        val outargs = instantiate (p, arguments)
+                        val t = M.TReturn outargs
+                        val () = Click.returnShortcut d
+                      in t
+                      end
+                    | CCase sw    => M.TGoto (<@ rewriteGotoOfCCase (s, t, sw))
+                    | CSumCase sw => M.TGoto (<@ rewriteGotoOfCSumCase (s, t, sw))
+            in t
+            end)
+            
+  val rewriteSwitch = 
+   fn (s as (d, imil, ws, seen), construct, {on, cases, default}) =>
+      Try.try
+        (fn () =>
+            let
+              val changed = ref false
+              val doTarget = 
+               fn (t as (M.T {block, arguments})) =>
+                  Try.try 
+                    (fn () => 
+                        let
+                          val contO = <@ ILD.lookup (seen, block)
+                          val cont = <- contO
+                          val t = 
+                              case cont
+                               of CGoto (l, p) => 
+                                  let
+                                    val () = Try.require (block <> l)
+                                    val () = changed := true
+                                    val args = instantiate (p, arguments)
+                                    val t = M.T {block = l,
+                                                 arguments = args}
+                                    val () = Click.switchTarget d
+                                  in t
+                                  end
+                                | CReturn _ => Try.fail ()
+                                | CCase sw => 
+                                  let
+                                    val t = <@ rewriteGotoOfCCase (s, t, sw)
+                                    val () = changed := true
+                                  in t
+                                  end
+                                | CSumCase sw => 
+                                  let
+                                    val t = <@ rewriteGotoOfCSumCase (s, t, sw)
+                                    val () = changed := true
+                                  in t
+                                  end
+                        in t
+                        end)
+              val doCase = 
+               fn (a, tg) => case doTarget tg
+                              of SOME tg => (a, tg)
+                               | NONE    => (a, tg)
+              val cases = Vector.map (cases, doCase)
+              val default = Option.map (default, fn tg => Utils.Option.get (doTarget tg, tg))
+              val () = Try.require (!changed)
+              val t = construct {on = on, cases = cases, default = default}
+            in t
+            end)
+
+
+  val rewriteTCase = 
+   fn (s, sw) => rewriteSwitch (s, M.TCase, sw)
+
+  val rewriteTPSumCase = 
+   fn (s, sw) => rewriteSwitch (s, M.TPSumCase, sw)
+
+  val rewriteTInterProc = 
+   fn ((d, imil, ws, seen), {callee, ret, fx}) => 
+      Try.try
+        (fn () => 
+            let
+              val {rets, block, cuts} = <@ MU.Return.Dec.rNormal ret
+              val contO = <@ ILD.lookup (seen, block)
+              val cont = <- contO
+              val ret = 
+                  case cont
+                   of CGoto (l, p) => 
+                      let
+                        val () = Try.require (Vector.isEmpty p)
+                        val ret = M.RNormal {rets = rets, block = l, cuts = cuts}
+                        val () = Click.iPShortcut d
+                      in ret
+                      end
+                    | CReturn p => 
+                      let
+                        val () = Try.require (Vector.length p = Vector.length rets)
+                        val () = Try.require (Vector.forall2 (p, rets, argIsVar))
+                        val () = Try.require (LS.isEmpty (MU.Cuts.targets cuts))
+                        val () =
+                            case callee
+                             of M.IpCall {call = M.CCode {ptr, ...}, ...} =>
+                                (* We shouldn't tail call unmanaged code,
+                                 * probably could tighten this code
+                                 *)
+                                  Try.require (IM.Var.kind (imil, ptr) <> M.VkExtern)
+                              | _ => ()
+                        val ret = M.RTail {exits = MU.Cuts.exits cuts}
+                        val () = Click.tailCall d
+                      in ret
+                      end
+                    | _ => Try.fail ()
+              val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
+            in t
+            end)
+
   val rewrite =
-   fn ((d, imil, ws, seen), b) =>
+   fn (s as (d, imil, ws, seen), b) =>
       Try.exec
         (fn () => 
             let
               val itfer = IBlock.getTransfer (imil, b)
               val tfer = <@ IInstr.toTransfer itfer
-                  
-              val doSwitch = 
-               fn (construct, {on, cases, default}) =>
-                  let
-                    val changed = ref false
-                    val doTarget = 
-                     fn (t as (M.T {block, arguments})) =>
-                        (case ILD.lookup (seen, block)
-                          of SOME contO => 
-                             (case contO
-                               of SOME (CGoto (l, p)) => 
-                                  if (block <> l) then
-                                    let
-                                      val () = changed := true
-                                      val args = instantiate (p, arguments)
-                                      val t = M.T {block = l,
-                                                   arguments = args}
-                                      val () = Click.switchTarget d
-                                    in t
-                                    end
-                                  else t
-                                | _=> t)
-                           | NONE => t)
-                    val cases = Vector.map (cases, fn (a, tg) => (a, doTarget tg))
-                    val default = Option.map (default, doTarget)
-                    val () = Try.require (!changed)
-                    val t = construct {on = on, cases = cases, default = default}
-                    val () = IInstr.replaceTransfer (imil, itfer, t)
-                    val () = WS.addInstr (ws, itfer)
-                  in ()
-                  end
-
-              val () = 
-                  (case tfer
-                    of M.TGoto (M.T {block, arguments}) => 
-                       let
-                         val contO = <@ ILD.lookup (seen, block)
-                         val cont = <- contO
-                         val t = 
-                             (case cont
-                               of CGoto (l, p) => 
-                                  let
-                                    val () = Try.require (l <> block)
-                                    val outargs = instantiate (p, arguments)
-                                    val tg = M.T {block = l,
-                                                  arguments = outargs}
-                                    val t = M.TGoto tg
-                                    val () = Click.gotoShortcut d
-                                  in t
-                                  end
-                                | CReturn p => 
-                                  let
-                                    val outargs = instantiate (p, arguments)
-                                    val t = M.TReturn outargs
-                                    val () = Click.returnShortcut d
-                                  in t
-                                  end)
-                         val () = IInstr.replaceTransfer (imil, itfer, t)
-                         val () = WS.addInstr (ws, itfer)
-                       in ()
-                       end
-                     | M.TCase sw => doSwitch (M.TCase, sw)
-                     | M.TInterProc {callee, ret, fx} => 
-                       let
-                         val {rets, block, cuts} = <@ MU.Return.Dec.rNormal ret
-                         val contO = <@ ILD.lookup (seen, block)
-                         val cont = <- contO
-                         val ret = 
-                             (case cont
-                               of CGoto (l, p) => 
-                                  let
-                                    val () = Try.require (Vector.isEmpty p)
-                                    val ret = M.RNormal {rets = rets, block = l, cuts = cuts}
-                                    val () = Click.iPShortcut d
-                                  in ret
-                                  end
-                                | CReturn p => 
-                                  let
-                                    val () = Try.require (Vector.length p = Vector.length rets)
-                                    val () = Try.require (Vector.forall2 (p, rets, argIsVar))
-                                    val () = Try.require (LS.isEmpty (MU.Cuts.targets cuts))
-                                    val () =
-                                        case callee
-                                         of M.IpCall {call = M.CCode {ptr, ...}, ...} =>
-                                            (* We shouldn't tail call unmanaged code,
-                                             * probably could tighten this code
-                                             *)
-                                            Try.require (IM.Var.kind (imil, ptr) <> M.VkExtern)
-                                          | _ => ()
-                                    val ret = M.RTail {exits = MU.Cuts.exits cuts}
-                                    val () = Click.tailCall d
-                                  in ret
-                                  end)
-                         val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
-                         val () = IInstr.replaceTransfer (imil, itfer, t)
-                         val () = WS.addInstr (ws, itfer)
-                       in ()
-                       end
-                     | M.TReturn args => Try.fail ()
-                     | M.TCut _ => Try.fail ()
-                     | M.THalt _ => Try.fail ()
-                     | M.TPSumCase sw => doSwitch (M.TPSumCase, sw))
+              val t = 
+                  case tfer
+                   of M.TGoto tg     => <@ rewriteGoto (s, tg)
+                    | M.TCase sw     => <@ rewriteTCase (s, sw)
+                    | M.TInterProc r => <@ rewriteTInterProc (s, r)
+                    | M.TReturn args => Try.fail ()
+                    | M.TCut _       => Try.fail ()
+                    | M.THalt _      => Try.fail ()
+                    | M.TPSumCase sw => <@ rewriteTPSumCase (s, sw)
+              val () = IInstr.replaceTransfer (imil, itfer, t)
+              val () = WS.addInstr (ws, itfer)
             in ()
             end)
 
+  (* Look for cascaded cases and collapse them into single case statements. e.g.
+   *  case x of 0 => L1() | _ => L2()
+   * L2() 
+   *  case x of 1 => L3 () | ...
+   * becomes
+   * case x of 0 => L1 () | 1 => L3 () | .... 
+   *)
   val collapse = 
    fn ((d, imil, ws, seen), b) =>
       Try.exec
@@ -331,6 +457,7 @@ struct
               val doSwitch = 
                fn {eq, con, dec, sw} => 
                   let
+                    (* A switch with a default with no outargs *)
                     val {on, cases, default} = sw
                     val {block, arguments} = MU.Target.Dec.t (<- default)
                     val () = Try.V.isEmpty arguments
@@ -373,6 +500,14 @@ struct
             in ()
             end)
 
+  val showShortcut = 
+   fn (imil, l, contO) =>
+      let
+        val l = L.seq [L.str "Block ", L.str (Identifier.labelString l), 
+                       L.str " has shortcut ", layoutCont (imil, contO)]
+      in LU.printLayout l
+      end
+
   val rec transform = 
    fn (d, imil, ws, seen, b) =>
       let
@@ -386,20 +521,11 @@ struct
                         val () = ILD.insert (seen, l, NONE)
                         val succs = IBlock.succs (imil, b)
                         val () = List.foreach (succs, fn t => transform (d, imil, ws, seen, t))
-(*                        val () = 
-                          (print "Block ";
-                           print (Identifier.labelString l);
-                           print "got shortcuts ";
-                           List.foreach (conts, fn c => (printCont c;print ", "));
-                           print "\n";
-                           print "And got shortcut ";
-                           printCont cont;
-                           print "\n")
- *)
                         val () = rewrite ((d, imil, ws, seen), b)
                         val () = collapse ((d, imil, ws, seen), b)
                         val contO = shortcut (d, imil, b)
                         val () = ILD.insert (seen, l, contO)
+                        val () = if show (T.getConfig imil) then showShortcut (imil, l, contO) else ()
                       in ()
                       end)
                | NONE => ())
@@ -435,4 +561,5 @@ struct
    fn (p, d) => program' (d, p, WS.new())
 
   val stats = Click.stats
+  val debugs = [showD]
 end;
