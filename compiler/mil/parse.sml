@@ -1563,8 +1563,12 @@ struct
   fun globals (state : state, env : env) : M.global VD.t P.t =
       P.map (P.zeroOrMore (varGlobalF (state, env)), VD.fromList)
 
+  fun includeKindF (state : state, env : env) : M.includeKind P.t =
+      P.bind (P.map (identifierF, MU.IncludeKind.fromString)) 
+             (fn ko => case ko of SOME k => P.succeed k | NONE => P.fail)
+
   fun includeKind (state : state, env : env) : M.includeKind P.t =
-      P.required (P.map (identifierF, MU.IncludeKind.fromString), "Expected include kind")
+      includeKindF (state, env) || P.error"Expected include kind"
 
   fun includeFileF (state : state, env : env) : M.includeFile P.t =
       P.map (cstringF && keycharS #":" && includeKind (state, env) && braceSeq (binder (state, env, M.VkExtern)),
@@ -1574,7 +1578,7 @@ struct
       includeFileF (state, env) || P.error "Expected include file"
 
   fun externGroupF (state : state, env : env) : M.externGroup P.t =
-      P.map (includeKind (state, env) && braceSeq (binder (state, env, M.VkExtern)),
+      P.map (includeKindF (state, env) && braceSeq (binder (state, env, M.VkExtern)),
              fn (k, vs) => M.EG {kind = k, externs = VS.fromVector vs})
 
   fun externGroup (state : state, env : env) : M.externGroup P.t =
