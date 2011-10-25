@@ -1573,13 +1573,20 @@ struct
   fun includeFile (state : state, env : env) : M.includeFile P.t =
       includeFileF (state, env) || P.error "Expected include file"
 
+  fun externGroupF (state : state, env : env) : M.externGroup P.t =
+      P.map (includeKind (state, env) && braceSeq (binder (state, env, M.VkExtern)),
+             fn (k, vs) => M.EG {kind = k, externs = VS.fromVector vs})
+
+  fun externGroup (state : state, env : env) : M.externGroup P.t =
+      externGroupF (state, env) || P.error "Expected extern group"
+
   fun program (config : Config.t) : M.t P.t =
       let
         val stm = IM.new Prims.ordString
         val state = stateMk stm
         val env = envMk config
         val includes = P.map (keywordS "Includes:" && P.zeroOrMoreV (includeFileF (state, env)), #2)
-        val externs = P.map (keywordS "Externs:" && braceSeq (binder (state, env, M.VkExtern)), VS.fromVector o #2)
+        val externs = P.map (keywordS "Externs:" && P.zeroOrMoreV (externGroupF (state, env)), #2)
         val globals = P.map (keywordS "Globals:" && globals (state, env), #2)
         val entry = P.map (keywordS "Entry:" && variable (state, env), #2)
         fun finish (((((), is), es), gs), e) =

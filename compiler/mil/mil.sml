@@ -329,6 +329,7 @@ struct
    *)
   datatype includeKind = IkC | IkTarget
   datatype includeFile = IF of {name : string, kind : includeKind, externs : VS.t}
+  datatype externGroup = EG of {kind : includeKind, externs : VS.t}
 
   datatype variableKind = VkExtern | VkGlobal | VkLocal
   datatype variableInfo = VI of {typ : typ, kind : variableKind}
@@ -338,7 +339,7 @@ struct
 
   datatype t = P of {
     includes    : includeFile Vector.t,
-    externs     : VS.t,
+    externs     : externGroup Vector.t,
     globals     : globals,
     symbolTable : symbolTable,
     entry       : variable

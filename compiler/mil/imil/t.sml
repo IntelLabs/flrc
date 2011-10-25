@@ -12,7 +12,7 @@ sig
   val getSi : t -> Mil.symbolInfo
   val getEntry : t -> Mil.variable
   val getIncludes : t -> Mil.includeFile Vector.t
-  val getExterns : t -> Identifier.VariableSet.t
+  val getExterns : t -> Mil.externGroup Vector.t
   val getConfig : t -> Config.t
 
   val callGraph : t -> MilCallGraph.Graph.t
@@ -94,9 +94,10 @@ struct
                        defs     = defs,
                        uses     = uses,
                        iFuncs   = funs}
-        val () = VS.foreach (externs, fn v => buildExtern (p, v))
         val () =
             Vector.foreach (includes, fn (M.IF {externs, ...}) => VS.foreach (externs, fn v => buildExtern (p, v)))
+        val () = 
+            Vector.foreach (externs, fn (M.EG {externs, ...}) => VS.foreach (externs, fn v => buildExtern (p, v)))
         val () = VD.foreach (milGlobals, fn (v, g) => buildGlobal (p, v, g))
         val () = Use.markUsed (p, milEntry)
       in p

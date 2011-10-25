@@ -157,7 +157,7 @@ sig
   datatype t = 
            P of {
            includes : Mil.includeFile Vector.t,
-           externs  : VS.t,
+           externs  : Mil.externGroup Vector.t,
            nextId   : int ref,
            config   : Config.t,
            stm      : Mil.symbolTableManager,
@@ -255,8 +255,8 @@ sig
   val tGetEntry : t -> Mil.variable
   val tSetIncludes : t * Mil.includeFile Vector.t -> t
   val tGetIncludes : t -> Mil.includeFile Vector.t
-  val tSetExterns : t * VS.t -> t
-  val tGetExterns : t -> VS.t
+  val tSetExterns : t * Mil.externGroup Vector.t -> t
+  val tGetExterns : t -> Mil.externGroup Vector.t
   val tSetIGlobals : t * iGlobal IVD.t -> t
   val tGetIGlobals : t -> iGlobal IVD.t
   val tSetDefs : t * def IVD.t -> t
@@ -401,7 +401,7 @@ struct
   datatype t = 
            P of {
            includes : Mil.includeFile Vector.t,
-           externs  : VS.t,
+           externs  : Mil.externGroup Vector.t,
            nextId   : int ref,
            config   : Config.t,
            stm      : Mil.symbolTableManager,
