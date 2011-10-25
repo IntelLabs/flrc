@@ -2479,9 +2479,10 @@ struct
         val incs = Pil.D.sequence (Vector.toList incs @ (if m then [] else [Pil.D.managed (getConfig env, true)]))
         fun doOne extern =
             let
-              (* NG XXX: Should we special case this on functions and generate a slightly different syntax? *)
               val t = getVarTyp (state, extern)
-              val t = genTyp (state, env, t)
+              val t = case t 
+                        of M.TCode {cc, args, ress} => genCodeType (state, env, (cc, args, ress))
+                         | _ => genTyp (state, env, t)
               val d = Pil.D.externVariable (Pil.varDec (t, genVar (state, env, extern)))
             in d
             end
