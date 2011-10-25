@@ -1293,6 +1293,8 @@ struct
       in e
       end
 
+  fun externGroup (s, e, M.EG {kind, externs = evs}) = externs (s, e, evs)
+
   fun consistentEntryTyp (s, e, t) =
       case t
        of M.TCode {cc = M.CcCode, args, ress} =>
@@ -1305,7 +1307,7 @@ struct
           end
         | _ => reportError (s, "program entry not of code type")
 
-  fun program' (config, p as M.P {includes, externs = evs, symbolTable, globals, entry}) =
+  fun program' (config, p as M.P {includes, externs, symbolTable, globals, entry}) =
       let
         (* Build the state and environment *)
         val s = stateMk ()
@@ -1321,7 +1323,7 @@ struct
         val e = envMk (config, st, ord)
         (* Check includes and externs *)
         val e = Vector.fold (includes, e, fn (i, e) => includeFile (s, e, i))
-        val e = externs (s, e, evs)
+        val e = Vector.fold (externs, e, fn (i, e) => externGroup (s, e, i))
         (* Check the symbol table *)
         val vars = I.listVariables st
         fun msgVar v () = "variable " ^ I.variableString' v

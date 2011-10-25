@@ -2464,28 +2464,45 @@ struct
         val state = newState symbolTable
         val env = newEnv (config, globals)
         val () = Chat.log2 (env, "Starting CodeGen")
-        fun doOne (M.IF {name, kind, externs}, m) =
+
+        fun doGroup (getKind, doIt, group) = 
             let
-              val (s, m) =
-                  case (m, kind)
-                   of (false, M.IkC     ) => (Pil.D.sequence [],          false)
-                    | (false, M.IkTarget) => (Pil.D.managed (getConfig env, true),  true )
-                    | (true,  M.IkC     ) => (Pil.D.managed (getConfig env, false), false)
-                    | (true,  M.IkTarget) => (Pil.D.sequence [],          true )
-              val d = Pil.D.sequence [s, Pil.D.includeLocalFile name]
-            in (d, m)
+              fun doOne (g, m) =
+                  let
+                    val (s, m) =
+                        case (m, getKind g)
+                         of (false, M.IkC     ) => (Pil.D.sequence [],          false)
+                          | (false, M.IkTarget) => (Pil.D.managed (getConfig env, true),  true )
+                          | (true,  M.IkC     ) => (Pil.D.managed (getConfig env, false), false)
+                          | (true,  M.IkTarget) => (Pil.D.sequence [],          true )
+                    val d = Pil.D.sequence [s, doIt g]
+                  in (d, m)
+                  end
+              val (incs, m) = Vector.mapAndFold (group, true, doOne)
+              val incs = Pil.D.sequence (Vector.toList incs @ (if m then [] else [Pil.D.managed (getConfig env, true)]))
+            in incs
             end
-        val (incs, m) = Vector.mapAndFold (includes, true, doOne)
-        val incs = Pil.D.sequence (Vector.toList incs @ (if m then [] else [Pil.D.managed (getConfig env, true)]))
-        fun doOne extern =
+
+        val incs = doGroup (MU.IncludeFile.kind, Pil.D.includeLocalFile o MU.IncludeFile.name, includes)
+
+        val exts = 
             let
-              (* NG XXX: Should we special case this on functions and generate a slightly different syntax? *)
-              val t = getVarTyp (state, extern)
-              val t = genTyp (state, env, t)
-              val d = Pil.D.externVariable (Pil.varDec (t, genVar (state, env, extern)))
-            in d
+              fun doIt g = 
+                  let
+                    fun doOne extern =
+                        let
+                          (* NG XXX: Should we special case this on functions for syntax? *)
+                          val t = getVarTyp (state, extern)
+                          val t = genTyp (state, env, t)
+                          val d = Pil.D.externVariable (Pil.varDec (t, genVar (state, env, extern)))
+                        in d
+                        end
+                    val externs = Pil.D.sequence (List.map (VS.toList (MU.ExternGroup.externs g), doOne))
+                  in externs
+                  end
+            in doGroup (MU.ExternGroup.kind, doIt, externs)
             end
-        val externs = Pil.D.sequence (List.map (VS.toList externs, doOne))
+
         val omDefs = OM.genDefs (state, env)
         val globs = genGlobals (state, env, globals)
         val () = Chat.log2 (env, "Emitting global root reporting and init code")
@@ -2506,7 +2523,7 @@ struct
                Pil.D.includeLocalFile "plsr",
                Pil.D.blank,
                incs,
-               externs,
+               exts,
                Pil.D.blank,
                Pil.D.comment "Types",
                typs,

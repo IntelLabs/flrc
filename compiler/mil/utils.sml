@@ -864,6 +864,13 @@ sig
     val externs : t -> Identifier.VariableSet.t
   end
 
+  structure ExternGroup :
+  sig
+    type t = Mil.externGroup
+    val kind : t -> IncludeKind.t
+    val externs : t -> Identifier.VariableSet.t
+  end
+
   structure SymbolTable :
   sig
     type t = Mil.symbolTable
@@ -915,7 +922,7 @@ sig
     type t = Mil.t
     val includes : t -> IncludeFile.t Vector.t
     val incl : t * int -> IncludeFile.t
-    val externs : t -> Identifier.VariableSet.t     (* Just the externs not in include files *)
+    val externs : t -> ExternGroup.t Vector.t         (* Just the externs not in include files *)
     val externVars : t -> Identifier.VariableSet.t  (* All external variables *)
     val globals : t -> Globals.t
     val numGlobals : t -> int
@@ -4063,6 +4070,16 @@ struct
 
   end
 
+  structure ExternGroup =
+  struct
+
+    type t = Mil.externGroup
+
+    fun kind    (M.EG {kind,    ...}) = kind
+    fun externs (M.EG {externs, ...}) = externs
+
+  end
+
   structure VariableKind =
   struct
 
@@ -4175,7 +4192,12 @@ struct
 
     fun incl (p, i) = Vector.sub (includes p, i)
 
-    fun externVars p = Vector.fold (includes p, externs p, fn (i, evs) => VS.union (IncludeFile.externs i, evs))
+    fun externVars p = 
+        let
+          val s1 = Vector.fold (externs p,  VS.empty, fn (i, evs) => VS.union (ExternGroup.externs i, evs))
+          val s2 = Vector.fold (includes p, s1, fn (i, evs) => VS.union (IncludeFile.externs i, evs))
+        in s2
+        end
 
     fun numGlobals  p     = Globals.num  (globals p   )
     fun globalVars  p     = Globals.vars (globals p   )

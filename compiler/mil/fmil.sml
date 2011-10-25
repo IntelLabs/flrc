@@ -194,7 +194,11 @@ struct
 
   fun analyseInclude (s, e, M.IF {externs, ...}) = analyseExterns (s, e, externs)
 
+  fun analyseExternGroup (s, e, M.EG {externs, ...}) = analyseExterns (s, e, externs)
+
   fun analyseIncludes (s, e, includes) = Vector.foreach (includes, fn i => analyseInclude (s, e, i))
+
+  fun analyseExternGroups (s, e, externs) = Vector.foreach (externs, fn i => analyseExternGroup (s, e, i))
 
   datatype t = P of {vars : varDef VD.t, instrs : Mil.instruction ID.t, labs : labDef LD.t}
 
@@ -223,7 +227,7 @@ struct
         fun f (state, env, (includes, externs, globals)) =
             let
               val () = analyseIncludes (state, env, includes)
-              val () = analyseExterns (state, env, externs)
+              val () = analyseExternGroups (state, env, externs)
               val () = analyseGlobals (state, env, globals)
             in ()
             end
