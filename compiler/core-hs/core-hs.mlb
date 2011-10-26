@@ -5,6 +5,7 @@ local
         $(SML_LIB)/mlton/sources.mlb
         ../common/common.mlb
         ../mil/mil.mlb
+        utils.sml
         core-hs.sml
         layout.sml
         parse.sml
@@ -16,7 +17,9 @@ local
         to-strict.sml
         fvs.sml
         to-mil.sml
+        link-option.sml
 in
+        structure ToMilUtils
         structure CoreHs
         structure ANormPrim
         structure ANormLazy
@@ -31,4 +34,5 @@ in
         structure GHCPrim
         structure ANormStrictFVS
         structure ANormStrictToMil
+        structure CoreHsLinkOption
 end

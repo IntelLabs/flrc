@@ -82,7 +82,7 @@ structure CoreHs = struct
       | Case of exp * vBind * ty * alt list (* non-empty list *)
       | Cast of exp * ty
       | Note of string * exp
-      | External of string * ty
+      | External of string * string * ty
 
   and vDef
       = Vdef of var qualified * ty * exp

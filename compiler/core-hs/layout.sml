@@ -204,7 +204,7 @@ struct
     | layoutExp (Note (s, e)) =
       L.mayAlign [ L.str ("%note \"" ^ escape s ^ "\"")
                  , layoutExp e]
-    | layoutExp (External (n, t)) =
+    | layoutExp (External (p, n, t)) =
       L.mayAlign [ L.str ("%external ccall \"" ^ escape n ^ "\"")
                  , layoutATy t]
     | layoutExp e = layoutFExp e
