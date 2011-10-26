@@ -67,6 +67,8 @@ signature CONFIG = sig
                      host : os,
 		     keep: {cp: bool, hcr : bool, obj: bool, pil: bool},
 		     linkStr: string list,
+		     linkDirectories: string list,
+		     linkLibraries: string list,
 		     logLev: verbosity,
 		     output: outputKind,
 		     pOpt: int,
@@ -110,6 +112,8 @@ signature CONFIG = sig
   val keepObj: t -> bool
   val keepPil: t -> bool
   val linkStr: t -> string list
+  val linkDirectories: t -> string list
+  val linkLibraries: t -> string list
   val logLevel: t * 'a -> int
   val output: t -> outputKind
   val pOpt: t -> int
@@ -289,6 +293,8 @@ structure Config :> CONFIG = struct
          host             : os,
          keep             : {cp : bool, hcr : bool, pil : bool, obj : bool},
          linkStr          : string list,
+         linkDirectories  : string list,
+         linkLibraries    : string list,
          logLev           : verbosity,
          output           : outputKind,
          parStyle         : parStyle,
@@ -322,6 +328,8 @@ structure Config :> CONFIG = struct
     fun host c                        = get (c, #host)
     fun ghcOpt c                      = get (c, #ghcOpt)
     fun linkStr c                     = get (c, #linkStr)
+    fun linkDirectories c             = get (c, #linkDirectories)
+    fun linkLibraries c               = get (c, #linkLibraries)
     fun output c                      = get (c, #output)
     fun parStyle c                    = get (c, #parStyle)
     fun pilcStr c                     = get (c, #pilcStr)

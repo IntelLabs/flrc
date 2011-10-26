@@ -16,6 +16,7 @@ sig
   val clicker : {stats : (string * string) List.t, passname : string, name : string, desc : string} 
                 -> {stats : (string * string) List.t, click : t -> unit}
   val mk : Config.t * (string * string) list -> t
+  val mk' : Config.t * Stats.t * int -> t
   val push : t -> t
   val report : t * string -> unit
   (* Make a feature, enabled by command line *)
@@ -58,12 +59,9 @@ struct
       in {stats = stats, click = click}
       end
 
-  fun mk (config, stats) =
-      let
-        val stats = Stats.fromList stats
-        val d = PD {config = config, stats = stats, level = 0}
-      in d
-      end
+  fun mk' (config, stats, level) = PD {config = config, stats = stats, level = level}
+
+  fun mk (config, stats) = mk' (config, Stats.fromList stats, 0)
 
   fun push (PD {config, stats, level}) =
       PD {config = config, stats = Stats.push stats, level = level + 1}
@@ -188,6 +186,8 @@ sig
   exception Done
   val stopAt : Config.stopPoint -> ('a, 'a) processor
   val >> : ('a, 'b) processor * ('b, 'c) processor -> ('a, 'c) processor
+  val >>> : ('a, 'b * Config.t) processor * ('b, 'c) processor -> ('a, 'c) processor
+  val first : ('a, 'b) processor -> ('a * 'c, 'b * 'c) processor
   val ifC : (Config.t -> bool) * ('a, 'b) processor * ('a, 'b) processor -> ('a, 'b) processor
   val apply : ('a, 'b) processor -> PassData.t * Path.t * 'a -> 'b
   val startFile : Config.t * string -> unit
@@ -411,6 +411,24 @@ struct
   fun >> (T f1, T f2) =
       let
         fun f (pd, base, arg) = f2 (pd, base, f1 (pd, base, arg))
+      in T f
+      end
+
+  fun >>> (T f1, T f2) =
+      let
+        fun f (pd, base, arg) = 
+            let
+              val (r, config) = f1 (pd, base, arg)
+              val pd = PassData.mk' (config, PassData.getStats pd, PassData.getLevel pd)
+            in
+              f2 (pd, base, r)
+            end
+      in T f
+      end
+
+  fun first (T f1) =
+      let
+        fun f (pd, base, (arg, extra)) = let val r = f1 (pd, base, arg) in (r, extra) end
       in T f
       end
 

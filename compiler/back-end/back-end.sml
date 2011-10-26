@@ -486,15 +486,23 @@ struct
 
     fun libPath ((config, ld), dname) =
         (case ld
-          of LdGCC    => ["-L" ^ dname]
-           | LdICC    => ["/LIBPATH:" ^ dname]
-           | LdOpc    => ["/LIBPATH:" ^ dname]
-           | LdIpc    => ["/LIBPATH:" ^ dname]
+          of LdGCC    => "-L" ^ dname
+           | LdICC    => "/LIBPATH:" ^ dname
+           | LdOpc    => "/LIBPATH:" ^ dname
+           | LdIpc    => "/LIBPATH:" ^ dname
         )
+
+    (* Turn a lib filename "lib<name>.a" into "-l<name>". Only works for
+     * filename that is a base name, and only for GCC *)
+    fun fixGCCLibName s = 
+        if (String.contains (s, #"\\") orelse String.contains (s, #"/")) andalso 
+           String.hasPrefix (s, { prefix = "lib" }) andalso String.hasSuffix (s, { suffix = ".a" }) 
+          then "-l" ^ String.dropPrefix (String.dropSuffix (s, 2), 3) 
+          else s
 
     fun lib ((config, ld), lname) =
         (case ld
-          of LdGCC   => "-l" ^ lname
+          of LdGCC   => fixGCCLibName lname
            | LdICC   => lname
            | LdOpc    => lname
            | LdIpc    => lname
@@ -654,7 +662,7 @@ struct
         val cfg = (config, ldTag)
         val ld = linker cfg
         val pLibLibs = libDirs (config, ldTag)
-        val pLibOptions = List.concatMap (pLibLibs, fn lib => LdOptions.libPath (cfg, lib))
+        val pLibOptions = List.map (pLibLibs, fn lib => LdOptions.libPath (cfg, lib))
         val options = List.concat [LdOptions.link cfg,
                                    pLibOptions,
                                    LdOptions.opt cfg, 
@@ -664,13 +672,17 @@ struct
         val (preLibs, postLibs) = libraries (config, ldTag)
         val preLibs = List.map (preLibs, fn l => LdOptions.lib (cfg, l))
         val postLibs = List.map (postLibs, fn l => LdOptions.lib (cfg, l))
+        val extraPaths = List.map (Config.linkDirectories config, fn p => LdOptions.libPath (cfg, p))
+        val extraLibs = List.map (Config.linkLibraries config, fn l => LdOptions.lib (cfg, l))
         val args = List.concat [LdOptions.exe (cfg, outFile),
                                 LdOptions.start cfg,
                                 preLibs,
                                 [inFile],
                                 postLibs,
                                 options,
-                                Config.linkStr config]
+                                Config.linkStr config,
+                                extraPaths,
+                                extraLibs]
         val cleanup = fn () => if Config.keepObj config then ()
                                else File.remove inFile
       in (ld, args, cleanup)
