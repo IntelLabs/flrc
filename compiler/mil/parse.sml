@@ -1563,8 +1563,12 @@ struct
   fun globals (state : state, env : env) : M.global VD.t P.t =
       P.map (P.zeroOrMore (varGlobalF (state, env)), VD.fromList)
 
+  fun includeKindF (state : state, env : env) : M.includeKind P.t =
+      P.bind (P.map (identifierF, MU.IncludeKind.fromString)) 
+             (fn ko => case ko of SOME k => P.succeed k | NONE => P.fail)
+
   fun includeKind (state : state, env : env) : M.includeKind P.t =
-      P.required (P.map (identifierF, MU.IncludeKind.fromString), "Expected include kind")
+      includeKindF (state, env) || P.error"Expected include kind"
 
   fun includeFileF (state : state, env : env) : M.includeFile P.t =
       P.map (cstringF && keycharS #":" && includeKind (state, env) && braceSeq (binder (state, env, M.VkExtern)),
@@ -1573,13 +1577,20 @@ struct
   fun includeFile (state : state, env : env) : M.includeFile P.t =
       includeFileF (state, env) || P.error "Expected include file"
 
+  fun externGroupF (state : state, env : env) : M.externGroup P.t =
+      P.map (includeKindF (state, env) && braceSeq (binder (state, env, M.VkExtern)),
+             fn (k, vs) => M.EG {kind = k, externs = VS.fromVector vs})
+
+  fun externGroup (state : state, env : env) : M.externGroup P.t =
+      externGroupF (state, env) || P.error "Expected extern group"
+
   fun program (config : Config.t) : M.t P.t =
       let
         val stm = IM.new Prims.ordString
         val state = stateMk stm
         val env = envMk config
         val includes = P.map (keywordS "Includes:" && P.zeroOrMoreV (includeFileF (state, env)), #2)
-        val externs = P.map (keywordS "Externs:" && braceSeq (binder (state, env, M.VkExtern)), VS.fromVector o #2)
+        val externs = P.map (keywordS "Externs:" && P.zeroOrMoreV (externGroupF (state, env)), #2)
         val globals = P.map (keywordS "Globals:" && globals (state, env), #2)
         val entry = P.map (keywordS "Entry:" && variable (state, env), #2)
         fun finish (((((), is), es), gs), e) =

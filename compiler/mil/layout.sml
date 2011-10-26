@@ -942,6 +942,14 @@ struct
        in l
        end
 
+   fun layoutExternGroup (env, M.EG {kind, externs}) =
+       let
+         val k = layoutIncludeKind (env, kind)
+         val externs = VS.layout (externs, fn v => layoutBinder (env, v))
+         val l = L.mayAlign [LU.indent k, LU.indent externs]
+       in l
+       end
+
    fun layoutVariableKind (env, k) = L.str (MU.VariableKind.toString k)
 
    fun layoutSymbolTable (env, st, allInfo) = 
@@ -972,7 +980,8 @@ struct
        let
          val includes =
              [L.str "Includes:", LU.indent (L.align (Vector.toListMap (includes, fn i => layoutIncludeFile (env, i))))]
-         val externs = [L.str "Externs:", LU.indent (VS.layout (externs, fn v => layoutBinder (env, v)))]
+         val externs = 
+             [L.str "Externs:", LU.indent (L.align (Vector.toListMap (externs, fn i => layoutExternGroup (env, i))))]
          val symtab =
              if symbols then
                [L.str "Symbols:", LU.indent (layoutSymbolTable (env, symbolTable, fullSymTab))]
