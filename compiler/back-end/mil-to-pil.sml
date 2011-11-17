@@ -395,7 +395,7 @@ struct
      * such that the end of the fixed portion is aligned to the maximum of the
      * natural and specified alignment of the array portion (if any).  The object is
      * aligned to the maximum of the natural and specified alignments of the fixed and 
-     * array fields.
+     * array fields (minimum 4 byte aligned).
      *)
     fun fieldPaddingG (state, env, 
                        nb    : Config.t * 'a -> int, (* number of bytes in field *)
@@ -415,7 +415,7 @@ struct
                 val max = Int.max (alignment, max)
               in (fieldStart - off, (fieldEnd, max))
               end
-          val (paddings, (fieldEnd, max)) = Vector.mapAndFold (fds, (start, 1), doOne)
+          val (paddings, (fieldEnd, max)) = Vector.mapAndFold (fds, (start, 4), doOne)
           val (size, max) = 
               case fdo
                of NONE    => (fieldEnd, max)
