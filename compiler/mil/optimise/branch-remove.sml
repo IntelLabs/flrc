@@ -48,7 +48,7 @@ struct
 
   datatype const =
            RCons of M.constant
-         | RName of ID.name
+         | RSel  of M.constant
 
   (* EP (v, c, true)  => v = c
    * EP (v, c, false) => v <> c 
@@ -61,15 +61,15 @@ struct
   val constCompare = 
    fn (c1, c2) => 
       case (c1, c2) 
-       of (RName n1,  RName n2)  => MU.Compare.name (n1, n2)
+       of (RSel cc1,  RSel cc2)  => MU.Compare.constant (cc1, cc2)
         | (RCons cc1, RCons cc2) => MU.Compare.constant (cc1, cc2)
-        | (RName _,   _)         => LESS
-        | (_,         RName _)   => GREATER
+        | (RSel _,   _)          => LESS
+        | (_,         RSel _)    => GREATER
 
   val constEquals = 
    fn (c1, c2) => 
       case (c1, c2) 
-       of (RName n1,  RName n2)  => MU.Eq.name (n1, n2)
+       of (RSel cc1,  RSel cc2)  => MU.Eq.constant (cc1, cc2)
         | (RCons cc1, RCons cc2) => MU.Eq.constant (cc1, cc2)
         | (_,   _)               => false
 
@@ -143,14 +143,19 @@ struct
 
     val printConst = 
      fn (d, imil, const) =>
-        case const
-         of RName n => prints (d, ID.nameString' n)
-          | RCons c => 
+        let
+          val f = 
+           fn (t, c) => 
             let
               val l = MilLayout.layoutConstant (PD.getConfig d, IMil.T.getSi imil, c)
               val s = Layout.toString l
-            in prints (d, s)
+            in prints (d, t^s)
             end
+        in
+          case const
+           of RSel c  => f ("S.", c)
+            | RCons c => f ("C.", c)
+        end
   
     val printPredicate =
      fn (d, imil, EP (v, const, b)) =>
@@ -264,12 +269,15 @@ struct
         val bl = getLabel (imil, b)
 
         val doCase = 
-         fn (construct, {on, cases, default}) =>
+         fn ({select, on, cases, default}) =>
             Try.try 
               (fn () => 
                   let
                     val v = Try.<@ MU.Operand.Dec.sVariable on
-
+                    val construct = 
+                        case select
+                         of M.SeSum _    => RSel
+                          | M.SeConstant => RCons
                     val doIt = 
                      fn ((n, t as M.T {block, ...}), (ps, found)) =>
                         (case (found, block = bl)
@@ -305,8 +313,7 @@ struct
             let
               val psO =
                   case IMil.IBlock.getTransfer' (imil, a)
-                   of M.TPSumCase ns => doCase (RName, ns)
-                    | M.TCase sw     => doCase (RCons, sw)
+                   of M.TCase sw     => doCase sw
                     | _ => NONE
               val ps = Utils.Option.get (psO, PS.empty)
             in ps
@@ -371,7 +378,7 @@ struct
       end
 
   val removeImpossible =
-   fn (d, imil, e as (a, b), cons, sw, predicates) =>
+   fn (d, imil, e as (a, b), sw, predicates) =>
       Try.exec
         (fn () => 
             let
@@ -380,7 +387,7 @@ struct
               val () = Debug.prints (d, "find impossible switch case instruction\n")
               val instr = IMil.IBlock.getTransfer (imil, a)
               val () = Debug.debugDo (d, fn () => Debug.printOrigInstr (d, imil, e, instr))
-              val {on, cases, default} = sw
+              val {select, on, cases, default} = sw
               val bl = getLabel (imil, b)
               val cases = 
                   let
@@ -396,8 +403,8 @@ struct
 
               val () = Click.rcbr d
                        
-              val sw = {on = on, cases = cases, default = default}
-              val nmt = IMil.MTransfer (cons sw)
+              val sw = {select = select, on = on, cases = cases, default = default}
+              val nmt = IMil.MTransfer (M.TCase sw)
               val () = IMil.IInstr.replaceMil (imil, instr, nmt)
               val () = Debug.debugDo (d, fn () => Debug.printNewInstr (d, imil, instr))
             in ()
@@ -408,8 +415,7 @@ struct
       case LD.lookup (dict, getLabel (imil, a))
        of SOME psset => 
           (case IMil.IBlock.getTransfer' (imil, a)
-            of M.TPSumCase ns => removeImpossible (d, imil, e, M.TPSumCase, ns, psset)
-             | M.TCase cs     => removeImpossible (d, imil, e, M.TCase, cs, psset)
+            of M.TCase cs     => removeImpossible (d, imil, e, cs, psset)
              | _ => ())
         | _ => ()
       
@@ -453,7 +459,7 @@ struct
         val config = PD.getConfig d
 
         val replaceCase =
-         fn (a, b, c, tCase, t as {on, cases, default}) =>
+         fn (a, b, c, t as {select, on, cases, default}) =>
             let
               val instr = IMil.IBlock.getTransfer (imil, a)
               val cl = getLabel (imil, c)
@@ -470,7 +476,7 @@ struct
               val newdefault = Option.map (default, doTarget)
               val instr = IMil.IBlock.getTransfer (imil, a)
               val oldInstrLayout = IMil.IInstr.layoutMil (imil, IMil.IInstr.getMil (imil, instr))
-              val newinstr = IMil.MTransfer (tCase {on=on, cases=newcases, default=newdefault})
+              val newinstr = IMil.MTransfer (M.TCase {select = select, on=on, cases=newcases, default=newdefault})
               val newInstrLayout = IMil.IInstr.layoutMil (imil, newinstr)
               val () = IMil.IInstr.replaceMil (imil, instr, newinstr)
               val () = Debug.debugDo (d, fn () => Debug.printLayout(d, L.seq[L.str "extension replace case:\n", 
@@ -508,7 +514,7 @@ struct
                     val () = Try.require (Vector.size bpara = 0)
                     (* Guard against degenerate cases *)
                     val caseOk = 
-                     fn {on, cases, default} => 
+                     fn {select, on, cases, default} => 
                         (Vector.length cases > 1) orelse
                         ((Vector.length cases = 1) andalso
                          isSome default)
@@ -519,8 +525,7 @@ struct
                            | Mil.TInterProc _ => Try.fail ()
                            | Mil.TReturn _    => Try.fail ()
                            | Mil.TCut _       => Try.fail ()
-                           | Mil.THalt _      => Try.fail ()
-                           | Mil.TPSumCase sw => Try.require (caseOk sw))
+                           | Mil.THalt _      => Try.fail ())
                     val () = 
                         case IMil.IBlock.getTransfer' (imil, a)
                          of M.TGoto t      => ()
@@ -529,7 +534,6 @@ struct
                           | M.TReturn t    => Try.fail ()
                           | M.TCut t       => Try.fail ()
                           | M.THalt _      => Try.fail ()
-                          | M.TPSumCase t  => ()
                   in ()
                   end)
 
@@ -543,12 +547,11 @@ struct
                     val () = 
                         case IMil.IBlock.getTransfer' (imil, a)
                          of M.TGoto t      => replaceGoto (a, b, c, t)
-                          | M.TCase t      => replaceCase (a, b, c, M.TCase, t)
+                          | M.TCase t      => replaceCase (a, b, c, t)
                           | M.TInterProc t => ()
                           | M.TReturn t    => ()
                           | M.TCut t       => ()
                           | M.THalt _      => ()
-                          | M.TPSumCase t  => replaceCase (a, b, c, M.TPSumCase, t)
                   in ()
                   end)
 

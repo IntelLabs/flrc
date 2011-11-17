@@ -310,7 +310,11 @@ struct
         val config = getConfig env
         val tc = MU.Bool.T config
         val fc = MU.Bool.F config
-        fun genSwitch (lt, lf) = (MS.empty, M.TCase (MU.Switch.noArgsNoDefault (on, Vector.new2 ((tc, lt), (fc, lf)))))
+        fun genSwitch (lt, lf) = 
+            (MS.empty, M.TCase {select = M.SeConstant, on = on, 
+                                cases = Vector.new2 ((tc, MU.Target.mkNoArgs lt), 
+                                                     (fc, MU.Target.mkNoArgs lf)), 
+                                default = NONE})
         val s = join (state, env, genSwitch, t, f, vs)
       in s
       end
@@ -318,7 +322,10 @@ struct
   fun ifConst (state : state, env : env, on : M.operand, c : M.constant, t : exp, f : exp, vs : M.variable Vector.t)
       : MS.t =
       let
-        fun genSwitch (lt, lf) = (MS.empty, M.TCase (MU.Switch.noArgs (on, Vector.new1 (c, lt), SOME lf)))
+        fun genSwitch (lt, lf) = 
+            (MS.empty, M.TCase {select = M.SeConstant, on = on, 
+                                cases = Vector.new1 (c, MU.Target.mkNoArgs lt), 
+                                default = SOME (MU.Target.mkNoArgs lf)})
         val s = join (state, env, genSwitch, t, f, vs)
       in s
       end
@@ -339,7 +346,7 @@ struct
               val cases = Vector.mapi (cs, genCase)
               fun genDefault _ = M.T {block = Vector.sub (ls, n), arguments = Vector.new0 ()}
               val default = Option.map (default, genDefault)
-              val t = M.TCase {on = on, cases = cases, default = default}
+              val t = M.TCase {select = M.SeConstant, on = on, cases = cases, default = default}
             in (MS.empty, t)
             end
         val exps =
@@ -481,7 +488,7 @@ struct
               val lcont = labelFresh state
               val case1 = (ct, M.T {block = lcont, arguments = Vector.new0 ()})
               val case2 = (cf, M.T {block = lexit, arguments = Vector.map (bodyVars, M.SVariable)})
-              val t1 = M.TCase {on = #2 test, cases = Vector.new2 (case1, case2), default = NONE}
+              val t1 = M.TCase {select = M.SeConstant, on = #2 test, cases = Vector.new2 (case1, case2), default = NONE}
               val s = MS.seqn [#1 test, MS.transfer (t1, lcont, Vector.new0 ()), body]
               val t2 = M.TGoto (M.T {block = lbody, arguments = next})
             in (s, t2)
@@ -505,14 +512,14 @@ struct
             let
               val (s, b) = genTest inits
               val cases = ((ct, M.T {block = lbody, arguments = inits}), (cf, M.T {block = lexit, arguments = inits}))
-              val t = M.TCase {on = b, cases = Vector.new2 cases, default = NONE}
+              val t = M.TCase {select = M.SeConstant, on = b, cases = Vector.new2 cases, default = NONE}
             in (s, t)
             end
         fun genBody (lbody, lexit) =
             let
               val (s', b) = genTest next
               val cases = ((ct, M.T {block = lbody, arguments = next}), (cf, M.T {block = lexit, arguments = next}))
-              val t = M.TCase {on = b, cases = Vector.new2 cases, default = NONE}
+              val t = M.TCase {select = M.SeConstant, on = b, cases = Vector.new2 cases, default = NONE}
               val s = MS.seq (body, s')
             in (s, t)
             end

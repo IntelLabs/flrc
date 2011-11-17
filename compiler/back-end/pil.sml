@@ -31,6 +31,7 @@ signature PIL = sig
     val named : identifier -> t
     val ptr : t -> t
     val array : t -> t
+    val arrayConstant : t * int -> t
     val code : t * t list -> t
     val strct : identifier option * (identifier * t) list -> t
   end
@@ -100,6 +101,8 @@ signature PIL = sig
   (* Top-level declarations *)
   structure D : sig
     type t
+    val alignedStaticVariable : int * varDec -> t
+    val alignedStaticVariableExpr : int * varDec * E.t -> t
     val blank : t
     val comment : string -> t
     val includeLocalFile : string -> t
@@ -181,6 +184,14 @@ struct
         let
           fun f3 b = f2 (b, L.str "[]")
           fun f4 (b, i) = f2 (b, L.seq [i, L.str "[]"])
+        in
+          (b, f3, f4)
+        end
+
+    fun arrayConstant ((b, _, f2), n) =
+        let
+          fun f3 b = f2 (b, L.seq [L.str "[", Int.layout n, L.str "]"])
+          fun f4 (b, i) = f2 (b, L.seq [i, L.seq [L.str "[", Int.layout n, L.str "]"]])
         in
           (b, f3, f4)
         end
@@ -545,6 +556,13 @@ struct
     fun typDef (t, tv) = L.seq [L.str "typedef ", T.dec (t, tv), L.str ";"]
 
     fun externVariable vd = L.seq [L.str "extern ", vd, L.str ";"]
+
+    fun alignedStaticVariable (i, vd) = L.seq [L.str "pil_aligned(", Int.layout i, L.str ")",
+                                               L.str " static ", vd, L.str ";"]
+
+    fun alignedStaticVariableExpr (i, vd, e) =
+        L.seq [L.str "pil_aligned(", Int.layout i, L.str ")",
+               L.str " static ", vd, L.str " = ", E.inPrec (e, 2), L.str ";"]
 
     fun staticVariable vd = L.seq [L.str "static ", vd, L.str ";"]
 

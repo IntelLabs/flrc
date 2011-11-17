@@ -105,8 +105,9 @@ struct
         val config = getConfig env
         val mdDesc = 
             (case MRS.iInfo (summary, id)
-              of MRB.IiMetaData {pok, fixed, array} => 
+              of MRB.IiMetaData {pok, pinned, fixed, array} => 
                  M.MDD {pok = pok, 
+                        pinned = pinned,
                         fixed = Vector.map (fixed, fn n => fieldDescriptorForNode n),
                         array = Option.map (array, fn (i, n) => (i, fieldDescriptorForNode n))}
                | _ => fail ("buildMetaData", "Id has no vtable entry"))
@@ -154,15 +155,15 @@ struct
       in td
       end
 
-  val buildPSumDescriptor = 
+  val buildSumDescriptor = 
    fn (se as (state, env), id) => 
       let
         val summary = getSummary state
         val config = getConfig env
         val td = 
             (case MRS.iInfo (summary, id)
-              of MRB.IiPSum typ => fieldKindForNode typ
-               | _ => fail ("buildPSumDescriptor", "Id has no pSum descriptor entry"))
+              of MRB.IiSum nodes => Vector.map (nodes, fieldKindForNode)
+               | _ => fail ("buildSumDescriptor", "Id has no Sum descriptor entry"))
       in td
       end
 
@@ -197,7 +198,6 @@ struct
         in ()
         end
       else ()
-
   val checkMetaData = checkItem (showFieldKindChanges, MU.MetaDataDescriptor.eq, MilLayout.layoutMetaDataDescriptor)
   val checkTupleDescriptor = checkItem (showFieldKindChanges, MU.TupleDescriptor.eq, MilLayout.layoutTupleDescriptor)
   val checkThunkDescriptor = 
@@ -215,7 +215,13 @@ struct
                         L.seq [L.str "fvs = ", MilLayout.layoutFieldKinds (config, si, fvs)]
       in checkItem (showFieldKindChanges, eq, layout)
       end
-  val checkPSumDescriptor = checkItem (showFieldKindChanges, MU.FieldKind.eq, MilLayout.layoutFieldKind)
+  val checkSumDescriptor = 
+      let
+        val eq = Equality.vector MU.FieldKind.eq
+        val layout = 
+         fn (config, si, fks) => L.seq [L.str "fks = ", MilLayout.layoutFieldKinds (config, si, fks)]
+      in checkItem (showFieldKindChanges, eq, layout)
+      end
   val checkCodeReturnTypes =
       let
         val layout = 
@@ -324,17 +330,17 @@ struct
                | M.RhsPSetGet _ => rhs
                | M.RhsPSetCond _ => rhs
                | M.RhsPSetQuery _ => rhs
-               | M.RhsPSum {tag, typ = typOld, ofVal} => 
+               | M.RhsSum {tag, typs = typOlds, ofVals} => 
                  let
-                   val typ = buildPSumDescriptor (se, id)
-                   val () = checkPSumDescriptor (se, id, typ, typOld)
-                 in M.RhsPSum {tag = tag, typ = typ, ofVal = ofVal}
+                   val typs = buildSumDescriptor (se, id)
+                   val () = checkSumDescriptor (se, id, typs, typOlds)
+                 in M.RhsSum {tag = tag, typs = typs, ofVals = ofVals}
                  end
-               | M.RhsPSumProj {typ = typOld, sum, tag} => 
+               | M.RhsSumProj {typs = typOlds, sum, tag, idx} => 
                  let
-                   val typ = buildPSumDescriptor (se, id)
-                   val () = checkPSumDescriptor (se, id, typ, typOld)
-                 in M.RhsPSumProj {tag = tag, typ = typ, sum = sum}
+                   val typs = buildSumDescriptor (se, id)
+                   val () = checkSumDescriptor (se, id, typs, typOlds)
+                 in M.RhsSumProj {tag = tag, typs = typs, sum = sum, idx = idx}
                  end)
       in M.I {dests = dests, n = n, rhs = rhs}
       end
@@ -403,11 +409,11 @@ struct
                  end
                | M.GSimple _ => g
                | M.GClosure _ => g
-               | M.GPSum {tag, typ = typOld, ofVal} => 
+               | M.GSum {tag, typs = typOlds, ofVals} => 
                  let
-                   val typ = buildPSumDescriptor (se, id)
-                   val () = checkPSumDescriptor (se, id, typ, typOld)
-                 in M.GPSum {tag = tag, typ = typ, ofVal = ofVal}
+                   val typs = buildSumDescriptor (se, id)
+                   val () = checkSumDescriptor (se, id, typs, typOlds)
+                 in M.GSum {tag = tag, typs = typs, ofVals = ofVals}
                  end
                | M.GPSet _ => g)
       in g

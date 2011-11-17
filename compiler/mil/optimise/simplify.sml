@@ -200,8 +200,8 @@ struct
          ("PSetGet",          "SetGet ops reduced"             ),
          ("PSetNewEta",       "SetNew ops eta reduced"         ),
          ("PSetQuery",        "SetQuery ops reduced"           ),
-         ("PSumEta",          "Sum injections eta reduced"     ),
-         ("PSumProjBeta",     "Sum projections reduced"        ),
+         ("SumEta",           "Sum injections eta reduced"     ),
+         ("SumProjBeta",      "Sum projections reduced"        ),
          ("PrimPrim",         "Primitives reduced"             ),
          ("PrimToLen",        "P Nom/Dub -> length reductions" ),
          ("PruneCuts",        "Cut sets pruned"                ),
@@ -287,8 +287,8 @@ struct
     val pSetGet = clicker  "PSetGet"
     val pSetNewEta = clicker "PSetNewEta"
     val pSetQuery = clicker  "PSetQuery"
-    val pSumEta = clicker  "PSumEta"
-    val pSumProjBeta = clicker  "PSumProjBeta"
+    val sumEta = clicker  "SumEta"
+    val sumProjBeta = clicker  "SumProjBeta"
     val primPrim = clicker "PrimPrim"
     val primToLen = clicker "PrimToLen"
     val pruneCuts = clicker "PruneCuts"
@@ -1169,7 +1169,8 @@ struct
                 val () = Try.require (ic > fc)
                 val extra = ic - fc
                 val extras = Vector.new (extra, fd)
-                val mdDesc = M.MDD {pok = MU.MetaDataDescriptor.pok mdDesc,
+                val mdDesc = M.MDD {pok = MU.MetaDataDescriptor.pok mdDesc, 
+                                    pinned = MU.MetaDataDescriptor.pinned mdDesc,
                                     fixed = Vector.concat [fixed, extras], array = SOME array}
                 val mil = M.GTuple {mdDesc = mdDesc, inits = inits}
                 val () = IGlobal.replaceGlobal (imil, g, (v, mil))
@@ -1365,13 +1366,21 @@ struct
           end
 
       val betaSwitch = 
-       fn {get, eq, dec, con} => 
           let
             val f = 
-             fn ((d, imil, ws), (i, {on, cases, default})) =>
+             fn ((d, imil, ws), (i, {select, on, cases, default})) =>
                 let
-                  val c = <@ get (imil, on)
-                  val eqToC = fn (c', _) => eq (c, c')
+                  val c = 
+                      case select
+                       of M.SeSum fk => 
+                          let
+                            val v = <@ MU.Simple.Dec.sVariable on
+                            val nm = #tag <! MU.Def.Out.sum <! Def.toMilDef o Def.get @@ (imil, v)
+                          in nm 
+                          end
+                        | M.SeConstant => <@ MU.Simple.Dec.sConstant on
+
+                  val eqToC = fn (c', _) => MU.Constant.eq (c, c')
                   val {yes, no} = Vector.partition (cases, eqToC)
                   val tg = 
                       (case (Vector.length yes, default)
@@ -1385,39 +1394,32 @@ struct
           in try (Click.betaSwitch, f)
           end
 
-      val switch = betaSwitch
-                             
-      val tCase1 = 
-          let
-            val get = (fn (imil, s) => MU.Simple.Dec.sConstant s)
-            val eq = MU.Constant.eq
-            val dec = MU.Transfer.Dec.tCase
-            val con = M.TCase
-            val f = switch {get = get, eq = eq, dec = dec, con = con}
-          in f
-          end
 
-            (* Switch ETA Reduction:
-             *
-             * Example: Switch with operand "a", constant options c1, c2, ..., 
-             * =======  cn, and default.
-             *
-             * Before the reduction          After the reduction
-             * --------------------          -------------------
-             *
-             * Case (a)                   |  Goto L (c, a, d)
-             * of c1 => goto L (c, c1, d) |      
-             *    c2 => goto L (c, c2, d) |
-             *    ...                     |
-             *    cn => goto L (c, cn, d) |
-             *     _ => goto L (c,  a, d) |
-             *     
-             *)
+     (* Switch ETA Reduction:
+      *
+      * Example: Switch with operand "a", constant options c1, c2, ..., 
+      * =======  cn, and default.
+      *
+      * Before the reduction          After the reduction
+      * --------------------          -------------------
+      *
+      * Case (a)                   |  Goto L (c, a, d)
+      * of c1 => goto L (c, c1, d) |      
+      *    c2 => goto L (c, c2, d) |
+      *    ...                     |
+      *    cn => goto L (c, cn, d) |
+      *     _ => goto L (c,  a, d) |
+      *     
+      *)
       val etaSwitch = 
           let
             val f = 
-             fn ((d, imil, ws), (i, {on, cases, default})) =>
+             fn ((d, imil, ws), (i, {select, on, cases, default})) =>
                 let
+                  (* We can only allow the case that the argument varies as the scrutinee
+                   * for constant switches 
+                   *)
+                  val isCSW = select = M.SeConstant
                   (* Turn the constants into operands *)
                   val cases = Vector.map (cases, fn (a, tg) => (M.SConstant a, tg))
                   (* Add the default, using the scrutinee as the comparator *)
@@ -1437,7 +1439,7 @@ struct
                    fn (a, M.T {block, arguments}) => 
                       let
                         val mask = 
-                         fn b => if MU.Operand.eq (a, b) orelse MU.Operand.eq (on, b) then
+                         fn b => if isCSW andalso (MU.Operand.eq (a, b) orelse MU.Operand.eq (on, b)) then
                                    NONE
                                  else 
                                    SOME b
@@ -1461,12 +1463,12 @@ struct
           in try (Click.etaSwitch, f)
           end
 
-            (* Turn a switch into a setCond:
-             * case b of true => goto L1 ({}) 
-             *        | false => goto L1 {a}
-             *   ==  x = setCond(b, a);
-             *       goto L1(x);
-             *)
+     (* Turn a switch into a setCond:
+      * case b of true => goto L1 ({}) 
+      *        | false => goto L1 {a}
+      *   ==  x = setCond(b, a);
+      *       goto L1(x);
+      *)
       val switchToSetCond = 
           let
             val f = 
@@ -1495,7 +1497,7 @@ struct
           in try (Click.switchToSetCond, f)
           end
 
-      val reduce = simpleBoolOp or tCase1 or switchToSetCond or etaSwitch
+      val reduce = simpleBoolOp or betaSwitch or etaSwitch or switchToSetCond
     end (* structure TCase *)
 
     val tCase = TCase.reduce
@@ -1826,23 +1828,6 @@ struct
 
     fun tHalt (state, (i, opnd)) = NONE
 
-    val tPSumCase = 
-        let
-          val get = 
-              Try.lift 
-                (fn (imil, oper) => 
-                    let
-                      val v = <@ MU.Simple.Dec.sVariable oper
-                      val nm = #tag <! MU.Def.Out.pSum <! Def.toMilDef o Def.get @@ (imil, v)
-                    in nm 
-                    end)
-          val eq = fn (nm, nm') => nm = nm'
-          val dec = MU.Transfer.Dec.tPSumCase
-          val con = M.TPSumCase
-          val f = TCase.switch {get = get, eq = eq, dec = dec, con = con}
-        in f
-        end
-
     val reduce = 
      fn (state, (i, t)) =>
         let
@@ -1853,8 +1838,7 @@ struct
                  | M.TInterProc ip => tInterProc (state, (i, ip))
                  | M.TReturn rts => tReturn (state, (i, rts))
                  | M.TCut ct => tCut (state, (i, ct))
-                 | M.THalt opnd => tHalt (state, (i, opnd))
-                 | M.TPSumCase sw => tPSumCase (state, (i, sw)))
+                 | M.THalt opnd => tHalt (state, (i, opnd)))
        in r
        end
 
@@ -2061,7 +2045,7 @@ struct
                            
 
       val analyzeSwitch = 
-       fn (d, imil, i, {on, cases, default}, l) => 
+       fn (d, imil, i, {select, on, cases, default}, l) => 
           let     
             val help = 
              fn (M.T {block, arguments}) => 
@@ -2084,7 +2068,6 @@ struct
                  of M.TGoto (M.T {block, arguments}) => 
                     SOME (TGoto {i = i, outArgs = outArgs2Objects (d, imil, arguments)})
                   | M.TCase sw     => SOME (analyzeSwitch (d, imil, i, sw, l))
-                  | M.TPSumCase sw => SOME (analyzeSwitch (d, imil, i, sw, l))
                   | _ => NONE)
              | NONE => fail ("analyzeTransfer", "Not a transfer"))
           
@@ -2302,8 +2285,9 @@ struct
                            (a, rewriteTarget (tg, objects))
                          | NONE => (a, tg))
                   val rewriteSwitch = 
-                   fn {on = a, cases = arms', default = dflt'} => 
-                      {on = a, 
+                   fn {select = s, on = a, cases = arms', default = dflt'} => 
+                      {select = s,
+                       on = a, 
                        cases = Vector.map2 (arms', arms, rewriteArm),
                        default = case (dflt', dflt)
                                   of (NONE, NONE)    => NONE
@@ -2317,8 +2301,6 @@ struct
                       (case IInstr.toTransfer i
                         of SOME (M.TCase sw) => 
                            M.TCase (rewriteSwitch sw)
-                         | SOME (M.TPSumCase sw) => 
-                           M.TPSumCase (rewriteSwitch sw)
                          | _ => fail ("rewriteSwitch", "Bad transfer"))
                   val () = IInstr.replaceTransfer (imil, i, mt)
                   val () = WS.addInstr (worklist, i)
@@ -2444,11 +2426,11 @@ struct
                            (* can ignore l *)
                          in []
                          end
-                       | M.RhsPSum {tag, typ, ofVal} => 
+                       | M.RhsSum {tag, typs, ofVals} => 
                          let
-                           val () = Try.require (const ofVal)
+                           val () = Try.require (Vector.forall (ofVals, const))
                            val v = Try.V.singleton dests
-                           val l = add (v, M.GPSum {tag = tag, typ = typ, ofVal = ofVal})
+                           val l = add (v, M.GSum {tag = tag, typs = typs, ofVals = ofVals})
                            (* can ignore l *)
                          in []
                          end
@@ -2714,6 +2696,7 @@ struct
                 val extra = ic - fc
                 val extras = Vector.new (extra, fd)
                 val mdDesc = M.MDD {pok = MU.MetaDataDescriptor.pok mdDesc,
+                                    pinned = MU.MetaDataDescriptor.pinned mdDesc,
                                     fixed = Vector.concat [fixed, extras], array = SOME array}
                 val rhs = M.RhsTuple {mdDesc = mdDesc, inits = inits}
                 val mil = Mil.I {dests = dests, n = 0, rhs = rhs}
@@ -3190,41 +3173,65 @@ struct
         in try (Click.pSetQuery, f)
         end
 
-    val pSumEta = 
+    val sumEta = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dests, {tag, typ, ofVal})) => 
+           fn ((d, imil, ws), (i, dests, {tag, typs, ofVals})) => 
               let
-                val s = <@ MU.Operand.Dec.sVariable ofVal
-                val {typ = typP, sum, tag = tagP} = <@ MU.Rhs.Dec.rhsPSumProj <! Def.toRhs o Def.get @@ (imil, s)
+                (* Single destination *)
                 val v = Try.V.singleton dests
-                val () = Try.require (tagP = tag)
-                val () = Try.require (MU.FieldKind.eq (typ, typP))
+                (* Given v = RhsSum (k, fks, vs),
+                 * If every value v_i : fk_i has def
+                 * v_i = SumProj(fks', k, sum, i)
+                 * for some sum, where fks[i] = fks'[i]
+                 * then we can replace v with sum.  Note
+                 * that sum may have more fields, hanging off the end,
+                 * but is in that case a subtype.
+                 *)
+                val doOne = 
+                 fn  (i, (typ, ofVal), so) => 
+                     let
+                       val s = <@ MU.Operand.Dec.sVariable ofVal
+                       val {typs = typsP, sum, tag = tagP, idx = iP} = 
+                           <@ MU.Rhs.Dec.rhsSumProj <! Def.toRhs o Def.get @@ (imil, s)
+                       val () = Try.require (i = iP)
+                       val () = Try.require (MU.Constant.eq (tagP, tag))
+                       val typP = Try.V.sub (typsP, iP)
+                       val () = Try.require (MU.FieldKind.eq (typ, typP))
+                       val () = 
+                           case so
+                            of SOME s => Try.require (sum = s)
+                             | NONE   => ()
+                       val so = SOME sum
+                     in so
+                     end
+                val sum = <@ Vector.foldi (Vector.zip (typs, ofVals), NONE, doOne)
                 val () = Use.replaceUses (imil, v, M.SVariable sum)
                 val () = IInstr.delete (imil, i)
               in []
               end
-        in try (Click.pSumEta, f)
+        in try (Click.sumEta, f)
         end
 
-    val pSum = pSumEta 
+    val sum = sumEta 
 
-    val pSumProjBeta = 
+    val sumProjBeta = 
         let
           val f = 
-           fn ((d, imil, ws), (i, dests, {typ, sum, tag})) => 
+           fn ((d, imil, ws), (i, dests, {typs, sum, tag, idx})) => 
               let
-                val {ofVal, tag = tag2, ...} = <@ MU.Def.Out.pSum <! Def.toMilDef o Def.get @@ (imil, sum)
-                val () = Try.require (tag = tag2)
+                val {ofVals, tag = tag2, ...} = <@ MU.Def.Out.sum <! Def.toMilDef o Def.get @@ (imil, sum)
+                val () = Try.require (MU.Constant.eq (tag, tag2))
+                val ofVal = Try.V.sub (ofVals, idx)
                 val v = Try.V.singleton dests
                 val () = Use.replaceUses (imil, v, ofVal)
                 val () = IInstr.delete (imil, i)
               in []
               end
-        in try (Click.pSumProjBeta, f)
+        in try (Click.sumProjBeta, f)
         end
 
-    val pSumProj = pSumProjBeta
+    val sumProj = sumProjBeta
 
     val simplify = 
      fn (state, (i, M.I {dests, n, rhs})) =>
@@ -3253,8 +3260,8 @@ struct
                 | M.RhsPSetGet r        => pSetGet (state, (i, dests, r))
                 | M.RhsPSetCond r       => pSetCond (state, (i, dests, r))
                 | M.RhsPSetQuery r      => pSetQuery (state, (i, dests, r))
-                | M.RhsPSum r           => pSum (state, (i, dests, r))
-                | M.RhsPSumProj r       => pSumProj (state, (i, dests, r))
+                | M.RhsSum r            => sum (state, (i, dests, r))
+                | M.RhsSumProj r        => sumProj (state, (i, dests, r))
         in r
         end
 

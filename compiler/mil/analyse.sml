@@ -213,8 +213,8 @@ functor MilAnalyseF (
           in ()
           end
         | M.RhsPSetQuery oper => analyseOperand (s, e, oper)
-        | M.RhsPSum {tag, typ, ofVal} => analyseOperand (s, e, ofVal)
-        | M.RhsPSumProj {typ, sum, tag} => analyseVariable (s, e, sum)
+        | M.RhsSum {tag, typs, ofVals} => analyseOperands (s, e, ofVals)
+        | M.RhsSumProj {typs, sum, tag, idx} => analyseVariable (s, e, sum)
 
   fun analyseInstruction (s, e, i as M.I {dests, n, rhs}) =
       let
@@ -234,12 +234,12 @@ functor MilAnalyseF (
       in ()
       end
 
-  fun analyseSwitch (s, e, f, {on, cases, default} : 'a Mil.switch) =
+  fun analyseSwitch (s, e, {select, on, cases, default}) =
       let
         val () = analyseOperand (s, e, on)
         fun doOne (x, t) =
             let
-              val () = f (s, e, x)
+              val () = analyseConstant (s, e, x)
               val () = analyseTarget (s, e, t)
             in ()
             end
@@ -327,7 +327,7 @@ functor MilAnalyseF (
       in
         case t
          of M.TGoto t => analyseTarget (s, e, t)
-          | M.TCase cs => analyseSwitch (s, e, analyseConstant, cs)
+          | M.TCase cs => analyseSwitch (s, e, cs)
           | M.TInterProc {callee, ret, fx} =>
             let
               val () = analyseInterProc (s, e, callee)
@@ -343,7 +343,6 @@ functor MilAnalyseF (
             in ()
             end
           | M.THalt opnd => analyseOperand (s, e, opnd)
-          | M.TPSumCase ns => analyseSwitch (s, e, fn _ => (), ns)
       end
 
   fun analyseBlock (s, e, l,
@@ -418,7 +417,7 @@ functor MilAnalyseF (
               val () = Vector.foreach (fvs, doOne)
             in ()
             end
-          | M.GPSum {tag, typ, ofVal}  => analyseSimple (s, e, ofVal)
+          | M.GSum {tag, typs, ofVals} => analyseSimples (s, e, ofVals)
           | M.GPSet simp               => analyseSimple (s, e, simp)
       end
 

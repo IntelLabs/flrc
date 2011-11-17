@@ -20,7 +20,8 @@ sig
 
     val fieldKind : Config.t * 'node shape -> Mil.fieldKind option
 
-    val typOf : Config.t * 'node shape * ('node -> Mil.typ) * ('node -> Mil.fieldVariance) -> Mil.typ
+    val typOf : Config.t * 'node shape * ('node -> Mil.typ) * ('node -> Mil.valueSize) * ('node -> Mil.fieldVariance) 
+                -> Mil.typ
     val flatTypOf : (Config.t * 'node shape) -> Mil.typ
 
     structure Build :
@@ -30,8 +31,8 @@ sig
       val closure : {name : Mil.variable option, code : 'node, fvs : 'node Vector.t} -> 'node shape
       val pSet : 'node -> 'node shape
       val pSetEmpty : unit -> 'node shape
-      val pSum : {tag : Mil.name, field : 'node} -> 'node shape
-      val pSum' : 'node Mil.ND.t -> 'node shape
+      val sum : {tag : Mil.constant, fields : 'node Vector.t} -> 'node shape
+      val sum' : {tag : Mil.constant, fields : 'node Vector.t} Vector.t -> 'node shape
       val tuple : {pok : Mil.pObjKind option, fields : 'node Vector.t, array : 'node option} -> 'node shape
       val thunkValue : {code : 'node, result : 'node} -> 'node shape
       val thunk : {name : Mil.variable option, code : 'node, result : 'node, fvs : 'node Vector.t} -> 'node shape
@@ -54,7 +55,8 @@ sig
   sig
     type 'node object
 
-    val typOf : Config.t * 'node object * ('node -> Mil.typ) * ('node -> Mil.fieldVariance) -> Mil.typ
+    val typOf : Config.t * 'node object * ('node -> Mil.typ) * ('node -> Mil.valueSize) * ('node -> Mil.fieldVariance)
+                -> Mil.typ
     val flowsTo : Config.t * 'node object * 'node object -> 'node object * 'node MilRepBase.edge list
     val shapeFlowsTo : Config.t * 'node object * 'node Shape.shape -> 'node object * 'node MilRepBase.edge list
     val flowsToShape : Config.t * 'node Shape.shape * 'node object -> 'node Shape.shape * 'node MilRepBase.edge list
@@ -76,6 +78,7 @@ struct
 
   structure M = Mil
   structure Type = MilType.Type
+  structure Typer = M
   structure MU = MilUtils
   structure Seq = MilRepSeq 
   structure I = Identifier
@@ -88,6 +91,7 @@ struct
   structure ND = Mil.ND
   structure VS = Mil.VS
   structure LS = Mil.LS
+  structure CD = MU.Constant.Dict
   structure POKL = MRB.PObjKindLat
 
   datatype edge = datatype MRB.edge 
@@ -132,7 +136,7 @@ struct
            | TBase of M.typ
            | TClosure of 'node * ('node env)
            | TPSet of 'node Seq.t
-           | TPSum of 'node ND.t
+           | TSum  of 'node Seq.t CD.t
            | TTuple of POKL.t * 'node Seq.t
            | TThunk of 'node * 'node * ('node env)
            | TCode of 'node code
@@ -366,13 +370,13 @@ struct
                    in (TPSet s, edges)
                    end
                  | (TPSet _, _) => noflow
-                 | (TPSum d1, TPSum d2) => 
+                 | (TSum d1, TSum d2) => 
                    let
-                     val flow = fn (a1, a2) => (a1, [EFlow (a1, a2)])
-                     val (d, edges) = dictFlowsTo (ND.map2, flow, d1, d2)
-                   in (TPSum d, edges)
+                     val flow = fn (a1, a2) => seqFlowsTo (a1, a2)
+                     val (d, edges) = dictFlowsTo (CD.map2, flow, d1, d2)
+                   in (TSum d, edges)
                    end
-                 | (TPSum _, _) => noflow
+                 | (TSum _, _) => noflow
                  | (TTuple (pok1, s1), TTuple (pok2, s2)) => 
                    let
                      val pok = POKL.join (pok1, pok2)
@@ -435,7 +439,7 @@ struct
                  | TBase t => ()
                  | TClosure (n, e) => (node n; env e)
                  | TPSet s => seq s
-                 | TPSum (nd) => ND.foreach (nd, fn (k, n) => node n)
+                 | TSum cd => CD.foreach (cd, fn (k, s) => seq s)
                  | TTuple (pok, s) => seq s
                  | TThunk (n, r, e) => (node n; node r; env e)
                  | TCode c => code c
@@ -450,7 +454,7 @@ struct
               | TBase t    => MU.FieldKind.fromTyp' (config, t)
               | TClosure _ => SOME M.FkRef
               | TPSet _    => SOME M.FkRef
-              | TPSum _    => SOME M.FkRef
+              | TSum _     => SOME M.FkRef
               | TTuple _   => SOME M.FkRef
               | TThunk _   => SOME M.FkRef
               | TCode _    => SOME (M.FkBits (MU.FieldSize.ptrSize config))
@@ -502,7 +506,7 @@ struct
           end
 
       val shape = 
-       fn (config, s, node, variance) =>
+       fn (config, s, node, alignment, variance) =>
           let
             val t =
                 (case s
@@ -522,7 +526,15 @@ struct
                               | Seq.SeqBot => M.TNone)
                      in M.TPType {kind = M.TkE, over = over}
                      end
-                   | TPSum nd => M.TPSum (ND.map (nd, (fn (tag, n) => node n)))
+                   | TSum cd => 
+                     let
+                       val tag = CD.fold (cd, M.TNone, fn (c, _, t) => 
+                                                          Type.lub (config, t, MU.Constant.typOf (config, c)))
+                       val armsL = CD.toListSorted cd
+                       val seq = fn s => Vector.map (#1 (Seq.deconstruct s), node)
+                       val arms = Vector.fromListMap (armsL, fn (c, s) => (c, seq s))
+                     in M.TSum {tag = tag, arms = arms}
+                     end
                    | TTuple (pokl, nodes) => 
                      if POKL.isTop pokl then M.TRef
                      else
@@ -533,12 +545,12 @@ struct
                                 | SOME pok => pok)
                          val (elts, terminator) = Seq.deconstruct nodes
                          val field = 
-                          fn n => (node n, variance n)
+                          fn n => (node n, alignment n, variance n)
                          val fixed = Vector.map (elts, field)
                          val array = 
                              (case terminator
                                of SOME (SOME a) => (field a)
-                                | _ => (M.TNone, M.FvReadWrite))
+                                | _ => (M.TNone, M.Vs8, M.FvReadWrite))
                        in M.TTuple {pok = pok, fixed = fixed, array = array}
                        end
                    | TThunk (code, res, env) => M.TThunk (node res)
@@ -559,7 +571,7 @@ struct
                    | TBase t    => MU.FlatTyp.fromTyp (config, t)
                    | TClosure (code, env) => M.TPAny
                    | TPSet elts => M.TPAny
-                   | TPSum nd => M.TPAny
+                   | TSum nd    => M.TPAny
                    | TTuple (pokl, nodes) => (case POKL.get pokl 
                                                of SOME pok => if pok = M.PokNone then M.TRef else M.TPAny
                                                 | NONE => M.TRef)
@@ -573,14 +585,14 @@ struct
      fn shape =>
         (case shape
           of TUnknown _ => 0
-           | TBase _ => 1
+           | TBase _    => 1
            | TClosure _ => 2
-           | TPSet _ => 3
-           | TPSum _ => 4
-           | TTuple _ => 5
-           | TThunk _ => 6
-           | TCode _ => 7
-           | TCont _ => 10)
+           | TPSet _    => 3
+           | TSum _     => 4
+           | TTuple _   => 5
+           | TThunk _   => 6
+           | TCode _    => 7
+           | TCont _    => 10)
 
     val filter = 
      fn (shape, dead) => 
@@ -620,14 +632,14 @@ struct
           val shape = 
               case shape
                of TUnknown t        => shape
-                 | TBase t          => shape
-                 | TClosure (n, e)  => TClosure (n, env e)
-                 | TPSet s          => TPSet s
-                 | TPSum (nd)       => TPSum nd
-                 | TTuple (pok, s)  => TTuple (pok, seq s)
-                 | TThunk (n, r, e) => TThunk (n, r, env e)
-                 | TCode c          => TCode (code c)
-                 | TCont c          => TCont (cont c)
+                | TBase t          => shape
+                | TClosure (n, e)  => TClosure (n, env e)
+                | TPSet s          => TPSet s
+                | TSum cd          => TSum (CD.map (cd, fn (c, s) => seq s))
+                | TTuple (pok, s)  => TTuple (pok, seq s)
+                | TThunk (n, r, e) => TThunk (n, r, env e)
+                | TCode c          => TCode (code c)
+                | TCont c          => TCont (cont c)
         in shape
         end
 
@@ -663,11 +675,12 @@ struct
       val pSetEmpty =
        fn () => TPSet Seq.seq0
 
-      val pSum' =
-       fn d => TPSum d
+      val sum' =
+       fn v => TSum (Vector.fold (v, CD.empty, fn ({tag, fields}, cd) 
+                                                  => CD.insert (cd, tag, Seq.fromVectorOpen fields)))
 
-      val pSum = 
-       fn {tag, field} => pSum' (ND.singleton (tag, field))
+      val sum = 
+       fn r => sum' (Vector.new1 r)
 
       val tuple = 
        fn {pok, fields, array} => 
@@ -843,9 +856,9 @@ struct
         ID.foreach (object, fn (i, shape) => Shape.foreachWithParity (shape, nodePlus, nodeMinus))
 
     val typOf = 
-     fn (config, object, node, variance) => 
+     fn (config, object, node, alignment, variance) => 
         let
-          val shape = fn (config, shape) => Shape.typOf (config, shape, node, variance)
+          val shape = fn (config, shape) => Shape.typOf (config, shape, node, alignment, variance)
         in ID.fold (object, M.TNone, fn (i, s, t) => Type.lub (config, shape (config, s), t))
         end
 
@@ -977,14 +990,14 @@ struct
                  | Shape.TClosure (n, e) => 
                    L.seq [L.str "Clos ", LU.parenSeq [node n], L.str " where ", env e]
                  | Shape.TPSet s => L.seq [L.str "PSet", seq s]
-                 | Shape.TPSum (nd) => 
+                 | Shape.TSum cd => 
                    let
                      val help = 
-                      fn (k, n) => L.seq [MilLayout.layoutName (config, si, k), 
-                                          L.str " => ", node n]
+                      fn (k, s) => L.seq [MilLayout.layoutConstant (config, si, k), 
+                                          L.str " => ", seq s]
                    in
-                     L.seq [L.str "PSum", 
-                            ND.layout (nd, help)]
+                     L.seq [L.str "Sum", 
+                            CD.layout (cd, help)]
                    end
                  | Shape.TTuple (pok, s) => L.seq [L.str "Tuple", 
                                                    LU.parenSeq [POKL.layout pObj pok,

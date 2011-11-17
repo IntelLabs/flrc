@@ -645,7 +645,6 @@ struct
             | M.TCut {cont, args, cuts} => 
               just (M.TCut {cont = cont, args = args, cuts = rewriteCuts (state, env, cuts)})
             | M.THalt _ => nochange
-            | M.TPSumCase _ => nochange
         end
 
     fun doInstr (state, env, i as M.I {dests, n, rhs}) =

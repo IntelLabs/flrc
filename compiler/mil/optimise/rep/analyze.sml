@@ -291,7 +291,8 @@ struct
    fn ((state, env), n, i) => State.addIInfo (state, n, i)
 
   val addMetaData = 
-   fn (se, n, pok, fixed, array) => addIInfo (se, n, MRB.IiMetaData {pok = pok, fixed = fixed, array = array})
+   fn (se, n, pok, pinned, fixed, array) => 
+      addIInfo (se, n, MRB.IiMetaData {pok = pok, pinned = pinned, fixed = fixed, array = array})
 
   val addTupleDescriptor = 
    fn (se, n, fixed, array) => addIInfo (se, n, MRB.IiTupleDescriptor {fixed = fixed, array = array})
@@ -302,8 +303,8 @@ struct
   val addClosureDescriptor = 
    fn (se, n, fvs) => addIInfo (se, n, MRB.IiClosure fvs)
 
-  val addPSumDescriptor = 
-   fn (se, n, typ) => addIInfo (se, n, MRB.IiPSum typ)
+  val addSumDescriptor = 
+   fn (se, n, typs) => addIInfo (se, n, MRB.IiSum typs)
 
   val symbols =
    fn se => 
@@ -318,40 +319,41 @@ struct
       end
 
   val mkBottomNode = 
-   fn (se, fk, variance, shape) => 
+   fn (se, fk, alignment, variance, shape) => 
       let
-        val n = Node.mkBottom (nextId se, fk, variance, shape)
+        val n = Node.mkBottom (nextId se, fk, alignment, variance, shape)
         val () = addNode (se, n)
       in n
       end
 
   val mkShapedNode = 
-   fn (se, fk, variance, shape) => 
+   fn (se, fk, alignment, variance, shape) => 
       let
-        val n = Node.mkShaped (nextId se, fk, variance, shape)
+        val n = Node.mkShaped (nextId se, fk, alignment, variance, shape)
         val () = addNode (se, n)
       in n
       end
 
   val newBottomNode = 
-   fn (se, fk) => mkBottomNode (se, SOME fk, NONE, NONE)
+   fn (se, fk) => mkBottomNode (se, SOME fk, NONE, NONE, NONE)
 
   val newShallowTypedBottomNode = 
    fn (se, t) => 
       let
         val fk = MU.FieldKind.fromTyp' (getConfig se, t)
         val shape = Build.unknown (MU.FlatTyp.fromTyp (getConfig se, t))
-      in mkBottomNode (se, fk, NONE, SOME shape)
+      in mkBottomNode (se, fk, NONE, NONE, SOME shape)
       end
 
   val newShapedNode = 
-   fn (se, shape) => mkShapedNode (se, Shape.fieldKind (getConfig se, shape), NONE, shape)
+   fn (se, shape) => mkShapedNode (se, Shape.fieldKind (getConfig se, shape), NONE, NONE, shape)
 
   val newFieldBottomNode =
-   fn (se, fk, variance) => mkBottomNode (se, SOME fk, SOME variance, NONE)
+   fn (se, fk, alignment, variance) => mkBottomNode (se, SOME fk, SOME alignment, SOME variance, NONE)
 
   val newFieldShapedNode = 
-   fn (se, shape, variance) => mkShapedNode (se, Shape.fieldKind (getConfig se, shape), SOME variance, shape)
+   fn (se, shape, alignment, variance) => mkShapedNode (se, Shape.fieldKind (getConfig se, shape), 
+                                                        SOME alignment, SOME variance, shape)
 
   val escapes = fn (se, node) => Node.markNodeEscaping node
   val unknown = fn (se, node) => Node.markNodeUnknownDefs node
@@ -379,12 +381,12 @@ struct
               typ
 
         val typField = 
-         fn (se, (t, fv)) => 
+         fn (se, (t, vs, fv)) => 
             let
               val s = case typShape (se, t)
                        of SOME s => s
                         | NONE => Build.unknown (MU.FlatTyp.fromTyp (getConfig se, t))
-              val n = newFieldShapedNode (se, s, fv)
+              val n = newFieldShapedNode (se, s, vs, fv)
             in n
             end
 
@@ -415,7 +417,7 @@ struct
                    val help = fn tfv => typField (se, tfv)
                    val array = 
                        (case array
-                         of (M.TNone, _) => NONE
+                         of (M.TNone, _, _) => NONE
                           | _ => SOME (help array))
                    val shape =
                        Build.tuple {pok = SOME pok, fields = Vector.map (fixed, help), array = array}
@@ -438,10 +440,10 @@ struct
                                               fvs = Vector.new0 ()}
                  in shaped shape
                  end
-               | M.TPSum nd => 
+               | M.TSum {tag, arms} => 
                  let
-                   val nd = ND.map (nd, fn (nm, t) => typ (se, t))
-                 in shaped (Build.pSum' nd)
+                   val arms = Vector.map (arms, fn (k, ts) => {tag = k, fields = typs (se, ts)})
+                 in shaped (Build.sum' arms)
                  end
                | M.TPType {kind = M.TkE, over} => shaped (Build.pSet (typ (se, over)))
                | M.TPType {kind = M.TkI, over} => shaped (Build.base t)
@@ -499,20 +501,20 @@ struct
       fn (se, fks) => Vector.map (fks, fn fk => fieldKind (se, fk))
 
   val fieldDescriptor = 
-   fn (se, M.FD {kind, var}) => newFieldBottomNode (se, kind, var)
+   fn (se, M.FD {kind, alignment, var}) => newFieldBottomNode (se, kind, alignment, var)
 
   val fieldDescriptors = 
    fn (se, fds) => Vector.map (fds, fn fd => fieldDescriptor (se, fd))
 
   val vTable = 
-   fn (se, M.MDD {pok, fixed, array}) => 
+   fn (se, M.MDD {pok, pinned, fixed, array}) => 
       let
         val fixed = fieldDescriptors (se, fixed)
         val array = 
             (case array
               of SOME (i, fd) => SOME (i, fieldDescriptor (se, fd))
                | NONE => NONE)
-      in (pok, fixed, array)
+      in (pok, pinned, fixed, array)
       end
 
   val tupleDescriptor = 
@@ -530,7 +532,7 @@ struct
    fn (se, id, mdDesc, inits) => 
       let
         val (op ==, op <==, op <--, op -->) = symbols se
-        val (pok, nodes, array) = vTable (se, mdDesc)
+        val (pok, pinned, nodes, array) = vTable (se, mdDesc)
         val inits = operands (se, inits)
         val () = 
             let
@@ -549,7 +551,7 @@ struct
             in ()
             end
         val object = Build.tuple {pok = SOME pok, fields = nodes, array = Option.map (array, fn (_, n) => n)}
-        val () = addMetaData (se, id, pok, nodes, array)
+        val () = addMetaData (se, id, pok, pinned, nodes, array)
       in object
       end
 
@@ -830,19 +832,20 @@ struct
                  in ()
                  end
                | M.RhsPSetQuery oper => node () <-- Build.base (MU.Bool.t (getConfig se))
-               | M.RhsPSum {tag, typ, ofVal} => 
+               | M.RhsSum {tag, typs, ofVals} => 
                  let
-                   val field = operand (se, ofVal)
-                   val () = addPSumDescriptor (se, MU.Id.I n, field)
-                   val () = node () <-- Build.pSum {tag = tag, field = field}
+                   val fields = operands (se, ofVals)
+                   val () = addSumDescriptor (se, MU.Id.I n, fields)
+                   val () = node () <-- Build.sum {tag = tag, fields = fields}
                  in ()
                  end
-               | M.RhsPSumProj {typ, sum, tag} => 
+               | M.RhsSumProj {typs, sum, tag, idx} => 
                  let
-                   val node = node ()
+                   val elts = fieldKinds (se, typs)
+                   val () = node () == (Vector.sub (elts, idx))
                    val sum = variable (se, sum) 
-                   val () = addPSumDescriptor (se, MU.Id.I n, node)
-                   val () = sum --> Build.pSum {tag = tag, field = node}
+                   val () = addSumDescriptor (se, MU.Id.I n, elts)
+                   val () = sum --> Build.sum {tag = tag, fields = elts}
                  in ()
                  end)
       in ()
@@ -862,7 +865,7 @@ struct
       end
 
   val switch = 
-   fn (se as (state, env), {on, cases, default}) => 
+   fn (se as (state, env), {select, on, cases, default}) => 
       let
         val (op ==, op <==, op <--, op -->) = symbols se
         val () = Vector.foreach (cases, fn (_, t) => target (se, t))
@@ -989,8 +992,7 @@ struct
                    val opnd = operand (se, opnd)
                    val () = escapes (se, opnd)
                  in ()
-                 end
-               | M.TPSumCase sw => switch (se, sw))
+                 end)
       in ()
       end 
 
@@ -1045,11 +1047,11 @@ struct
                  end
                | M.GSimple s => destNode <== operand (se, s)
                | M.GClosure {code, fvs} => destNode <-- pFunctionInit (se, v, MU.Id.G v, destNode, code, fvs)
-               | M.GPSum {tag, typ, ofVal} => 
+               | M.GSum {tag, typs, ofVals} => 
                  let
-                   val field = operand (se, ofVal)
-                   val () = addPSumDescriptor (se, MU.Id.G v, field)
-                 in destNode <-- Build.pSum {tag = tag, field = field}
+                   val fields = operands (se, ofVals)
+                   val () = addSumDescriptor (se, MU.Id.G v, fields)
+                 in destNode <-- Build.sum {tag = tag, fields = fields}
                  end
                | M.GPSet s => destNode <-- Build.pSet (operand (se, s)))
       in ()

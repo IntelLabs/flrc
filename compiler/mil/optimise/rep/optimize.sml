@@ -384,8 +384,8 @@ struct
                                 | M.RhsPSetGet _        => ()
                                 | M.RhsPSetCond r       => let val () = fixed () val () = boxedO (#ofVal r) in () end
                                 | M.RhsPSetQuery _      => fixed ()
-                                | M.RhsPSum _           => fixed ()
-                                | M.RhsPSumProj _       => ())
+                                | M.RhsSum _            => fixed ()
+                                | M.RhsSumProj _        => ())
 
                        in e
                        end
@@ -685,8 +685,9 @@ struct
           val t = typFromUs us
           val fk = fkFromUs us
           val fv = MilRepNode.fieldVariance' n
+          val ag = MilRepNode.alignment' n
           val shape = SOME (MilRepObject.Shape.Build.unknown t)
-          val () = MilRepNode.setData (n, shape, fk, fv)
+          val () = MilRepNode.setData (n, shape, fk, ag, fv)
           val done = MRN.Set.insert (done, n)
         in done
         end
@@ -703,8 +704,9 @@ struct
                 val done = replaceNodeData (s, e, done, inner)
                 val fk = MilRepNode.fieldKind' inner
                 val fv = MilRepNode.fieldVariance' n
+                val ag = MilRepNode.alignment' n
                 val shape = MilRepNode.shape' inner
-                val () = MilRepNode.setData (n, shape, fk, fv)
+                val () = MilRepNode.setData (n, shape, fk, ag, fv)
                 val done = MRN.Set.insert (done, n)
               in done
               end
@@ -876,8 +878,8 @@ struct
                                 | M.RhsPSetGet _        => ()
                                 | M.RhsPSetCond _       => mark ()
                                 | M.RhsPSetQuery _      => mark ()
-                                | M.RhsPSum _           => mark ()
-                                | M.RhsPSumProj _       => ())
+                                | M.RhsSum _            => mark ()
+                                | M.RhsSumProj _        => ())
 
                        in e
                        end

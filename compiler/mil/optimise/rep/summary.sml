@@ -228,7 +228,8 @@ struct
                  let
                    val node = fn n => nodeTyp (summary, n)
                    val variance = fn n => Node.fieldVariance n
-                 in Shape.typOf (config, shape, node, variance)
+                   val alignment = fn n => Node.alignment n
+                 in Shape.typOf (config, shape, node, alignment, variance)
                  end
 
              val () =

@@ -94,9 +94,11 @@ struct
   (* vtInfo contains all information needed about a vtable.
    * Currently this is:
    *   The P object kind.
+   *   Whether or not it is pinned.
    *   The size of the fixed part of the object.
    *   For each word offset in the fixed part of the object, whether it is
    *     a reference or not.
+   *   The required alignment for the object (int bytes, power of two)
    *   An option variable-sized portion description consisting of:
    *     The size of the elements of the variable portion.
    *     The offset in the fixed portion of the field containing the
@@ -113,8 +115,10 @@ struct
   datatype vtInfo = Vti of {
            name      : string,
            tag       : M.pObjKind,
+           pinned    : bool,
            fixedSize : int,
            fixedRefs : bool Vector.t,
+           alignment : int,
            array     : {size : int, offset : int, isRef : bool} option,
            mut       : vtMutability
   }
@@ -138,10 +142,12 @@ struct
           | (VtmAlwaysImmutable, VtmAlwaysImmutable) => EQUAL
   in
   fun vtInfoCompare (Vti x1, Vti x2) =
-      rec6 (#name, String.compare,
-            #tag, MU.PObjKind.compare,
+      rec8 (#name, String.compare,
+            #tag, MU.PObjKind.compare, 
+            #pinned, Bool.compare,
             #fixedSize, Int.compare,
             #fixedRefs, vector Bool.compare,
+            #alignment, Int.compare,
             #array, arrayCompare,
             #mut, vtMutabilityCompare)
            (x1, x2)
@@ -327,6 +333,16 @@ struct
        val wordSize : state * env -> int
        (* Return the offset of the vtable in objects *)
        val vtableOffset : state * env -> int
+       (* Return the offset of the start of the fixed fields in objects *)
+       val fieldBase : state * env -> int
+       (* Given a tuple descriptor, return (size, algn, paddings, padding)
+        * where size is the total size of the object in bytes, algn is the alignment
+        * requirement for the object, paddings is a vector
+        * where element i specifies the padding to be inserted before fixed field i,
+        * and padding specifies the padding to be inserted at the end of the fixed 
+        * fields.
+        *)
+       val fieldPadding : state * env * M.tupleDescriptor -> int * int * (int Vector.t) * int
        (* Given a tuple descriptor, return the offset of
         * the given field (indexed from zero).
         *)
@@ -335,6 +351,8 @@ struct
        val arrayOffset : state * env * M.tupleDescriptor -> int
        (* Return the size of the fixed portion of objects of the given type *)
        val fixedSize : state * env * M.tupleDescriptor -> int
+       (* Return the required alignment for the object *)
+       val objectAlignment : state * env * M.tupleDescriptor -> int
        (* Return the size of the elements of the variable portion of the given
         * type
         *)
@@ -365,6 +383,69 @@ struct
     fun fieldBase (state, env) =
         vtableOffset (state, env) + wordSize (state, env)
 
+    (* Compute size and padding for an object. Returns (size, algn, paddings, padding)
+     * where size is the total size of the object in bytes, algn is the alignment
+     * required of the object, paddings is a vector
+     * where element i specifies the padding to be inserted before fixed field i,
+     * and padding specifies the padding to be inserted at the end of the fixed 
+     * fields.
+     * 
+     * Each field is padded to its natural alignment or the specified
+     * alignment, whichever is greater.  The entire object is padded
+     * such that the end of the fixed portion is aligned to the maximum of the
+     * natural and specified alignment of the array portion (if any).  The object is
+     * aligned to the maximum of the natural and specified alignments of the fixed and 
+     * array fields (minimum 4 byte aligned).
+     *)
+    fun fieldPaddingG (state, env, 
+                       nb    : Config.t * 'a -> int, (* number of bytes in field *)
+                       algn  : 'a -> int,            (* specified alignment of field *)
+                       fds   : 'a Vector.t, 
+                       fdo   : 'a Option.t, 
+                       start : int   (* starting offset *)
+                      ) =
+        let
+          val config = getConfig env
+          fun doOne (fd, (off, max)) = 
+              let
+                val fsz = nb (config, fd)
+                val alignment = Int.max (fsz, algn fd)
+                val fieldStart = align (off, fsz)
+                val fieldEnd = fieldStart + fsz
+                val max = Int.max (alignment, max)
+              in (fieldStart - off, (fieldEnd, max))
+              end
+          val (paddings, (fieldEnd, max)) = Vector.mapAndFold (fds, (start, 4), doOne)
+          val (size, max) = 
+              case fdo
+               of NONE    => (fieldEnd, max)
+                | SOME fd => 
+                  let
+                    val a = Int.max (nb (config, fd), algn fd)
+                  in (align (fieldEnd, a), Int.max (a, max))
+                  end
+          val padding = size - fieldEnd
+        in (size, max, paddings, padding)
+        end
+
+    (* Size of the fixed portion of the object, accounting for padding.
+     * Each field is padded to its natural alignment or the specified
+     * alignment, whichever is greater.  The entire object is padded
+     * to the maximum of the natural and specified alignments of the 
+     * array portion (if any)
+     *)
+    fun objectSizeG (state, env, 
+                     nb    : Config.t * 'a -> int, (* number of bytes in field *)
+                     algn  : 'a -> int,            (* specified alignment of field *)
+                     fds   : 'a Vector.t, 
+                     fdo   : 'a Option.t, 
+                     start : int   (* starting offset *)
+                    ) =
+        let
+          val (size, _, _, _) = fieldPaddingG (state, env, nb, algn, fds, fdo, start)
+        in size
+        end
+
     fun get (fds, fdo, i) =
         if i < Vector.length fds then
           Vector.sub (fds, i)
@@ -374,35 +455,61 @@ struct
                                   "not enough fields")
              | SOME fd => fd)
 
-    fun fieldOffsetG (state, env, nb, fds, fdo, i, j, pre, off) =
-        if i = j andalso pre then
-          off
-        else
-          let
-            val fd = get (fds, fdo, i)
-            val fsz = nb (getConfig env, fd)
-            val off = align (off, fsz)
-          in
-            if i = j then
-              off
-            else
-              fieldOffsetG (state, env, nb, fds, fdo, i + 1, j, pre, off + fsz)
-          end
+    (* Offset of field, accounting for padding *)
+    fun fieldOffsetG (state, env, 
+                      nb    : Config.t * 'a -> int, (* number of bytes in field *)
+                      algn  : 'a -> int,            (* specified alignment of field *)
+                      fds   : 'a Vector.t, 
+                      fdo   : 'a Option.t, 
+                      j     : int,  (* target field *)
+                      start : int   (* starting offset *)
+                     ) =
+        let
+          val config = getConfig env
+          fun loop (i, off) = 
+              let
+                val fd = get (fds, fdo, i)
+                val fsz = nb (config, fd)
+                val alignment = Int.max (fsz, algn fd)
+                val fieldStart = align (off, fsz)
+              in
+                if i = j then
+                  fieldStart
+                else
+                  loop (i + 1, fieldStart + fsz)
+              end
+        in loop (0, start)
+        end
+
+    fun fieldPadding (state, env, M.TD {fixed, array, ...}) =
+        fieldPaddingG (state, env, 
+                      MU.FieldDescriptor.numBytes, MU.FieldDescriptor.alignmentBytes,
+                      fixed, array, fieldBase (state, env))
 
     fun fieldOffset (state, env, M.TD {fixed, array, ...}, i) =
-        fieldOffsetG (state, env, MU.FieldDescriptor.numBytes,
-                      fixed, array, 0, i, false,
-                      fieldBase (state, env))
+        fieldOffsetG (state, env, 
+                      MU.FieldDescriptor.numBytes, MU.FieldDescriptor.alignmentBytes,
+                      fixed, array, i, fieldBase (state, env))
 
     fun arrayOffset (state, env, M.TD {fixed, array, ...}) =
-        fieldOffsetG (state, env, MU.FieldDescriptor.numBytes,
-                      fixed, array, 0, Vector.length fixed, false,
+        fieldOffsetG (state, env, 
+                      MU.FieldDescriptor.numBytes, MU.FieldDescriptor.alignmentBytes,
+                      fixed, array, Vector.length fixed, 
                       fieldBase (state, env))
 
     fun fixedSize (state, env, M.TD {fixed, array, ...}) =
-        fieldOffsetG (state, env, MU.FieldDescriptor.numBytes,
-                      fixed, array, 0, Vector.length fixed,
-                      true, fieldBase (state, env))
+        objectSizeG (state, env, 
+                     MU.FieldDescriptor.numBytes, MU.FieldDescriptor.alignmentBytes,
+                     fixed, array, fieldBase (state, env))
+
+    fun objectAlignment (state, env, M.TD {fixed, array, ...}) = 
+        let
+          val (_, alignment, _, _) = 
+              fieldPaddingG (state, env, 
+                             MU.FieldDescriptor.numBytes, MU.FieldDescriptor.alignmentBytes,
+                             fixed, array, fieldBase (state, env))
+        in alignment
+        end
 
     fun extraSize (state, env, M.TD {array, ...}) =
         case array
@@ -431,16 +538,14 @@ struct
         end
 
     fun thunkSize (state, env, typ, fks) =
-        fieldOffsetG (state, env, MU.FieldKind.numBytes,
-                      fks, NONE, 0, Vector.length fks, true,
-                      thunkFixedSize (state, env, typ))
+        objectSizeG (state, env, MU.FieldKind.numBytes, fn _ => 1,
+                     fks, NONE, thunkFixedSize (state, env, typ))
 
     fun thunkResultOffset (state, env, typ, fks) = thunkBase (state, env, typ)
 
     fun thunkFvOffset (state, env, typ, fks, i) =
-        fieldOffsetG (state, env, MU.FieldKind.numBytes,
-                      fks, NONE, 0, i, false,
-                      thunkFixedSize (state, env, typ))
+        fieldOffsetG (state, env, MU.FieldKind.numBytes, fn _ => 1,
+                      fks, NONE, i, thunkFixedSize (state, env, typ))
 
     fun genDefs (state, env) =
         let
@@ -494,10 +599,10 @@ struct
           val funCodeOffset = mk (RT.Object.functionCodeOffset, funCodeOffset)
           val funSize = fixedSize (state, env, funTD)
           val funSize = mk (RT.Object.functionSize, funSize)
-          val sumTD = POM.Sum.td (c, M.FkRef)
+          val sumTD = POM.Sum.td (c, M.FkRef, Vector.new1 (M.FkRef))
           val sumTagOffset = fieldOffset(state, env, sumTD, POM.Sum.tagIndex)
           val sumTagOffset = mk (RT.Object.sumTagOffset, sumTagOffset)
-          val sumValOffset = fieldOffset(state, env, sumTD, POM.Sum.ofValIndex)
+          val sumValOffset = fieldOffset(state, env, sumTD, POM.Sum.ofValIndex 0)
           val sumValOffset = mk (RT.Object.sumValOffset, sumValOffset)
           val sumSize = fixedSize (state, env, sumTD)
           val sumSize = mk (RT.Object.sumSize, sumSize)
@@ -664,29 +769,34 @@ struct
     (* From the components of a tuple type, compute its vtable information *)
     fun deriveVtInfo (state, env, no, mdd, nebi) =
         let
-          val M.MDD {pok, fixed, array} = mdd
+          val M.MDD {pok, pinned, fixed, array} = mdd
           val td = MU.MetaDataDescriptor.toTupleDescriptor mdd
+          val config = getConfig env
           val ws = OM.wordSize (state, env)
-          val fs = OM.fixedSize (state, env, td)
+          val (fs, alignment, paddings, padding) = OM.fieldPadding (state, env, td)
           val frefs = Array.new (fs div ws, false)
-          fun doOne (i, fd) =
-              if MU.FieldDescriptor.isRef fd then
-                let
-                  val off = OM.fieldOffset (state, env, td, i)
-                  val () =
-                      if off mod ws <> 0 then
-                        Fail.unimplemented ("MilToPil.VT", "deriveVtInfo",
-                                            "unaligned reference field")
-                      else
-                        ()
-                  val idx = off div ws
-                  val () = Array.update (frefs, idx, true)
-                in
-                  ()
-                end
-              else
-                ()
-          val () = Vector.foreachi (fixed, doOne)
+          fun doOne (padding, fd, off) =
+              let
+                val off = off + padding
+                val () = 
+                    if MU.FieldDescriptor.isRef fd then
+                      let
+                        val () =
+                            if off mod ws <> 0 then
+                              Fail.unimplemented ("MilToPil.VT", "deriveVtInfo",
+                                                  "unaligned reference field")
+                            else
+                              ()
+                        val idx = off div ws
+                        val () = Array.update (frefs, idx, true)
+                      in ()
+                      end
+                    else
+                      ()
+                val off = off + MU.FieldDescriptor.numBytes (config, fd)
+              in off
+              end
+          val _ = Vector.fold2 (paddings, fixed, OM.fieldBase (state, env), doOne)
           val frefs = Array.toVector frefs
           val a =
               case array
@@ -712,7 +822,8 @@ struct
               else
                 VtmCreatedMutable
         in
-          Vti {name = n, tag = pok, fixedSize = fs, fixedRefs = frefs,
+          Vti {name = n, tag = pok, pinned = pinned, 
+               fixedSize = fs, fixedRefs = frefs, alignment = alignment,
                array = a, mut = vtm}
         end
 
@@ -728,36 +839,59 @@ struct
     fun genMetaDataUnboxed (state, env, vti) =
         let
           val () = incVtables state
-          val Vti {name, tag, fixedSize, fixedRefs, array, mut} = vti
+          val Vti {name, tag, pinned, fixedSize, fixedRefs, alignment, array, mut} = vti
           (* Generate the actual vtable *)
           val vt = freshVariableDT (state, env, "vtable", M.VkGlobal)
           val vt' = genVarE (state, env, vt)
-          val tag = Pil.E.namedConstant (RT.MD.pObjKindTag tag)
-          val args = [vt', tag, Pil.E.string name]
-          val vtg = Pil.D.macroCall (RT.MD.static, args)
-          val () = addXtrGlb (state, vtg)
+          val () = 
+              let
+                val tag = Pil.E.namedConstant (RT.MD.pObjKindTag tag)
+                val args = [vt', tag, Pil.E.string name]
+                val vtg = Pil.D.macroCall (RT.MD.static, args)
+              in addXtrGlb (state, vtg)
+              end
           (* Generate an array of the fixed reference information *)
-          fun doOne b = Pil.E.int (if b then 1 else 0)
-          val refs = Pil.E.strctInit (Vector.toListMap (fixedRefs, doOne))
           val refsv = freshVariableDT (state, env, "vtrefs", M.VkGlobal)
           val refsv = genVar (state, env, refsv)
-          val isRefT = Pil.T.named RT.MD.isRefTyp
-          val refsvd = Pil.varDec (Pil.T.array isRefT, refsv)
-          val refsg = Pil.D.staticVariableExpr (refsvd, refs)
-          val () = if vtReg env then addXtrGlb (state, refsg) else ()
+          val () = 
+              if vtReg env then 
+                let
+                  fun doOne b = Pil.E.int (if b then 1 else 0)
+                  val refs = Pil.E.strctInit (Vector.toListMap (fixedRefs, doOne))
+                  val isRefT = Pil.T.named RT.MD.isRefTyp
+                  val refsvd = Pil.varDec (Pil.T.array isRefT, refsv)
+                  val refsg = Pil.D.staticVariableExpr (refsvd, refs)
+                in addXtrGlb (state, refsg) 
+                end
+              else ()
           val refsv = Pil.E.variable refsv
           (* Generate code to register vtable with GC *)
-          val fs = Pil.E.int fixedSize
-          val (vs, vlo, vr) =
-              case array
-               of NONE => (Pil.E.int 0, Pil.E.int 0, Pil.E.int 0)
-                | SOME {size, offset, isRef} =>
-                  (Pil.E.int size, Pil.E.int offset,
-                   Pil.E.int (if isRef then 1 else 0))
-          val mut = Pil.E.namedConstant (genVtMutability mut)
-          val args = [Pil.E.addrOf vt', fs, refsv, vs, vlo, vr, mut]
-          val vtr = Pil.E.call (Pil.E.namedConstant RT.MD.register, args)
-          val () = if vtReg env then addReg0 (state, Pil.S.expr vtr) else ()
+          val () = 
+              if vtReg env then 
+                let
+                  val fs = Pil.E.int fixedSize
+                  val ag = Pil.E.int alignment
+                  val (vs, vlo, vr) =
+                      case array
+                       of NONE => (Pil.E.int 0, Pil.E.int 0, Pil.E.int 0)
+                        | SOME {size, offset, isRef} =>
+                          (Pil.E.int size, Pil.E.int offset,
+                           Pil.E.int (if isRef then 1 else 0))
+                  val mut = Pil.E.namedConstant (genVtMutability mut)
+                  val args = [Pil.E.addrOf vt', ag, fs, refsv, vs, vlo, vr, mut]
+                  val vtr = Pil.E.call (Pil.E.namedConstant RT.MD.register, args)
+                in addReg0 (state, Pil.S.expr vtr) 
+                end 
+              else ()
+          (* Generate code to pin the vtable *)
+          val () = 
+              if pinned then 
+                let
+                  val args = [Pil.E.addrOf vt']
+                  val vtr = Pil.E.call (Pil.E.namedConstant RT.MD.pin, args)
+                in addReg0 (state, Pil.S.expr vtr) 
+                end 
+              else ()
         in vt
         end
 
@@ -841,8 +975,8 @@ struct
                     VtmAlwaysImmutable
                 else
                   VtmAlwaysMutable
-            val vti = Vti {name = n, tag = M.PokCell, fixedSize = fs,
-                           fixedRefs = frefs, array = NONE,
+            val vti = Vti {name = n, tag = M.PokCell, pinned = false, fixedSize = fs,
+                           fixedRefs = frefs, alignment = 4, array = NONE,
                            mut = mut}
             val vt = vTableFromInfo (state, env, vti)
           in vt
@@ -980,7 +1114,7 @@ struct
           end
         | M.TPAny => Pil.T.named RT.T.pAny
         | M.TClosure _ => notCoreMil (env, "genTyp", "TClosure")
-        | M.TPSum _ => notCoreMil (env, "genTyp", "TPSum")
+        | M.TSum _   => notCoreMil (env, "genTyp", "TSum")
         | M.TPType _ => notCoreMil (env, "genTyp", "TPType")
         | M.TPRef _ => notCoreMil (env, "genTyp", "TPRef")
   and genTyps (state, env, ts) =
@@ -990,15 +1124,28 @@ struct
   (* Return the C type for the unboxed version of a Mil type *)
 
   (* XXX: This is highly object layout specific *)
-  fun tupleUnboxedTyp (pok, ts, xt) =
+  fun tupleUnboxedTyp (state, env, mdd, ts) =
       let
-        fun doOne (i, t) = (RT.Tuple.fixedField i, t)
-        val fts = (RT.Tuple.vtable, Pil.T.named RT.T.vtable)::
-                  (List.mapi (ts, doOne))
-        val fts =
-            case xt
-             of NONE => fts
-              | SOME xt => fts @ [(RT.Tuple.xtras, Pil.T.array xt)]
+        val td = MU.MetaDataDescriptor.toTupleDescriptor mdd
+        val (size, alignment, paddings, padding) = OM.fieldPadding (state, env, td)
+        fun pad (i, n) = 
+            (RT.Tuple.paddingField i, Pil.T.arrayConstant (Pil.T.char, n))
+        fun doOne (i, t) = 
+            if i < Vector.length paddings then
+              let
+                val p = Vector.sub (paddings, i)
+              in 
+                if p = 0 then 
+                  [(RT.Tuple.fixedField i, t)]
+                else
+                  [pad (i, p), (RT.Tuple.fixedField i, t)]
+              end
+            else
+              Fail.fail ("MilToPil", "tupleUnboxedTyp", "meta-data/init mismatched lengths")
+
+        val fts = (RT.Tuple.vtable, Pil.T.named RT.T.vtable)::List.concat (List.mapi (ts, doOne))
+        val fts = 
+            if padding = 0 then fts else fts @ [pad (List.length ts, padding)]
       in
         Pil.T.strct (NONE, fts)
       end
@@ -1112,14 +1259,14 @@ struct
 
   fun genTuple (state, env, no, dest, mdd, inits) = 
       let
-        val M.MDD {pok, fixed, array} = mdd
+        val M.MDD {pok, pinned, fixed, array} = mdd
         val td = MU.MetaDataDescriptor.toTupleDescriptor mdd
         val (fdo, lenIdx, nebi) =
             case array
              of NONE => (NONE, 0, true)
               | SOME (li, fd) => (SOME fd, li, false)
         val nebi = nebi andalso Vector.length inits = Vector.length fixed
-        val fixedSize = OM.fixedSize (state, env, td)
+        val (fixedSize, alignment, _, _) = OM.fieldPadding (state, env, td)
         val dest = genVarE (state, env, dest)
         val vtable = MD.genMetaData (state, env, no, mdd, nebi)
         val newTuple =
@@ -1556,8 +1703,8 @@ struct
           | M.RhsPSetGet _ => notCoreMil (env, "genRhs", "PSetGEt")
           | M.RhsPSetCond _ => notCoreMil (env, "genRhs", "PSetCond")
           | M.RhsPSetQuery _ => notCoreMil (env, "genRhs", "PSetQuery")
-          | M.RhsPSum _ => notCoreMil (env, "genRhs", "PSum")
-          | M.RhsPSumProj _ => notCoreMil (env, "genRhs", "PSumProj")
+          | M.RhsSum _       => notCoreMil (env, "genRhs", "Sum")
+          | M.RhsSumProj _   => notCoreMil (env, "genRhs", "SumProj")
 
       end
 
@@ -1647,8 +1794,12 @@ struct
         Pil.S.sequence [pre, Pil.S.sequence moves, Pil.S.goto succ]
       end
 
-  fun genCase (state, env, cb, src, {on,cases,default} : Mil.constant Mil.switch) =
+  fun genCase (state, env, cb, src, {select, on, cases, default}) =
       let
+        val () = 
+            case select
+             of M.SeSum fk   => notCoreMil (env, "genCase", "SeSum")
+              | M.SeConstant => ()
         val on = genOperand (state, env, on)
         fun isZero c =
             case c
@@ -1883,7 +2034,6 @@ struct
               val halt = if void then RT.haltV else RT.halt
             in Pil.S.call (Pil.E.namedConstant halt, [genOperand (state, env, opnd)])
             end
-          | M.TPSumCase _ => notCoreMil (env, "genTransfer", "TPSumCase")
        end
 
   (*** Blocks ***)
@@ -1978,11 +2128,10 @@ struct
               | M.GIdx t => error "GIdx"
               | M.GTuple {mdDesc, inits} =>
                 let
-                  val M.MDD {pok, ...} = mdDesc
                   val tv = globalTVar (state, env, v)
                   val ts = MTT.operands (getConfig env, getSymbolInfo state, inits)
                   val fs = genTyps (state, env, ts)
-                  val utt = tupleUnboxedTyp (pok, fs, NONE)
+                  val utt = tupleUnboxedTyp (state, env, mdDesc, fs)
                   val ut = Pil.D.typDef (utt, tv)
                   val dec = declareAndDefine (v, Pil.T.named tv)
                 in Pil.D.sequence [ut, dec]
@@ -2009,10 +2158,9 @@ struct
       case g
        of M.GTuple {mdDesc, inits} =>
           let
-            val M.MDD {pok, ...} = mdDesc
             val ts = MTT.operands (getConfig env, getSymbolInfo state, inits)
             val fs = genTyps (state, env, ts)
-            val t = tupleUnboxedTyp (pok, fs, NONE)
+            val t = tupleUnboxedTyp (state, env, mdDesc, fs)
             val tv = globalTVar (state, env, v)
             val ut = Pil.D.typDef (t, tv)
           in [ut]
@@ -2273,13 +2421,32 @@ struct
                       then SOME (I.variableString' var)
                       else NONE
                   val vtable = MD.genMetaData (state, env, no, mdDesc, true)
-                  fun doOne s = genSimple (state, env, s)
-                  val fields = Vector.toListMap (inits, doOne)
+                  val td = MU.MetaDataDescriptor.toTupleDescriptor mdDesc
+                  val (_, alignment, paddings, padding) = OM.fieldPadding (state, env, td)
+                  fun pad p = 
+                      let
+                        val elts = List.duplicate (p, fn () => Pil.E.char #"\000")
+                      in
+                        Pil.E.strctInit elts
+                      end
+                  fun doOne (i, s) = 
+                      let
+                        val p = Vector.sub (paddings, i)
+                        val s = genSimple (state, env, s)
+                      in if p = 0 then [s] else [pad p, s]
+                      end
+                  val fields = Vector.mapi (inits, doOne)
+                  val fields = List.concat (Vector.toList fields)
+                  val fields = 
+                      if padding = 0 then 
+                        fields
+                      else
+                        fields @ [pad padding]
                   val elts = vtable::fields
                   val newvId = unboxedVar (state, env, var)
                   val newv  = Pil.E.variable newvId
                   val init = Pil.E.strctInit elts
-                  val tuple = Pil.D.staticVariableExpr (Pil.varDec (tv, newvId), init)
+                  val tuple = Pil.D.alignedStaticVariableExpr (alignment, Pil.varDec (tv, newvId), init)
                   val () = addGlobalReg newv
                   val tupleptr = mkGlobalDef (var, newv, "Tuple")
                   val d = Pil.D.sequence [tuple, tupleptr]
@@ -2321,7 +2488,7 @@ struct
                  end
               | M.GSimple s => Pil.D.sequence []  (* This is supposed to be eliminated?  XXX -leaf *)
               | M.GClosure code => notCoreMil (env, "genGlobal", "GClosure")
-              | M.GPSum _ => notCoreMil (env, "genGlobal", "GPSum")
+              | M.GSum _  => notCoreMil (env, "genGlobal", "GSum")
               | M.GPSet _ => notCoreMil (env, "genGlobal", "GPSet")
       in 
         res

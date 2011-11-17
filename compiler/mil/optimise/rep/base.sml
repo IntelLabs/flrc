@@ -6,11 +6,11 @@ sig
 
   datatype 'node iInfo = 
            IiCode of {cargs : 'node Mil.callConv, args : 'node Vector.t, returns : 'node Vector.t}
-         | IiMetaData of {pok : Mil.pObjKind, fixed : 'node Vector.t, array : (int * 'node) option}
+         | IiMetaData of {pok : Mil.pObjKind, pinned : bool, fixed : 'node Vector.t, array : (int * 'node) option}
          | IiTupleDescriptor of {fixed : 'node Vector.t, array : 'node option}
          | IiThunk of {typ : 'node, fvs : 'node Vector.t}
          | IiClosure of 'node Vector.t
-         | IiPSum of 'node
+         | IiSum of 'node Vector.t
 
   val layoutIInfo : Config.t * Mil.symbolInfo * 'node iInfo * ('node -> Layout.t) -> Layout.t
 
@@ -41,11 +41,11 @@ struct
 
   datatype 'node iInfo = 
            IiCode of {cargs : 'node Mil.callConv, args : 'node Vector.t, returns : 'node Vector.t}
-         | IiMetaData of {pok : Mil.pObjKind, fixed : 'node Vector.t, array : (int * 'node) option}
+         | IiMetaData of {pok : Mil.pObjKind, pinned : bool, fixed : 'node Vector.t, array : (int * 'node) option}
          | IiTupleDescriptor of {fixed : 'node Vector.t, array : 'node option}
          | IiThunk of {typ : 'node, fvs : 'node Vector.t}
          | IiClosure of 'node Vector.t
-         | IiPSum of 'node
+         | IiSum of 'node Vector.t
 
   val layoutIInfo =
    fn (config, si, info, node) => 
@@ -60,16 +60,17 @@ struct
                    val returns = L.seq [L.str " => ", LU.parenSeq (vector returns)]
                  in  L.mayAlign [cargs, args, returns]
                  end
-               | IiMetaData {pok, fixed, array} => 
+               | IiMetaData {pok, pinned, fixed, array} => 
                  let
                    val pok = L.str (MU.PObjKind.toString pok)
+                   val pinned = if pinned then L.str "!" else L.str ""
                    val fixed = vector fixed
                    val array = 
                        (case array
                          of NONE => []
                           | SOME (i, n) => [LU.bracket (L.seq [Int.layout i, L.str " : ", node n])])
                    val elts = LU.angleSeq (fixed @ array)
-                 in L.mayAlign [L.seq [L.str "MetaData ", pok], elts]
+                 in L.mayAlign [L.seq [L.str "MetaData ", pok, pinned], elts]
                  end
                | IiTupleDescriptor {fixed, array} => 
                  let
@@ -85,8 +86,8 @@ struct
                  L.seq [L.str "Thunk", LU.paren (node typ), LU.angleSeq (vector fvs)]
                | IiClosure fvs =>
                  L.seq [L.str "Closure", LU.angleSeq (vector fvs)]
-               | IiPSum n => 
-                 L.seq [L.str "PSum", LU.angleBracket (node n)])
+               | IiSum v => 
+                 L.seq [L.str "Sum", LU.angleSeq (vector v)])
       in l
       end
 
