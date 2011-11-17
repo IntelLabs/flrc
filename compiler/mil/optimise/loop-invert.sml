@@ -286,13 +286,13 @@ struct
                        , arguments = V.concat [arguments,
                                      V.map (args, M.SVariable)]}
               else target
-        fun replaceS ({ on, cases, default }) =
-                      { on = on
+        fun replaceS ({ select, on, cases, default }) =
+                      { select = select
+                      , on = on
                       , cases = V.map (cases, fn (x, t) => (x, replaceT t))
                       , default = fmap replaceT default }
         fun replaceTr (M.TGoto t) = SOME (M.TGoto (replaceT t))
           | replaceTr (M.TCase s) = SOME (M.TCase (replaceS s))
-          | replaceTr (M.TPSumCase s) = SOME (M.TPSumCase (replaceS s))
           (* if there are calls returning to the targetlabel, we fail! *)
           | replaceTr (x as M.TInterProc { ret = M.RNormal { block, ... }, ...  }) =
             if block = targetlabel then NONE else SOME x

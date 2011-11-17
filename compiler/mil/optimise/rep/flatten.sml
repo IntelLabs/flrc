@@ -199,8 +199,8 @@ struct
                                 | M.RhsPSetGet _        => noFlatten ()
                                 | M.RhsPSetCond _       => noFlatten ()
                                 | M.RhsPSetQuery _      => noFlatten ()
-                                | M.RhsPSum _           => noFlatten ()
-                                | M.RhsPSumProj _       => noFlatten ())
+                                | M.RhsSum _            => noFlatten ()
+                                | M.RhsSumProj _        => noFlatten ())
 
                        in e
                        end
@@ -226,8 +226,7 @@ struct
                                | M.TInterProc {ret, ...} => noFlatten ret
                                | M.TReturn _   => () 
                                | M.TCut _      => ()
-                               | M.THalt _     => ()
-                               | M.TPSumCase _ => ())
+                               | M.THalt _     => ())
                       in e
                       end
                   val analyseTransfer = SOME analyseTransfer'
@@ -267,7 +266,7 @@ struct
                                 | M.GSimple (M.SVariable _) => ()
                                 | M.GSimple _               => noFlatten ()
                                 | M.GClosure _              => noFlatten ()
-                                | M.GPSum _                 => noFlatten ()
+                                | M.GSum _                  => noFlatten ()
                                 | M.GPSet _                 => noFlatten ())
                        in e
                        end
@@ -371,8 +370,7 @@ struct
                                    val () = noFlatten cont
                                  in ()
                                  end
-                               | M.THalt opnd               => noFlattenO opnd
-                               | M.TPSumCase {on, ...}      => noFlattenO on)
+                               | M.THalt opnd               => noFlattenO opnd)
                       in e
                       end
                   val analyseTransfer = SOME analyseTransfer'
@@ -600,11 +598,11 @@ struct
           end
 
       val doSwitch = 
-       fn (state, env, {on, cases, default}) => 
+       fn (state, env, {select, on, cases, default}) => 
           let
             val help1 = fn tg => doTarget (state, env, tg)
             val help2 = fn (c, tg) => (c, help1 tg)
-          in {on = on, cases = Vector.map (cases, help2), default = Option.map (default, help1)}
+          in {select = select, on = on, cases = Vector.map (cases, help2), default = Option.map (default, help1)}
           end
 
       val doInterProc =
@@ -636,8 +634,7 @@ struct
                            end)
                    | M.TReturn _     => NONE
                    | M.TCut _        => NONE
-                   | M.THalt _       => NONE
-                   | M.TPSumCase sw  => SOME (MS.empty, M.TPSumCase (doSwitch (state, env, sw))))
+                   | M.THalt _       => NONE)
           in (env, so)
           end
 

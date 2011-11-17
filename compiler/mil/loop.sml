@@ -933,7 +933,6 @@ struct
                     | M.TReturn _    => failed ()
                     | M.TCut _       => Vector.map (a, f2)
                     | M.THalt _      => failed ()
-                    | M.TPSumCase s  => doSwitch (a, s, f1, f2)
               fun doInitUnknown (p, _, la) = (p, IaUnknown, la)
               fun doInitArg ((p, ia, la), arg) =
                   case ia

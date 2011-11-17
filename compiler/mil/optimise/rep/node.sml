@@ -10,10 +10,17 @@ sig
   structure Set : SET where type element = node
 
   (* No class object constraint *)
-  val mkBottom : id * Mil.fieldKind option * Mil.fieldVariance option * node MilRepObject.Shape.shape option 
+  val mkBottom : id * Mil.fieldKind option 
+                 * Mil.valueSize option
+                 * Mil.fieldVariance option 
+                 * node MilRepObject.Shape.shape option 
                  -> node
   (* Class object constraint initialized to shape *)
-  val mkShaped : id * Mil.fieldKind option * Mil.fieldVariance option * node MilRepObject.Shape.shape -> node
+  val mkShaped : id * Mil.fieldKind option 
+                 * Mil.valueSize option
+                 * Mil.fieldVariance option 
+                 * node MilRepObject.Shape.shape 
+                 -> node
   val markNodeEscaping : node -> unit
   val markNodeUnknownDefs : node -> unit
   val propagate : node -> unit 
@@ -29,10 +36,13 @@ sig
   val fieldVariance : node -> Mil.fieldVariance
   val fieldKind' : node -> Mil.fieldKind option
   val fieldKind : node -> Mil.fieldKind
+  val alignment' : node -> Mil.valueSize option
+  val alignment : node -> Mil.valueSize
   val fieldDescriptor : node -> Mil.fieldDescriptor
   val setData : node 
                 * node MilRepObject.Shape.shape option 
                 * Mil.fieldKind option 
+                * Mil.valueSize option
                 * Mil.fieldVariance option 
                 -> unit
   val setShape : node * node MilRepObject.Shape.shape option -> unit
@@ -85,6 +95,7 @@ struct
 
        and nodeData = ND of {fk : Mil.fieldKind option,
                              shape : node Shape.shape option,
+                             alignment : Mil.valueSize option,
                              variance : Mil.fieldVariance option}
 
        and node = N of {id    : int,
@@ -94,15 +105,16 @@ struct
 
 
   val ((nodeDataSetFk, nodeDataGetFk),
+       (nodeDataSetAlignment, nodeDataGetAlignment),
        (nodeDataSetShape, nodeDataGetShape),
        (nodeDataSetVariance, nodeDataGetVariance)) = 
       let
         val r2t = 
-         fn (ND {fk, shape, variance}) => (fk, shape, variance)
+         fn (ND {fk, alignment, shape, variance}) => (fk, alignment, shape, variance)
         val t2r = 
-         fn (fk, shape, variance) => ND {fk = fk, shape = shape, variance = variance}
+         fn (fk, alignment, shape, variance) => ND {fk = fk, alignment = alignment, shape = shape, variance = variance}
       in
-        FunctionalUpdate.mk3 (r2t, t2r)
+        FunctionalUpdate.mk4 (r2t, t2r)
       end
 
   val ((forwardDataSetDefsKnown, forwardDataGetDefsKnown),
@@ -149,6 +161,7 @@ struct
   val nodeGetFieldKind = nodeDataGetFk o (op !) o nodeGetNodeData
   val nodeGetShape = nodeDataGetShape o (op !) o nodeGetNodeData
   val nodeGetVariance = nodeDataGetVariance o (op !) o nodeGetNodeData
+  val nodeGetAlignment = nodeDataGetAlignment o (op !) o nodeGetNodeData
 
   structure Ord = 
   struct
@@ -160,10 +173,10 @@ struct
   structure Set = SetF (Ord)
 
   val setData =
-   fn (n, s, fk, vs) => 
+   fn (n, s, fk, ag, vs) => 
       let
         val ndR = nodeGetNodeData n
-        val nd = ND {fk = fk, shape = s, variance = vs}
+        val nd = ND {fk = fk, alignment = ag, shape = s, variance = vs}
         val () = ndR := nd
       in ()
       end
@@ -171,25 +184,25 @@ struct
   val setShape = 
    fn (n, s) => 
       let
-        val ndR as ref (ND {fk, shape, variance}) = nodeGetNodeData n
-        val nd = ND {fk = fk, shape = s, variance = variance}
+        val ndR as ref (ND {fk, alignment, shape, variance}) = nodeGetNodeData n
+        val nd = ND {fk = fk, alignment = alignment, shape = s, variance = variance}
         val () = ndR := nd
       in ()
       end
 
   val mkBottom =
-   fn (id, fk, variance, shape) => 
+   fn (id, fk, alignment, variance, shape) => 
       N {id = id, 
          forward = EC.new  (FD {defsKnown = true, object = Object.bottom (), id = id}),
          backward = EC.new (BD {usesKnown = true}),
-         nodeData = ref (ND {fk = fk, shape = shape, variance = variance})}
+         nodeData = ref (ND {fk = fk, shape = shape, alignment = alignment, variance = variance})}
 
   val mkShaped =
-   fn (id, fk, variance, shape) => 
+   fn (id, fk, alignment, variance, shape) => 
       N {id = id, 
          forward = EC.new  (FD {defsKnown = true, object = Object.fromShape shape, id = id}),
          backward = EC.new (BD {usesKnown = true}),
-         nodeData = ref (ND {fk = fk, shape = SOME shape, variance = variance})}
+         nodeData = ref (ND {fk = fk, alignment = alignment, shape = SOME shape, variance = variance})}
 
 
   val markNodeUnknownDefs = 
@@ -321,13 +334,25 @@ struct
                | NONE => fail ("fieldKind", "No field kind for node"))
       in fk
       end
-      
+
+  val alignment' = nodeGetAlignment
+  val alignment = 
+   fn n => 
+      let
+        val a = 
+            (case nodeGetAlignment n
+              of SOME a => a
+               | NONE => fail ("alignment", "No alignment for node"))
+      in a
+      end
+
   val fieldDescriptor = 
    fn n => 
       let
         val fk = fieldKind n
         val var = fieldVariance n
-      in M.FD {kind = fk, var = var}
+        val alignment = alignment n
+      in M.FD {kind = fk, alignment = alignment, var = var}
       end
 
   val layout = 
@@ -357,17 +382,19 @@ struct
         val N {id, 
                forward,
                backward,
-               nodeData = ref (ND {fk, shape, variance})} = n
+               nodeData = ref (ND {fk, alignment, shape, variance})} = n
         val FD {defsKnown, object, id=classId} = EC.get forward
         val BD {usesKnown} = EC.get backward
         val fk = (case fk of NONE => L.empty
                            | SOME fk => L.str (" : " ^ (MU.FieldKind.toString fk)))
+        val ag = (case alignment of NONE => L.empty
+                                  | SOME vs => L.str (" - " ^ (MU.ValueSize.toString vs)))
         val var = (case variance of NONE => L.empty 
                                   | SOME v => L.str ("^"^MU.FieldVariance.toString v))
 
         val header = L.seq [L.str (if defsKnown then "!" else "?"),
                             L.str (if usesKnown then "!" else "^"),
-                            name true (id, classId), fk, var
+                            name true (id, classId), fk, ag, var
                            ]
         val shape = 
             (case shape

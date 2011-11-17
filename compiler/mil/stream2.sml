@@ -559,7 +559,7 @@ struct
                val (is, t) = 
                    case head
                     of ELabeled l => 
-                       (AL.empty, M.TGoto (MU.Target.fromVars (l, vs)))
+                       (AL.empty, M.TGoto (MU.Target.mkArgs (l, vs)))
                      | EBlock b => b
                val frag = F.emitPhiBlockI (state, env, frag, l, vs, is, t)
              in (tail, frag)
@@ -697,8 +697,8 @@ struct
          let
            fun doIt (state, env, i1, i2) =
                let
-                 val cases = Vector.new2 ((c1, i1), (c2, i2))
-                 val s = MU.Switch.noArgsNoDefault (opnd, cases)
+                 val cases = Vector.new2 ((c1, MU.Target.mkNoArgs i1), (c2, MU.Target.mkNoArgs i2))
+                 val s = {select = M.SeConstant, on = opnd, cases = cases, default = NONE}
                  val t = M.TCase s
                in t
                end
@@ -728,8 +728,10 @@ struct
          let
            fun doIt (state, env, i1, i2) =
                let
-                 val cases = Vector.new1 ((c1, i1))
-                 val s = MU.Switch.noArgs (opnd, cases, SOME i2)
+                 val t1 = MU.Target.mkNoArgs i1
+                 val t2 = MU.Target.mkNoArgs i2
+                 val cases = Vector.new1 ((c1, t1))
+                 val s = {select = M.SeConstant, on = opnd, cases = cases, default = SOME t2}
                  val t = M.TCase s
                in t
                end

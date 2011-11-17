@@ -144,11 +144,11 @@ end
 
    signature P_OBJECT_MODEL_SUM_HIGH =
    sig
-     val typ : Mil.typ Identifier.NameDict.t -> Mil.typ
-     val mk : Config.t * Mil.name * Mil.fieldKind * Mil.operand -> Mil.rhs
-     val mkGlobal : Config.t * Mil.name * Mil.fieldKind * Mil.simple
+     val typ : Mil.typ * (Mil.constant * (Mil.typ Vector.t)) Vector.t -> Mil.typ
+     val mk : Config.t * Mil.fieldKind * Mil.constant * Mil.fieldKind Vector.t * Mil.operand Vector.t -> Mil.rhs
+     val mkGlobal : Config.t * Mil.fieldKind * Mil.constant * Mil.fieldKind Vector.t * Mil.simple Vector.t
                     -> Mil.global
-     val getVal : Config.t * Mil.variable * Mil.fieldKind * Mil.name -> Mil.rhs
+     val getVal : Config.t * Mil.variable * Mil.fieldKind * Mil.fieldKind Vector.t * Mil.constant * int -> Mil.rhs
    end
 
    signature P_OBJECT_MODEL_TYPE_HIGH =
@@ -202,9 +202,9 @@ end
    sig
      include P_OBJECT_MODEL_SUM_HIGH
      val tagIndex : int
-     val ofValIndex : int
+     val ofValIndex : int -> int
      val getTag : Config.t * Mil.variable * Mil.fieldKind -> Mil.rhs
-     val td : Config.t * Mil.fieldKind -> Mil.tupleDescriptor
+     val td : Config.t * Mil.fieldKind * Mil.fieldKind Vector.t -> Mil.tupleDescriptor
    end
 
    signature P_OBJECT_MODEL_TYPE_LOW =
@@ -409,10 +409,15 @@ struct
   structure Sum =
   struct
 
-    fun typ nts = M.TPSum nts
-    fun mk (c, tag, fk, ofVal) = M.RhsPSum {tag = tag, typ = fk, ofVal = ofVal}
-    fun mkGlobal (c, tag, fk, ofVal) = M.GPSum {tag = tag, typ = fk, ofVal = ofVal}
-    fun getVal (c, v, fk, tag) = M.RhsPSumProj {typ = fk, sum = v, tag = tag}
+    fun typ (tt, arms) = 
+        let
+          val arms = Utils.SortedVectorMap.fromVector MU.Constant.compare arms
+        in M.TSum {tag = tt, arms = arms}
+        end
+    fun mk (c, fk, tag, fks, ofVals) = M.RhsSum {tag = tag, typs = fks, ofVals = ofVals}
+    fun mkGlobal (c, fk, tag, fks, ofVals) = 
+        M.GSum {tag = tag, typs = fks, ofVals = ofVals}
+    fun getVal (c, v, fk, fks, tag, idx) = M.RhsSumProj {typs = fks, sum = v, tag = tag, idx = idx}
 
   end (* structure Sum *)
 
@@ -455,7 +460,7 @@ struct
            * type.  Instead we approximate with TRef.
            *)
           val ct = codeTyp (M.TRef, args, ress)
-          val fts = Vector.new1 (ct, M.FvReadOnly)
+          val fts = Vector.new1 (ct, M.Vs8, M.FvReadOnly)
         in
           MU.Typ.fixedArray (M.PokFunction, fts)
         end
@@ -467,8 +472,7 @@ struct
     fun td (c, fks) =
       let
         val fks = Utils.Vector.cons (MU.FieldKind.nonRefPtr c, fks)
-        fun doOne fk = M.FD {kind = fk, var = M.FvReadOnly}
-        val fds = Vector.map (fks, doOne)
+        val fds = Vector.map (fks, MU.FieldDescriptor.unalignedRO)
         val td = M.TD {fixed = fds, array = NONE}
       in td
       end
@@ -477,9 +481,8 @@ struct
       let
         val pok = M.PokFunction
         val fks = Utils.Vector.cons (MU.FieldKind.nonRefPtr c, fks)
-        fun doOne fk = M.FD {kind = fk, var = M.FvReadOnly}
-        val fds = Vector.map (fks, doOne)
-        val mdd = M.MDD {pok = pok, fixed = fds, array = NONE}
+        val fds = Vector.map (fks, MU.FieldDescriptor.unalignedRO)
+        val mdd = M.MDD {pok = pok, pinned = false, fixed = fds, array = NONE}
       in mdd
       end
 
@@ -555,7 +558,7 @@ struct
   structure OptionSet =
   struct
 
-    fun typ t = MU.Typ.fixedArray (M.PokOptionSet, Vector.new1 (t, M.FvReadOnly))
+    fun typ t = MU.Typ.fixedArray (M.PokOptionSet, Vector.new1 (t, M.Vs8, M.FvReadOnly))
 
     val ofValIndex = B.ofValIndex
 
@@ -564,8 +567,8 @@ struct
     fun empty c =
         let
           val pok = M.PokOptionSet
-          val fd = M.FD {kind = M.FkRef, var = M.FvReadOnly}
-          val mdd = M.MDD {pok = pok, fixed = Vector.new1 fd, array = NONE}
+          val fd = MU.FieldDescriptor.unalignedRO M.FkRef
+          val mdd = M.MDD {pok = pok, pinned = false, fixed = Vector.new1 fd, array = NONE}
           val zero = M.SConstant (nulConst c)
         in M.RhsTuple {mdDesc = mdd, inits = Vector.new1 zero}
         end
@@ -573,15 +576,15 @@ struct
     fun emptyGlobal c =
         let
           val pok = M.PokOptionSet
-          val fd = M.FD {kind = M.FkRef, var = M.FvReadOnly}
-          val mdd = M.MDD {pok = pok, fixed = Vector.new1 fd, array = NONE}
+          val fd = MU.FieldDescriptor.unalignedRO M.FkRef
+          val mdd = M.MDD {pok = pok, pinned = false, fixed = Vector.new1 fd, array = NONE}
           val zero = M.SConstant (nulConst c)
         in M.GTuple {mdDesc = mdd, inits = Vector.new1 zero}
         end
 
     fun td c =
         let
-          val fixed = Vector.new1 (M.FD {kind = M.FkRef, var = M.FvReadOnly})
+          val fixed = Vector.new1 (MU.FieldDescriptor.unalignedRO M.FkRef)
           val td = M.TD {fixed = fixed, array = NONE}
         in td
         end
@@ -589,8 +592,8 @@ struct
     fun mdd c =
         let
           val pok = M.PokOptionSet
-          val fixed = Vector.new1 (M.FD {kind = M.FkRef, var = M.FvReadOnly})
-          val mdd = M.MDD {pok = pok, fixed = fixed, array = NONE}
+          val fixed = Vector.new1 (MU.FieldDescriptor.unalignedRO M.FkRef)
+          val mdd = M.MDD {pok = pok, pinned = false, fixed = fixed, array = NONE}
         in mdd
         end
 
@@ -636,55 +639,55 @@ struct
   structure Sum = 
   struct
 
-    fun typ nts = MU.Typ.fixedArray (M.PokTagged, Vector.new1 (M.TName, M.FvReadOnly))
+    fun typ (tt, _) = MU.Typ.fixedArray (M.PokTagged, Vector.new1 (tt, M.Vs8, M.FvReadOnly))
 
-    fun td (c, fk) =
+    fun td (c, fk, fks) =
         let
-          val fds = Vector.new2 (M.FD {kind = M.FkRef, var = M.FvReadOnly},
-                                 M.FD {kind = fk,      var = M.FvReadOnly})
+          val fds = Utils.Vector.cons (MU.FieldDescriptor.unalignedRO fk,
+                                       Vector.map (fks, MU.FieldDescriptor.unalignedRO))
           val td = M.TD {fixed = fds, array = NONE}
         in td
         end
 
-    fun mdd (c, fk) =
+    fun mdd (c, fk, fks) =
         let
-          val fds = Vector.new2 (M.FD {kind = M.FkRef, var = M.FvReadOnly},
-                                 M.FD {kind = fk,      var = M.FvReadOnly})
-          val mdd = M.MDD {pok = M.PokTagged, fixed = fds, array = NONE}
+          val fds = Utils.Vector.cons (MU.FieldDescriptor.unalignedRO fk,
+                                      Vector.map (fks, MU.FieldDescriptor.unalignedRO))
+          val mdd = M.MDD {pok = M.PokTagged, pinned = false, fixed = fds, array = NONE}
         in mdd
         end
 
-    fun mk (c, tag, fk, ofVal) =
+    fun mk (c, fk, tag, fks, ofVals) =
         let
-          val mdd = mdd (c, fk)
-          val inits = Vector.new2 (M.SConstant (M.CName tag), ofVal)
+          val mdd = mdd (c, fk, fks)
+          val inits = Utils.Vector.cons (M.SConstant tag, ofVals)
           val rhs = M.RhsTuple {mdDesc = mdd, inits = inits}
         in rhs
         end
 
-    fun mkGlobal (c, tag, fk, ofVal) =
+    fun mkGlobal (c, fk, tag, fks, ofVals) =
         let
-          val mdd = mdd (c, fk)
-          val inits = Vector.new2 (M.SConstant (M.CName tag), ofVal)
+          val mdd = mdd (c, fk, fks)
+          val inits = Utils.Vector.cons (M.SConstant tag, ofVals)
           val g = M.GTuple {mdDesc = mdd, inits = inits}
         in g
         end
 
     val tagIndex = 0
-    val ofValIndex = 1
+    val ofValIndex = fn i => tagIndex + 1 + i
 
     fun getTag (c, v, fk) =
         let
-          val td = td (c, fk)
+          val td = td (c, fk, Vector.new0 ())
           val f = M.FiFixed tagIndex
           val rhs = M.RhsTupleSub (M.TF {tupDesc = td, tup = v, field = f})
         in rhs
         end
 
-    fun getVal (c, v, fk, tag) =
+    fun getVal (c, v, fk, fks, tag, idx) =
         let
-          val td = td (c, fk)
-          val f = M.FiFixed ofValIndex
+          val td = td (c, fk, fks)
+          val f = M.FiFixed (ofValIndex idx)
           val rhs = M.RhsTupleSub (M.TF {tupDesc = td, tup = v, field = f})
         in rhs
         end
@@ -698,7 +701,7 @@ struct
 
     val td = M.TD {fixed = Vector.new0 (), array = NONE}
 
-    val mdd = M.MDD {pok = M.PokType, fixed = Vector.new0 (), array = NONE}
+    val mdd = M.MDD {pok = M.PokType, pinned = false, fixed = Vector.new0 (), array = NONE}
 
     fun mk () = M.RhsTuple {mdDesc = mdd, inits = Vector.new0 ()}
                     

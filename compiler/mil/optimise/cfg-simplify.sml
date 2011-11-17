@@ -82,12 +82,10 @@ struct
   type pattern = arg Vector.t
   type target = M.label * pattern
 
-  type 'a switch = {on : arg, cases : ('a * target) Vector.t, default : target option}
   datatype cont = 
            CReturn of pattern
          | CGoto of target
-         | CCase of M.constant switch
-         | CSumCase of M.name switch
+         | CCase of {select : M.selector, on : arg, cases : (M.constant * target) Vector.t, default : target option}
 
   val layoutArg = 
    fn (imil, v) =>
@@ -104,15 +102,19 @@ struct
                                layoutPattern (imil, p)]
       
   val layoutSwitch = 
-   fn (imil, f, {on, cases, default}) => 
+   fn (imil, {select, on, cases, default}) => 
       let
-        val on = layoutArg (imil, on)
-        val doCase = fn (a, t) => L.seq [f (T.getConfig imil, T.getSi imil, a), 
+        val on = 
+            case select 
+             of M.SeSum _    => L.seq [L.str "tagof", LU.paren (layoutArg (imil, on))]
+              | M.SeConstant => layoutArg (imil, on)
+        val doCase = fn (a, t) => L.seq [MilLayout.layoutConstant (T.getConfig imil, T.getSi imil, a), 
                                          L.str " => ", layoutTarget (imil, t)]
         val cases = Vector.toListMap (cases, doCase)
         val default = Option.layout (fn t => layoutTarget (imil, t)) default
         val header = L.seq [L.str "case ", on, L.str " of "]
-      in L.align [header, LU.indent (L.mayAlign (cases @ [default]))]
+        val l = L.seq [L.str "Case ", L.align [header, LU.indent (L.mayAlign (cases @ [default]))]]
+      in l
       end
 
   val layoutCont = 
@@ -123,8 +125,7 @@ struct
            (case c
              of CReturn p   => L.seq [L.str "Return ", layoutPattern (imil, p)]
               | CGoto t     => L.seq [L.str "Goto ", layoutTarget (imil, t)]
-              | CCase sw    => L.seq [L.str "Case ", layoutSwitch (imil, MilLayout.layoutConstant, sw)]
-              | CSumCase sw => L.seq [L.str "SCase ", layoutSwitch (imil, MilLayout.layoutName, sw)]
+              | CCase sw    => layoutSwitch (imil, sw)
            )
       )
 
@@ -217,27 +218,26 @@ struct
                   in t
                   end
               val doSwitch = 
-               fn {on, cases, default} => 
+               fn {select, on, cases, default} => 
                   let
                     val on = generalize1 (parms, on)
                     val cases = Vector.map (cases, (fn (d, t) => (d, doTarget t)))
                     val default = Option.map (default, doTarget)
-                  in {on = on, cases = cases, default = default}
+                  in {select = select, on = on, cases = cases, default = default}
                   end
               val res = 
-                  (case tfer
-                    of M.TGoto t           => CGoto (doTarget t)
-                     | M.TCase sw          => CCase (doSwitch sw)
-                     | M.TInterProc _      => Try.fail ()
-                     | M.TReturn arguments => 
-                       let 
-                         val pattern = generalize (parms, arguments)
-                         val sc = CReturn pattern
-                       in sc
-                       end 
-                     | M.TCut _            => Try.fail ()
-                     | M.THalt _           => Try.fail ()
-                     | M.TPSumCase sw      => CSumCase (doSwitch sw))
+                  case tfer
+                   of M.TGoto t           => CGoto (doTarget t)
+                    | M.TCase sw          => CCase (doSwitch sw)
+                    | M.TInterProc _      => Try.fail ()
+                    | M.TReturn arguments => 
+                      let 
+                        val pattern = generalize (parms, arguments)
+                        val sc = CReturn pattern
+                      in sc
+                      end 
+                    | M.TCut _            => Try.fail ()
+                    | M.THalt _           => Try.fail ()
             in res
             end)
 
@@ -252,15 +252,23 @@ struct
    *  Goto L2()
    * 
    *)
-  val rewriteGotoOfSwitch =
-   fn ((d, imil, ws, seen), M.T {block, arguments}, get, eq, {on, cases, default}) => 
+  val rewriteGotoOfCCase =
+   fn ((d, imil, ws, seen), M.T {block, arguments}, {select, on, cases, default}) => 
       Try.try
         (fn () =>
             let
               val on = instantiate1 (on, arguments)
-              val c = <@ get on
+              val c = 
+                  case select
+                   of M.SeSum fk => 
+                      let
+                        val v = <@ MU.Operand.Dec.sVariable on
+                        val tag = #tag <! MU.Def.Out.sum <! IMil.Def.toMilDef o IMil.Def.get @@ (imil, v)
+                      in tag
+                      end
+                    | M.SeConstant  => <@ MU.Operand.Dec.sConstant on
               val (l, p) = 
-                  case Vector.peek (cases, fn (c', t) => eq (c, c'))
+                  case Vector.peek (cases, fn (c', t) => MU.Constant.eq (c, c'))
                    of SOME (_, t) => t
                     | NONE        => <- default
               val () = Try.require (block <> l)
@@ -268,29 +276,6 @@ struct
               val () = Click.switchReduce d
             in M.T {block = l, arguments = arguments}
             end)
-
-  val rewriteGotoOfCCase =
-   fn (s, t, sw) => 
-      let
-        val get = MU.Operand.Dec.sConstant
-        val eq = MU.Constant.eq
-      in rewriteGotoOfSwitch (s, t, get, eq, sw)
-      end
-
-  val rewriteGotoOfCSumCase =
-   fn (s as (d, imil, ws, seen), t, sw) => 
-      let
-        val get = 
-            Try.lift
-            (fn oper => 
-                let
-                  val v = <@ MU.Operand.Dec.sVariable oper
-                  val tag = #tag <! MU.Def.Out.pSum <! IMil.Def.toMilDef o IMil.Def.get @@ (imil, v)
-                in tag
-                end)
-        val eq = MU.Eq.name
-      in rewriteGotoOfSwitch (s, t, get, eq, sw)
-      end
 
   val rewriteGoto = 
    fn (s as (d, imil, ws, seen), t as M.T {block, arguments}) => 
@@ -319,12 +304,11 @@ struct
                       in t
                       end
                     | CCase sw    => M.TGoto (<@ rewriteGotoOfCCase (s, t, sw))
-                    | CSumCase sw => M.TGoto (<@ rewriteGotoOfCSumCase (s, t, sw))
             in t
             end)
             
-  val rewriteSwitch = 
-   fn (s as (d, imil, ws, seen), construct, {on, cases, default}) =>
+  val rewriteTCase = 
+   fn (s as (d, imil, ws, seen), {select, on, cases, default}) =>
       Try.try
         (fn () =>
             let
@@ -355,12 +339,6 @@ struct
                                     val () = changed := true
                                   in t
                                   end
-                                | CSumCase sw => 
-                                  let
-                                    val t = <@ rewriteGotoOfCSumCase (s, t, sw)
-                                    val () = changed := true
-                                  in t
-                                  end
                         in t
                         end)
               val doCase = 
@@ -370,16 +348,10 @@ struct
               val cases = Vector.map (cases, doCase)
               val default = Option.map (default, fn tg => Utils.Option.get (doTarget tg, tg))
               val () = Try.require (!changed)
-              val t = construct {on = on, cases = cases, default = default}
+              val t = M.TCase {select = select, on = on, cases = cases, default = default}
             in t
             end)
 
-
-  val rewriteTCase = 
-   fn (s, sw) => rewriteSwitch (s, M.TCase, sw)
-
-  val rewriteTPSumCase = 
-   fn (s, sw) => rewriteSwitch (s, M.TPSumCase, sw)
 
   val rewriteTInterProc = 
    fn ((d, imil, ws, seen), {callee, ret, fx}) => 
@@ -435,7 +407,6 @@ struct
                     | M.TReturn args => Try.fail ()
                     | M.TCut _       => Try.fail ()
                     | M.THalt _      => Try.fail ()
-                    | M.TPSumCase sw => <@ rewriteTPSumCase (s, sw)
               val () = IInstr.replaceTransfer (imil, itfer, t)
               val () = WS.addInstr (ws, itfer)
             in ()
@@ -455,10 +426,9 @@ struct
             let
               val bTransfer = IBlock.getTransfer (imil, b)
               val doSwitch = 
-               fn {eq, con, dec, sw} => 
+               fn {select, on, cases, default} => 
                   let
                     (* A switch with a default with no outargs *)
-                    val {on, cases, default} = sw
                     val {block, arguments} = MU.Target.Dec.t (<- default)
                     val () = Try.V.isEmpty arguments
                     val iFunc = IInstr.getIFunc (imil, bTransfer)
@@ -473,14 +443,16 @@ struct
                               of [_] => ()
                                | _ => Try.fail ()
                     val ftTransfer = IBlock.getTransfer (imil, fallthruBlock)
-                    val {on = on2, cases = cases2, default = default2} = <@ dec <! IInstr.toTransfer @@ ftTransfer
+                    val {select = select2, on = on2, cases = cases2, default = default2} = 
+                        <@ MU.Transfer.Dec.tCase <! IInstr.toTransfer @@ ftTransfer
                     val () = Try.require (MU.Operand.eq (on, on2))
-                    val check = fn x => (fn (y, _) => not (eq (x, y)))
+                    val () = Try.require (select = select2)
+                    val check = fn x => (fn (y, _) => not (MU.Constant.eq (x, y)))
                     val notAnArmInFirst = 
                      fn (x, _) => Vector.forall (cases, check x)
                     val cases2 = Vector.keepAll (cases2, notAnArmInFirst)
                     val cases = Vector.concat [cases, cases2]
-                    val t = con {on = on, cases = cases, default = default2}
+                    val t = M.TCase {select = select, on = on, cases = cases, default = default2}
                     val () = IInstr.replaceTransfer (imil, bTransfer, t)
                     (* Kill the fall thru block to prevent temporary quadratic blowup *)
                     val t2 = M.TGoto (M.T {block = block, arguments = Vector.new0()})
@@ -491,12 +463,9 @@ struct
                   in ()
                   end
               val () = 
-                  (case <@ IInstr.toTransfer bTransfer
-                    of M.TCase sw     => doSwitch {eq = MU.Constant.eq, con = M.TCase, 
-                                                   dec = MU.Transfer.Dec.tCase, sw = sw}
-                     | M.TPSumCase sw => doSwitch {eq = op =, con = M.TPSumCase, 
-                                                   dec = MU.Transfer.Dec.tPSumCase, sw = sw}
-                     | _ => Try.fail ())
+                  case <@ IInstr.toTransfer bTransfer
+                   of M.TCase sw     => doSwitch sw
+                    | _ => Try.fail ()
             in ()
             end)
 

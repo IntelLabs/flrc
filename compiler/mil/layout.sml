@@ -37,7 +37,6 @@ sig
     val layoutRhs                  : Mil.rhs layout
     val layoutInstruction          : Mil.instruction layout
     val layoutTarget               : Mil.target layout
-    val layoutSwitch               : string * 'a layout -> 'a Mil.switch layout
     val layoutCodes                : Mil.codes layout
     val layoutCall                 : Mil.call layout
     val layoutEval                 : Mil.eval layout
@@ -163,7 +162,7 @@ struct
      thunkTyp   : bool,
      thunkFvs   : bool,
      pFunFvs    : bool,
-     pSumTyp    : bool,
+     sumTyp     : bool,
      codes      : bool
    }
 
@@ -191,7 +190,7 @@ struct
    fun showThunkTyp     e = #thunkTyp   (getOptions e)
    fun showThunkFvs     e = #thunkFvs   (getOptions e)
    fun showClosureFvs   e = #pFunFvs    (getOptions e)
-   fun showPSumTyp      e = #pSumTyp    (getOptions e)
+   fun showSumTyp       e = #sumTyp     (getOptions e)
    fun showCodes        e = #codes      (getOptions e)
 
    fun setBlock (E {config, si, helpers, options, block}, b) =
@@ -247,6 +246,58 @@ struct
    fun layoutFieldVarianceShort (env, fv) =
        LU.char (MU.FieldVariance.toChar fv)
 
+   fun layoutAlignmentOpt (env, vs) = 
+       if MU.ValueSize.eq (vs, M.Vs8) then 
+         L.empty 
+       else 
+         L.seq [L.str "-", Int.layout (MU.ValueSize.numBytes vs)]
+
+   fun layoutConstant (env, c) =
+       case c
+        of M.CRat r => L.seq [L.str "R", L.paren (IntInf.layout r)]
+         | M.CInteger i => L.seq [L.str "I", L.paren (IntInf.layout i)]
+         | M.CName n => layoutName (env, n)
+         | M.CIntegral i => IntArb.layout i
+         | M.CBoolean b => if b then L.str "True" else L.str "False"
+         | M.CFloat f =>
+           let
+             val f =
+                 if showBinFpConsts env then
+                   let
+                     val lw = Utils.real32ToWord f
+                     val s = LargeWord.toString lw
+                     val s = s ^ String.make (8 - String.length s, #"0")
+                     val l = L.str s
+                   in l
+                   end
+                 else
+                   Real32.layout f
+             val l = L.seq [L.str "F", L.paren f]
+           in l
+           end
+         | M.CDouble d =>
+           let
+             val d =
+                 if showBinFpConsts env then
+                   Fail.unimplemented (modulename, "layoutConstant", "binary double")
+                 else
+                   Real64.layout d
+             val l = L.seq [L.str "D", L.paren d]
+           in l
+           end
+         | M.CViMask {descriptor, elts} =>
+           let
+             val desc = MPU.Layout.vectorDescriptor (getConfig env, descriptor)
+             val bs = L.seq (Vector.toListMap (elts, LU.layoutBool'))
+             val l = L.seq [L.str "M", LU.bracket desc, LU.angleBracket bs]
+           in l
+           end
+         | M.CPok pok => layoutPObjKind (env, pok)
+         | M.CRef i   => L.seq [L.str "Ref", L.paren (IntInf.layout i)]
+         | M.COptionSetEmpty => L.str "Empty"
+         | M.CTypePH => L.str "TypePH"
+   and layoutConstants (env, cs) = layoutVector (env, layoutConstant, cs)
+
    fun layoutTyp (env, t) =
        case t
         of M.TAny => L.str "Any"
@@ -275,10 +326,11 @@ struct
          | M.TTuple {pok, fixed, array} =>
            let
              val pok = layoutPObjKindShort (env, pok)
-             fun layoutTypVar (env, (t, fv)) = L.seq [layoutTyp (env, t), layoutFieldVarianceShort (env, fv)]
-             val fixed = layoutVector (env, layoutTypVar, fixed)
+             fun layoutTypAVar (env, (t, a, fv)) = 
+                 L.seq [layoutTyp (env, t), layoutAlignmentOpt (env, a), layoutFieldVarianceShort (env, fv)]
+             val fixed = layoutVector (env, layoutTypAVar, fixed)
              val is = semiCommaL (pok, fixed)
-             val array = [LU.bracket (layoutTypVar (env, array))]
+             val array = [LU.bracket (layoutTypAVar (env, array))]
              val is = is @ array
              val l = LU.angleBracket (L.mayAlign is)
            in l
@@ -295,12 +347,13 @@ struct
              val l = L.mayAlign [a, LU.indent r]
            in l
            end
-         | M.TPSum nts =>
+         | M.TSum {tag, arms} =>
            let
-             val is = ND.toList nts
-             fun doOne (n, t) = L.mayAlign [L.seq [layoutName (env, n), L.str ":"], LU.indent (layoutTyp (env, t))]
-             val is = List.map (is, doOne)
-             val l = L.seq [L.str "PSum", LU.braceSeq is]
+             val tag = layoutTyp (env, tag)
+             fun doOne (n, t) = L.mayAlign [L.seq [layoutConstant (env, n), L.str ":"], 
+                                            LU.indent (LU.angleSeq (layoutTyps (env, t)))]
+             val is = Vector.toListMap (arms, doOne)
+             val l = L.seq [L.str "Sum", LU.brace tag, LU.braceSeq is]
            in l
            end
          | M.TPType {kind, over} =>
@@ -358,11 +411,15 @@ struct
    fun layoutFieldKinds (env, fks) = 
        LU.parenSeq (layoutVector (env, layoutFieldKindShort, fks))
 
-   fun layoutFieldDescriptor (env, M.FD {kind, var}) =
-       L.seq [layoutFieldKind (env, kind), layoutFieldVarianceShort (env, var)]
+   fun layoutFieldDescriptor (env, M.FD {kind, alignment, var}) =
+       L.seq [layoutFieldKind (env, kind), 
+              layoutAlignmentOpt (env, alignment),
+              layoutFieldVarianceShort (env, var)]
 
-   fun layoutFieldDescriptorShort (env, M.FD {kind, var}) =
-       L.seq [layoutFieldKindShort (env, kind), layoutFieldVarianceShort (env, var)]
+   fun layoutFieldDescriptorShort (env, M.FD {kind, alignment, var}) =
+       L.seq [layoutFieldKindShort (env, kind), 
+              layoutAlignmentOpt (env, alignment),
+              layoutFieldVarianceShort (env, var)]
 
    fun layoutTupleDescriptor (env, M.TD {fixed, array}) =
        let
@@ -375,9 +432,10 @@ struct
        in l
        end
 
-   fun layoutMetaDataDescriptor (env, M.MDD {pok, fixed, array}) =
+   fun layoutMetaDataDescriptor (env, M.MDD {pok, pinned, fixed, array}) =
        let
          val pok = layoutPObjKindShort (env, pok)
+         val pre = if pinned then L.seq [pok, L.str "!"] else pok
          val fixed = layoutVector (env, layoutFieldDescriptorShort, fixed)
          val array =
              case array
@@ -389,55 +447,10 @@ struct
                    val l = [LU.bracket l]
                  in l
                  end
-         val l = LU.angleBracket (L.mayAlign (semiCommaL (pok, fixed) @ array))
+         val l = LU.angleBracket (L.mayAlign (semiCommaL (pre, fixed) @ array))
        in l
        end
 
-   fun layoutConstant (env, c) =
-       case c
-        of M.CRat r => L.seq [L.str "R", L.paren (IntInf.layout r)]
-         | M.CInteger i => L.seq [L.str "I", L.paren (IntInf.layout i)]
-         | M.CName n => layoutName (env, n)
-         | M.CIntegral i => IntArb.layout i
-         | M.CBoolean b => if b then L.str "True" else L.str "False"
-         | M.CFloat f =>
-           let
-             val f =
-                 if showBinFpConsts env then
-                   let
-                     val lw = Utils.real32ToWord f
-                     val s = LargeWord.toString lw
-                     val s = s ^ String.make (8 - String.length s, #"0")
-                     val l = L.str s
-                   in l
-                   end
-                 else
-                   Real32.layout f
-             val l = L.seq [L.str "F", L.paren f]
-           in l
-           end
-         | M.CDouble d =>
-           let
-             val d =
-                 if showBinFpConsts env then
-                   Fail.unimplemented (modulename, "layoutConstant", "binary double")
-                 else
-                   Real64.layout d
-             val l = L.seq [L.str "D", L.paren d]
-           in l
-           end
-         | M.CViMask {descriptor, elts} =>
-           let
-             val desc = MPU.Layout.vectorDescriptor (getConfig env, descriptor)
-             val bs = L.seq (Vector.toListMap (elts, LU.layoutBool'))
-             val l = L.seq [L.str "M", LU.bracket desc, LU.angleBracket bs]
-           in l
-           end
-         | M.CPok pok => layoutPObjKind (env, pok)
-         | M.CRef i   => L.seq [L.str "Ref", L.paren (IntInf.layout i)]
-         | M.COptionSetEmpty => L.str "Empty"
-         | M.CTypePH => L.str "TypePH"
-   and layoutConstants (env, cs) = layoutVector (env, layoutConstant, cs)
 
    fun layoutSimple (env, s) =
        case s
@@ -569,9 +582,9 @@ struct
        else
          LU.paren (Int.layout (Vector.size fvs))
 
-   fun layoutPSumTyp (env, l, fk) =
-       if showPSumTyp env then
-         L.seq [l, L.str ":", layoutFieldKindShort (env, fk)]
+   fun layoutSumTyp (env, l, fks) =
+       if showSumTyp env then
+         L.seq [l, L.str ":", LU.angleSeq (layoutVector (env, layoutFieldKindShort, fks))]
        else
          l
 
@@ -690,13 +703,14 @@ struct
            in l
            end
          | M.RhsPSetQuery oper => L.seq [L.str "?", layoutOperand (env, oper)]
-         | M.RhsPSum {tag, typ, ofVal} =>
+         | M.RhsSum {tag, typs, ofVals} =>
            L.seq [L.str "Tagged",
-                  L.tuple [layoutName (env, tag), layoutPSumTyp (env, layoutOperand (env, ofVal), typ)]]
-         | M.RhsPSumProj {typ, sum, tag} =>
+                  L.tuple [layoutConstant (env, tag), 
+                           layoutSumTyp (env, LU.angleSeq (layoutVector (env, layoutOperand, ofVals)), typs)]]
+         | M.RhsSumProj {typs, sum, tag, idx} =>
            let
-             val l = L.seq [layoutVariable (env, sum), L.str ".", layoutName (env, tag)]
-             val l = layoutPSumTyp (env, l, typ)
+             val l = L.seq [layoutVariable (env, sum), L.str ".", layoutConstant (env, tag), L.str ".", Int.layout idx]
+             val l = layoutSumTyp (env, l, typs)
              val l = L.seq [L.str "SumProj", L.paren l]
            in l
            end
@@ -725,12 +739,17 @@ struct
          L.seq [layoutLabel (env, block), LU.parenSeq (layoutOperands (env, arguments)), anot]
        end
 
-   fun layoutSwitch (kw, f) (env, {on, cases, default} : 'a Mil.switch) =
+   fun layoutSwitch (env, {select, on, cases, default}) =
        let
-         val header = L.seq [L.str kw, LU.space, layoutOperand (env, on), L.str " {"]
+         val on = layoutOperand (env, on)
+         val select = 
+             case select
+              of M.SeSum fk   => L.seq [L.str "tagof", LU.paren (L.seq [on, L.str ":", layoutFieldKindShort (env, fk)])]
+               | M.SeConstant => on
+         val header = L.seq [L.str "Case", LU.space, select, L.str " {"]
          fun doOne (k, t) =
              let
-               val k = f (env, k)
+               val k = layoutConstant (env, k)
                val t = layoutTarget (env, t)
                val l = L.mayAlign [L.seq [k, L.str " =>"], LU.indent t]
              in LU.indent l
@@ -817,7 +836,7 @@ struct
    fun layoutTransfer (env, t) = 
        case t
         of M.TGoto tg => L.seq [L.str "Goto ", layoutTarget (env, tg)]
-         | M.TCase s => layoutSwitch ("Case", layoutConstant) (env, s)
+         | M.TCase s => layoutSwitch (env, s)
          | M.TInterProc {callee, ret, fx} =>
            L.mayAlign [layoutInterProc (env, callee), layoutReturn (env, ret), layoutEffects (env, fx)]
          | M.TReturn os => L.seq [L.str "Return", LU.parenSeq (layoutOperands (env, os))]
@@ -826,7 +845,6 @@ struct
                        LU.indent (LU.parenSeq (layoutOperands (env, args))),
                        LU.indent (layoutCuts (env, cuts))]
          | M.THalt opnd => L.seq [L.str "Halt", L.paren (layoutOperand (env, opnd))]
-         | M.TPSumCase s => layoutSwitch ("PSumCase", layoutName) (env, s)
 
    fun layoutBlock (env, (l, M.B {parameters, instructions, transfer})) =
        let
@@ -911,12 +929,12 @@ struct
              val l = L.seq [L.str "Closure", LU.paren (L.mayAlign l)]
            in l
            end
-         | M.GPSum {tag, typ, ofVal} =>
+         | M.GSum {tag, typs, ofVals} =>
            let
-             val ofVal = layoutSimple (env, ofVal)
-             val ofVal = layoutPSumTyp (env, ofVal, typ)
-             val tag = layoutName (env, tag)
-             val l = L.seq [L.str "Tagged", L.tuple [tag, ofVal]]
+             val ofVals = LU.angleSeq (layoutVector (env, layoutSimple, ofVals))
+             val ofVals = layoutSumTyp (env, ofVals, typs)
+             val tag = layoutConstant (env, tag)
+             val l = L.seq [L.str "Tagged", L.tuple [tag, ofVals]]
            in l
            end
          | M.GPSet opnd => L.seq [L.str "PSet", L.paren (layoutSimple (env, opnd))]
@@ -1000,7 +1018,7 @@ struct
          val hs = Helpers.default
          val opts = {supVarKind = true, escVarName = true, binFpConst = true, binderTyps = true,
                      viElemType = true, numbers = false, tupDesc = true,
-                     thunkTyp = true, thunkFvs = true, pFunFvs = true, pSumTyp = true, codes = true}
+                     thunkTyp = true, thunkFvs = true, pFunFvs = true, sumTyp = true, codes = true}
          val env = E {config = c, si = si, helpers = hs, options = opts, block = NONE}
          val l = layoutProgramAux (env, false, false, p)
        in l
@@ -1038,7 +1056,7 @@ struct
          val thunkTyp   = ref false
          val thunkFvs   = ref false
          val pFunFvs    = ref false
-         val pSumTyp    = ref false
+         val sumTyp     = ref false
          val codes      = ref false
          val symbols    = ref false
          val fullSymTab = ref false
@@ -1053,7 +1071,7 @@ struct
                | #"F" => let val () = fullSymTab := true val () = symbols := true in true end
                | #"k" => let val () = supVarKind := true in true end
                | #"n" => let val () = numbers := true in true end
-               | #"s" => let val () = pSumTyp := true in true end
+               | #"s" => let val () = sumTyp := true in true end
                | #"S" => let val () = symbols := true in true end
                | #"t" => let val () = tupDesc := true in true end
                | #"T" => let val () = thunkTyp := true in true end
@@ -1070,7 +1088,7 @@ struct
                    val () = thunkTyp   := true
                    val () = thunkFvs   := true
                    val () = pFunFvs    := true
-                   val () = pSumTyp    := true
+                   val () = sumTyp     := true
                    val () = codes      := true
                    val () = symbols    := false
                    val () = fullSymTab := false
@@ -1097,7 +1115,7 @@ struct
                    val () = thunkTyp := true
                    val () = thunkFvs := true
                    val () = pFunFvs := true
-                   val () = pSumTyp := true
+                   val () = sumTyp := true
                    val () = codes := true
                    val () = symbols := true
                    val () = fullSymTab := true
@@ -1110,7 +1128,7 @@ struct
            SOME ({supVarKind = !supVarKind, escVarName = !escVarName,
                   binFpConst = !binFpConst, binderTyps = !binderTyps,
                   viElemType = !viElemType, tupDesc = !tupDesc,
-                  thunkTyp = !thunkTyp, thunkFvs = !thunkFvs, pFunFvs = !pFunFvs, pSumTyp = !pSumTyp, codes = !codes,
+                  thunkTyp = !thunkTyp, thunkFvs = !thunkFvs, pFunFvs = !pFunFvs, sumTyp = !sumTyp, codes = !codes,
                   numbers = !numbers},
                  !symbols,
                  !fullSymTab)
@@ -1120,7 +1138,7 @@ struct
 
    fun dft _ = ({supVarKind = false, escVarName = false, binFpConst = false, binderTyps = false,
                  viElemType = false, tupDesc = false, thunkTyp = false,
-                 thunkFvs = false, pFunFvs = false, pSumTyp = false, codes = true, numbers = false},
+                 thunkFvs = false, pFunFvs = false, sumTyp = false, codes = true, numbers = false},
                 false,
                 false)
 
@@ -1215,12 +1233,6 @@ struct
     fn (config, si, cc) =>
        layoutCallConv (fn (env, y) => g (getConfig env, getSI env, y))
                       (#1 (envMk (config, si, Helpers.default)), cc)
-
-   val layoutSwitch =
-    fn (kw, g) =>
-    fn (config, si, s) =>
-       layoutSwitch (kw, fn (env, y) => g (getConfig env, getSI env, y))
-                    (#1 (envMk (config, si, Helpers.default)), s)
 
    fun layout (c, p) = layoutProgram (c, Helpers.default, p)
 

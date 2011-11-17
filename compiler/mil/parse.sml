@@ -159,6 +159,7 @@ struct
         in maps
         end
 
+    (* What's going on with this?  Why doesn't it rewrite names in types?  -leaf *)
     structure RewriteNames =
     struct
 
@@ -238,8 +239,10 @@ struct
             | M.RhsPSetGet _ => r
             | M.RhsPSetCond {bool, ofVal} => M.RhsPSetCond {bool = operand (nm, bool), ofVal = operand (nm, ofVal)}
             | M.RhsPSetQuery opnd => M.RhsPSetQuery (operand (nm, opnd))
-            | M.RhsPSum {tag, typ, ofVal} => M.RhsPSum {tag = name (nm, tag), typ = typ, ofVal = operand (nm, ofVal)}
-            | M.RhsPSumProj {typ, sum, tag} => M.RhsPSumProj {typ = typ, sum = sum, tag = name (nm, tag)}
+            | M.RhsSum {tag, typs, ofVals} => 
+              M.RhsSum {tag = constant (nm, tag), typs = typs, ofVals = operands (nm, ofVals)}
+            | M.RhsSumProj {typs, sum, tag, idx} => 
+              M.RhsSumProj {typs = typs, sum = sum, tag = constant (nm, tag), idx = idx}
 
       fun instruction (nm : t, M.I {dests, n, rhs = r} : M.instruction) : M.instruction =
                                                                           M.I {dests = dests, n = n, rhs = rhs (nm, r)}
@@ -247,9 +250,10 @@ struct
       fun target (nm : t, M.T {block, arguments} : M.target) : M.target =
           M.T {block = block , arguments = operands (nm, arguments)}
 
-      fun switch (nm : t, f : t * 'a -> 'a, {on, cases, default} : 'a M.switch) : 'a M.switch =
-          {on = operand (nm, on),
-           cases = Vector.map (cases, fn (x, t) => (f (nm, x), target (nm, t))),
+      fun switch (nm : t, {select, on, cases, default}) =
+          {select = select, 
+           on = operand (nm, on),
+           cases = Vector.map (cases, fn (x, t) => (constant (nm, x), target (nm, t))),
            default = Option.map (default, fn t => target (nm, t))}
 
       fun interProc (nm : t, ip : M.interProc) : M.interProc =
@@ -260,12 +264,11 @@ struct
       fun transfer (nm : t, t : M.transfer) : M.transfer =
         case t
          of M.TGoto t => M.TGoto (target (nm, t))
-          | M.TCase sw => M.TCase (switch (nm, constant, sw))
+          | M.TCase sw => M.TCase (switch (nm, sw))
           | M.TInterProc {callee, ret, fx} => M.TInterProc {callee = interProc (nm, callee), ret = ret, fx = fx}
           | M.TReturn os => M.TReturn (operands (nm, os))
           | M.TCut {cont, args, cuts} => M.TCut {cont = cont, args = operands (nm, args), cuts = cuts}
           | M.THalt opnd => M.THalt (operand (nm, opnd))
-          | M.TPSumCase sw => M.TPSumCase (switch (nm, name, sw))
 
     end (* RewriteNames *)
 
@@ -297,7 +300,6 @@ struct
             | M.TReturn _ => t
             | M.TCut {cont, args, cuts = cs} => M.TCut {cont = cont, args = args, cuts = cuts (csm, cs)}
             | M.THalt _ => t
-            | M.TPSumCase _ => t
 
     end (* RewriteCutSets *)
 
@@ -807,6 +809,10 @@ struct
   fun fieldVariance (state : state, env : env) : M.fieldVariance P.t =
       syntax (P.satisfyMap (MU.FieldVariance.fromChar)) || P.error "Expected field variance"
 
+  fun alignmentOpt (state : state, env : env) : M.valueSize P.t = 
+      P.required (P.map (keycharSF #"-" -&& decimal, MU.ValueSize.fromBytes) || P.return (SOME M.Vs8), 
+                  "Bad alignment")
+
   fun typNameF (state : state, env : env) : string P.t =
       P.bind identifierF
              (fn s => if String.length s >= 1 andalso String.sub (s, 0) = #"t" then P.succeed s else P.fail)
@@ -824,171 +830,6 @@ struct
 
   fun vectorSize (state : state, env : env) : MP.vectorSize P.t = 
       vectorSizeF (state, env) || P.error "Expected vector size"
-
-  fun typ (state : state, env : env) : M.typ P.t =
-      let
-        val nameTyp = P.map (name (state, env) && keycharS #":" && P.$$ typ (state, env), fn ((n, _), t) => (n, t))
-        fun doId s =
-            case s
-             of "Any" => P.succeed M.TAny
-              | "Any8" => P.succeed (M.TAnyS M.Vs8)
-              | "Any16" => P.succeed (M.TAnyS M.Vs16)
-              | "Any32" => P.succeed (M.TAnyS M.Vs32)
-              | "Any64" => P.succeed (M.TAnyS M.Vs64)
-              | "Any128" => P.succeed (M.TAnyS M.Vs128)
-              | "Any256" => P.succeed (M.TAnyS M.Vs256)
-              | "Any512" => P.succeed (M.TAnyS M.Vs512)
-              | "Bits8" => P.succeed (M.TBits M.Vs8)
-              | "Bits16" => P.succeed (M.TBits M.Vs16)
-              | "Bits32" => P.succeed (M.TBits M.Vs32)
-              | "Bits64" => P.succeed (M.TBits M.Vs64)
-              | "Bits128" => P.succeed (M.TBits M.Vs128)
-              | "Bits256" => P.succeed (M.TBits M.Vs256)
-              | "Bits512" => P.succeed (M.TBits M.Vs512)
-              | "Bitsp" => P.succeed (M.TBits (MU.ValueSize.ptrSize (getConfig env)))
-              | "Boolean" => P.succeed M.TBoolean
-              | "Cont" => P.map (parenSeq (typ (state, env)), fn ts => M.TContinuation ts)
-              | "CStr" => P.succeed M.TCString
-              | "Idx" => P.succeed M.TIdx
-              | "Mask" => P.map (bracket (vectorDescriptor (state, env)), M.TViMask)
-              | "Name" => P.succeed M.TName
-              | "None" => P.succeed M.TNone
-              | "NonRefPtr" => P.succeed M.TNonRefPtr
-              | "PAny" => P.succeed M.TPAny
-              | "PSet" => P.map (paren (typ (state, env)), fn t => M.TPType {kind = M.TkE, over = t})
-              | "PSum" => P.map (braceSeq nameTyp, fn nts => M.TPSum (ND.fromVector nts))
-              | "PRef" => P.map (paren (typ (state, env)), M.TPRef)
-              | "PType" => P.map (paren (typ (state, env)), fn t => M.TPType {kind = M.TkI, over = t})
-              | "Ref" => P.succeed M.TRef
-              | "Thunk" => P.map (paren (typ (state, env)), M.TThunk)
-              | "Vec" => P.map (bracket (vectorSize (state, env)) && angleBracket (P.$$ typ (state, env)),
-                                (fn (vs, t) => M.TViVector {vectorSize = vs, elementTyp = t}))
-              | _ => P.fail
-        val idBased = P.bind identifierF doId
-        val tNumeric = syntax (P.map (PU.Parse.numericTyp (getConfig env), M.TNumeric))
-        val code =
-            P.map (parenSemiCommaF (callConvF (state, env, typ), P.$$ typ (state, env))
-                   && keywordS "->"
-                   && parenSeq (P.$$ typ (state, env)),
-                   fn (((cc, args), _), ress) => M.TCode {cc = cc, args = args, ress = ress})
-        val typVar = P.$$ typ (state, env) && fieldVariance (state, env)
-        val tuple =
-            P.map (semiCommaAux (keycharSF #"<", #"[", pObjKind (state, env), typVar) &&
-                   typVar && keycharS #"]" && keycharS #">",
-                   fn ((((pok, tvs), tv), _), _) => M.TTuple {pok = pok, fixed = tvs, array = tv})
-        val closure =
-            P.map (parenSeqF (P.$$ typ (state, env))
-                   && keywordS "=>"
-                   && parenSeq (P.$$ typ (state, env)),
-                   fn ((args, _), ress) => M.TClosure {args = args, ress = ress})
-        fun doNamed s =
-            case getNamedTyp (state, s) of NONE => P.error ("Type " ^ s ^ " undefined") | SOME t => P.succeed t
-        val named = P.bind (typNameF (state, env)) doNamed
-        val p = idBased || tNumeric || code || tuple || closure || named || P.error "Expected type"
-      in p
-      end
-
-  fun binderF (state : state, env : env, k : M.variableKind) : M.variable P.t =
-      let
-        fun doIt ((v, _), t) =
-            if MU.SymbolTableManager.variableHasInfo (getStm state,v) then
-              P.error "Variable already bound"
-            else
-              let
-                val () = MU.SymbolTableManager.variableSetInfo (getStm state, v, M.VI {typ = t, kind = k})
-              in P.succeed v
-              end
-        val p = P.bind (variableF (state, env) && keycharS #":" && typ (state, env)) doIt
-      in p
-      end
-
-  fun binder (state : state, env : env, k : M.variableKind) : M.variable P.t =
-      binderF (state, env, k) || P.error "Expected variable binder"
-
-  fun fieldKind (state : state, env : env) : M.fieldKind P.t =
-      P.bind identifierF
-             (fn s =>
-                 case s
-                  of "b8"  => P.succeed (M.FkBits M.Fs8)
-                   | "b16" => P.succeed (M.FkBits M.Fs16)
-                   | "b32" => P.succeed (M.FkBits M.Fs32)
-                   | "b64" => P.succeed (M.FkBits M.Fs64)
-                   | "bp"  => P.succeed (MU.FieldKind.nonRefPtr (getConfig env))
-                   | "d"   => P.succeed M.FkDouble
-                   | "f"   => P.succeed M.FkFloat
-                   | "r"   => P.succeed M.FkRef
-                   | _     => P.fail)
-      || P.error "Expected field kind"
-
-  fun fieldDescriptor (state : state, env : env) : M.fieldDescriptor P.t =
-      P.map (fieldKind (state, env) && fieldVariance (state, env), fn (k, v) => M.FD {kind = k, var = v})
-
-  fun tupleDescriptorNameF (state : state, env : env) : string P.t =
-      P.bind identifierF
-             (fn s =>
-                 if String.length s >= 2 andalso String.sub (s, 0) = #"t" andalso String.sub (s, 1) = #"d"
-                 then P.succeed s 
-                 else P.fail)
-
-  fun tupleDescriptorName (state : state, env : env) : string P.t =
-      tupleDescriptorNameF (state, env) || P.error "Expected tuple descriptor name"
-
-  fun tupleDescriptor (state : state, env : env) : M.tupleDescriptor P.t =
-      let
-        fun doNamed s =
-            case getNamedTD (state, s)
-             of NONE => P.error ("Tuple descriptor " ^ s ^ " undefined")
-              | SOME td => P.succeed td
-        val named = P.bind (tupleDescriptorNameF (state, env)) doNamed
-        val array = P.map (keycharSF #"[" && fieldDescriptor (state, env) && keycharS #"]" && keycharS #">",
-                           fn (((_, fd), _), _) => SOME fd)
-        fun pr () =
-            P.map (keycharSF #">", fn () => ([], NONE)) ||
-            P.map (array, fn a => ([], a)) ||
-            P.map (keycharSF #"," && fieldDescriptor (state, env) && P.$ pr, fn ((_, fd), (fds, a)) => (fd::fds, a)) ||
-            P.error "Expected , or [ or >"
-        val p = P.map (keycharSF #">", fn () => M.TD {fixed = Vector.new0 (), array = NONE}) ||
-                P.map (array, fn a => M.TD {fixed = Vector.new0 (), array = a}) ||
-                P.map (fieldDescriptor (state, env) && P.$ pr,
-                       fn (fd, (fds, a)) => M.TD {fixed = Vector.fromList (fd::fds), array = a})
-        val p = P.map (keycharSF #"<" && p, #2) || named || P.error "Expected tuple descriptor"
-      in p
-      end
-
-  fun metaDataDescriptorNameF (state : state, env : env) : string P.t =
-      P.bind identifierF
-             (fn s =>
-                 if String.length s >= 3 andalso String.sub (s, 0) = #"m" andalso String.sub (s, 1) = #"d" andalso
-                    String.sub (s, 2) = #"d"
-                 then P.succeed s 
-                 else P.fail)
-
-  fun metaDataDescriptorName (state : state, env : env) : string P.t =
-      metaDataDescriptorNameF (state, env) || P.error "Expected metadata descriptor name"
-
-  fun metaDataDescriptor (state : state, env : env) : M.metaDataDescriptor P.t =
-      let
-        fun doNamed s =
-            case getNamedMDD (state, s)
-             of NONE => P.error ("Metadata descriptor " ^ s ^ " undefined")
-              | SOME mdd => P.succeed mdd
-        val named = P.bind (metaDataDescriptorNameF (state, env)) doNamed
-        val fd = fieldDescriptor (state, env)
-        val array = P.map (keycharSF #"[" && fd && keycharS #"@" && decimal && keycharS #"]" && keycharS #">",
-                           fn (((((_, fd), _), n), _), _) => SOME (n, fd))
-        fun pr () =
-            P.map (keycharSF #">", fn () => ([], NONE)) ||
-            P.map (array, fn a => ([], a)) ||
-            P.map (keycharSF #"," && fd && P.$ pr, fn ((_, fd), (fds, a)) => (fd::fds, a)) ||
-            P.error "Expected , or [ or >"
-        val p = P.map (keycharSF #">", fn () => (Vector.new0 (), NONE)) ||
-                P.map (array, fn a => (Vector.new0 (), a)) ||
-                P.map (fd && P.$ pr, fn (fd, (fds, a)) => (Vector.fromList (fd::fds), a))
-        val p = P.map (keycharSF #"<" && pObjKind (state, env) && keycharS #";" && p,
-                       fn (((_, pok), _), (fixed, array)) => M.MDD {pok = pok, fixed = fixed, array = array})
-        val p = p || named || P.error "Expected metadata descriptor"
-      in p
-      end
 
   fun constantNameF (state : state, env : env) : string P.t =
       P.bind identifierF
@@ -1055,6 +896,192 @@ struct
       end
 
   and constant (state : state, env : env) : M.constant P.t = constantF (state, env) || P.error "Expected constant"
+
+  fun typ (state : state, env : env) : M.typ P.t =
+      let
+        fun doId s =
+            case s
+             of "Any" => P.succeed M.TAny
+              | "Any8" => P.succeed (M.TAnyS M.Vs8)
+              | "Any16" => P.succeed (M.TAnyS M.Vs16)
+              | "Any32" => P.succeed (M.TAnyS M.Vs32)
+              | "Any64" => P.succeed (M.TAnyS M.Vs64)
+              | "Any128" => P.succeed (M.TAnyS M.Vs128)
+              | "Any256" => P.succeed (M.TAnyS M.Vs256)
+              | "Any512" => P.succeed (M.TAnyS M.Vs512)
+              | "Bits8" => P.succeed (M.TBits M.Vs8)
+              | "Bits16" => P.succeed (M.TBits M.Vs16)
+              | "Bits32" => P.succeed (M.TBits M.Vs32)
+              | "Bits64" => P.succeed (M.TBits M.Vs64)
+              | "Bits128" => P.succeed (M.TBits M.Vs128)
+              | "Bits256" => P.succeed (M.TBits M.Vs256)
+              | "Bits512" => P.succeed (M.TBits M.Vs512)
+              | "Bitsp" => P.succeed (M.TBits (MU.ValueSize.ptrSize (getConfig env)))
+              | "Boolean" => P.succeed M.TBoolean
+              | "Cont" => P.map (parenSeq (typ (state, env)), fn ts => M.TContinuation ts)
+              | "CStr" => P.succeed M.TCString
+              | "Idx" => P.succeed M.TIdx
+              | "Mask" => P.map (bracket (vectorDescriptor (state, env)), M.TViMask)
+              | "Name" => P.succeed M.TName
+              | "None" => P.succeed M.TNone
+              | "NonRefPtr" => P.succeed M.TNonRefPtr
+              | "PAny" => P.succeed M.TPAny
+              | "PSet" => P.map (paren (typ (state, env)), fn t => M.TPType {kind = M.TkE, over = t})
+              | "PRef" => P.map (paren (typ (state, env)), M.TPRef)
+              | "PType" => P.map (paren (typ (state, env)), fn t => M.TPType {kind = M.TkI, over = t})
+              | "Ref" => P.succeed M.TRef
+              | "Sum" => 
+                let
+                  val arm = 
+                      let
+                        val k = constant (state, env)
+                        val v = angleBracketSeq (P.$$ typ (state, env))
+                        val p = k &&- keycharS #":" && v
+                      in p
+                      end
+                  val fv = Utils.SortedVectorMap.fromVector MU.Constant.compare 
+                  val p = brace (P.$$ typ (state, env)) && braceSeq arm
+                  val f = fn (tag, arms) => M.TSum {tag = tag, arms = fv arms}
+                in P.map (p, f)
+                end
+              | "Thunk" => P.map (paren (typ (state, env)), M.TThunk)
+              | "Vec" => P.map (bracket (vectorSize (state, env)) && angleBracket (P.$$ typ (state, env)),
+                                (fn (vs, t) => M.TViVector {vectorSize = vs, elementTyp = t}))
+              | _ => P.fail
+        val idBased = P.bind identifierF doId
+        val tNumeric = syntax (P.map (PU.Parse.numericTyp (getConfig env), M.TNumeric))
+        val code =
+            P.map (parenSemiCommaF (callConvF (state, env, typ), P.$$ typ (state, env))
+                   && keywordS "->"
+                   && parenSeq (P.$$ typ (state, env)),
+                   fn (((cc, args), _), ress) => M.TCode {cc = cc, args = args, ress = ress})
+        val typAVar = P.map (P.$$ typ (state, env) && alignmentOpt (state, env) && fieldVariance (state, env), 
+                             (fn ((a, b), c) => (a, b, c)))
+        val tuple =
+            P.map (semiCommaAux (keycharSF #"<", #"[", pObjKind (state, env), typAVar) &&
+                   typAVar &&- keycharS #"]" &&- keycharS #">",
+                   fn ((pok, tvs), tv) => M.TTuple {pok = pok, fixed = tvs, array = tv})
+        val closure =
+            P.map (parenSeqF (P.$$ typ (state, env))
+                   && keywordS "=>"
+                   && parenSeq (P.$$ typ (state, env)),
+                   fn ((args, _), ress) => M.TClosure {args = args, ress = ress})
+        fun doNamed s =
+            case getNamedTyp (state, s) of NONE => P.error ("Type " ^ s ^ " undefined") | SOME t => P.succeed t
+        val named = P.bind (typNameF (state, env)) doNamed
+        val p = idBased || tNumeric || code || tuple || closure || named || P.error "Expected type"
+      in p
+      end
+
+  fun binderF (state : state, env : env, k : M.variableKind) : M.variable P.t =
+      let
+        fun doIt ((v, _), t) =
+            if MU.SymbolTableManager.variableHasInfo (getStm state,v) then
+              P.error "Variable already bound"
+            else
+              let
+                val () = MU.SymbolTableManager.variableSetInfo (getStm state, v, M.VI {typ = t, kind = k})
+              in P.succeed v
+              end
+        val p = P.bind (variableF (state, env) && keycharS #":" && typ (state, env)) doIt
+      in p
+      end
+
+  fun binder (state : state, env : env, k : M.variableKind) : M.variable P.t =
+      binderF (state, env, k) || P.error "Expected variable binder"
+
+  fun fieldKind (state : state, env : env) : M.fieldKind P.t =
+      P.bind identifierF
+             (fn s =>
+                 case s
+                  of "b8"  => P.succeed (M.FkBits M.Fs8)
+                   | "b16" => P.succeed (M.FkBits M.Fs16)
+                   | "b32" => P.succeed (M.FkBits M.Fs32)
+                   | "b64" => P.succeed (M.FkBits M.Fs64)
+                   | "bp"  => P.succeed (MU.FieldKind.nonRefPtr (getConfig env))
+                   | "d"   => P.succeed M.FkDouble
+                   | "f"   => P.succeed M.FkFloat
+                   | "r"   => P.succeed M.FkRef
+                   | _     => P.fail)
+      || P.error "Expected field kind"
+
+  fun fieldDescriptor (state : state, env : env) : M.fieldDescriptor P.t =
+      let
+        val alignment = alignmentOpt (state, env)
+        val p = fieldKind (state, env) && alignment && fieldVariance (state, env)
+        val f = fn ((k, a), v) => M.FD {kind = k, alignment = a, var = v}
+      in P.map (p, f)
+      end
+          
+
+  fun tupleDescriptorNameF (state : state, env : env) : string P.t =
+      P.bind identifierF
+             (fn s =>
+                 if String.length s >= 2 andalso String.sub (s, 0) = #"t" andalso String.sub (s, 1) = #"d"
+                 then P.succeed s 
+                 else P.fail)
+
+  fun tupleDescriptorName (state : state, env : env) : string P.t =
+      tupleDescriptorNameF (state, env) || P.error "Expected tuple descriptor name"
+
+  fun tupleDescriptor (state : state, env : env) : M.tupleDescriptor P.t =
+      let
+        fun doNamed s =
+            case getNamedTD (state, s)
+             of NONE => P.error ("Tuple descriptor " ^ s ^ " undefined")
+              | SOME td => P.succeed td
+        val named = P.bind (tupleDescriptorNameF (state, env)) doNamed
+        val array = P.map (keycharSF #"[" && fieldDescriptor (state, env) && keycharS #"]" && keycharS #">",
+                           fn (((_, fd), _), _) => SOME fd)
+        fun pr () =
+            P.map (keycharSF #">", fn () => ([], NONE)) ||
+            P.map (array, fn a => ([], a)) ||
+            P.map (keycharSF #"," && fieldDescriptor (state, env) && P.$ pr, fn ((_, fd), (fds, a)) => (fd::fds, a)) ||
+            P.error "Expected , or [ or >"
+        val p = P.map (keycharSF #">", fn () => M.TD {fixed = Vector.new0 (), array = NONE}) ||
+                P.map (array, fn a => M.TD {fixed = Vector.new0 (), array = a}) ||
+                P.map (fieldDescriptor (state, env) && P.$ pr,
+                       fn (fd, (fds, a)) => M.TD {fixed = Vector.fromList (fd::fds), array = a})
+        val p = P.map (keycharSF #"<" && p, #2) || named || P.error "Expected tuple descriptor"
+      in p
+      end
+
+  fun metaDataDescriptorNameF (state : state, env : env) : string P.t =
+      P.bind identifierF
+             (fn s =>
+                 if String.length s >= 3 andalso String.sub (s, 0) = #"m" andalso String.sub (s, 1) = #"d" andalso
+                    String.sub (s, 2) = #"d"
+                 then P.succeed s 
+                 else P.fail)
+
+  fun metaDataDescriptorName (state : state, env : env) : string P.t =
+      metaDataDescriptorNameF (state, env) || P.error "Expected metadata descriptor name"
+
+  fun metaDataDescriptor (state : state, env : env) : M.metaDataDescriptor P.t =
+      let
+        fun doNamed s =
+            case getNamedMDD (state, s)
+             of NONE => P.error ("Metadata descriptor " ^ s ^ " undefined")
+              | SOME mdd => P.succeed mdd
+        val named = P.bind (metaDataDescriptorNameF (state, env)) doNamed
+        val fd = fieldDescriptor (state, env)
+        val array0 = keycharSF #"[" -&& fd &&- keycharS #"@" && decimal &&- keycharS #"]" &&- keycharS #">"
+        val array = P.map (array0, fn (a, b) => (b, a))
+        fun pr () =
+            P.map (keycharSF #">", fn () => ([], NONE)) ||
+            P.map (array, fn a => ([], SOME a)) ||
+            P.map (keycharSF #"," -&& fd && P.$ pr, fn (fd, (fds, a)) => (fd::fds, a)) ||
+            P.error "Expected , or [ or >"
+        val p = P.map (keycharSF #">", fn () => (Vector.new0 (), NONE)) ||
+                P.map (array, fn a => (Vector.new0 (), SOME a)) ||
+                P.map (fd && P.$ pr, fn (fd, (fds, a)) => (Vector.fromList (fd::fds), a))
+        val mk = fn ((pok, pO), (fixed, array)) => 
+                    M.MDD {pok = pok, pinned = isSome pO, fixed = fixed, array = array}
+        val p = 
+            P.map (keycharSF #"<" -&& pObjKind (state, env) && P.optional (keycharSF #"!") &&- keycharS #";" && p, mk)
+        val p = p || named || P.error "Expected metadata descriptor"
+      in p
+      end
 
   fun simpleF (state : state, env : env) : M.simple P.t =
       P.map (variableF (state, env), M.SVariable) ||
@@ -1242,12 +1269,25 @@ struct
                 P.map (paren (variable (state, env) && keycharSF #":" && fieldKind (state, env)) &&
                        effects (state, env),
                        fn (((v, _), fk), fx) => M.RhsThunkSpawn {typ = fk, thunk = v, fx = fx})
-              | "SumProj" => P.map (paren (variable (state, env) && keycharSF #"." && name (state, env) &&
-                                           keycharSF #":" && fieldKind (state, env)),
-                                    fn ((((v, _), n), _), fk) => M.RhsPSumProj {typ = fk, sum = v, tag = n})
-              | "Tagged" => P.map (pair (name (state, env),
-                                         operand (state, env) && keycharSF #":" && fieldKind (state, env)),
-                                   fn (n, ((opnd, _), fk)) => M.RhsPSum {tag = n, typ = fk, ofVal = opnd})
+              | "SumProj" => 
+                let
+                  val v = variable (state, env)
+                  val k = constant (state, env)
+                  val i = decimal
+                  val fks = angleBracketSeq (fieldKind (state, env))
+                  val p = paren (v &&- keycharSF #"." && k &&- keycharSF #"." && i &&- keycharSF #":" && fks)
+                  val f = fn (((v, k), i), fks) => M.RhsSumProj {typs = fks, sum = v, tag = k, idx = i}
+                in P.map (p, f)
+                end
+              | "Tagged" => 
+                let
+                  val k = constant (state, env)
+                  val vs = angleBracketSeq (operand (state, env))
+                  val fks = angleBracketSeq (fieldKind (state, env))
+                  val p = pair (k, vs &&- keycharSF #":" && fks)
+                  val f = fn (n, (opnds, fks)) => M.RhsSum {tag = n, typs = fks, ofVals = opnds}
+                in P.map (p, f)
+                end
               | "ThunkGetFv" =>
                 P.map (pair (variable (state, env) && keycharSF #":" &&
                              angleBracketSemiComma (fieldKind (state, env), fieldKind (state, env)),
@@ -1286,15 +1326,22 @@ struct
              fn (l, os) => M.T {block = l, arguments = os})
 
   (* f should fail at least if sees Default or } *)
-  fun switch (state : state, env : env, f : state * env -> 'a P.t) : 'a M.switch P.t =
+  fun switch (state : state, env : env) : M.transfer P.t =
       let
-        val case1 = P.map (f (state, env) && keywordS "=>" && target (state, env), fn ((k, _), t) => (k, t))
+        val seSum = 
+            let
+              val p = operand (state, env) &&- keycharS #":" && fieldKind (state, env)
+              val p = keywordSF "tagof" -&& paren p
+            in P.map (p, fn (on, fk) => (M.SeSum fk, on))
+            end
+        val seConstant = P.map (operand (state, env), fn on => (M.SeConstant, on))
+        val header = seSum || seConstant
+        val case1 = constantF (state, env) &&- keywordS "=>" && target (state, env)
         val cases = P.zeroOrMoreV case1
-        val default = P.map (keywordSF "Default" && keywordS "=>" && target (state, env), #2)
-        val body = cases && P.optional default
-        val p = P.map (operand (state, env) && brace body,
-                       fn (opnd, (cs, d)) => {on = opnd, cases = cs, default = d})
-      in p
+        val default = keywordSF "Default" -&& keywordS "=>" -&& target (state, env)
+        val p = header && brace (cases && P.optional default)
+        val f = fn ((select, on), (cs, d)) => M.TCase {select = select, on = on, cases = cs, default = d}
+      in P.map (p, f)
       end
 
   fun codesD (state : state, env : env, d : M.codes) : M.codes P.t =
@@ -1404,14 +1451,13 @@ struct
              of "Call" => interProc s
               | "CallClos" => interProc s
               | "CallDir" => interProc s
-              | "Case" => P.map (switch (state, env, constantF), M.TCase)
+              | "Case" => switch (state, env)
               | "Cut" => P.map (variable (state, env) && parenSeq (operand (state, env)) && cutsOpt (state, env),
                                 fn ((v, os), cs) => M.TCut {cont = v, args = os, cuts = cs})
               | "Eval" => interProc s
               | "EvalDir" => interProc s
               | "Goto" => P.map (target (state, env), M.TGoto)
               | "Halt" => P.map (paren (operand (state, env)), M.THalt)
-              | "PSumCase" => P.map (switch (state, env, nameF), M.TPSumCase)
               | "Return" => P.map (parenSeq (operand (state, env)), M.TReturn)
               | _ => P.fail
         val p = P.bind identifierF doIt
@@ -1543,9 +1589,14 @@ struct
                                     fn (((_, co), _), fvs) => M.GClosure {code = co, fvs = fvs})
               | "PSet" => P.map (paren (simple (state, env)), M.GPSet)
               | "Tagged" =>
-                P.map (pair (name (state, env),
-                             simple (state, env) && keycharS #":" && fieldKind (state, env)),
-                       fn (n, ((s, _), fk)) => M.GPSum {tag = n, typ = fk, ofVal = s})
+                let
+                  val k = constant (state, env)
+                  val vs = angleBracketSeq (operand (state, env))
+                  val fks = angleBracketSeq (fieldKind (state, env))
+                  val p = pair (k, vs &&- keycharSF #":" && fks)
+                  val f = fn (n, (opnds, fks)) => M.GSum {tag = n, typs = fks, ofVals = opnds}
+                in P.map (p, f)
+                end
               | "ThunkValue" => P.map (paren (simple (state, env) && keycharS #":" && fieldKind (state, env)),
                                        fn ((s, _), fk) => M.GThunkValue {typ = fk, ofVal = s})
               | _ => P.fail

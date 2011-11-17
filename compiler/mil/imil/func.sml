@@ -806,7 +806,6 @@ struct
                            | (_, M.TGoto _)     => ([], t)
                            | (_, M.TCase _)     => ([], t)
                            | (_, M.THalt _)     => ([], t)
-                           | (_, M.TPSumCase _) => ([], t)
                            | (M.RNormal {cuts = callCuts, ...}, 
                               M.TInterProc {callee, ret = M.RNormal {rets, block, cuts}, fx})  =>
                              let 

@@ -9,7 +9,7 @@ end
 functor MilToCoreMilF(val passname : string
                       val desc : string
                       val lowerPTypes : bool
-                      val lowerPSums : bool
+                      val lowerSums : bool
                       val lowerClosures : bool
                       val lowerPRefs : bool) :> MIL_TO_CORE_MIL = 
 struct
@@ -155,7 +155,7 @@ struct
                 end
               | M.TTuple {pok, fixed, array} =>
                 let
-                  fun typVar (t, v) = (typ t, v)
+                  fun typVar (t, ag, v) = (typ t, ag, v)
                   val tvs = Vector.map (fixed, typVar)
                   val tv = typVar array
                   val t = M.TTuple {pok = pok, fixed = tvs, array = tv}
@@ -177,14 +177,15 @@ struct
                         M.TClosure {args = args, ress = ress}
                 in t
                 end
-              | M.TPSum nts =>
+              | M.TSum {tag, arms} =>
                 let
-                  val nts = ND.map (nts, fn (_, t) => typ t)
+                  val tt = typ tag
+                  val arms = Vector.map (arms, fn (k, v) => (k, Vector.map (v, typ)))
                   val t =
-                      if lowerPSums then
-                        POM.Sum.typ nts
+                      if lowerSums then
+                        POM.Sum.typ (tt, arms)
                       else
-                        M.TPSum nts
+                        M.TSum {tag = tt, arms = arms}
                 in t
                 end
               | M.TPType {kind, over} =>
@@ -282,13 +283,20 @@ struct
       in s
       end
 
-  val doPSum = 
-   fn (state, env, (nm, fk, oper)) =>
-      POM.Sum.mk (envGetConfig env, nm, fk, oper)
+  val doSum = 
+   fn (state, env, (c, fks, opers)) =>
+      let
+        val config = envGetConfig env
+      in
+        POM.Sum.mk (config, MU.Constant.fkOf (config, c), c, fks, opers)
+      end
 
-  fun doPSumProj (state, env, (fk, v, tag)) =
-      POM.Sum.getVal (envGetConfig env, v, fk, tag)
-
+  fun doSumProj (state, env, (fks, v, tag, idx)) =
+      let
+        val config = envGetConfig env
+      in
+        POM.Sum.getVal (config, v, MU.Constant.fkOf (config, tag), fks, tag, idx)
+      end
   fun lowerToRhs (state, env, lower, doIt, dests, args) =
       if lower then
         let
@@ -333,28 +341,26 @@ struct
                   SOME (doPSetQuery (state, env, dests, v))
                 else
                   NONE
-              | M.RhsPSum {tag, typ, ofVal} => 
-                lowerToRhs (state, env, lowerPSums, doPSum, dests, (tag, typ, ofVal))
-              | M.RhsPSumProj {typ, sum, tag} =>
-                lowerToRhs (state, env, lowerPSums, doPSumProj, dests, (typ, sum, tag))
+              | M.RhsSum {tag, typs, ofVals} => 
+                lowerToRhs (state, env, lowerSums, doSum, dests, (tag, typs, ofVals))
+              | M.RhsSumProj {typs, sum, tag, idx} =>
+                lowerToRhs (state, env, lowerSums, doSumProj, dests, (typs, sum, tag, idx))
               | _ => NONE
       in (env, res)
       end
 
   val doSwitch = 
-   fn (state, env, {on, cases, default} : Mil.name Mil.switch) => 
+   fn (state, env, (fk, on, cases, default)) => 
       let
         val v = 
             case on
              of M.SVariable v => v
               | _ => fail ("doSwitch", "Arg is not a variable")
-        val help = fn (nm, tg) => (M.CName nm, tg)
-        val arms = Vector.map (cases, help)
         val t = M.TName
         val tgv = relatedVar (state, v, "_tag", t, M.VkLocal)
-        val r = POM.Sum.getTag (envGetConfig env, v, M.FkRef)
+        val r = POM.Sum.getTag (envGetConfig env, v, fk)
         val s = MS.bindRhs (tgv, r)
-        val t = M.TCase {on = M.SVariable tgv, cases = arms, default = default}
+        val t = M.TCase {select = M.SeConstant, on = M.SVariable tgv, cases = cases, default = default}
       in (env, SOME (s, t))
       end
 
@@ -414,9 +420,9 @@ struct
                    end
                  else
                    (env, NONE)
-               | M.TPSumCase sw => 
-                 if lowerPSums then 
-                   doSwitch (state, env, sw)
+               | M.TCase (sw as {select = M.SeSum fk, on, cases, default}) => 
+                 if lowerSums then 
+                   doSwitch (state, env, (fk, on, cases, default))
                  else 
                    (env, NONE)
                | _ => (env, NONE))
@@ -512,9 +518,9 @@ struct
                   end
                 else
                   NONE
-              | M.GPSum {tag, typ, ofVal} =>
-                if lowerPSums then
-                  SOME (v, POM.Sum.mkGlobal (c, tag, typ, ofVal))
+              | M.GSum {tag, typs, ofVals} =>
+                if lowerSums then
+                  SOME (v, POM.Sum.mkGlobal (c, MU.Constant.fkOf (c, tag), tag, typs, ofVals))
                 else
                   NONE
               | M.GPSet s => 
@@ -609,7 +615,7 @@ MilToCoreMilF(
 val passname = "MilLowerClosures"
 val desc = "P functions"
 val lowerPTypes = false
-val lowerPSums = false
+val lowerSums = false
 val lowerClosures = true
 val lowerPRefs = false)
 
@@ -618,7 +624,7 @@ MilToCoreMilF(
 val passname = "MilLowerPSums"
 val desc = "P sums"
 val lowerPTypes = false
-val lowerPSums = true
+val lowerSums = true
 val lowerClosures = false
 val lowerPRefs = false)
 
@@ -627,6 +633,6 @@ MilToCoreMilF(
 val passname = "MilLowerPTypes"
 val desc = "P option sets & intensional types"
 val lowerPTypes = true
-val lowerPSums = false
+val lowerSums = false
 val lowerClosures = false
 val lowerPRefs = false)

@@ -161,7 +161,7 @@ struct
                                val id = MU.Id.I n
                                val () = 
                                    (case MRS.iInfo (summary, id)
-                                     of MRB.IiMetaData {pok, fixed, array} => 
+                                     of MRB.IiMetaData {pok, pinned, fixed, array} => 
                                         (case array
                                           of SOME (i, n) => FG.addEdge (fg, Vector.sub (fixed, i), n)
                                            | NONE        => ())
@@ -236,8 +236,8 @@ struct
                                | M.RhsPSetGet _        => data ()
                                | M.RhsPSetCond r       => setCondDeps r
                                | M.RhsPSetQuery _      => data ()
-                               | M.RhsPSum _           => ()
-                               | M.RhsPSumProj _       => data ()
+                               | M.RhsSum _            => ()
+                               | M.RhsSumProj _        => data ()
 
                        in e
                        end
@@ -294,8 +294,7 @@ struct
                                  end
                                | M.TReturn _    => () 
                                | M.TCut r       => live (#cont r)
-                               | M.THalt p      => liveO p
-                               | M.TPSumCase r  => liveO (#on r))
+                               | M.THalt p      => liveO p)
                       in e
                       end
                   val analyseTransfer = SOME analyseTransfer'
@@ -333,7 +332,7 @@ struct
                                     val id = MU.Id.G v
                                     val () = 
                                         (case MRS.iInfo (summary, id)
-                                          of MRB.IiMetaData {pok, fixed, array} => 
+                                          of MRB.IiMetaData {pok, pinned, fixed, array} => 
                                              (case array
                                                of SOME (i, n) => FG.addEdge (fg, Vector.sub (fixed, i), n)
                                                 | NONE        => ())
@@ -760,15 +759,18 @@ struct
                                              in replace rhs
                                              end
                   | M.RhsPSetQuery _      => keepIfAnyLiveV dests
-                  | M.RhsPSum r           => if deadV dests then kill () else
-                                             if liveO (#ofVal r) then keep () else
+                  | M.RhsSum r            => if deadV dests then kill () else
                                              let
-                                               val {typ, ofVal, tag} = r
-                                               val ofVal = fieldDefault typ
-                                               val rhs = M.RhsPSum {typ = typ, ofVal = ofVal, tag = tag}
+                                               val {typs, ofVals, tag} = r
+                                               val typs = 
+                                                   let val f = fn (t, oper) => if liveO oper then SOME t else NONE
+                                                   in Vector.keepAllMap2 (typs, ofVals, f)
+                                                   end
+                                               val ofVals = Vector.keepAll (ofVals, liveO)
+                                               val rhs = M.RhsSum {typs = typs, ofVals = ofVals, tag = tag}
                                              in replace rhs
                                              end
-                  | M.RhsPSumProj _       => keepIfAnyLiveV dests
+                  | M.RhsSumProj _        => keepIfAnyLiveV dests
           in (env, so)
           end
 
@@ -801,10 +803,11 @@ struct
              fn M.T {block, arguments} => M.T {block = block, arguments = filterOV arguments}
 
             val doSwitch = 
-             fn {on, cases, default} => 
+             fn {select, on, cases, default} => 
                 let
                   val help = fn (c, tg) => (c, doTarget tg)
-                in {on = on, cases = Vector.map (cases, help), default = Option.map (default, doTarget)}
+                in {select = select, on = on, cases = Vector.map (cases, help), 
+                    default = Option.map (default, doTarget)}
                 end
 
             val doCut = 
@@ -904,7 +907,6 @@ struct
                   | M.TReturn rv    => SOME (MS.empty, return rv)
                   | M.TCut r        => SOME (MS.empty, M.TCut (doCut r))
                   | M.THalt _       => NONE
-                  | M.TPSumCase sw  => SOME (MS.empty, M.TPSumCase (doSwitch sw))
           in (env, so)
           end
 
@@ -976,11 +978,14 @@ struct
                       val fvs = Vector.keepAll (fvs, fn (fk, s) => liveO s)
                     in (env, SOME [(v, M.GClosure {code = code, fvs = fvs})])
                     end
-                  | M.GPSum {tag, typ, ofVal} => 
-                    if liveO ofVal then (env, NONE) else
+                  | M.GSum {tag, typs, ofVals} => 
                     let
-                      val p = fieldDefault typ
-                      val g = M.GPSum {typ = typ, ofVal = p, tag = tag}
+                      val typs = 
+                          let val f = fn (t, oper) => if liveO oper then SOME t else NONE
+                          in Vector.keepAllMap2 (typs, ofVals, f)
+                          end
+                      val ofVals = Vector.keepAll (ofVals, liveO)
+                      val g = M.GSum {typs = typs, ofVals = ofVals, tag = tag}
                     in (env, SOME [(v, g)])
                     end
                   | M.GPSet s => 
@@ -1136,7 +1141,7 @@ struct
                           | _           => filterV returns
                   in MRB.IiCode {cargs = cargs, args = args, returns = returns}
                   end
-                | MRB.IiMetaData {pok, fixed, array} => 
+                | MRB.IiMetaData {pok, pinned, fixed, array} => 
                   let
                     val adjustIndex = 
                      fn i => 
@@ -1153,8 +1158,11 @@ struct
                         in loop (0, 0)
                         end
                     val fixed = filterV fixed
-                    val array = Utils.Option.bind (array, fn (i, n) => if deadN n then NONE else SOME (adjustIndex i, n))
-                  in MRB.IiMetaData {pok = pok, fixed = fixed, array = array}
+                    val array = 
+                        let val f = fn (i, n) => if deadN n then NONE else SOME (adjustIndex i, n)
+                        in Utils.Option.bind (array, f)
+                        end
+                  in MRB.IiMetaData {pok = pok, pinned = pinned, fixed = fixed, array = array}
                   end
                 | MRB.IiTupleDescriptor {fixed, array} => 
                   let
@@ -1164,7 +1172,7 @@ struct
                   end
                 | MRB.IiThunk {typ, fvs} => MRB.IiThunk {typ = typ, fvs = filterV fvs}
                 | MRB.IiClosure fvs      => MRB.IiClosure (filterV fvs)
-                | MRB.IiPSum n           => info
+                | MRB.IiSum ns           => MRB.IiSum (filterV ns)
           val () = MRS.updateIInfo (summary, update)
 
           val doNode =

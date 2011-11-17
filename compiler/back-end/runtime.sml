@@ -16,6 +16,7 @@ sig
     val createdMutable  : Pil.identifier 
     val alwaysImmutable : Pil.identifier 
     val register : Pil.identifier 
+    val pin : Pil.identifier 
   end
 
   structure GC :
@@ -67,6 +68,7 @@ sig
     val vtable : Pil.identifier
 
     val fixedField : int -> Pil.identifier
+    val paddingField : int -> Pil.identifier
 
     val xtras : Pil.identifier
 
@@ -271,6 +273,7 @@ struct
     val alwaysImmutable = Pil.identifier "PGC_ALWAYS_IMMUTABLE"
 
     val register = Pil.identifier "pLsrVTableRegister"
+    val pin      = Pil.identifier "pLsrVTablePin"
 
   end
 
@@ -331,6 +334,7 @@ struct
     val vtable = Pil.identifier "vtable"
 
     fun fixedField i = Pil.identifier ("f_" ^ Int.toString i)
+    fun paddingField i = Pil.identifier ("p_" ^ Int.toString i)
 
     val xtras = Pil.identifier "extras"
 

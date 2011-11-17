@@ -173,6 +173,78 @@ structure Utils = struct
        fn (v, f) => Vector.map (v, fn a => case f a of SOME a => a | NONE => a)
     end (* structure Vector *)
 
+    structure SortedVectorMap = 
+    struct
+      structure Vector = MltonVector
+      type ('a, 'b) t = ('a * 'b) Vector.t
+      (* Sorted vectors of pairs. 
+       * Sort is in increasing order according to the given comparison
+       *)
+      val unionWith : ('a * 'a -> order) -> ('a , 'b) t * ('a, 'b) t * (('b * 'b) -> 'b) -> ('a, 'b) t = 
+       fn compare => 
+       fn (a1, a2, f) => 
+          let
+            val rec loop = 
+             fn (a1, a2) => 
+                case (a1, a2)
+                 of ([], a) => a
+                  | (a, []) => a
+                  | ((k1, v1)::a12, (k2, v2)::a22) => 
+                    (case compare (k1, k2)
+                      of LESS    => (k1, v1)::loop (a12, a2)
+                       | GREATER => (k2, v2)::loop (a1, a22)
+                       | EQUAL   => (k1, f (v1, v2))::loop (a12, a22))
+          in Vector.fromList (loop (Vector.toList a1, Vector.toList a2))
+          end
+
+      val intersectWith : ('a * 'a -> order) -> ('a, 'b) t * ('a, 'b) t * (('b * 'b) -> 'b) -> ('a, 'b) t =
+       fn compare => 
+       fn (a1, a2, f) => 
+          let
+            val rec loop = 
+             fn (a1, a2) => 
+                case (a1, a2)
+                 of ([], a) => []
+                  | (a, []) => []
+                  | ((k1, v1)::a12, (k2, v2)::a22) => 
+                    (case compare (k1, k2)
+                      of LESS    => loop (a12, a2)
+                       | GREATER => loop (a1, a22)
+                       | EQUAL   => (k1, f (v1, v2))::loop (a12, a22))
+          in Vector.fromList (loop (Vector.toList a1, Vector.toList a2))
+          end
+
+      val isSorted : ('a * 'a -> order) -> ('a, 'b) t -> bool = 
+       fn compare => 
+       fn a1 => 
+          let
+            val le = fn ((k1, _), (k2, _)) => compare (k1, k2) <> GREATER
+          in MltonVector.isSorted (a1, le)
+          end
+
+      val fromList : ('a * 'a -> order) -> ('a * 'b ) list -> ('a, 'b) t = 
+       fn compare =>
+       fn l => 
+          let
+            val le = fn ((k1, _), (k2, _)) => compare (k1, k2) <> GREATER
+          in Vector.fromList (List.insertionSort (l, le))
+          end
+
+      val fromList : ('a * 'a -> order) -> ('a * 'b ) list -> ('a, 'b) t = 
+       fn compare =>
+       fn l => 
+          let
+            val le = fn ((k1, _), (k2, _)) => compare (k1, k2) <> GREATER
+          in Vector.fromList (List.insertionSort (l, le))
+          end
+
+      val fromVector : ('a * 'a -> order) -> ('a * 'b ) Vector.t -> ('a, 'b) t = 
+          fn compare => 
+          fn v => fromList compare (Vector.toList v)
+
+          
+    end  (* structure SortedVectorMap *)
+
     structure MltonList = List
 
     structure List = 
@@ -611,6 +683,8 @@ signature DICT = sig
     val fromList2 : key list * 'a list -> 'a t
     (* Order of entries is arbitrary *)
     val toList : 'a t -> (key * 'a) list
+    (* Sorted by key, small to large *)
+    val toListSorted : 'a t -> (key * 'a) list
     val domain : 'a t -> key list
     val range  : 'a t -> 'a list
     val fromVector : (key * 'a) vector -> 'a t
@@ -660,6 +734,7 @@ struct
     fun fromList2 (l1, l2) =
         List.fold2 (l1, l2, empty, fn (k, v, d) => RBT.insert (d, k, v))
     val toList = RBT.listItemsi
+    val toListSorted = RBT.listItemsi
     val domain = RBT.listKeys
     val range = RBT.listItems
     fun fromVector v =

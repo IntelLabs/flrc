@@ -169,6 +169,74 @@ struct
 
   (*** Type Checking ***)
 
+  fun optIntegerRep (s, e, msg, i) =
+      assert (s, MU.Integer.Opt.integerFits i,
+              fn () => msg () ^ ": integer constant out of opt rep range")
+
+  fun optRatRep (s, e, msg, r) =
+      assert (s, MU.Rational.Opt.integerFits r,
+              fn () => msg () ^ ": rat constant out of opt rep range")
+
+  fun validRefConstant (s, e, msg, i) = 
+      assert (s, MU.HeapModel.validRefConstant (getConfig e, i),
+              fn () => msg () ^ ": ref value not valid as ref constant")
+
+  fun constant (s, e, msg, c) =
+      case c
+       of M.CRat r =>
+          let
+            val () = optRatRep (s, e, msg, r)
+          in MUP.NumericTyp.tRat
+          end
+        | M.CInteger i =>
+          let
+            val () = optIntegerRep (s, e, msg, i)
+          in MUP.NumericTyp.tIntegerArbitrary
+          end
+        | M.CName n =>
+          let
+            val () = name (s, e, n)
+          in M.TName
+          end
+        | M.CIntegral i => MUP.NumericTyp.tIntegerFixed (IntArb.typOf i)
+        | M.CBoolean b  => M.TBoolean
+        | M.CFloat f => MUP.NumericTyp.tFloat
+        | M.CDouble d => MUP.NumericTyp.tDouble
+        | M.CViMask {descriptor, elts} =>
+          let
+            val () = assert (s, PU.VectorDescriptor.elementCount descriptor = Vector.length elts,
+                             fn () => msg () ^ ": bad constant mask")
+          in M.TViMask descriptor
+          end
+        | M.CPok _ => MU.Uintp.t (getConfig e)
+        | M.CRef i => 
+          let
+            val () = validRefConstant (s, e, msg, i)
+          in M.TRef
+          end
+        | M.COptionSetEmpty => M.TPType {kind = M.TkE, over = M.TNone}
+        | M.CTypePH => M.TPType {kind = M.TkI, over = M.TNone}
+
+  fun sumTag (s, e, msg, c) =
+      let
+        val t = constant (s, e, msg, c)
+        val () =
+            case c
+             of M.CBoolean _      => ()
+              | M.CRat     _      => reportError (s, msg () ^ ": rational used as sum tag")
+              | M.CInteger _      => reportError (s, msg () ^ ": integer used as sum tag")
+              | M.CName    _      => ()
+              | M.CIntegral _     => ()
+              | M.CFloat _        => reportError (s, msg () ^ ": float used as sum tag")
+              | M.CDouble _       => reportError (s, msg () ^ ": double used as sum tag")
+              | M.CViMask _       => reportError (s, msg () ^ ": mask used as sum tag")
+              | M.CPok _          => ()
+              | M.CRef _          => reportError (s, msg () ^ ": ref used as sum tag")
+              | M.COptionSetEmpty => reportError (s, msg () ^ ": option set used as sum tag")
+              | M.CTypePH         => reportError (s, msg () ^ ": type used as sum tag")
+      in t
+      end
+
   fun typ (s, e, m, t) =
       case t
        of M.TAny                       => ()
@@ -188,11 +256,12 @@ struct
                                             val () = typs (s, e, m, ress)
                                           in ()
                                           end
-        | M.TTuple {pok, fixed, array} => let
-                                            val () = typVars (s, e, m, fixed)
-                                            val () = typVar (s, e, m, array)
-                                          in ()
-                                          end
+        | M.TTuple {pok, fixed, array} => 
+          let
+            val () = Vector.foreach (fixed, fn (t, _, _) => typ (s, e, m, t))
+            val () = typ (s, e, m, #1 array)
+          in ()
+          end
         | M.TCString                   => ()
         | M.TIdx                       => ()
         | M.TContinuation ts           => typs (s, e, m, ts)
@@ -203,26 +272,24 @@ struct
                                             val () = typs (s, e, m, ress)
                                           in ()
                                           end
-        | M.TPSum nts                  => let
-                                            fun checkOne (n, t) =
-                                                let
-                                                  val () = name (s, e, n)
-                                                  val () = typ (s, e, m, t)
-                                                in ()
-                                                end
-                                            val () = ND.foreach (nts, checkOne)
-                                          in ()
-                                          end
+        | M.TSum {tag, arms}           => 
+          let
+            fun checkOne (k, v) =
+                let
+                  val _ = sumTag (s, e, m, k)
+                  val () = typs (s, e, m, v)
+                in ()
+                end
+            val () = typ (s, e, m, tag)
+            val () = if Utils.SortedVectorMap.isSorted MU.Constant.compare arms then () 
+                     else reportError (s, m () ^ ": sum arms not sorted")
+            val () = Vector.foreach (arms, checkOne)
+          in ()
+          end
         | M.TPType {kind, over}        => typ (s, e, m, over)
         | M.TPRef t                    => typ (s, e, m, t)
   and typs (s, e, m, ts) =
       Vector.foreach (ts, fn t => typ (s, e, m, t))
-  and typVar (s, e, m, (t, _)) =
-      typ (s, e, m, t)
-  and typVars (s, e, m, tvs) =
-      Vector.foreach (tvs, fn tv => typVar (s, e, m, tv))
-  and typVarO (s, e, m, tvo) =
-      Option.foreach (tvo, fn tv => typVar (s, e, m, tv))
 
   fun knownTraceSize (s, e, t, msg) =
       case MUT.traceabilitySize (getConfig e, t)
@@ -351,54 +418,6 @@ struct
       in ()
       end
 
-  fun optIntegerRep (s, e, msg, i) =
-      assert (s, MU.Integer.Opt.integerFits i,
-              fn () => msg () ^ ": integer constant out of opt rep range")
-
-  fun optRatRep (s, e, msg, r) =
-      assert (s, MU.Rational.Opt.integerFits r,
-              fn () => msg () ^ ": rat constant out of opt rep range")
-
-  fun validRefConstant (s, e, msg, i) = 
-      assert (s, MU.HeapModel.validRefConstant (getConfig e, i),
-              fn () => msg () ^ ": ref value not valid as ref constant")
-
-  fun constant (s, e, msg, c) =
-      case c
-       of M.CRat r =>
-          let
-            val () = optRatRep (s, e, msg, r)
-          in MUP.NumericTyp.tRat
-          end
-        | M.CInteger i =>
-          let
-            val () = optIntegerRep (s, e, msg, i)
-          in MUP.NumericTyp.tIntegerArbitrary
-          end
-        | M.CName n =>
-          let
-            val () = name (s, e, n)
-          in M.TName
-          end
-        | M.CIntegral i => MUP.NumericTyp.tIntegerFixed (IntArb.typOf i)
-        | M.CBoolean b  => M.TBoolean
-        | M.CFloat f => MUP.NumericTyp.tFloat
-        | M.CDouble d => MUP.NumericTyp.tDouble
-        | M.CViMask {descriptor, elts} =>
-          let
-            val () = assert (s, PU.VectorDescriptor.elementCount descriptor = Vector.length elts,
-                             fn () => msg () ^ ": bad constant mask")
-          in M.TViMask descriptor
-          end
-        | M.CPok _ => MU.Uintp.t (getConfig e)
-        | M.CRef i => 
-          let
-            val () = validRefConstant (s, e, msg, i)
-          in M.TRef
-          end
-        | M.COptionSetEmpty => M.TPType {kind = M.TkE, over = M.TNone}
-        | M.CTypePH => M.TPType {kind = M.TkI, over = M.TNone}
-
   fun simple (s, e, msg, simp) =
       case simp
        of M.SConstant c => constant (s, e, msg, c)
@@ -494,7 +513,7 @@ struct
    *)
   fun consistentMdDesc (s, e, msg, vtd, ts) =
       let
-        val M.MDD {pok, fixed, array} = vtd
+        val M.MDD {pok, pinned, fixed, array} = vtd
         fun tooManyFields () = reportError (s, msg () ^ ": not enough fields in vtable descriptor")
         fun msgi i () = msg () ^ ": " ^ Int.toString i
         fun checkOne (i, t) =
@@ -530,7 +549,24 @@ struct
               | SOME (lenIdx, _) =>
                 assert (s, 0 <= lenIdx andalso lenIdx < Vector.length ts,
                         fn () => msg () ^ ": length field not inited")
-        val tvs = Vector.map (ts, fn t => (t, M.FvReadWrite))
+        val get = fn (i, t) => 
+                     let 
+                       val (var, a) = 
+                           case MU.MetaDataDescriptor.getField (mdd, i)
+                            of SOME fd => 
+                               let
+                                 val var = MU.FieldDescriptor.var fd
+                                 val a = MU.FieldDescriptor.alignment fd
+                               in (var, a)
+                               end
+                             | NONE    => 
+                               let
+                                 val () = reportError (s, msg () ^ ": not enough fields")
+                               in (M.FvReadWrite, M.Vs8)
+                               end
+                     in (t, a, var)
+                     end
+        val tvs = Vector.mapi (ts, get)
         val t = MU.Typ.fixedArray (pok, tvs)
       in t
       end
@@ -597,6 +633,14 @@ struct
                 end
       in ft
       end
+
+  fun inRange (s, e, msg, v, i) =
+      if i < Vector.length v then ()
+      else reportError (s, msg () ^ ": index not in range")
+
+  fun sameLength (s, e, msg, v1, v2) = 
+      if Vector.length v1 = Vector.length v2 then ()
+      else reportError (s, msg () ^ ": mismatched lengths")
 
   fun rhs (s, e, msg, r) =
       let
@@ -679,13 +723,14 @@ struct
                  end
                | M.RhsThunkGetFv {typ, fvs, thunk, idx} =>
                  let
-                   fun msg' () = msg () ^ ": thunk"
+                   fun msg' () = msg () ^ ": thunk get fv"
                    val _ = variableUse (s, e, msg', thunk)
+                   val () = inRange (s, e, msg', fvs, idx)
                  in some M.TNone
                  end
                | M.RhsThunkValue {typ, thunk, ofVal} =>
                  let
-                   fun msg1 () = msg () ^ ": thunk"
+                   fun msg1 () = msg () ^ ": thunk value"
                    val () =
                        case thunk
                         of NONE => ()
@@ -700,13 +745,13 @@ struct
                  end
                | M.RhsThunkGetValue {typ, thunk} =>
                  let
-                   fun msg' () = msg () ^ ": thunk"
+                   fun msg' () = msg () ^ ": thunk get value"
                    val _ = variableUse (s, e, msg', thunk)
                  in some M.TNone
                  end
                | M.RhsThunkSpawn {typ, thunk, fx} =>
                  let
-                   fun msg' () = msg () ^ ": thunk"
+                   fun msg' () = msg () ^ ": thunk spawn"
                    val _ = variableUse (s, e, msg', thunk)
                  in none
                  end
@@ -741,8 +786,9 @@ struct
                  end
                | M.RhsClosureGetFv {fvs, cls, idx} =>
                  let
-                   fun msg' () = msg () ^ ": closure"
+                   fun msg' () = msg () ^ ": closure get fv"
                    val _ = variableUse (s, e, msg', cls)
+                   val () = inRange (s, e, msg', fvs, idx)
                  in some M.TNone
                  end
                | M.RhsPSetNew opnd =>
@@ -771,18 +817,20 @@ struct
                    val _ = operand (s, e, msg', oper)
                  in some M.TNone
                  end
-               | M.RhsPSum {tag, typ, ofVal} =>
+               | M.RhsSum {tag, typs, ofVals} =>
                  let
-                   val () = name (s, e, tag)
-                   fun msg2 () = msg () ^ ": of val"
-                   val _ = operand (s, e, msg2, ofVal)
+                   val _ = sumTag (s, e, msg, tag)
+                   fun msg2 () = msg () ^ ": of vals"
+                   val _ = operands (s, e, msg2, ofVals)
+                   val () = sameLength (s, e, msg2, typs, ofVals)
                  in some M.TNone
                  end
-               | M.RhsPSumProj {typ, sum, tag} =>
+               | M.RhsSumProj {typs, sum, tag, idx} =>
                  let
-                   fun msg1 () = msg () ^ ": sum"
+                   fun msg1 () = msg () ^ ": sum proj"
                    val _ = variableUse (s, e, msg1, sum)
-                   val () = name (s, e, tag)
+                   val _ = sumTag (s, e, msg1, tag)
+                   val () = inRange (s, e, msg1, typs, idx)
                  in some M.TNone
                  end)
       in ts
@@ -805,7 +853,7 @@ struct
       in ()
       end
 
-  fun switch (s, e, f, msg, {on, cases, default} : 'a M.switch) =
+  fun switch (s, e, msg, {select, on, cases, default}) =
       let
         fun msg' () = msg () ^ ": on"
         val ot = operand (s, e, msg', on)
@@ -813,7 +861,7 @@ struct
             let
               fun msg' () = msg () ^ ": arm " ^ Int.toString j
               fun msg'' () = msg' () ^ ": val"
-              val ct = f (s, e, msg'', x)
+              val ct = constant (s, e, msg'', x)
               fun msg'' () = msg' () ^ ": target"
               val () = target (s, e, msg'', t)
               fun msg'' () = msg' () ^ ": val/on"
@@ -1029,7 +1077,7 @@ struct
   fun transfer (s, e, msg, t) =
       case t
        of M.TGoto t => target (s, e, fn () => msg () ^ ": target", t)
-        | M.TCase sw => switch (s, e, constant, msg, sw)
+        | M.TCase sw => switch (s, e, msg, sw)
         | M.TInterProc {callee, ret, fx} =>
           let
             fun msg' () = msg () ^ ": callee"
@@ -1069,13 +1117,6 @@ struct
                   | _ => badTyp ()
           in ()
           end
-        | M.TPSumCase sw =>
-          let
-            fun name' (s, e, msg, n) =
-                let val () = name (s, e, n) in M.TName end
-          in
-            switch (s, e, name', msg, sw)
-          end
 
   fun block (s, e, l, M.B {parameters, instructions, transfer = t}) =
       let
@@ -1105,7 +1146,6 @@ struct
               | M.TReturn _ => e
               | M.TCut _ => e
               | M.THalt _ => e
-              | M.TPSumCase _ => e
       in e
       end
 
@@ -1262,13 +1302,14 @@ struct
                            end)
                 in t
                 end
-              | M.GPSum {tag, typ, ofVal} =>
+              | M.GSum {tag, typs, ofVals} =>
                 let
-                  val () = name (s, e, tag)
+                  val tTag = sumTag (s, e, msg, tag)
                   fun msg' () = msg () ^ ": carried value"
-                  val t = simple (s, e, msg', ofVal)
-                  val () = consistentFieldKind (s, e, msg', typ, t)
-                  val t = M.TPSum (ND.singleton (tag, t))
+                  val ts = simples (s, e, msg', ofVals)
+                  val () = sameLength (s, e, msg', typs, ofVals)
+                  val () = Vector.foreach2 (typs, ts, fn (typ, t) => consistentFieldKind (s, e, msg', typ, t))
+                  val t = M.TSum {tag = tTag, arms = Vector.new1 (tag, ts)}
                 in t
                 end
               | M.GPSet simp =>

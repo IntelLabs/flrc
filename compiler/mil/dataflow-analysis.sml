@@ -443,7 +443,7 @@ functor MilDataFlowAnalysisF (
                          end
             in ()
             end 
-        fun goSwitch (E env, st, {on, cases, default}) =
+        fun goSwitch (E env, st, {select, on, cases, default}) =
             let
               val () = Vector.foreach (cases, fn (_, t) => goTarget (E env, st, t))
               val () = Option.app (default, fn (t) => goTarget (E env, st, t))
@@ -453,7 +453,6 @@ functor MilDataFlowAnalysisF (
         case transfer
          of M.TGoto t => goTarget (E env, st, t)
           | M.TCase s => goSwitch (E env, st, s)
-          | M.TPSumCase s => goSwitch (E env, st, s)
           | M.TInterProc {callee, ret, fx} => 
             (case callee
               of M.IpCall {call, args} => (

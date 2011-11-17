@@ -123,7 +123,6 @@ struct
         | M.TReturn os                   => ()
         | M.TCut {cont, args, cuts}      => ()
         | M.THalt _                      => ()
-        | M.TPSumCase s                  => ()
 
   fun analyseBlock (s, e, f, l, b) =
       let
@@ -181,7 +180,7 @@ struct
           | M.GThunkValue {typ, ofVal} => ()
           | M.GSimple s                => ()
           | M.GClosure vo              => ()
-          | M.GPSum {tag, typ, ofVal}  => ()
+          | M.GSum {tag, typs, ofVals} => ()
           | M.GPSet s                  => ()
       end
 

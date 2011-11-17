@@ -47,6 +47,29 @@ struct
                                 type fieldSize = fieldSize
                               end)
 
+  (* Vector indexing conventions:
+   *   The element at index 0 is the same element that a vector load will load from the address loaded from.
+   *   The element at the highest index is the same element that a vector load will load from the address furtherest
+   *   away from the addresse loaded from.
+   *)
+
+  (* Unboxed constants *)
+  datatype constant =
+    (* Core *)
+      CBoolean  of bool
+    | CRat      of IntInf.t   (* Only optimised reps *)
+    | CInteger  of IntInf.t   (* Only optimised reps *)
+    | CName     of name
+    | CIntegral of IntArb.t
+    | CFloat    of Real32.t
+    | CDouble   of Real64.t
+    | CViMask   of {descriptor : Prims.vectorDescriptor, elts : bool Vector.t} (* see vector indexing conventions *)
+    | CPok      of pObjKind
+    | CRef      of IntInf.t   (* Only gc-ignored refs *)
+    (* HL *)
+    | COptionSetEmpty
+    | CTypePH 
+ 
   datatype typ =
     (* Core *)
       TAny                        (* All values *)
@@ -71,8 +94,8 @@ struct
                         args : typ Vector.t, 
                         ress : typ Vector.t}
     | TTuple        of {pok : pObjKind, 
-                        fixed : (typ * fieldVariance) Vector.t, 
-                        array : (typ * fieldVariance)}
+                        fixed : (typ * valueSize * fieldVariance) Vector.t, 
+                        array : (typ * valueSize * fieldVariance)}
     | TCString
     | TIdx
     | TContinuation of typ Vector.t
@@ -81,7 +104,9 @@ struct
     | TPAny
     | TClosure      of {args : typ Vector.t, 
                         ress : typ Vector.t}
-    | TPSum         of typ ND.t
+    | TSum          of {tag : typ, 
+                        arms : (constant * (typ Vector.t)) Vector.t} 
+                        (* No duplicates, sorted. *)
     | TPType        of {kind : typKind, 
                         over : typ}
     | TPRef         of typ
@@ -90,7 +115,7 @@ struct
   (* FkFloat and FkDouble are separate from bits, as backend casting is not preserving *)
   datatype fieldKind = FkRef | FkBits of fieldSize | FkFloat | FkDouble
 
-  datatype fieldDescriptor = FD of {kind : fieldKind, var : fieldVariance}
+  datatype fieldDescriptor = FD of {kind : fieldKind, alignment : valueSize, var : fieldVariance}
 
   datatype tupleDescriptor = TD of {
     fixed : fieldDescriptor Vector.t,
@@ -98,34 +123,12 @@ struct
   }
 
   datatype metaDataDescriptor = MDD of {
-    pok   : pObjKind,
-    fixed : fieldDescriptor Vector.t,
-    array : (int * fieldDescriptor) option
+    pok    : pObjKind,
+    pinned : bool, 
+    fixed  : fieldDescriptor Vector.t,
+    array  : (int * fieldDescriptor) option
   }
 
-  (* Vector indexing conventions:
-   *   The element at index 0 is the same element that a vector load will load from the address loaded from.
-   *   The element at the highest index is the same element that a vector load will load from the address furtherest
-   *   away from the addresse loaded from.
-   *)
-
-  (* Unboxed constants *)
-  datatype constant =
-    (* Core *)
-      CBoolean  of bool
-    | CRat      of IntInf.t   (* Only optimised reps *)
-    | CInteger  of IntInf.t   (* Only optimised reps *)
-    | CName     of name
-    | CIntegral of IntArb.t
-    | CFloat    of Real32.t
-    | CDouble   of Real64.t
-    | CViMask   of {descriptor : Prims.vectorDescriptor, elts : bool Vector.t} (* see vector indexing conventions above *)
-    | CPok      of pObjKind
-    | CRef      of IntInf.t   (* Only gc-ignored refs *)
-    (* HL *)
-    | COptionSetEmpty
-    | CTypePH 
- 
   datatype simple = 
       SVariable of variable
     | SConstant of constant
@@ -205,8 +208,8 @@ struct
     | RhsClosureInit   of {cls  : variable option,                (* if absent, create;
                                                                    * if present, must be from ClosureMk
                                                                    *)
-                           code : variable option,                (* Must be function name. If absent then this is an environment, 
-                                                                   * which can only be projected from but not called.  *)
+                           code : variable option,   (* Must be function name. If absent then this is an environment, 
+                                                      * which can only be projected from but not called.  *)
                            fvs  : (fieldKind * operand) Vector.t}
     | RhsClosureGetFv  of {fvs : fieldKind Vector.t, 
                            cls : variable, 
@@ -216,12 +219,13 @@ struct
     | RhsPSetCond      of {bool : operand, 
                            ofVal : operand} (* if bool then {ofVal} else {} *)
     | RhsPSetQuery     of operand (* {} => false | _ => true *)
-    | RhsPSum          of {tag : name, 
-                           typ : fieldKind, 
-                           ofVal : operand}
-    | RhsPSumProj      of {typ : fieldKind, 
-                           sum : variable, 
-                           tag : name}
+    | RhsSum           of {tag : constant, 
+                           ofVals : operand Vector.t,
+                           typs   : fieldKind Vector.t}
+    | RhsSumProj       of {typs : fieldKind Vector.t, 
+                           sum : variable,
+                           tag : constant, 
+                           idx : int}
 
   datatype instruction = I of {
     dests : variable vector,     (* arity must match rhs *)
@@ -232,11 +236,7 @@ struct
   datatype target = T of {block : label, 
                           arguments : operand Vector.t}
 
-  type 'a switch = {
-    on      : operand,
-    cases   : ('a * target) Vector.t,
-    default : target option
-  }
+  datatype selector = SeSum of fieldKind (*HL*) | SeConstant (* Core *)
 
   (* The variables in "possible" are always function names *)
   type codes = {possible : VS.t, exhaustive : bool}
@@ -267,13 +267,14 @@ struct
   datatype transfer =
     (* Core *)
       TGoto      of target
-    | TCase      of constant switch
+    | TCase      of {select  : selector,
+                     on      : operand, 
+                     cases   : (constant * target) Vector.t, 
+                     default : target option}
     | TInterProc of {callee : interProc, ret : return, fx : effects}
     | TReturn    of operand Vector.t
     | TCut       of {cont : variable, args : operand Vector.t, cuts : cuts}
     | THalt      of operand
-    (* HL *)
-    | TPSumCase  of name switch
 
   datatype block = B of {
     parameters   : variable Vector.t,
@@ -317,9 +318,9 @@ struct
     | GSimple     of simple
     | GClosure    of {code : variable option, 
                       fvs : (fieldKind * simple) Vector.t}
-    | GPSum       of {tag : name, 
-                      typ : fieldKind, 
-                      ofVal : simple}
+    | GSum       of {tag    : constant, 
+                     ofVals : simple Vector.t,
+                     typs   : fieldKind Vector.t}
     | GPSet       of simple
 
   type globals = global VD.t

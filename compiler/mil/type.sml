@@ -115,7 +115,8 @@ struct
              MU.PObjKind.compare (pok1, pok2) = EQUAL andalso
              Vector.size ftvs1 >= Vector.size ftvs2 andalso
              let
-               fun checkField ((t1, v1), (t2, v2)) =
+               fun checkField ((t1, vs1, v1), (t2, vs2, v2)) =
+                   MU.ValueSize.eq (vs1, vs2) andalso 
                    case (v1, v2)
                     of (M.FvReadOnly , M.FvReadOnly ) => subtype (c, t1, t2)
                      | (M.FvReadOnly , M.FvReadWrite) => false
@@ -142,14 +143,22 @@ struct
            | (_, M.TPAny) => MU.Typ.isP t1
            | (M.TClosure {args = args1, ress = ress1}, M.TClosure {args = args2, ress = ress2}) =>
              subtypes (c, args2, args1) andalso subtypes (c, ress1, ress2)
-           | (M.TPSum nts1, M.TPSum nts2) =>
+           | (M.TSum {tag = t1, arms = a1}, M.TSum {tag = t2, arms = a2}) =>
              let
-               fun checkArm (n, t1) =
-                   case ND.lookup (nts2, n)
-                    of NONE => false
-                     | SOME t2 => subtype (c, t1, t2)
-             in
-               ND.forall (nts1, checkArm)
+               (* Seems reasonable to allow subtyping on tag types, but I'm not sure this
+                * is a good idea. -leaf 
+                *)
+               val rec loop =
+                fn (a1, a2) =>
+                   case (a1, a2)
+                    of ([], _)                      => true
+                     | (_, [])                      => false
+                     | ((c1, v1)::a12, (c2, v2)::a22) => 
+                       (case MU.Constant.compare (c1, c2)
+                         of LESS    => loop (a12, a2)
+                          | GREATER => loop (a1, a22)
+                          | EQUAL   => subtypes (c, Vector.prefix (v1, Vector.length v2), v2))
+             in equal (t1, t2) andalso loop (Vector.toList a1, Vector.toList a2)
              end
            | (M.TPType {kind = tk1, over = t1}, M.TPType {kind = tk2, over = t2}) =>
              MU.TypKind.compare (tk1, tk2) = EQUAL andalso subtype (c, t1, t2)
@@ -250,7 +259,7 @@ struct
                           val ress = <@ vector (ress1, ress2, up)
                         in M.TClosure {args = args, ress = ress}
                         end
-                      | (M.TPSum ts1, M.TPSum ts2) => Try.fail () (* handled elsewhere *)
+                      | (M.TSum ts1, M.TSum ts2) => Try.fail () (* handled elsewhere *)
                       | (M.TPType {kind = kind1, over = over1}, M.TPType {kind = kind2, over = over2}) => 
                         let
                           val kind = <@ typKind (kind1 ,kind2)
@@ -267,8 +276,8 @@ struct
                       | (M.TCode _, _) => Try.fail ()        | (M.TTuple _, _) => Try.fail ()
                       | (M.TCString, _) => Try.fail ()
                       | (M.TIdx, _) => Try.fail ()           | (M.TContinuation _, _) => Try.fail ()
-                      | (M.TThunk _, _) => Try.fail ()       | (M.TPAny, _) => Try.fail ()
-                      | (M.TClosure _, _) => Try.fail ()     | (M.TPSum _, _) => Try.fail ()
+                      | (M.TThunk _, _) => Try.fail ()       | (M.TPAny, _)   => Try.fail ()
+                      | (M.TClosure _, _) => Try.fail ()     | (M.TSum _, _)  => Try.fail ()
                       | (M.TPType _, _) => Try.fail ()       | (M.TPRef _, _) => Try.fail ()
                    )
                )
@@ -332,7 +341,7 @@ struct
             | M.TThunk t                   => SRef true
             | M.TPAny                      => SPAny false
             | M.TClosure {args, ress}      => SPAny true
-            | M.TPSum nts                  => SPAny true
+            | M.TSum nts                   => SPAny true
             | M.TPType {kind, over}        => SPAny true
             | M.TPRef t                    => SPAny true)
 
@@ -346,13 +355,16 @@ struct
            val sub = fn (t1, t2) => if subtype (config, t1, t2) then SOME t2 else NONE
 
            val field = 
-               (fn ((t1, fv1), (t2, fv2)) => 
-                   (case (fv1, fv2)
-                     of (M.FvReadOnly, M.FvReadOnly) => (lub (t1, t2), M.FvReadOnly)
-                      | (M.FvReadOnly, M.FvReadWrite) => (lub (t1, t2), M.FvReadOnly)
-                      | (M.FvReadWrite, M.FvReadOnly) => (lub (t2, t1), M.FvReadOnly)
-                      | (M.FvReadWrite, M.FvReadWrite) =>
-                        if MU.Typ.eq (t1, t2) then (t1, M.FvReadWrite) else (lub (t1, t2), M.FvReadOnly)))
+               (fn ((t1, vs1, fv1), (t2, vs2, fv2)) => 
+                   if MU.ValueSize.eq (vs1, vs2) then 
+                     SOME (case (fv1, fv2)
+                            of (M.FvReadOnly, M.FvReadOnly) => (lub (t1, t2), vs1, M.FvReadOnly)
+                             | (M.FvReadOnly, M.FvReadWrite) => (lub (t1, t2), vs1, M.FvReadOnly)
+                             | (M.FvReadWrite, M.FvReadOnly) => (lub (t2, t1), vs1, M.FvReadOnly)
+                             | (M.FvReadWrite, M.FvReadWrite) =>
+                               if MU.Typ.eq (t1, t2) then (t1, vs1, M.FvReadWrite) 
+                               else (lub (t1, t2), vs1, M.FvReadOnly))
+                   else NONE)
 
           (*
            * LUB: t1 v t2
@@ -373,8 +385,8 @@ struct
                      val (fixed2, extras2) = Utils.Vector.split (fixed2, len)
                      (* One is empty *)
                      val extras = Vector.concat [extras1, extras2]
-                     val fixed = Vector.map2 (fixed1, fixed2, field)
-                     val array = Vector.fold (extras, field (array1, array2), field)
+                     val fixed = Vector.map2 (fixed1, fixed2, <@ field)
+                     val array = Vector.fold (extras, <@ field (array1, array2), <@ field)
                    in M.TTuple {pok = pok, fixed = fixed, array = array}
                    end)
                
@@ -387,16 +399,23 @@ struct
                         | NONE => if MU.Typ.isP t1 andalso MU.Typ.isP t2 then M.TPAny else M.TRef)
 
                   (* Sum widening *)
-                  | (M.TPSum d1, M.TPSum d2) => 
-                    let
-                      val combine = (fn (nm, op1, op2) => 
-                                        (case (op1, op2)
-                                          of (NONE, _) => op2
-                                           | (_, NONE) => op1
-                                           | (SOME t1, SOME t2) => SOME (lub (t1, t2))))
-                      val d = ND.map2 (d1, d2, combine)
-                    in M.TPSum d
-                    end
+                  | (M.TSum {tag = t1, arms = a1}, M.TSum {tag = t2, arms = a2}) => 
+                    if not (equal (t1, t2)) then if MU.Typ.isP t1 andalso MU.Typ.isP t2 then M.TPAny else M.TRef
+                    else
+                      let
+                        val combine = 
+                         fn (v1, v2) => 
+                            let
+                              val n = Int.min (Vector.length v1, Vector.length v2)
+                              val v1 = Vector.prefix (v1, n)
+                              val v2 = Vector.prefix (v2, n)
+                              val v = Vector.map2 (v1, v2, lub)
+                            in v
+                            end
+                        val tag = t1
+                        val arms = Utils.SortedVectorMap.unionWith MU.Constant.compare (a1, a2, combine)
+                      in M.TSum {tag = tag, arms = arms}
+                      end
 
                   (* All other combinations.  Note that by assumption, 
                    * t1 and t2 have different top level structure.
@@ -455,13 +474,15 @@ struct
 
            val field = 
                Try.lift 
-               (fn ((t1, fv1), (t2, fv2)) => 
-                   (case (fv1, fv2)
-                     of (M.FvReadOnly, M.FvReadOnly) => (glb (t1, t2), M.FvReadOnly)
-                      | (M.FvReadOnly, M.FvReadWrite) => (<@ sub (t2, t1), M.FvReadWrite)
-                      | (M.FvReadWrite, M.FvReadOnly) => (<@ sub (t1, t2), M.FvReadWrite)
-                      | (M.FvReadWrite, M.FvReadWrite) => (<@ eq (t1, t2), M.FvReadWrite)))
-
+               (fn ((t1, vs1, fv1), (t2, vs2, fv2)) => 
+                   if MU.ValueSize.eq (vs1, vs2) then 
+                     (case (fv1, fv2)
+                       of (M.FvReadOnly, M.FvReadOnly) => (glb (t1, t2), vs1, M.FvReadOnly)
+                        | (M.FvReadOnly, M.FvReadWrite) => (<@ sub (t2, t1), vs1, M.FvReadWrite)
+                        | (M.FvReadWrite, M.FvReadOnly) => (<@ sub (t1, t2), vs1, M.FvReadWrite)
+                        | (M.FvReadWrite, M.FvReadWrite) => (<@ eq (t1, t2), vs1, M.FvReadWrite))
+                   else Try.fail ())
+               
            (* GLB: t1 ^ t2
             * <a1, ..., an, R1> ^ <b1, ..., bn, ..., bm, R2> = <a1 ^ b1, ..., an ^ bn, cn+1, ..., cm, R3>
             * where
@@ -499,15 +520,23 @@ struct
                         | NONE => M.TNone)
 
                   (* Sum narrowing *)
-                  | (M.TPSum d1, M.TPSum d2) => 
-                    let
-                      val combine = (fn (nm, op1, op2) => 
-                                        (case (op1, op2)
-                                          of (NONE, _) => NONE
-                                           | (_, NONE) => NONE
-                                           | (SOME t1, SOME t2) => SOME (glb (t1, t2))))
-                      val d = ND.map2 (d1, d2, combine)
-                    in M.TPSum d
+                  | (M.TSum {tag = t1, arms = a1}, M.TSum {tag = t2, arms = a2}) => 
+                    if not (equal (t1, t2)) then M.TNone
+                    else
+                      let
+                        val combine = 
+                         fn (v1, v2) => 
+                            let
+                              val n = Int.min (Vector.length v1, Vector.length v2)
+                              val (v1, extra1) = Utils.Vector.split (v1, n)
+                              val (v2, extra2) = Utils.Vector.split (v2, n)
+                              val v = Vector.map2 (v1, v2, glb)
+                              val v = Vector.concat [v, extra1, extra2]
+                            in v
+                            end
+                        val tag = t1
+                        val arms = Utils.SortedVectorMap.intersectWith MU.Constant.compare (a1, a2, combine)
+                    in M.TSum {tag = tag, arms = arms}
                     end
 
                   (* All other combinations.  Note that by assumption, 
@@ -617,9 +646,9 @@ struct
      val tString = 
       fn (c, si) =>
          let
-           val ord = Prims.getOrd si
+           val ord = M.CName (Prims.getOrd si)
            val char = MU.Boxed.t (M.PokRat, tRat)
-           val sum = M.TPSum (ND.singleton (ord, char))
+           val sum = POM.Sum.typ (M.TName, Vector.new1 (ord, Vector.new1 char))
            val str = OA.varTyp (c, M.PokArray, char)
          in str
          end
@@ -926,20 +955,7 @@ struct
              M.CcThunk {thunk = variable (config, si, thunk),
                         fvs = variables (config, si, fvs)}
 
-     fun constant (config, si, c) =
-         case c
-          of M.CRat _          => MUP.NumericTyp.tRat
-           | M.CInteger _      => MUP.NumericTyp.tIntegerArbitrary
-           | M.CName _         => M.TName
-           | M.CIntegral i     => MUP.NumericTyp.tIntegerFixed (IntArb.typOf i)
-           | M.CBoolean _      => M.TBoolean
-           | M.CFloat _        => MUP.NumericTyp.tFloat
-           | M.CDouble _       => MUP.NumericTyp.tDouble
-           | M.CViMask x       => M.TViMask (#descriptor x)
-           | M.CPok _          => MU.Uintp.t config
-           | M.COptionSetEmpty => M.TPType {kind = M.TkE, over = M.TNone}
-           | M.CRef _          => M.TRef
-           | M.CTypePH         => M.TPType {kind = M.TkI, over = M.TNone}
+     fun constant (config, si, c) = MU.Constant.typOf (config, c)
 
      fun simple (config, si, s) =
          case s
@@ -963,8 +979,16 @@ struct
            | M.GErrorVal t => t
            | M.GIdx _ => M.TIdx
            | M.GTuple {mdDesc, inits} => 
-             MU.Typ.fixedArray (MU.MetaDataDescriptor.pok mdDesc,
-                                Vector.map (simples (config, si, inits), fn t => (t, M.FvReadWrite)))
+             let
+               val pok = MU.MetaDataDescriptor.pok mdDesc
+               val getFD = fn i => MU.MetaDataDescriptor.fixedField (mdDesc, i)
+               val get = fn i => let val fd = getFD i 
+                                 in (MU.FieldDescriptor.alignment fd, MU.FieldDescriptor.var fd) 
+                                 end
+               val s = simples (config, si, inits)
+               val l = Vector.mapi (s, fn (i, t) => let val (vs, vr) = get i in (t, vs, vr) end)
+             in  MU.Typ.fixedArray (pok, l)
+             end
            | M.GRat _ => MUP.NumericTyp.tRat
            | M.GInteger _ => MUP.NumericTyp.tIntegerArbitrary
            | M.GCString _ => M.TCString
@@ -977,8 +1001,9 @@ struct
                of M.TCode {args, ress, ...} =>
                   M.TClosure {args = args, ress = ress}
                 | _ => M.TPAny)
-           | M.GPSum {tag, typ, ofVal} =>
-             M.TPSum (ND.singleton (tag, simple (config, si, ofVal)))
+           | M.GSum {tag, typs, ofVals} =>
+             M.TSum {tag = constant (config, si, tag),
+                     arms = Vector.new1 (tag, simples (config, si, ofVals))}
            | M.GPSet s =>
              M.TPType {kind = M.TkE, over = simple (config, si, s)}
 

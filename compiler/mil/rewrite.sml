@@ -187,10 +187,10 @@ struct
           | M.RhsPSetCond {bool, ofVal} =>
             M.RhsPSetCond {bool = doOp bool, ofVal = doOp ofVal}
           | M.RhsPSetQuery oper => M.RhsPSetQuery (doOp oper)
-          | M.RhsPSum {tag, typ, ofVal} =>
-            M.RhsPSum {tag = tag, typ = typ, ofVal = doOp ofVal}
-          | M.RhsPSumProj {typ, sum, tag} =>
-            M.RhsPSumProj {typ = typ, sum = doVar sum, tag = tag}
+          | M.RhsSum {tag, typs, ofVals} =>
+            M.RhsSum {tag = tag, typs = typs, ofVals = doOps ofVals}
+          | M.RhsSumProj {typs, sum, tag, idx} =>
+            M.RhsSumProj {typs = typs, sum = doVar sum, tag = tag, idx = idx}
       end
 
   fun instruction (state, env, i) = 
@@ -232,13 +232,13 @@ struct
       in t
       end
 
-  fun switch (state, env, {on, cases, default} : 'a Mil.switch) =
+  fun switch (state, env, {select, on, cases, default}) =
       let
         val on = operand (state, env, on)
         fun doOne (k, t) = (k, target (state, env, t))
         val cases = Vector.map (cases, doOne)
         val default = Option.map (default, fn t => target (state, env, t))
-        val s = {on = on , cases = cases, default = default}
+        val s = {select = select, on = on , cases = cases, default = default}
       in s
       end
 
@@ -310,7 +310,6 @@ struct
                         args = operands (state, env, args),
                         cuts = cuts (state, env, cs)}
               | M.THalt opnd => M.THalt (operand (state, env, opnd))
-              | M.TPSumCase s => M.TPSumCase (switch (state, env, s))
       in
         callClientCode (clientTransfer, doTransfer, state, env, transfer)
       end
@@ -405,6 +404,7 @@ struct
         fun doGlobal (state, env, (x, global)) = 
             let
               fun doOp opnd = operand (state, env, opnd)
+              fun doOps opnds = Vector.map (opnds, doOp)
               fun doVarO vo = Option.map (vo, fn v => variable (state, env, v))
               fun doFkOps fkos = Vector.map (fkos, fn (fk, opnd) => (fk, doOp opnd))
               val global = 
@@ -421,8 +421,8 @@ struct
                       M.GThunkValue {typ = typ, ofVal = simple (state, env, ofVal)}
                     | M.GSimple s => M.GSimple (simple (state, env, s))
                     | M.GClosure {code, fvs} => M.GClosure {code = doVarO code, fvs  = doFkOps fvs}
-                    | M.GPSum {tag, typ, ofVal} =>
-                      M.GPSum {tag = tag, typ = typ, ofVal = simple (state, env, ofVal)}
+                    | M.GSum {tag, typs, ofVals} =>
+                      M.GSum {tag = tag, typs = typs, ofVals = doOps ofVals}
                     | M.GPSet s => M.GPSet (simple (state, env, s))
             in (x, global)
             end

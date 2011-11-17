@@ -419,7 +419,7 @@ struct
                   end
                   
               val doSwitch = 
-                  (fn (mk, l3, {on = a, cases = v, default = defo}) => 
+                  (fn (l3, {select, on = a, cases = v, default = defo}) => 
                       let
                         val help = 
                          fn (arg as ((a, tg), done)) =>
@@ -434,8 +434,8 @@ struct
                               | NONE => fail ("retargetOutEdge", "Switch")
                       in
                         (case Vector.mapAndFold (v, false, help)
-                          of (v, true)  => mk {on = a, cases = v, default = defo}
-                           | (_, false) => mk {on = a, cases = v, default = def defo})
+                          of (v, true)  => M.TCase {select = select, on = a, cases = v, default = defo}
+                           | (_, false) => M.TCase {select = select, on = a, cases = v, default = def defo})
                       end)
 
               val b3 = 
@@ -459,11 +459,9 @@ struct
                            end
                          | M.RTail _ => fail ("retargetOutEdge", "TailCall"))
                     | M.TCase sw => 
-                      succeed (fn l3 => doSwitch (M.TCase, l3, sw))
+                      succeed (fn l3 => doSwitch (l3, sw))
                     | M.TCut _ => Try.fail ()
                     | M.THalt _ => fail ("retargetOutEdge", "Halt")
-                    | M.TPSumCase sw => 
-                      succeed (fn l3 => doSwitch (M.TPSumCase, l3, sw))
             in b3
             end)
 
