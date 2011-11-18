@@ -29,12 +29,10 @@ in
         structure MilContify
         structure MilCse
         structure MilDblDiamond
-        structure MilFlatten
         structure MilInlineLeaves
         structure MilLicm
         structure MilRemoveBranch
         structure MilRep
-        structure MilRepDce
         structure MilSimplify
         structure MilVectorize
         structure MilInlineAggressive   

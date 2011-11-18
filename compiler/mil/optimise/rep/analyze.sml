@@ -3,6 +3,8 @@
 
 signature MIL_REP_ANALYZE = 
 sig
+  val debugs : Config.Debug.debug list
+  val features : Config.Feature.feature list
   val program : PassData.t * Mil.t -> MilRepSummary.summary
 end
 
@@ -69,10 +71,18 @@ struct
   val fail = 
    fn (f, m) => Fail.fail ("analyze.sml", f, m)
 
+  val debugs = []
+
+  val mkFeature = 
+   fn (tag, description) => PD.mkFeature (passname ^":"^ tag, description)
+
+  val (useShallowTypesF, useShallowTypes) =
+      mkFeature ("shallow-types", "Don't expand types deeply")
+
+  val features = [useShallowTypesF]
+
   val stringFromVar = Layout.toString o MilLayout.layoutVariable
   val stringFromLabel = Layout.toString o MilLayout.layoutLabel
-
-  val useShallowTypes = MilRepBase.useShallowTypes
 
   structure Env = 
   struct

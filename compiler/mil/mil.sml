@@ -235,8 +235,10 @@ struct
 
   datatype target = T of {block : label, 
                           arguments : operand Vector.t}
-
-  datatype selector = SeSum of fieldKind (*HL*) | SeConstant (* Core *)
+                      
+  datatype selector = 
+           SeSum of fieldKind (*HL*) (* dispatch on sum tag of the operand.  fieldKind is size of tag *)
+         | SeConstant (* Core *)     (* dispatch on the operand itself *)
 
   (* The variables in "possible" are always function names *)
   type codes = {possible : VS.t, exhaustive : bool}

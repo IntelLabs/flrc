@@ -1,14 +1,11 @@
 (* The Intel P to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
-signature MIL_REP_DCE = 
-sig
-  val pass : (BothMil.t, BothMil.t) Pass.t
-end
-
-structure MilRepDce :> MIL_REP_DCE = 
+structure MilRepDceOptimization :> MIL_REP_OPTIMIZATION = 
 struct
   val passname = "MilRepDce"
+  val description = "Rep dead code optimisation"
+  val reconstructTypes = true
   val fail = 
    fn (fname, msg) => Fail.fail ("dead-code.sml", fname, msg)
 
@@ -38,12 +35,6 @@ struct
                           end)
 
 
-  val (noDceF, noDce) =
-      PD.mkFeature (passname ^ ":no-dce", "disable dead code elimination")
-
-  val (statPhasesF, statPhases) = 
-      PD.mkLogFeature (passname, passname ^ ":stat-phases", "Show stats between each phase", 2)
-
   val mkDebug = 
    fn (tag, description) => PD.mkDebug (passname^":"^tag, description)
 
@@ -53,28 +44,12 @@ struct
   val mkLevelDebug = 
    fn (tag, description, level) => PD.mkLevelDebug (passname, passname^":"^tag, description, level, debugPass)
 
-  val (checkPhasesD, checkPhases) =
-      mkLevelDebug ("check-phases", "Check IR between each phase", 0)
-
-  val (showPhasesD, showPhases) =
-      mkLevelDebug ("show-phases", "Show IR between each phase", 0)
-
   val (showD, show) = 
       mkLevelDebug ("show-dce", "Show dce analysis", 1)
 
-  val (showAnalysisD, showAnalysis) =
-      mkLevelDebug ("show-analysis", "Show analysis results", 1)
+  val debugs = [debugPassD, showD]
 
-  val (skipReconstructionD, skipReconstruction) =
-      mkDebug ("skip-reconstruction", "Don't reconstruct types")
-
-  val (annotateProgramD, annotateProgram) =
-      mkDebug ("annotate", "Annotate program variables with class")
-
-  val debugs = [annotateProgramD, checkPhasesD, debugPassD, showAnalysisD, showD, showPhasesD, 
-                skipReconstructionD]
-
-  val features = [noDceF, statPhasesF]
+  val features = []
 
   structure Click = 
   struct
@@ -87,8 +62,6 @@ struct
 
   structure Dce = 
   struct
-
-    val skip = noDce
 
     structure SE1 = 
     struct
@@ -1218,92 +1191,6 @@ struct
 
   end (* structure Dce *)
 
-  val postPhase = 
-   fn (pd, p) => 
-      let
-        val config = PD.getConfig pd
-        val () = if statPhases pd then Stats.report (PD.getStats pd) else ()
-        val () = if checkPhases pd then MilCheck.program (config, p) else ()
-        val () = if showPhases pd then MilLayout.print (config, p) else ()
-      in ()
-      end
+  val program = Dce.program
+end (* structure MilRepDceOptimization*)
 
-  val doPhase = 
-   fn (skip, f, name) =>
-   fn (pd, p) => 
-      if skip pd then
-        let
-          val () = Chat.log1 (pd, "Skipping "^name)
-        in p
-        end
-      else
-        let
-          val pd = PD.push pd
-          val () = Chat.log1 (pd, "Doing "^name)
-          val s = Time.now ()
-          val p = f (pd, p)
-          val e = Time.toString (Time.- (Time.now (), s))
-          val () = Chat.log1 (pd, "Done with "^name^" in "^e^"s")
-          val () = postPhase (pd, p)
-        in p
-        end
-
-  val preProcess = doPhase (fn _ => false, MilRepPrep.program, "Pre-processing")
-
-  val optimize = fn (pd, summary, p) => 
-                    doPhase (Dce.skip, 
-                             fn (pd, p) => Dce.program (pd, summary, p),
-                             "Optimization") (pd, p)
-
-  val reconstruct = fn (pd, summary, p) => 
-                       doPhase (skipReconstruction, 
-                                fn (pd, p) => MilRepReconstruct.program (pd, summary, false, p),
-                                "Reconstruction") (pd, p)
-
-  val annotate = fn (pd, summary, p) => 
-                    doPhase (fn pd => not (annotateProgram pd),
-                             fn (pd, p) => MilRepShow.annotate (pd, summary, p),
-                             "Annotation") (pd, p)
-
-  val analyze = 
-   fn (pd, p) => 
-      let
-          val () = Chat.log1 (pd, "Doing analysis")
-          val summary = MilRepAnalyze.program (pd, p)
-          val () = Chat.log1 (pd, "Done with analysis")
-          val () = 
-              if showAnalysis pd then
-                MilRepShow.printAnalysis (pd, summary, p)
-              else
-                ()
-      in summary
-      end
-
-  val program = 
-   fn (pd, p) =>
-      let
-        val p = preProcess (pd, p)
-        val summary = analyze (pd, p)
-        val p = optimize (pd, summary, p)
-        val p = reconstruct (pd, summary, p)
-        val p = annotate (pd, summary, p)
-        val () = PD.report (pd, passname)
-      in p
-      end
-
-  val description = {name        = passname,
-                     description = "Rep dead code optimisation",
-                     inIr        = BothMil.irHelpers,
-                     outIr       = BothMil.irHelpers,
-                     mustBeAfter = [],
-                     stats       = stats}
-
-  val associates = {controls  = [],
-                    debugs    = debugs,
-                    features  = features,
-                    subPasses = []}
-
-  val pass =
-      Pass.mkOptPass (description, associates, BothMil.mkMilPass (Utils.Function.flipIn program))
-
-end
