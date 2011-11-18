@@ -3,8 +3,8 @@
 
 signature MIL_REP_PREP = 
 sig
-  val stats : (string * string) list
   val debugs : Config.Debug.debug list
+  val features : Config.Feature.feature list
   val program : PassData.t * Mil.t -> Mil.t
 end
 
@@ -18,11 +18,18 @@ struct
   structure MU = MilUtils
   structure PD = PassData
 
-  val stats = []
   val debugs = []
 
-  val splitAggressive = MilRepBase.splitAggressive
-  val noSplitting = MilRepBase.noSplitting
+  val mkFeature = 
+   fn (tag, description) => PD.mkFeature (passname ^":"^ tag, description)
+
+  val (splitAggressiveF, splitAggressive) =
+      mkFeature ("split-aggressive", "Split globals aggressively")
+
+  val (noSplittingF, noSplitting) =
+      mkFeature ("no-global-splitting", "Disable global splitting")
+
+  val features = [splitAggressiveF, noSplittingF]
 
   structure Split = 
   struct

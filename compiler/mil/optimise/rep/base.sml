@@ -18,17 +18,6 @@ sig
   structure NameIntDict : DICT where type key = Mil.name * int
   datatype 'a edge = EUnify of 'a * 'a | EFlow of 'a * 'a
 
-  val features : Config.Feature.feature list
-
-  val noTupleUnbox     : PassData.t -> bool
-  val noConstantProp   : PassData.t -> bool
-  val statPhases       : PassData.t -> bool
-  val useShallowTypes  : PassData.t -> bool
-  val splitAggressive  : PassData.t -> bool
-  val noSplitting      : PassData.t -> bool
-  val noCFA            : PassData.t -> bool
-  val noEscapeAnalysis : PassData.t -> bool
-  val cfaAnnotateFull  : PassData.t -> bool
 end  (* signature MIL_REP_BASE *)
 
 structure MilRepBase :> MIL_REP_BASE = 
@@ -102,60 +91,5 @@ struct
                                  end)
 
   datatype 'a edge = EUnify of 'a * 'a | EFlow of 'a * 'a
-
-  val mkLogFeature : string * string * int -> (Config.Feature.feature * (PassData.t -> bool)) = 
-   fn (tag, description, level) =>
-      let
-        val (featureD, feature) = 
-            Config.Feature.mk ("MilRep" ^ ":" ^ tag, description)
-        val feature = 
-         fn d => 
-            let
-              val config = PD.getConfig d
-            in feature config orelse 
-               (Config.logLevel (config, "MilRep") >= level)
-            end
-      in (featureD, feature)
-      end
-
-  val mkFeature : string * string -> (Config.Feature.feature * (PassData.t -> bool)) = 
-   fn (tag, description) =>
-      let
-        val (featureD, feature) = 
-            Config.Feature.mk ("MilRep" ^ ":" ^ tag, description)
-        val feature = 
-         fn d => feature (PD.getConfig d)
-      in (featureD, feature)
-      end
-
-  val (noTupleUnboxF, noTupleUnbox) =
-      mkFeature ("no-unbox", "disable global unboxing")
-      
-  val (noConstantPropF, noConstantProp) =
-      mkFeature ("no-constant-prop", "disable global constant propogation")
-
-  val (statPhasesF, statPhases) = 
-      mkLogFeature ("stat-phases", "Show stats between each phase", 2)
-
-  val (useShallowTypesF, useShallowTypes) =
-      mkFeature ("shallow-types", "Don't expand types deeply")
-
-  val (splitAggressiveF, splitAggressive) =
-      mkFeature ("split-aggressive", "Split globals aggressively")
-
-  val (noSplittingF, noSplitting) =
-      mkFeature ("no-global-splitting", "Disable global splitting")
-
-  val (noCFAF, noCFA) =
-      mkFeature ("no-cfa", "Disable global control flow analysis")
-
-  val (noEscapeAnalysisF, noEscapeAnalysis) =
-      mkFeature ("no-escape-analysis", "Disable global escape analysis")
-
-  val (cfaAnnotateFullF, cfaAnnotateFull) =
-      mkFeature ("cfa-annotate", "CFA adds full code annotations")
-
-  val features = [cfaAnnotateFullF, noConstantPropF, noSplittingF, noTupleUnboxF, 
-                  splitAggressiveF, statPhasesF, useShallowTypesF, noCFAF, noEscapeAnalysisF]
 
 end (* structure MilRepBase *)

@@ -1,14 +1,11 @@
 (* The Intel P to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
-signature MIL_FLATTEN = 
-sig
-  val pass : (BothMil.t, BothMil.t) Pass.t
-end
-
-structure MilFlatten :> MIL_FLATTEN = 
+structure MilRepFlattenOptimization :> MIL_REP_OPTIMIZATION = 
 struct
   val passname = "MilFlatten"
+  val description = "Flattening optimization"
+  val reconstructTypes = false
   val fail = 
    fn (fname, msg) => Fail.fail ("flatten.sml", fname, msg)
 
@@ -37,12 +34,6 @@ struct
                             val indent = 2
                           end)
 
-  val (noFlattenF, noFlatten) =
-      PD.mkFeature (passname ^ ":no-flatten", "disable flattening")
-
-  val (statPhasesF, statPhases) = 
-      PD.mkLogFeature (passname, passname ^ ":stat-phases", "Show stats between each phase", 2)
-
   val mkDebug = 
    fn (tag, description) => PD.mkDebug (passname^":"^tag, description)
 
@@ -52,27 +43,15 @@ struct
   val mkLevelDebug = 
    fn (tag, description, level) => PD.mkLevelDebug (passname, passname^":"^tag, description, level, debugPass)
 
-  val (checkPhasesD, checkPhases) =
-      mkLevelDebug ("check-phases", "Check IR between each phase", 0)
-
-  val (showPhasesD, showPhases) =
-      mkLevelDebug ("show-phases", "Show IR between each phase", 0)
-
   val (showFlatteningD, showFlattening) = 
       mkLevelDebug ("show-flattening", "Show flattening analysis", 1)
-
-  val (showAnalysisD, showAnalysis) =
-      mkLevelDebug ("show-analysis", "Show analysis results", 1)
-
-  val (annotateProgramD, annotateProgram) =
-      mkDebug ("annotate", "Annotate program variables with class")
 
   val debug = 
    fn (pd, i) => debugPass pd andalso (Config.debugLevel (PD.getConfig pd, passname) >= i)
 
-  val debugs = [annotateProgramD, checkPhasesD, debugPassD, showAnalysisD, showFlatteningD, showPhasesD] 
+  val debugs = [debugPassD, showFlatteningD] 
 
-  val features = [noFlattenF, statPhasesF]
+  val features = []
 
   structure Click = 
   struct
@@ -85,8 +64,6 @@ struct
 
   structure Flatten = 
   struct
-
-    val skip = noFlatten
 
     structure TLat = LatticeFn (struct 
                                   type element = Config.t * Mil.typ
@@ -766,86 +743,6 @@ struct
 
   end (* structure Flatten *)
 
-  val postPhase = 
-   fn (pd, p) => 
-      let
-        val config = PD.getConfig pd
-        val () = if statPhases pd then Stats.report (PD.getStats pd) else ()
-        val () = if checkPhases pd then MilCheck.program (config, p) else ()
-        val () = if showPhases pd then MilLayout.print (config, p) else ()
-      in ()
-      end
+  val program = Flatten.program
+end (* structure MilRepFlattenOptimization *)
 
-  val doPhase = 
-   fn (skip, f, name) =>
-   fn (pd, p) => 
-      if skip pd then
-        let
-          val () = Chat.log1 (pd, "Skipping "^name)
-        in p
-        end
-      else
-        let
-          val pd = PD.push pd
-          val () = Chat.log1 (pd, "Doing "^name)
-          val s = Time.now ()
-          val p = f (pd, p)
-          val e = Time.toString (Time.- (Time.now (), s))
-          val () = Chat.log1 (pd, "Done with "^name^" in "^e^"s")
-          val () = postPhase (pd, p)
-        in p
-        end
-
-  val preProcess = doPhase (fn _ => false, MilRepPrep.program, "Pre-processing")
-
-  val optimize = fn (pd, summary, p) => 
-                    doPhase (Flatten.skip, 
-                             fn (pd, p) => Flatten.program (pd, summary, p),
-                             "Optimization") (pd, p)
-
-  val annotate = fn (pd, summary, p) => 
-                    doPhase (fn pd => not (annotateProgram pd),
-                             fn (pd, p) => MilRepShow.annotate (pd, summary, p),
-                             "Annotation") (pd, p)
-
-  val analyze = 
-   fn (pd, p) => 
-      let
-          val () = Chat.log1 (pd, "Doing analysis")
-          val summary = MilRepAnalyze.program (pd, p)
-          val () = Chat.log1 (pd, "Done with analysis")
-          val () = 
-              if showAnalysis pd then
-                MilRepShow.printAnalysis (pd, summary, p)
-              else
-                ()
-      in summary
-      end
-
-  val program = 
-   fn (pd, p) =>
-      let
-        val p = preProcess (pd, p)
-        val summary = analyze (pd, p)
-        val p = optimize (pd, summary, p)
-        val p = annotate (pd, summary, p)
-        val () = PD.report (pd, passname)
-      in p
-      end
-
-  val description = {name        = passname,
-                     description = "Flattening optimisation",
-                     inIr        = BothMil.irHelpers,
-                     outIr       = BothMil.irHelpers,
-                     mustBeAfter = [],
-                     stats       = stats}
-
-  val associates = {controls  = [],
-                    debugs    = debugs,
-                    features  = features,
-                    subPasses = []}
-
-  val pass =
-      Pass.mkOptPass (description, associates, BothMil.mkMilPass (Utils.Function.flipIn program))
-
-end

@@ -16,12 +16,11 @@ local
         reconstruct.sml
         show.sml
         flowgraph.sml
+        driver.sml
         optimize.sml
-        rep.sml
         flatten.sml
         dead-code.sml
+        rep.sml
 in
-        structure MilFlatten
-        structure MilRepDce
         structure MilRep
 end

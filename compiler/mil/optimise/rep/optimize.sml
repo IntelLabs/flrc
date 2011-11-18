@@ -1,16 +1,11 @@
 (* The Intel P to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
-signature MIL_REP_OPTIMIZE = 
-sig
-  val stats : (string * string) list
-  val debugs : Config.Debug.debug list
-  val program : PassData.t * MilRepSummary.summary * Mil.t -> Mil.t
-end
-
-structure MilRepOptimize :> MIL_REP_OPTIMIZE = 
+structure MilRepOptimization :> MIL_REP_OPTIMIZATION = 
 struct
-  val passname = "MilRepOptimize"
+  val passname = "MilRep"
+  val description = "Core representation optimizations"
+  val reconstructTypes = true
   val fail = 
    fn (fname, msg) => Fail.fail ("optimize.sml", fname, msg)
 
@@ -65,10 +60,31 @@ struct
   val (showUnboxingD, showUnboxing) = mkDebug ("show-unboxing", "Show unboxing analysis", 1)
   val (showConstantPropD, showConstantProp) = mkDebug ("show-constant-prop", "Show constant propagation analysis", 1)
   val (showCFAD, showCFA) = mkDebug ("show-cfa", "Show global control flow analysis", 1)
-  val (showPhasesD, showPhases) = mkDebug ("show-phases", "Show IR between phases", 1)
+  val (showPhasesD, showPhases) = mkDebug ("show-sub-phases", "Show IR between optimizations", 1)
       
 
   val debugs = [debugPassD, showUnboxingD, showCFAD, showConstantPropD, showPhasesD]
+
+  val mkFeature = 
+   fn (tag, description) => PD.mkFeature (passname ^":"^ tag, description)
+
+  val (noTupleUnboxF, noTupleUnbox) =
+      mkFeature ("no-unbox", "disable global unboxing")
+      
+  val (noConstantPropF, noConstantProp) =
+      mkFeature ("no-constant-prop", "disable global constant propogation")
+
+  val (noCFAF, noCFA) =
+      mkFeature ("no-cfa", "Disable global control flow analysis")
+
+  val (noEscapeAnalysisF, noEscapeAnalysis) =
+      mkFeature ("no-escape-analysis", "Disable global escape analysis")
+
+  val (cfaAnnotateFullF, cfaAnnotateFull) =
+      mkFeature ("cfa-annotate", "CFA adds full code annotations")
+
+  val features = [cfaAnnotateFullF, noConstantPropF, noTupleUnboxF, 
+                  noCFAF, noEscapeAnalysisF]
 
   val debugShow =
    fn (pd, f) => if debugPass pd then LayoutUtils.printLayout (f ()) else ()
@@ -81,7 +97,7 @@ struct
       
   structure Unbox = 
   struct
-    val skip = MilRepBase.noTupleUnbox
+    val skip = noTupleUnbox
 
     structure TS = MU.TraceabilitySize
 
@@ -801,7 +817,7 @@ struct
 
   structure ConstantProp = 
   struct
-    val skip = MilRepBase.noConstantProp
+    val skip = noConstantProp
 
     (* We construct a lattice whose elements are drawn from (variable x (constant option)).
      * An element (v, co) consists of a global variable v.  If co = SOME c, then v is 
@@ -992,7 +1008,7 @@ struct
 
   structure CFA = 
   struct
-    val skip = MilRepBase.noCFA
+    val skip = noCFA
 
     structure LS = Identifier.LabelSet
     structure VS = Identifier.VariableSet
@@ -1261,7 +1277,7 @@ struct
                                 val set = FG.query (flowgraph, MRS.variableNode (summary, v))
                                 val newCodes = Lat.toCodes set
                                 val newCodes = 
-                                    if MilRepBase.cfaAnnotateFull pd orelse VS.size (#possible newCodes) <= 1 then
+                                    if cfaAnnotateFull pd orelse VS.size (#possible newCodes) <= 1 then
                                       newCodes
                                     else
                                       {possible = VS.empty, exhaustive = false}
@@ -1358,7 +1374,7 @@ struct
     val program = 
      fn (pd, summary, p) => 
         let
-          val precise = MilRepBase.cfaAnnotateFull pd
+          val precise = cfaAnnotateFull pd
           val fgF = FG.build {pd = pd,
                               forward = true,
                               summary = summary,
@@ -1383,7 +1399,7 @@ struct
 
   structure EscapeAnalysis = 
   struct
-    val skip = MilRepBase.noEscapeAnalysis
+    val skip = noEscapeAnalysis
 
     structure LS = Identifier.LabelSet
     structure VS = Identifier.VariableSet

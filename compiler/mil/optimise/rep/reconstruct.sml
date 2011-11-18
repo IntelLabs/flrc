@@ -4,6 +4,7 @@
 signature MIL_REP_RECONSTRUCT = 
 sig
   val debugs : Config.Debug.debug list
+  val features : Config.Feature.feature list
   val program : PassData.t * MilRepSummary.summary * bool * Mil.t -> Mil.t
 end (* signature MIL_REP_RECONSTRUCT *)
 
@@ -22,6 +23,8 @@ struct
       Config.Debug.mk (passname ^ ":show-fk-changes", "Show changes to field kinds/vtables")
 
   val debugs = [showTypChangesD, showFieldKindChangesD]
+
+  val features = []
 
   structure M = Mil
   structure MU = MilUtils
