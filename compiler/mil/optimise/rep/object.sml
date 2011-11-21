@@ -48,6 +48,7 @@ sig
     structure Dec :
     sig
       val tuple : 'node shape -> {pok : Mil.pObjKind option, fields : 'node Vector.t, array : 'node option} option
+      val thunkVal : 'node shape -> 'node option
     end
   end (* structure Shape *)
 
@@ -799,6 +800,12 @@ struct
                         | SOME array => array)
                in SOME {pok = POKL.get pok, fields = fixed, array = array}
                end
+             | _ => NONE)
+
+      val thunkVal = 
+       fn s => 
+          (case s
+            of TThunk (_, res, _) => SOME res
              | _ => NONE)
 
     end (* structure Dec *)
