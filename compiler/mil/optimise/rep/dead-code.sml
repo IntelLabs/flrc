@@ -640,6 +640,19 @@ struct
                   val r = {fvs = fvs, cls = cls, idx = idx}
                 in r
                 end
+
+            val sumProj = 
+             fn {typs, sum, tag, idx} => 
+                let
+                  val nodes = 
+                      case MRS.iInfo (summary, MU.Id.I n)
+                       of MRB.IiSum fields => fields
+                        | _                => fail ("sumProj", "Bad descriptor")
+                  val idx = adjustIndex (idx, nodes)
+                  val r = {typs = typs, sum = sum, tag = tag, idx = idx}
+                in r
+                end
+
             val replace = fn rhs => SOME (MS.instruction (M.I {dests = dests, n = n, rhs = rhs}))
 
             val so = 
@@ -743,7 +756,12 @@ struct
                                                val rhs = M.RhsSum {typs = typs, ofVals = ofVals, tag = tag}
                                              in replace rhs
                                              end
-                  | M.RhsSumProj _        => keepIfAnyLiveV dests
+                  | M.RhsSumProj r        => if deadV dests then kill () else
+                                             let
+                                               val r = sumProj r
+                                               val rhs = M.RhsSumProj r
+                                             in replace rhs
+                                             end
           in (env, so)
           end
 
