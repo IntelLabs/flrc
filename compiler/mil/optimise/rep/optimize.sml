@@ -39,6 +39,8 @@ struct
                                                     name = "ConstantProp", desc = "Constants globally propagated"}
     val {stats, click = unboxTuple} = PD.clicker {stats = stats, passname = passname, 
                                                   name = "UnboxTuple", desc = "Single element tuples unboxed"}
+    val {stats, click = unboxThunk} = PD.clicker {stats = stats, passname = passname, 
+                                                  name = "UnboxThunk", desc = "Thunk values unboxed"}
     val {stats, click = mkDirect} = PD.clicker {stats = stats, passname = passname, 
                                                 name = "MkDirect", desc = "Calls/Evals resolved to direct"}
     val {stats, click = escapeAnalysis} = PD.clicker {stats = stats, passname = passname, 
@@ -68,9 +70,19 @@ struct
   val mkFeature = 
    fn (tag, description) => PD.mkFeature (passname ^":"^ tag, description)
 
-  val (noTupleUnboxF, noTupleUnbox) =
+  val (noUnboxF, noUnbox) =
       mkFeature ("no-unbox", "disable global unboxing")
+
+  val (noTupleUnboxF, noTupleUnbox) =
+      mkFeature ("no-tuple-unbox", "disable global tuple unboxing")
+
+  val tupleUnbox = not o noTupleUnbox
+
+  val (noThunkUnboxF, noThunkUnbox) =
+      mkFeature ("no-thunk-unbox", "disable global thunk unboxing")
       
+  val thunkUnbox = not o noThunkUnbox
+
   val (noConstantPropF, noConstantProp) =
       mkFeature ("no-constant-prop", "disable global constant propogation")
 
@@ -83,7 +95,7 @@ struct
   val (cfaAnnotateFullF, cfaAnnotateFull) =
       mkFeature ("cfa-annotate", "CFA adds full code annotations")
 
-  val features = [cfaAnnotateFullF, noConstantPropF, noTupleUnboxF, 
+  val features = [cfaAnnotateFullF, noConstantPropF, noTupleUnboxF, noThunkUnboxF, noUnboxF,
                   noCFAF, noEscapeAnalysisF]
 
   val debugShow =
@@ -97,7 +109,7 @@ struct
       
   structure Unbox = 
   struct
-    val skip = noTupleUnbox
+    val skip = noUnbox
 
     structure TS = MU.TraceabilitySize
 
@@ -158,7 +170,7 @@ struct
                              ecs : ecData EC.t ID.t,    (* maps cc id to ec *)
                              unboxed : IS.t ref}        (* set of ccs to be unboxed *)
 
-      datatype env = E of {pd : PD.t}
+      datatype env = E of {pd : PD.t, current : M.variable option}
 
       val ((setSummary, getSummary),
            (setSi, getSi),
@@ -175,6 +187,12 @@ struct
       val getPd = fn (E {pd, ...}) => pd
 
       val getConfig = PD.getConfig o getPd
+
+      val getCurrent = fn (E {current, ...}) => 
+                          (case current 
+                            of SOME f => f
+                             | NONE => fail ("getCurrent", "Not in a function"))
+      val setCurrent = fn (E {current, pd}, v) => E {current = SOME v, pd = pd}
 
     end (* structure SE1 *) 
 
@@ -351,6 +369,7 @@ struct
                   val analyseInstruction' = 
                    fn (s, e, M.I {dests, n, rhs}) => 
                        let
+                         val pd = SE1.getPd e
                          val candidateV = fn vv => Vector.foreach (vv, fn v => addCandidateVar (s, e, v))
                          val fixed = fn () => Vector.foreach (dests, fn v => addFixed (s, e, v))
                          val boxed = fn v => addBoxedIfRef (s, e, v)
@@ -369,15 +388,20 @@ struct
                                     val () = boxedOV (#args r)
                                   in ()
                                   end
-                                | M.RhsTuple r          => if Vector.length (#inits r) > 0 then 
-                                                             candidateV dests 
-                                                           else 
+                                | M.RhsTuple r          => if noTupleUnbox pd then
+                                                             fixed ()
+                                                           else if Vector.length (#inits r) < 1 then 
                                                              boxedV dests
+                                                           else
+                                                             candidateV dests 
                                 | M.RhsTupleSub tf       => 
-                                  (case MU.FieldIdentifier.Dec.fiFixed (MU.TupleField.field tf)
-                                    of SOME 0 => ()
-                                     | _      => boxed (MU.TupleField.tup tf))
-                                | M.RhsTupleSet r       => boxed (MU.TupleField.tup (#tupField r))
+                                  if noTupleUnbox pd then ()
+                                  else (case MU.FieldIdentifier.Dec.fiFixed (MU.TupleField.field tf)
+                                         of SOME 0 => ()
+                                          | _               => boxed (MU.TupleField.tup tf))
+                                | M.RhsTupleSet r       => 
+                                  if noTupleUnbox pd then ()
+                                  else boxed (MU.TupleField.tup (#tupField r))
                                 | M.RhsTupleInited _    => ()
                                 | M.RhsIdxGet _         => fixed ()
                                 | M.RhsCont _           => fixed ()
@@ -387,12 +411,15 @@ struct
                                     val () = boxed v
                                   in ()
                                   end
-                                | M.RhsThunkMk _        => fixed ()
-                                | M.RhsThunkInit _      => fixed ()
+                                | M.RhsThunkMk _        => if noThunkUnbox pd then fixed () else boxedV dests
+                                | M.RhsThunkInit r      => if noThunkUnbox pd then fixed () else boxedV dests
                                 | M.RhsThunkGetFv _     => ()
-                                | M.RhsThunkValue _     => fixed ()
+                                | M.RhsThunkValue r     => if noThunkUnbox pd then fixed () else
+                                                           (case #thunk r
+                                                             of SOME t => boxed t
+                                                              | NONE   => candidateV dests)
                                 | M.RhsThunkGetValue _  => ()
-                                | M.RhsThunkSpawn _     => ()
+                                | M.RhsThunkSpawn r     => if noThunkUnbox pd then () else boxed (#thunk r)
                                 | M.RhsClosureMk _      => fixed ()
                                 | M.RhsClosureInit _    => fixed ()
                                 | M.RhsClosureGetFv _   => ()
@@ -414,7 +441,7 @@ struct
                         (* We may compare pointers to various cref constants *)
                         val () = 
                             (case t
-                              of M.TCase {on , ...} => boxedO on
+                              of M.TCase {select = M.SeSum _, on , ...} => boxedO on
                                | _ => ())
                       in e
                       end
@@ -424,6 +451,7 @@ struct
                   val analyseGlobal' = 
                    fn (s, e, v, g) => 
                        let
+                         val pd = SE1.getPd e
                          val candidate = fn v => addCandidateVar (s, e, v)
                          val fixed = fn () => addFixed (s, e, v)
                          val boxed = fn v => addBoxedIfRef (s, e, v)
@@ -433,6 +461,7 @@ struct
                                   if Vector.length (#inits r) > 0 then candidate v else boxed v
                                 | M.GSimple (M.SVariable _) => ()
                                 | M.GErrorVal t             => ()
+                                | M.GThunkValue r           => if noThunkUnbox pd then fixed () else candidate v
                                 | M.GPSet s                 => let val () = fixed () val () = boxed (opToVar s) 
                                                                in () end
                                 | _                         => fixed ())
@@ -446,6 +475,7 @@ struct
         Try.exec 
           (fn () => 
               let
+                val () = Try.require (tupleUnbox (SE1.getPd e))
                 val () = Try.require (isCandidateVar (s, e, v1))
                 val leaveBoxed = fn () => let val () = removeCandidateVar (s, e, v1) in Try.fail () end
                 val because = 
@@ -458,6 +488,39 @@ struct
                 val require = fn (b, s) => if b then () else fail s
                 val () = require (Vector.length inits > 0, "not enough elements")
                 val v2 = opToVar (Vector.sub (inits, 0))
+                val ec1 = ecForVar (s, e, v1)
+                val ec2 = ecForVar (s, e, v2)
+                val () = require (not (EC.equal (ec1, ec2)), "same ec")
+                val us1 = ecGetRawStatus (s, e, ec1)
+                val us2M = ecGetModifiedStatus (s, e, ec2)
+                val us2R = ecGetRawStatus (s, e, ec2)
+                val usM = joinUS (us1, us2M)
+                val () = require (not (usIsTop usM), "incompatible")
+                val status = joinUS (us1, us2R)
+                val cand = ecGetCand (s, e, ec2)
+                val _  = EC.join (ec1, ec2)
+                val () = EC.set (ec1, {status = status, cand = cand})
+                val () = unboxVar (s, e, v1)
+              in ()
+              end)
+
+    val tryToUnboxThunk = 
+     fn (s, e, v1, ofVal) =>
+        Try.exec 
+          (fn () => 
+              let
+                val () = Try.require (thunkUnbox (SE1.getPd e))
+                val () = Try.require (isCandidateVar (s, e, v1))
+                val leaveBoxed = fn () => let val () = removeCandidateVar (s, e, v1) in Try.fail () end
+                val because = 
+                 fn st => 
+                    let
+                      val f = fn () => L.seq [L.str "Can't unbox ", layoutVariable (s, e, v1), L.str ": ", L.str st]
+                    in debugShow (SE1.getPd e, f)
+                    end
+                val fail = fn s => let val () = because s in leaveBoxed () end
+                val require = fn (b, s) => if b then () else fail s
+                val v2 = opToVar ofVal
                 val ec1 = ecForVar (s, e, v1)
                 val ec2 = ecForVar (s, e, v2)
                 val () = require (not (EC.equal (ec1, ec2)), "same ec")
@@ -492,8 +555,12 @@ struct
                        let
                          val () = 
                              case rhs
-                              of M.RhsTuple r => tryToUnboxTuple (s, e, Vector.sub (dests, 0), #inits r)
-                               | _            => ()
+                              of M.RhsTuple r      => tryToUnboxTuple (s, e, Vector.sub (dests, 0), #inits r)
+                               | M.RhsThunkValue r => 
+                                 (case #thunk r
+                                   of NONE   => tryToUnboxThunk (s, e, Vector.sub (dests, 0), #ofVal r)
+                                    | SOME _ => ())
+                               | _                 => ()
                        in e
                        end
                   val analyseInstruction = SOME analyseInstruction'
@@ -504,7 +571,8 @@ struct
                        let
                          val () = 
                              case g
-                              of M.GTuple r => tryToUnboxTuple (s, e, v, #inits r)
+                              of M.GTuple r      => tryToUnboxTuple (s, e, v, #inits r)
+                               | M.GThunkValue r => tryToUnboxThunk (s, e, v, #ofVal r)
                                | _          => ()
                        in e
                        end
@@ -525,6 +593,19 @@ struct
         in oper
         end
 
+    val unboxThunk = 
+     fn (s, e, v1, oper) => 
+        let
+          val summary = SE1.getSummary s
+          val v2 = opToVar oper
+          val n1 = nodeForVariable (s, e, v1)
+          val n2 = nodeForVariable (s, e, v2)
+          val edge = (n2, n1)
+          val () = MRS.addEdge (summary, edge)
+          val () = Click.unboxThunk (SE1.getPd e)
+        in oper
+        end
+
 
     structure Rewrite = 
     MilTransformF (struct
@@ -537,11 +618,12 @@ struct
                     val instr = 
                      fn (s, e, i as M.I {dests, n, rhs}) => 
                         let
+                          val pd = SE1.getPd e
                           val summary = SE1.getSummary s
                           val so = 
                               (case rhs
                                 of M.RhsTuple r => 
-                                   if varIsUnboxed (s, e, Vector.sub (dests, 0)) then
+                                   if tupleUnbox pd andalso varIsUnboxed (s, e, Vector.sub (dests, 0)) then
                                      let
                                        val oper = unboxTuple (s, e, Vector.sub (dests, 0), #inits r)
                                        val s = MS.instruction (M.I {dests = dests, n = n, rhs = M.RhsSimple oper})
@@ -553,7 +635,7 @@ struct
                                    let
                                      val v1 = MU.TupleField.tup tf
                                      val res = 
-                                         if varIsUnboxed (s, e, v1) then
+                                         if tupleUnbox pd andalso varIsUnboxed (s, e, v1) then
                                            let
                                              val n1 = MRS.variableNode (summary, v1)
                                              val rhs = M.RhsSimple (M.SVariable v1)
@@ -570,24 +652,98 @@ struct
                                    in res
                                    end
                                  | M.RhsTupleInited {tup, ...} => 
-                                   if varIsUnboxed (s, e, tup) then
+                                   if tupleUnbox pd andalso varIsUnboxed (s, e, tup) then
                                      SOME MS.empty
                                    else 
+                                     NONE
+                                 | M.RhsThunkValue {typ, thunk = NONE, ofVal} => 
+                                   if thunkUnbox pd andalso varIsUnboxed (s, e, Vector.sub (dests, 0)) then
+                                     let
+                                       val oper = unboxThunk (s, e, Vector.sub (dests, 0), ofVal)
+                                       val s = MS.instruction (M.I {dests = dests, n = n, rhs = M.RhsSimple oper})
+                                     in SOME s
+                                     end
+                                   else
+                                     NONE
+                                 | M.RhsThunkGetValue {typ, thunk} => 
+                                   if thunkUnbox pd andalso varIsUnboxed (s, e, thunk) then 
+                                     let
+                                       val n1 = MRS.variableNode (summary, thunk)
+                                       val rhs = M.RhsSimple (M.SVariable thunk)
+                                       val v2 = Vector.sub (dests, 0)
+                                       val n2 = MRS.variableNode (summary, v2)
+                                       val edge = (n1, n2)
+                                       val () = MRS.addEdge (summary, edge)
+                                       val i = M.I {dests = dests, n = n, rhs = rhs}
+                                       val s = MS.instruction i
+                                     in SOME s
+                                     end
+                                   else
                                      NONE
                                  | _ => NONE)
                         in (e, so)
                         end
-                    val transfer    = fn (_, env, _) => (env, NONE)
+                    val transfer    = 
+                     fn (s, e, t) => 
+                        let
+                          val pd = SE1.getPd e
+                          val summary = SE1.getSummary s
+                          val so = 
+                              case t
+                               of M.TInterProc {callee = M.IpEval {typ, eval}, ret, fx} => 
+                                  let
+                                    val thunk = MU.Eval.thunk eval
+                                    val oper = M.SVariable thunk
+                                    val so = 
+                                        if thunkUnbox pd andalso varIsUnboxed (s, e, thunk) then
+                                          let
+                                            val n1 = MRS.variableNode (summary, thunk)
+                                            val n2 = 
+                                                case ret
+                                                 of M.RNormal {rets, ...} => 
+                                                    MRS.variableNode (summary, Vector.sub (rets, 0))
+                                                  | M.RTail _ => 
+                                                    (case MRS.iInfo (summary, MU.Id.G (SE1.getCurrent e))
+                                                      of MRB.IiCode {returns, ...} => Vector.sub (returns, 0)
+                                                       | _ => fail ("analyseTransfer'", "Bad function information"))
+                                            val edge = (n1, n2)
+                                            val () = MRS.addEdge (summary, edge)
+                                            val (s, t) = 
+                                                case ret
+                                                 of M.RNormal {rets, block, cuts} =>
+                                                    (MS.bindsRhs (rets, M.RhsSimple oper),
+                                                     M.TGoto (M.T {block = block, arguments = Vector.new0()}))
+                                                  | M.RTail {exits}               => 
+                                                    (MS.empty, M.TReturn (Vector.new1 oper))
+                                          in SOME (s, t)
+                                          end
+                                        else
+                                          NONE
+                                  in so
+                                  end
+                                | _ => NONE
+                        in (e, so)
+                        end
                     val global      = 
                      fn (s, e, v, g) => 
                         let
+                          val pd = SE1.getPd e
                           val summary = SE1.getSummary s
                           val so = 
                               case g
                                of M.GTuple r => 
-                                  if varIsUnboxed (s, e, v) then 
+                                  if tupleUnbox pd andalso varIsUnboxed (s, e, v) then 
                                     let
                                       val oper = unboxTuple (s, e, v, #inits r)
+                                      val l = [(v, M.GSimple oper)]
+                                    in SOME l
+                                    end
+                                  else
+                                    NONE
+                                | M.GThunkValue r =>
+                                  if thunkUnbox pd andalso varIsUnboxed (s, e, v) then 
+                                    let
+                                      val oper = unboxThunk (s, e, v, #ofVal r)
                                       val l = [(v, M.GSimple oper)]
                                     in SOME l
                                     end
@@ -603,6 +759,10 @@ struct
                                   else
                                     NONE
                                 | _ => NONE
+                          val e = 
+                              case g
+                               of M.GCode _ => SE1.setCurrent (e, v)
+                                | _         => e
                         in (e, so)
                         end
                    end)
@@ -711,9 +871,9 @@ struct
     val rec replaceNodeDataWithShape = 
      fn (s, e, done, n, shp) => 
         let   
+          val pd = SE1.getPd e
           val fallback = 
            fn () => replaceNodeDataWithoutShape (s, e, done, n)
-
           val replace = 
            fn inner => 
               let
@@ -727,15 +887,18 @@ struct
               in done
               end
           val done = 
-              case MilRepObject.Shape.Dec.tuple shp
-               of NONE => fallback ()
-                | SOME {pok, fields, array} => 
+              case (tupleUnbox pd, MilRepObject.Shape.Dec.tuple shp)
+               of (true, SOME {pok, fields, array}) => 
                   (case Utils.Vector.lookup (fields, 0)
                     of NONE => 
                        (case array 
                          of SOME inner => replace inner
                           | NONE => fallback ())
                      | SOME inner => replace inner)
+                | _ => 
+                  (case (thunkUnbox pd, MilRepObject.Shape.Dec.thunkVal shp)
+                    of (true, SOME res) => replace res
+                     | _                => fallback ())
         in done
         end
 
@@ -806,7 +969,7 @@ struct
               end
           val s = SE1.S {summary = summary, si = I.SymbolInfo.SiTable symbolTable,
                          ccs = ccs, ecs = ecs, unboxed = ref IS.empty}
-          val e = SE1.E {pd = pd}
+          val e = SE1.E {pd = pd, current = NONE}
           val () = analyze (s, e, p)
           val p = rewrite (s, e, p)
           val () = MRS.resetTyps summary
@@ -1344,8 +1507,10 @@ struct
                     val global      = 
                      fn (state, env, (v, g)) => 
                         (case g
-                          of M.GCode (M.F {rtyps, ...}) => MRC.ContinueWith (setRetCount (env, Vector.length rtyps), (v, g))
-                           | _                          => MRC.Continue)
+                          of M.GCode (M.F {rtyps, ...}) => 
+                             MRC.ContinueWith (setRetCount (env, Vector.length rtyps), (v, g))
+                           | _                          => 
+                             MRC.Continue)
                     val bind        = fn (_, env, _) => (env, NONE)
                     val bindLabel   = fn (_, env, _) => (env, NONE)
                     val cfgEnum     = fn (_, _, t) => MilUtils.CodeBody.dfsTrees t
