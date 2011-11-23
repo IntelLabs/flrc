@@ -1076,7 +1076,7 @@ struct
         val () = updateCallSitesInfo (d, info, imil)
         val () = printCallGraph (info, d, imil, lastInlined)
         val bestCS = selectBestCallSite (d, imil, info)
-        val allowOpt = not (Feature.noOptimizer (PD.getConfig d))
+        val allowOpt = false (*XXX optimizer adds functions -leaf not (Feature.noOptimizer (PD.getConfig d))*)
         val csInfo = case (bestCS, allowOpt)
                       of (NONE, true)     => optimizeAndSelect (d, imil, info)
                        | (SOME csInfo, _) => SOME csInfo
