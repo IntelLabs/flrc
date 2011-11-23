@@ -2854,3 +2854,125 @@ structure IntFiniteOrdinal = FiniteOrdinalF(structure Base =
                                               val hash    : t -> Word32.word = Word32.fromInt
                                             end)
 
+signature DEP_GRAPH = 
+sig
+  (* This module implements a structure for building up dataflow
+   * graphs over a 2 point lattice.  Nodes are either top, bottom, the join
+   * of two other nodes, or the meet of two other nodes.  The nodes
+   * carry data which is used only for debugging.  As a mnemonic,
+   * the join operation is referred to as disjuncion (top if either are top)
+   * and the meet operation is referred to as conjuction (top if both are top) 
+   *)
+  datatype 'a status = 
+           DgTop of 'a option                                    (* Top *)
+         | DgDisj of 'a option * ('a status ref * 'a status ref) (* Join. Top if either are top, else bottom *)
+         | DgConj of 'a option * ('a status ref * 'a status ref) (* Meet. Top if both are top, else bottom *)
+         | DgBot of 'a option                                    (* Bottom *)
+
+  type 'a t = 'a status ref
+
+  (* Given a node N in a dataflow graph, decide its status.  A node is Top if either:
+   *   It is Top
+   *   It is the disjunction (join) of two nodes, at least one of which decides
+   *    to Top, under the assumption that N is Bottom.
+   *   It is the conjunction (meet) of two nodes, both of which decide to Top,
+   *    under the assumption that N is Bottom
+   * In all other cases, N is Bottom.  
+   *)
+  val decide : 'a t -> unit
+  val info : 'a t -> 'a option 
+  (* both (a, b) makes a Top iff it would otherwise be Top and b is Top *)
+  val both : 'a t * 'a t -> unit
+  (* either (a, b) makes a Top iff a would otherwise be Top or b is Top *)
+  val either : 'a t * 'a t -> unit 
+  val layout : 'a t * Layout.t * Layout.t * ('a option -> Layout.t) -> Layout.t 
+end
+
+structure DepGraph :> DEP_GRAPH = 
+struct
+  (* This module implements a structure for building up dataflow
+   * graphs over a 2 point lattice.  Nodes are either top, bottom, the join
+   * of two other nodes, or the meet of two other nodes.  The nodes
+   * carry data which is used only for debugging.  As a mnemonic,
+   * the join operation is referred to as disjuncion (top if either are top)
+   * and the meet operation is referred to as conjuction (top if both are top) 
+   *)
+  datatype 'a status = 
+           DgTop of 'a option                  (* Top *)
+         | DgDisj of 'a option * ('a t * 'a t) (* Join. Top if either are top, else bottom *)
+         | DgConj of 'a option * ('a t * 'a t) (* Meet. Top if both are top, else bottom *)
+         | DgBot of 'a option                  (* Bottom *)
+
+  withtype 'a t = 'a status ref
+
+  (* Given a node N in a dataflow graph, decide its status.  A node is Top if either:
+   *   It is Top
+   *   It is the disjunction (join) of two nodes, at least one of which decides
+   *    to Top, under the assumption that N is Bottom.
+   *   It is the conjunction (meet) of two nodes, both of which decide to Top,
+   *    under the assumption that N is Bottom
+   * In all other cases, N is Bottom.  
+   *)
+  val rec decide : 'a t -> unit = 
+   fn r => 
+      case !r
+       of DgTop _            => ()
+        | DgBot _            => ()
+        | DgDisj (a, (r1, r2)) => 
+          let
+            val () = r := DgBot a
+            val () = decide r1
+            val () = decide r2
+            val () = 
+                case (!r1, !r2)
+                 of (DgBot _, DgBot _) => ()
+                  | (_      , _      ) => r := DgTop a
+          in ()
+          end
+        | DgConj (a, (r1, r2)) => 
+          let
+            val () = r := DgBot a
+            val () = decide r1
+            val () = decide r2
+            val () = 
+                case (!r1, !r2)
+                 of (DgTop _, DgTop _) => r := DgTop a
+                  | (_      , _      ) => ()
+          in ()
+          end
+
+  val info : 'a t -> 'a option = 
+   fn r => 
+      (case !r
+        of DgTop a       => a
+         | DgBot a       => a
+         | DgDisj (a, r) => a
+         | DgConj (a, r) => a)
+
+
+  (* both (a, b) makes a Top iff it would otherwise be Top and b is Top *)
+  val both : 'a t * 'a t -> unit = 
+   fn (r1, r2) => 
+      case !r1
+       of DgBot _ => ()
+        | _       =>  r1 := DgConj (info r1, (ref (!r1), r2))
+
+  (* either (a, b) makes a Top iff a would otherwise be Top or b is Top *)
+  val either : 'a t * 'a t -> unit = 
+   fn (r1, r2) => 
+      case !r1
+       of DgTop _ => ()
+        | _       => r1 := DgDisj (info r1, (ref (!r1), r2))
+
+  structure L = Layout
+  structure LU = LayoutUtils
+  val layout : 'a t * L.t * L.t * ('a option -> L.t) -> L.t = 
+   fn (r, t, b, la) => 
+      case !r
+       of DgTop a              => t
+        | DgConj (a, (r1, r2)) => L.seq [L.str "/\\", LU.parenSeq [la (info r1), la (info r2)]]
+        | DgDisj (a, (r1, r2)) => L.seq [L.str "\\/", LU.parenSeq [la (info r1), la (info r2)]]
+        | DgBot a              => b
+
+end (* structure DepGraph *)
+

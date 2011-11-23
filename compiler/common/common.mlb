@@ -95,6 +95,7 @@ in
         structure Compare
         structure Config
         structure DList
+        structure DepGraph
         structure Effect
         structure EquivalenceClass
         structure Equality
