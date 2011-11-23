@@ -50,6 +50,7 @@ struct
   structure LU = LayoutUtils
   structure L = Layout
   structure MEL = MilExtendedLayout
+  structure MTT = MilType.Typer
 
   structure Chat = ChatF (struct 
                             type env = PD.t
@@ -182,6 +183,7 @@ struct
          ("CallInline",       "Calls inlined (inline once)"    ),
          ("DCE",              "Dead instrs/globals eliminated" ),
          ("EtaSwitch",        "Cases eta reduced"              ),
+         ("FunctionWrap",     "Known functions wrapped"        ),
          ("Globalized",       "Objects globalized"             ),
          ("IdxGet",           "Index gets reduced"             ),
          ("InitMerge",        "Alloc/inits merged"             ),
@@ -269,6 +271,7 @@ struct
     val callInline = clicker "CallInline"
     val dce = clicker "DCE"
     val etaSwitch = clicker "EtaSwitch"
+    val functionWrap = clicker "FunctionWrap"
     val globalized = clicker "Globalized"
     val idxGet = clicker "IdxGet"
     val initMerge = clicker "InitMerge"
@@ -1116,7 +1119,117 @@ struct
         in try (Click.thunkEta, f)
         end
 
-    val reduce = thunkToThunkVal or thunkEta
+    (* We look for closure functions 
+     *  f_code (f_clos as cargs; args) = ....
+     * which have at least one call of the form:
+     *  CallDir (f_clos, f_code)(args) 
+     * where f_clos is defined in the same scope.  We replace all uses of
+     * f_code with f_code', and rewrite these calls as
+     *  Call (f_code)(f_clos::cargs@args)
+     * where
+     *  f_code' (f_clos as cargs; args) = f_code (f_clos::cargs@args)
+     * and
+     *  f_code(f_clos::cargs@args) = ....
+     * *)
+    val functionWrap = 
+        let
+          val f = 
+           fn ((d, imil, ws), c) => 
+              let
+                val config = PD.getConfig d
+                val fname = IFunc.getFName (imil, c)
+                val cc = IFunc.getCallConv (imil, c)
+                val {cls = clsInner, fvs = fvsInner} = <@ MU.CallConv.Dec.ccClosure cc
+                (* Find all of the calls that either call a local closure or the
+                 * self closure.
+                 *)
+                val calls = 
+                    let
+                      val pred = 
+                       fn use =>
+                          Try.try
+                          (fn () => 
+                              let
+                                val ii = <@ Use.toIInstr use
+                                val t = <@ IInstr.toTransfer ii
+                                val {callee, ret, fx} = <@ MU.Transfer.Dec.tInterProc t
+                                val {call, args} = <@ MU.InterProc.Dec.ipCall callee
+                                val {cls, code} = <@ MU.Call.Dec.cDirectClosure call
+                                val () = Try.require (code = fname)
+                                val cargs = 
+                                    if cls = clsInner then
+                                      Vector.map (fvsInner, M.SVariable)
+                                    else
+                                      Vector.map (<@ getClosureInitFvsFromVariable (imil, cls), #2)
+                              in (ii, M.SVariable cls, cargs, args, ret, fx)
+                              end)
+                    in Vector.keepAllMap (Use.getUses (imil, fname), pred)
+                    end
+                (* No point in wrapping if not at least one *)
+                val () = Try.require (Vector.length calls > 0)
+                (* Copy the function, and redirect all uses to the copy *)
+                val (fWrap, wrapper) = IFunc.copy (imil, c)
+                val () = Use.replaceUses (imil, fname, M.SVariable fWrap)
+                (* Modify the original to use a direct calling convention *)
+                val () = 
+                    let
+                      val cc = M.CcCode
+                      val args = Vector.concat [Vector.new1 clsInner, fvsInner, IFunc.getArgs (imil, c)]
+                      val () = IFunc.setCallConv (imil, c, cc)
+                      val () = IFunc.setArgs (imil, c, args)
+                      val () = IFunc.markNonEscaping (imil, c)
+                      val rTyps = IFunc.getRtyps (imil, c)
+                      val aTyps = Vector.map (args, fn oper => MTT.variable (config, IMil.T.getSi imil, oper))
+                      val typ = Mil.TCode {cc = M.CcCode, args = aTyps, ress = rTyps}
+                      val () = Var.setInfo (imil, fname, typ, M.VkGlobal)
+                    in ()
+                    end
+                (* Modify all of the candidate calls to call the original version directly *)
+                val () = 
+                    let
+                      val rewrite = 
+                       fn (ii, cls, cargs, args, ret, fx) => 
+                          let
+                            val call = M.CCode {ptr = fname, code = {possible = VS.singleton fname, exhaustive = true}}
+                            val callee = M.IpCall {call = call, args = Vector.concat [Vector.new1 cls, cargs, args]}
+                            val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                            val () = IInstr.replaceTransfer (imil, ii, t)
+                          in ()
+                          end
+                    in Vector.foreach (calls, rewrite)
+                    end
+                (* Replace the body of the copy with a direct call to the original *)
+                val () =
+                    let
+                      val blocks = IFunc.getBlocks (imil, wrapper)
+                      val cc = IFunc.getCallConv (imil, wrapper)
+                      val {cls = clsInner, fvs = fvsInner} = 
+                          case MU.CallConv.Dec.ccClosure cc
+                           of SOME r => r
+                            | NONE   => fail ("functionWrap", "Copy has different calling convention")
+                      val args = IFunc.getArgs (imil, wrapper)
+                      val call = M.CCode {ptr = fname, code = {possible = VS.singleton fname, exhaustive = true}}
+                      val args = Vector.map (Vector.concat [Vector.new1 clsInner, fvsInner, args], M.SVariable)
+                      val callee = M.IpCall {call = call, args = args}
+                      val fx = IFunc.getEffects (imil, c)
+                      val ret = M.RTail {exits = Effect.contains (fx, Effect.Fails)}
+                      val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                      val b = Mil.B {parameters = Vector.new0 (), instructions = Vector.new0 (), transfer = t}
+                      val l = Var.labelFresh imil
+                      val bi = IBlock.build (imil, wrapper, (l, b))
+                      val () = IFunc.setStart (imil, wrapper, l)
+                      val () = List.foreach (blocks, fn b => IBlock.delete (imil, b))
+                    in ()
+                    end
+                val () = WS.addUses (ws, Use.getUses (imil, fname)) 
+                val () = WS.addUses (ws, Use.getUses (imil, fWrap)) 
+                val l = [I.ItemFunc c, I.ItemFunc wrapper]
+              in l
+              end
+        in try (Click.functionWrap, f)
+        end
+
+    val reduce = thunkToThunkVal or thunkEta or functionWrap
 
   end (* structure FuncR *)
 
