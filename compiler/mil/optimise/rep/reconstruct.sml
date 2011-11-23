@@ -165,7 +165,7 @@ struct
         val config = getConfig env
         val td = 
             (case MRS.iInfo (summary, id)
-              of MRB.IiSum nodes => Vector.map (nodes, fieldKindForNode)
+              of MRB.IiSum (node, nodes) => (fieldKindForNode node, Vector.map (nodes, fieldKindForNode))
                | _ => fail ("buildSumDescriptor", "Id has no Sum descriptor entry"))
       in td
       end
@@ -223,6 +223,13 @@ struct
         val eq = Equality.vector MU.FieldKind.eq
         val layout = 
          fn (config, si, fks) => L.seq [L.str "fks = ", MilLayout.layoutFieldKinds (config, si, fks)]
+      in checkItem (showFieldKindChanges, eq, layout)
+      end
+  val checkSumTagDescriptor = 
+      let
+        val eq = MU.FieldKind.eq
+        val layout = 
+         fn (config, si, fk) => L.seq [L.str "fk = ", MilLayout.layoutFieldKind (config, si, fk)]
       in checkItem (showFieldKindChanges, eq, layout)
       end
   val checkCodeReturnTypes =
@@ -335,15 +342,21 @@ struct
                | M.RhsPSetQuery _ => rhs
                | M.RhsSum {tag, typs = typOlds, ofVals} => 
                  let
-                   val typs = buildSumDescriptor (se, id)
+                   val (_, typs) = buildSumDescriptor (se, id)
                    val () = checkSumDescriptor (se, id, typs, typOlds)
                  in M.RhsSum {tag = tag, typs = typs, ofVals = ofVals}
                  end
                | M.RhsSumProj {typs = typOlds, sum, tag, idx} => 
                  let
-                   val typs = buildSumDescriptor (se, id)
+                   val (_, typs) = buildSumDescriptor (se, id)
                    val () = checkSumDescriptor (se, id, typs, typOlds)
                  in M.RhsSumProj {tag = tag, typs = typs, sum = sum, idx = idx}
+                 end
+               | M.RhsSumGetTag {typ = typOld, sum} => 
+                 let
+                   val (typ, _) = buildSumDescriptor (se, id)
+                   val () = checkSumTagDescriptor (se, id, typ, typOld)
+                 in M.RhsSumGetTag {typ = typ, sum = sum}
                  end)
       in M.I {dests = dests, n = n, rhs = rhs}
       end
@@ -363,6 +376,12 @@ struct
                       in M.TInterProc {callee = M.IpEval {typ = typ, eval = eval}, ret = ret, fx = fx}
                       end
                     | _ => tf)
+               | M.TCase {select = M.SeSum fk, on, cases, default} => 
+                 let
+                   val (typ, _) = buildSumDescriptor (se, id)
+                   val () = checkSumTagDescriptor (se, id, typ, fk)
+                 in M.TCase {select = M.SeSum typ, on = on, cases = cases, default = default}
+                 end
                | _ => tf)
       in tf
       end
@@ -414,7 +433,7 @@ struct
                | M.GClosure _ => g
                | M.GSum {tag, typs = typOlds, ofVals} => 
                  let
-                   val typs = buildSumDescriptor (se, id)
+                   val (typ, typs) = buildSumDescriptor (se, id)
                    val () = checkSumDescriptor (se, id, typs, typOlds)
                  in M.GSum {tag = tag, typs = typs, ofVals = ofVals}
                  end

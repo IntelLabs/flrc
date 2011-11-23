@@ -10,7 +10,7 @@ sig
          | IiTupleDescriptor of {fixed : 'node Vector.t, array : 'node option}
          | IiThunk of {typ : 'node, fvs : 'node Vector.t}
          | IiClosure of 'node Vector.t
-         | IiSum of 'node Vector.t
+         | IiSum of 'node * ('node Vector.t)
 
   val layoutIInfo : Config.t * Mil.symbolInfo * 'node iInfo * ('node -> Layout.t) -> Layout.t
 
@@ -34,7 +34,7 @@ struct
          | IiTupleDescriptor of {fixed : 'node Vector.t, array : 'node option}
          | IiThunk of {typ : 'node, fvs : 'node Vector.t}
          | IiClosure of 'node Vector.t
-         | IiSum of 'node Vector.t
+         | IiSum of 'node * ('node Vector.t)
 
   val layoutIInfo =
    fn (config, si, info, node) => 
@@ -75,8 +75,8 @@ struct
                  L.seq [L.str "Thunk", LU.paren (node typ), LU.angleSeq (vector fvs)]
                | IiClosure fvs =>
                  L.seq [L.str "Closure", LU.angleSeq (vector fvs)]
-               | IiSum v => 
-                 L.seq [L.str "Sum", LU.angleSeq (vector v)])
+               | IiSum (n, v) => 
+                 L.seq [L.str "Sum", LU.paren (node n), LU.angleSeq (vector v)])
       in l
       end
 

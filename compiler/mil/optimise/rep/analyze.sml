@@ -252,6 +252,9 @@ struct
   val typOfPrimViResult = 
    fn (se, vi, typs) => #2 (MT.PrimsTyper.vector (getConfig se, vi, typs))
 
+  val typOfConstant =
+   fn (se, c) => MT.Typer.constant (getConfig se, getSi se, c)
+
   val typOfVariable =
    fn (se, v) => MU.SymbolInfo.variableTyp (getSi se, v)
 
@@ -314,7 +317,7 @@ struct
    fn (se, n, fvs) => addIInfo (se, n, MRB.IiClosure fvs)
 
   val addSumDescriptor = 
-   fn (se, n, typs) => addIInfo (se, n, MRB.IiSum typs)
+   fn (se, n, tag, typs) => addIInfo (se, n, MRB.IiSum (tag, typs))
 
   val symbols =
    fn se => 
@@ -452,8 +455,9 @@ struct
                  end
                | M.TSum {tag, arms} => 
                  let
-                   val arms = Vector.map (arms, fn (k, ts) => {tag = k, fields = typs (se, ts)})
-                 in shaped (Build.sum' arms)
+                   val tag = typ (se, tag)
+                   val arms = Vector.map (arms, fn (k, ts) => (k, typs (se, ts)))
+                 in shaped (Build.sum' {tag = tag, arms = arms})
                  end
                | M.TPType {kind = M.TkE, over} => shaped (Build.pSet (typ (se, over)))
                | M.TPType {kind = M.TkI, over} => shaped (Build.base t)
@@ -476,7 +480,7 @@ struct
         of M.COptionSetEmpty => newShapedNode (se, Build.pSetEmpty ())
          | _ => 
            let
-             val t = MT.Typer.constant (getConfig se, getSi se, c)
+             val t = typOfConstant (se, c)
              val shape = Build.base t
              val node = newShapedNode (se, shape)
            in node
@@ -844,18 +848,29 @@ struct
                | M.RhsPSetQuery oper => node () <-- Build.base (MU.Bool.t (getConfig se))
                | M.RhsSum {tag, typs, ofVals} => 
                  let
+                   val tagNode = newShallowTypedBottomNode (se, typOfConstant (se, tag))
                    val fields = operands (se, ofVals)
-                   val () = addSumDescriptor (se, MU.Id.I n, fields)
-                   val () = node () <-- Build.sum {tag = tag, fields = fields}
+                   val () = addSumDescriptor (se, MU.Id.I n, tagNode, fields)
+                   val () = node () <-- Build.sum {tag = tagNode, arm = (tag, fields)}
                  in ()
                  end
                | M.RhsSumProj {typs, sum, tag, idx} => 
                  let
+                   val tagNode = newShallowTypedBottomNode (se, typOfConstant (se, tag))
                    val elts = fieldKinds (se, typs)
                    val () = node () == (Vector.sub (elts, idx))
                    val sum = variable (se, sum) 
-                   val () = addSumDescriptor (se, MU.Id.I n, elts)
-                   val () = sum --> Build.sum {tag = tag, fields = elts}
+                   val () = addSumDescriptor (se, MU.Id.I n, tagNode, elts)
+                   val () = sum --> Build.sum {tag = tagNode, arm = (tag, elts)}
+                 in ()
+                 end
+               | M.RhsSumGetTag {typ, sum} => 
+                 let
+                   val tagNode = fieldKind (se, typ)
+                   val () = node () == tagNode
+                   val sum = variable (se, sum) 
+                   val () = addSumDescriptor (se, MU.Id.I n, tagNode, Vector.new0 ())
+                   val () = sum --> Build.sum' {tag = tagNode, arms = Vector.new0 ()}
                  in ()
                  end)
       in ()
@@ -875,9 +890,20 @@ struct
       end
 
   val switch = 
-   fn (se as (state, env), {select, on, cases, default}) => 
+   fn (se as (state, env), (l, {select, on, cases, default})) => 
       let
         val (op ==, op <==, op <--, op -->) = symbols se
+        val onN = operand (se, on)
+        val () = 
+            case select
+             of M.SeSum fk => 
+                let
+                   val tagNode = fieldKind (se, fk)
+                   val () = addSumDescriptor (se, MU.Id.T l, tagNode, Vector.new0 ())
+                   val () = onN --> Build.sum' {tag = tagNode, arms = Vector.new0 ()}
+                in ()
+                end
+              | M.SeConstant => ()
         val () = Vector.foreach (cases, fn (_, t) => target (se, t))
         val () = Option.foreach (default, fn t => target (se, t))
       in ()
@@ -975,7 +1001,7 @@ struct
         val () = 
             (case t
               of M.TGoto tg => target (se, tg)
-               | M.TCase sw => switch (se, sw)
+               | M.TCase sw => switch (se, (l, sw))
                | M.TInterProc r => interProc (se, (l, r))
                | M.TReturn args => 
                  let
@@ -1059,9 +1085,10 @@ struct
                | M.GClosure {code, fvs} => destNode <-- pFunctionInit (se, v, MU.Id.G v, destNode, code, fvs)
                | M.GSum {tag, typs, ofVals} => 
                  let
+                   val tagNode = newShallowTypedBottomNode (se, typOfConstant (se, tag))
                    val fields = operands (se, ofVals)
-                   val () = addSumDescriptor (se, MU.Id.G v, fields)
-                 in destNode <-- Build.sum {tag = tag, fields = fields}
+                   val () = addSumDescriptor (se, MU.Id.G v, tagNode, fields)
+                 in destNode <-- Build.sum {tag = tagNode, arm = (tag, fields)}
                  end
                | M.GPSet s => destNode <-- Build.pSet (operand (se, s)))
       in ()

@@ -177,7 +177,8 @@ struct
                                 | M.RhsPSetCond _       => noFlatten ()
                                 | M.RhsPSetQuery _      => noFlatten ()
                                 | M.RhsSum _            => noFlatten ()
-                                | M.RhsSumProj _        => noFlatten ())
+                                | M.RhsSumProj _        => noFlatten ()
+                                | M.RhsSumGetTag _      => noFlatten ())
 
                        in e
                        end

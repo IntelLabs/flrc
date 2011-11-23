@@ -832,6 +832,12 @@ struct
                    val _ = sumTag (s, e, msg1, tag)
                    val () = inRange (s, e, msg1, typs, idx)
                  in some M.TNone
+                 end
+               | M.RhsSumGetTag {typ, sum} =>
+                 let
+                   fun msg1 () = msg () ^ ": sum get tag"
+                   val _ = variableUse (s, e, msg1, sum)
+                 in some M.TNone
                  end)
       in ts
       end

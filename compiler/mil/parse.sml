@@ -243,6 +243,7 @@ struct
               M.RhsSum {tag = constant (nm, tag), typs = typs, ofVals = operands (nm, ofVals)}
             | M.RhsSumProj {typs, sum, tag, idx} => 
               M.RhsSumProj {typs = typs, sum = sum, tag = constant (nm, tag), idx = idx}
+            | M.RhsSumGetTag _ => r
 
       fun instruction (nm : t, M.I {dests, n, rhs = r} : M.instruction) : M.instruction =
                                                                           M.I {dests = dests, n = n, rhs = rhs (nm, r)}
@@ -1277,6 +1278,14 @@ struct
                   val fks = angleBracketSeq (fieldKind (state, env))
                   val p = paren (v &&- keycharSF #"." && k &&- keycharSF #"." && i &&- keycharSF #":" && fks)
                   val f = fn (((v, k), i), fks) => M.RhsSumProj {typs = fks, sum = v, tag = k, idx = i}
+                in P.map (p, f)
+                end
+              | "SumGetTag" => 
+                let
+                  val v = variable (state, env)
+                  val fk = fieldKind (state, env)
+                  val p = brace fk && paren v
+                  val f = fn (typ, sum) => M.RhsSumGetTag {typ = typ, sum = sum}
                 in P.map (p, f)
                 end
               | "Tagged" => 

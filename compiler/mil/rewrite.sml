@@ -191,6 +191,8 @@ struct
             M.RhsSum {tag = tag, typs = typs, ofVals = doOps ofVals}
           | M.RhsSumProj {typs, sum, tag, idx} =>
             M.RhsSumProj {typs = typs, sum = doVar sum, tag = tag, idx = idx}
+          | M.RhsSumGetTag {typ, sum} =>
+            M.RhsSumGetTag {typ = typ, sum = doVar sum}
       end
 
   fun instruction (state, env, i) = 

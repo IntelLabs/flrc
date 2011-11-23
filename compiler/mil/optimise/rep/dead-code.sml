@@ -211,6 +211,7 @@ struct
                                | M.RhsPSetQuery _      => data ()
                                | M.RhsSum _            => ()
                                | M.RhsSumProj _        => data ()
+                               | M.RhsSumGetTag _      => data ()
 
                        in e
                        end
@@ -646,7 +647,7 @@ struct
                 let
                   val nodes = 
                       case MRS.iInfo (summary, MU.Id.I n)
-                       of MRB.IiSum fields => fields
+                       of MRB.IiSum (tag, fields) => fields
                         | _                => fail ("sumProj", "Bad descriptor")
                   val idx = adjustIndex (idx, nodes)
                   val r = {typs = typs, sum = sum, tag = tag, idx = idx}
@@ -762,6 +763,8 @@ struct
                                                val rhs = M.RhsSumProj r
                                              in replace rhs
                                              end
+                  | M.RhsSumGetTag r      => keepIfAnyLiveV dests
+
           in (env, so)
           end
 
@@ -1163,7 +1166,7 @@ struct
                   end
                 | MRB.IiThunk {typ, fvs} => MRB.IiThunk {typ = typ, fvs = filterV fvs}
                 | MRB.IiClosure fvs      => MRB.IiClosure (filterV fvs)
-                | MRB.IiSum ns           => MRB.IiSum (filterV ns)
+                | MRB.IiSum (tag, ns)    => MRB.IiSum (tag, filterV ns)
           val () = MRS.updateIInfo (summary, update)
 
           val doNode =

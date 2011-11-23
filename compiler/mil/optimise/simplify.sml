@@ -203,6 +203,7 @@ struct
          ("PSetNewEta",       "SetNew ops eta reduced"         ),
          ("PSetQuery",        "SetQuery ops reduced"           ),
          ("SumEta",           "Sum injections eta reduced"     ),
+         ("SumGetTagBeta",    "Sum tag projections reduced"    ),
          ("SumProjBeta",      "Sum projections reduced"        ),
          ("PrimPrim",         "Primitives reduced"             ),
          ("PrimToLen",        "P Nom/Dub -> length reductions" ),
@@ -291,6 +292,7 @@ struct
     val pSetNewEta = clicker "PSetNewEta"
     val pSetQuery = clicker  "PSetQuery"
     val sumEta = clicker  "SumEta"
+    val sumGetTagBeta = clicker  "SumGetTagBeta"
     val sumProjBeta = clicker  "SumProjBeta"
     val primPrim = clicker "PrimPrim"
     val primToLen = clicker "PrimToLen"
@@ -3346,6 +3348,22 @@ struct
 
     val sumProj = sumProjBeta
 
+    val sumGetTagBeta = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dests, {typ, sum})) => 
+              let
+                val {tag, ...} = <@ MU.Def.Out.sum <! Def.toMilDef o Def.get @@ (imil, sum)
+                val v = Try.V.singleton dests
+                val () = Use.replaceUses (imil, v, M.SConstant tag)
+                val () = IInstr.delete (imil, i)
+              in []
+              end
+        in try (Click.sumGetTagBeta, f)
+        end
+
+    val sumGetTag = sumGetTagBeta
+
     val simplify = 
      fn (state, (i, M.I {dests, n, rhs})) =>
         let
@@ -3375,6 +3393,7 @@ struct
                 | M.RhsPSetQuery r      => pSetQuery (state, (i, dests, r))
                 | M.RhsSum r            => sum (state, (i, dests, r))
                 | M.RhsSumProj r        => sumProj (state, (i, dests, r))
+                | M.RhsSumGetTag r      => sumGetTag (state, (i, dests, r))
         in r
         end
 
