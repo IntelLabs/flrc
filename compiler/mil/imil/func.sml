@@ -36,6 +36,7 @@ sig
   val markNonRecursive : t * iFunc -> unit
   val setArgs : t * iFunc * Mil.variable Vector.t -> unit
   val setRtyps : t * iFunc * Mil.typ Vector.t -> unit
+  val setStart : t * iFunc * Mil.label -> unit
   val isProgramEntry : t * iFunc -> bool
   val splitCriticalEdges : t * iFunc -> unit
   (* inline (t, v, c) = ls
@@ -345,6 +346,23 @@ struct
 
   val setRtyps =
    fn (p, c, rtyps) => IMT.iFuncSetRtyps (c, rtyps)
+
+  val setStart =
+   fn (p, c, start) => 
+      let
+        val cfg = IMT.iFuncGetCfg c
+        val entryN = IMT.iFuncGetEntry c
+        val () = 
+            let
+              val d = fn e => Graph.deleteEdge (cfg, e)
+            in List.foreach (Graph.Node.outEdges entryN, d)
+            end
+        val startBlock = getBlockByLabel (p, c, start)
+        val startNode = IMT.iBlockGetNode startBlock
+        val () = ignore (Graph.addEdge (cfg, entryN, startNode, ()))
+        val () = IMT.iFuncSetStart (c, start)
+      in ()
+      end
 
   val isProgramEntry =
    fn (p, c) => 
