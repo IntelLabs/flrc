@@ -215,6 +215,7 @@ functor MilAnalyseF (
         | M.RhsPSetQuery oper => analyseOperand (s, e, oper)
         | M.RhsSum {tag, typs, ofVals} => analyseOperands (s, e, ofVals)
         | M.RhsSumProj {typs, sum, tag, idx} => analyseVariable (s, e, sum)
+        | M.RhsSumGetTag {typ, sum} => analyseVariable (s, e, sum)
 
   fun analyseInstruction (s, e, i as M.I {dests, n, rhs}) =
       let

@@ -714,6 +714,13 @@ struct
              val l = L.seq [L.str "SumProj", L.paren l]
            in l
            end
+         | M.RhsSumGetTag {typ, sum} =>
+           let
+             val typ = layoutFieldKindShort (env, typ)
+             val sum = layoutVariable (env, sum)
+             val l = L.seq [L.str "SumGetTag", LU.brace typ, L.paren sum]
+           in l
+           end
 
    fun layoutInstruction (env, M.I {dests, n, rhs}) =
        let

@@ -226,6 +226,8 @@ struct
                            sum : variable,
                            tag : constant, 
                            idx : int}
+    | RhsSumGetTag     of {typ : fieldKind, 
+                           sum : variable}
 
   datatype instruction = I of {
     dests : variable vector,     (* arity must match rhs *)

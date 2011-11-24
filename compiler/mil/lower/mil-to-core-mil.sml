@@ -297,6 +297,9 @@ struct
       in
         POM.Sum.getVal (config, v, MU.Constant.fkOf (config, tag), fks, tag, idx)
       end
+
+  fun doSumGetTag (state, env, (fk, v)) = POM.Sum.getTag (envGetConfig env, v, fk)
+
   fun lowerToRhs (state, env, lower, doIt, dests, args) =
       if lower then
         let
@@ -345,6 +348,8 @@ struct
                 lowerToRhs (state, env, lowerSums, doSum, dests, (tag, typs, ofVals))
               | M.RhsSumProj {typs, sum, tag, idx} =>
                 lowerToRhs (state, env, lowerSums, doSumProj, dests, (typs, sum, tag, idx))
+              | M.RhsSumGetTag {typ, sum} =>
+                lowerToRhs (state, env, lowerSums, doSumGetTag, dests, (typ, sum))
               | _ => NONE
       in (env, res)
       end

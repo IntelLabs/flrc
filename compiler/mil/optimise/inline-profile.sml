@@ -787,7 +787,7 @@ struct
   datatype policyInfo = PI of {
            constraints  : Constraints.t,
            callSites    : CallSitesInfo.t ref,
-           recInlining  : int ref VD.t,
+           recInlining  : int ref VD.t ref,
            inlinedCS    : CallSitesInfo.csInfo option ref,
            newBlocksMap : (Mil.label * (Mil.label * IMil.iInstr)) list ref,
            initPrgSize  : int,
@@ -795,17 +795,26 @@ struct
            currBudget   : int ref,
            nIterations  : int ref
   }
-                              
+                  
+  fun getRecInliningCountRef (PI {recInlining as ref d, ...}, f) =
+      case VD.lookup (d, f)
+       of SOME c => c
+        | NONE   => 
+          let
+            val r = ref 0
+            val () = recInlining := VD.insert (d, f, r)
+          in r
+          end
   (* recInlining  keeps track of how  many times a  given function was
    * recursively inlined. *)
-  fun getRecInliningCount (PI {recInlining, ...}, f) =
-      case VD.lookup (recInlining, f)
-       of SOME c => !c
-        | NONE => fail ("getRecInliningCount", "Could not find function.")
-  fun incRecInliningCount (PI {recInlining, ...}, f) =
-      case VD.lookup (recInlining, f)
-       of SOME c => c := !c + 1
-        | NONE => fail ("incRecInliningCount", "Could not find function.")
+  fun getRecInliningCount (info, f) = !(getRecInliningCountRef (info, f))
+
+  fun incRecInliningCount (info, f) =
+      let
+        val r = getRecInliningCountRef (info, f)
+      in r := !r + 1
+      end
+
   fun setInlinedCS (PI {inlinedCS, ...}, csInfo) = inlinedCS := csInfo
   fun getInlinedCS (PI {inlinedCS, ...} ) = !inlinedCS
   fun incIterations (PI {nIterations, ...}) = nIterations := !nIterations + 1
@@ -870,7 +879,7 @@ struct
                                fn f => ref 0)
         val info = PI {constraints  = constraints,
                        callSites    = ref callSites,
-                       recInlining  = recInlining,
+                       recInlining  = ref recInlining,
                        inlinedCS    = ref NONE,
                        newBlocksMap = ref nil,
                        initPrgSize  = initPrgSize,
@@ -1076,7 +1085,7 @@ struct
         val () = updateCallSitesInfo (d, info, imil)
         val () = printCallGraph (info, d, imil, lastInlined)
         val bestCS = selectBestCallSite (d, imil, info)
-        val allowOpt = false (*XXX optimizer adds functions -leaf not (Feature.noOptimizer (PD.getConfig d))*)
+        val allowOpt = Feature.noOptimizer (PD.getConfig d)
         val csInfo = case (bestCS, allowOpt)
                       of (NONE, true)     => optimizeAndSelect (d, imil, info)
                        | (SOME csInfo, _) => SOME csInfo

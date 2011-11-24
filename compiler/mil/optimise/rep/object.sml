@@ -31,8 +31,8 @@ sig
       val closure : {name : Mil.variable option, code : 'node, fvs : 'node Vector.t} -> 'node shape
       val pSet : 'node -> 'node shape
       val pSetEmpty : unit -> 'node shape
-      val sum : {tag : Mil.constant, fields : 'node Vector.t} -> 'node shape
-      val sum' : {tag : Mil.constant, fields : 'node Vector.t} Vector.t -> 'node shape
+      val sum : {tag : 'node, arm : (Mil.constant * 'node Vector.t)} -> 'node shape
+      val sum' : {tag : 'node, arms : (Mil.constant * 'node Vector.t) Vector.t}  -> 'node shape
       val tuple : {pok : Mil.pObjKind option, fields : 'node Vector.t, array : 'node option} -> 'node shape
       val thunkValue : {code : 'node, result : 'node} -> 'node shape
       val thunk : {name : Mil.variable option, code : 'node, result : 'node, fvs : 'node Vector.t} -> 'node shape
@@ -137,7 +137,7 @@ struct
            | TBase of M.typ
            | TClosure of 'node * ('node env)
            | TPSet of 'node Seq.t
-           | TSum  of 'node Seq.t CD.t
+           | TSum  of 'node * ('node Seq.t CD.t)
            | TTuple of POKL.t * 'node Seq.t
            | TThunk of 'node * 'node * ('node env)
            | TCode of 'node code
@@ -371,11 +371,11 @@ struct
                    in (TPSet s, edges)
                    end
                  | (TPSet _, _) => noflow
-                 | (TSum d1, TSum d2) => 
+                 | (TSum (t1, d1), TSum (t2, d2)) => 
                    let
                      val flow = fn (a1, a2) => seqFlowsTo (a1, a2)
                      val (d, edges) = dictFlowsTo (CD.map2, flow, d1, d2)
-                   in (TSum d, edges)
+                   in (TSum (t1, d), EFlow (t1, t2)::edges)
                    end
                  | (TSum _, _) => noflow
                  | (TTuple (pok1, s1), TTuple (pok2, s2)) => 
@@ -440,7 +440,7 @@ struct
                  | TBase t => ()
                  | TClosure (n, e) => (node n; env e)
                  | TPSet s => seq s
-                 | TSum cd => CD.foreach (cd, fn (k, s) => seq s)
+                 | TSum (n, cd) => (node n;CD.foreach (cd, fn (k, s) => seq s))
                  | TTuple (pok, s) => seq s
                  | TThunk (n, r, e) => (node n; node r; env e)
                  | TCode c => code c
@@ -527,14 +527,12 @@ struct
                               | Seq.SeqBot => M.TNone)
                      in M.TPType {kind = M.TkE, over = over}
                      end
-                   | TSum cd => 
+                   | TSum (n, cd) => 
                      let
-                       val tag = CD.fold (cd, M.TNone, fn (c, _, t) => 
-                                                          Type.lub (config, t, MU.Constant.typOf (config, c)))
                        val armsL = CD.toListSorted cd
                        val seq = fn s => Vector.map (#1 (Seq.deconstruct s), node)
                        val arms = Vector.fromListMap (armsL, fn (c, s) => (c, seq s))
-                     in M.TSum {tag = tag, arms = arms}
+                     in M.TSum {tag = node n, arms = arms}
                      end
                    | TTuple (pokl, nodes) => 
                      if POKL.isTop pokl then M.TRef
@@ -572,7 +570,7 @@ struct
                    | TBase t    => MU.FlatTyp.fromTyp (config, t)
                    | TClosure (code, env) => M.TPAny
                    | TPSet elts => M.TPAny
-                   | TSum nd    => M.TPAny
+                   | TSum (n, nd)    => M.TPAny
                    | TTuple (pokl, nodes) => (case POKL.get pokl 
                                                of SOME pok => if pok = M.PokNone then M.TRef else M.TPAny
                                                 | NONE => M.TRef)
@@ -636,7 +634,7 @@ struct
                 | TBase t          => shape
                 | TClosure (n, e)  => TClosure (n, env e)
                 | TPSet s          => TPSet s
-                | TSum cd          => TSum (CD.map (cd, fn (c, s) => seq s))
+                | TSum (n, cd)     => TSum (n, CD.map (cd, fn (c, s) => seq s))
                 | TTuple (pok, s)  => TTuple (pok, seq s)
                 | TThunk (n, r, e) => TThunk (n, r, env e)
                 | TCode c          => TCode (code c)
@@ -677,11 +675,11 @@ struct
        fn () => TPSet Seq.seq0
 
       val sum' =
-       fn v => TSum (Vector.fold (v, CD.empty, fn ({tag, fields}, cd) 
-                                                  => CD.insert (cd, tag, Seq.fromVectorOpen fields)))
+       fn {tag, arms} => TSum (tag, Vector.fold (arms, CD.empty, fn ((idx, fields), cd) 
+                                                                    => CD.insert (cd, idx, Seq.fromVectorOpen fields)))
 
       val sum = 
-       fn r => sum' (Vector.new1 r)
+       fn {tag, arm} => sum' {tag = tag, arms = Vector.new1 arm}
 
       val tuple = 
        fn {pok, fields, array} => 
@@ -997,14 +995,13 @@ struct
                  | Shape.TClosure (n, e) => 
                    L.seq [L.str "Clos ", LU.parenSeq [node n], L.str " where ", env e]
                  | Shape.TPSet s => L.seq [L.str "PSet", seq s]
-                 | Shape.TSum cd => 
+                 | Shape.TSum (n, cd) => 
                    let
                      val help = 
                       fn (k, s) => L.seq [MilLayout.layoutConstant (config, si, k), 
                                           L.str " => ", seq s]
                    in
-                     L.seq [L.str "Sum", 
-                            CD.layout (cd, help)]
+                     L.seq [L.str "Sum", LU.parenSeq [node n], CD.layout (cd, help)]
                    end
                  | Shape.TTuple (pok, s) => L.seq [L.str "Tuple", 
                                                    LU.parenSeq [POKL.layout pObj pok,

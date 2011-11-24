@@ -428,7 +428,8 @@ struct
                                 | M.RhsPSetCond r       => let val () = fixed () val () = boxedO (#ofVal r) in () end
                                 | M.RhsPSetQuery _      => fixed ()
                                 | M.RhsSum _            => fixed ()
-                                | M.RhsSumProj _        => ())
+                                | M.RhsSumProj _        => ()
+                                | M.RhsSumGetTag _      => ())
 
                        in e
                        end
@@ -982,32 +983,41 @@ struct
   struct
     val skip = noConstantProp
 
-    (* We construct a lattice whose elements are drawn from (variable x (constant option)).
-     * An element (v, co) consists of a global variable v.  If co = SOME c, then v is 
+    (* We construct a lattice whose elements are drawn from ((variable option) x (constant option)),
+     * where the variable if present is global.  If vo = v and co = SOME c, then v is 
      * bound to c.  If co = NONE, then the definition of v is unknown.  Elements are equal
-     * if the variables are equal, or if both variables have equal definitions.  This avoids 
+     * if the variables are equal, or if the constants are equal.  This avoids 
      * relying on CSE of constants (which is generally violated by the name small values pass).
      *)
     val elementEq = 
-     fn ((v1, co1), (v2, co2)) => 
-        (case (v1 = v2, co1, co2)
-          of (true, _, _) => true
-           | (false, SOME c1, SOME c2) =>  MU.Constant.eq (c1, c2)
-           | _ => false)
+     fn ((vo1, co1), (vo2, co2)) => 
+        let
+          val eqV = 
+              case (vo1, vo2) 
+               of (SOME v1, SOME v2) => v1 = v2
+                | _                  => false
+          val eqC = 
+              case (co1, co2)
+               of (SOME c1, SOME c2) =>  MU.Constant.eq (c1, c2)
+                | _                  => false
+        in eqV orelse eqC
+        end
     structure CLat = FlatLatticeFn (struct 
-                                      type element = (Mil.variable * (Mil.constant option))
+                                      type element = ((Mil.variable option) * (Mil.constant option))
                                       val equal = elementEq
                                     end)
 
     datatype state = S of {summary : MRS.summary,
                            flowgraph : CLat.t FG.t}
 
-    datatype env = E of {pd : PD.t}
+    datatype env = E of {pd : PD.t, block : M.label option}
 
     val getSummary = fn (S {summary, ...}) => summary
     val getFlowgraph = fn (S {flowgraph, ...}) => flowgraph
     val getPd = fn (E {pd, ...}) => pd
     val getConfig = PD.getConfig o getPd
+    val getBlock = fn (E {block, ...}) => block
+    val setBlock = fn (E {block = _, pd}, label) => E {block = SOME label, pd = pd}
 
     structure Analyze =
     MilAnalyseF(struct
@@ -1057,8 +1067,19 @@ struct
                                 | M.RhsPSetGet _        => ()
                                 | M.RhsPSetCond _       => mark ()
                                 | M.RhsPSetQuery _      => mark ()
-                                | M.RhsSum _            => mark ()
-                                | M.RhsSumProj _        => ())
+                                | M.RhsSum {tag, ...}   => 
+                                  let
+                                    val tagN = 
+                                        case MRS.iInfo (summary, MU.Id.I n)
+                                         of MRB.IiSum (tag, fields) => tag
+                                          | _                       => fail ("sumProj", "Bad descriptor")
+                                    val () = FG.add (getFlowgraph s, tagN, CLat.elt (NONE, SOME tag))
+                                    val () = mark ()
+                                  in ()
+                                  end
+                                | M.RhsSumProj _        => ()
+                                | M.RhsSumGetTag _      => ()
+                             )
 
                        in e
                        end
@@ -1068,10 +1089,20 @@ struct
                   val analyseGlobal' = 
                    fn (s, e, v, g) => 
                        let
+                         val summary = getSummary s
                          val elt = 
                              (case g
-                               of M.GSimple (M.SConstant c) => (v, SOME c)
-                                | _                         => (v, NONE))
+                               of M.GSimple (M.SConstant c) => (SOME v, SOME c)
+                                | M.GSum {tag, ...} => 
+                                  let
+                                    val tagN = 
+                                        case MRS.iInfo (summary, MU.Id.G v)
+                                         of MRB.IiSum (tag, fields) => tag
+                                          | _                       => fail ("gSumProj", "Bad descriptor")
+                                    val () = FG.add (getFlowgraph s, tagN, CLat.elt (NONE, SOME tag))
+                                  in (SOME v, NONE)
+                                  end
+                                | _                         => (SOME v, NONE))
                          val summary = getSummary s
                          val node = MRS.variableNode (summary, v)
                          val () = FG.add (getFlowgraph s, node, CLat.elt elt)
@@ -1098,7 +1129,8 @@ struct
                               Try.try 
                                 (fn () => 
                                     let
-                                      val (v', _) = Try.<@ CLat.get (FG.query (fg, node))
+                                      val (vo', _) = Try.<@ CLat.get (FG.query (fg, node))
+                                      val v' = Try.<- vo'
                                       val () = Try.require (v <> v')
                                       val () = Click.constantProp (getPd env)
                                     in v'
@@ -1109,10 +1141,93 @@ struct
                                  | NONE   => MRC.Stop)
                         in res
                         end
-                    val operand     = fn _ => MRC.Continue
+                    val replaceNode = 
+                        Try.lift
+                          (fn (state, env, node) =>
+                              let
+                                val fg = getFlowgraph state
+                              in
+                                case (Try.<@ CLat.get (FG.query (fg, node)))
+                                 of (SOME v', _) => 
+                                    let
+                                      val () = Click.constantProp (getPd env)
+                                    in M.SVariable v'
+                                    end
+                                  | (_, SOME c) => 
+                                    let
+                                      val () = Click.constantProp (getPd env)
+                                    in M.SConstant c
+                                    end
+                                  | _           => Try.fail ()
+                              end)
+
+                    val replaceOperand =
+                        Try.lift
+                          (fn (state, env, oper) =>
+                              (case oper
+                                of M.SConstant c => Try.fail ()
+                                 | M.SVariable v =>
+                                   let
+                                     val fg = getFlowgraph state
+                                     val summary = getSummary state
+                                     val node = MRS.variableNode (summary, v)
+                                   in 
+                                     case (Try.<@ CLat.get (FG.query (fg, node)))
+                                      of (SOME v', _) => 
+                                         let
+                                           val () = Try.require (v <> v')
+                                           val () = Click.constantProp (getPd env)
+                                         in M.SVariable v'
+                                         end
+                                       | (_, SOME c) => 
+                                         let
+                                           val () = Click.constantProp (getPd env)
+                                         in M.SConstant c
+                                         end
+                                       | _           => Try.fail ()
+                                   end))
+                     
+                    val operand     = 
+                     fn (state, env, oper) => 
+                        let
+                          val so = replaceOperand (state, env, oper)
+                          val res = 
+                              (case so
+                                of SOME oper => MRC.StopWith (env, oper)
+                                 | NONE      => MRC.Stop)
+                        in res
+                        end
                     val instruction = fn _ => MRC.Continue
-                    val transfer    = fn _ => MRC.Continue
-                    val block       = fn _ => MRC.Continue
+                    val transfer    = 
+                     fn (state, env, tfer) => 
+                        (case tfer
+                          of M.TCase {select = M.SeSum fk, on = M.SVariable sum, cases, default} => 
+                             let
+                               val summary = getSummary state
+                               val l = valOf (getBlock env)
+                               val tagN = 
+                                   case MRS.iInfo (summary, MU.Id.T l)
+                                    of MRB.IiSum (tag, fields) => tag
+                                     | _                       => fail ("TCase", "Bad descriptor")
+                               val so = replaceNode (state, env, tagN)
+                               val res = 
+                                   (case so
+                                     of SOME oper => 
+                                        let
+                                          val t = M.TCase {select = M.SeConstant, on = oper, 
+                                                           cases = cases, default = default}
+                                        in MRC.ContinueWith (env, t)
+                                        end
+                                      | NONE => MRC.Continue)
+                             in res
+                             end
+                           | _ => MRC.Continue)
+                    val block = 
+                     fn (state, env, (l, b)) => 
+                        let
+                          val env = setBlock (env, l)
+                        in MRC.ContinueWith (env, (l, b))
+                        end
                     val global      = fn _ => MRC.Continue
                     val bind        = fn (_, env, _) => (env, NONE)
                     val bindLabel   = fn (_, env, _) => (env, NONE)
@@ -1130,13 +1245,16 @@ struct
             val le = 
              fn (v, p) => 
                 (case CLat.get p
-                  of SOME (v', _) => 
+                  of SOME (SOME v', _) => 
                      if v <> v' then
                        SOME (Layout.seq[MilLayout.layoutVariable (config, si, v), Layout.str " = ",
                                         MilLayout.layoutVariable (config, si, v')])
                      else
                        NONE
-                   | NONE => NONE)
+                   | SOME (_, SOME c) => 
+                       SOME (Layout.seq[MilLayout.layoutVariable (config, si, v), Layout.str " = ",
+                                        MilLayout.layoutConstant (config, si, c)])
+                   | _ => NONE)
             val ls = List.keepAllMap (props, le)
             val l = Layout.align ls
             val l = Layout.align [Layout.str "Propagating:", LayoutUtils.indent l]
@@ -1159,7 +1277,7 @@ struct
                               equal = CLat.equal elementEq
                              }
           val state = S {summary = summary, flowgraph = fgF}
-          val env = E {pd = pd}
+          val env = E {pd = pd, block = NONE}
           val () = Analyze.analyseProgram (state, env, p)
           val () = FG.propagate fgF
           val () = show (pd, summary, fgF, p)

@@ -557,6 +557,7 @@ sig
       val rhsPSetQuery : t -> Mil.operand option
       val rhsSum : t -> {tag : Mil.constant, ofVals : Mil.operand Vector.t, typs : Mil.fieldKind Vector.t} option
       val rhsSumProj : t -> {typs : Mil.fieldKind Vector.t, sum : Mil.variable, tag : Mil.constant, idx : int} option
+      val rhsSumGetTag : t -> {typ : Mil.fieldKind, sum : Mil.variable} option
     end (* structure Dec *)
   end
 
@@ -1652,6 +1653,7 @@ struct
           val psc  = C.rec2 (#bool, operand, #ofVal, operand)
           val sm   = C.rec3 (#tag, constant, #typs, C.vector fieldKind, #ofVals, C.vector operand)
           val smp  = C.rec4 (#typs, C.vector fieldKind, #sum, variable, #tag, constant, #idx, Int.compare)
+          val smgt = C.rec2 (#typ, fieldKind, #sum, variable)
         in
           case (rhs1, rhs2)
            of (M.RhsSimple         x1, M.RhsSimple         x2) => s (x1, x2)
@@ -1724,6 +1726,9 @@ struct
             | (M.RhsSum            _ , _                     ) => LESS
             | (_                     , M.RhsSum            _ ) => GREATER
             | (M.RhsSumProj        x1, M.RhsSumProj        x2) => smp (x1, x2)
+            | (M.RhsSumProj        x1, _                     ) => LESS
+            | (_                     , M.RhsSumProj        x2) => GREATER
+            | (M.RhsSumGetTag      x1, M.RhsSumGetTag      x2) => smgt (x1, x2)
         end
 
     fun instruction (M.I x1, M.I x2) =
@@ -3057,6 +3062,7 @@ struct
           | M.RhsPSetQuery _      => false
           | M.RhsSum _            => false
           | M.RhsSumProj _        => false
+          | M.RhsSumGetTag _      => false
 
     val compare = Compare.rhs
     val eq = Eq.rhs
@@ -3137,6 +3143,7 @@ struct
           | M.RhsPSetQuery _          => T
           | M.RhsSum _                => T
           | M.RhsSumProj _            => T
+          | M.RhsSumGetTag _          => T
     end
 
     val getInit = 
@@ -3198,7 +3205,8 @@ struct
            | M.RhsPSetCond _           => SOME M.PokOptionSet
            | M.RhsPSetQuery _          => NONE
            | M.RhsSum _                => SOME M.PokTagged
-           | M.RhsSumProj _            => NONE)
+           | M.RhsSumProj _            => NONE
+           | M.RhsSumGetTag _          => NONE)
 
     fun arity (config, rhs) =
         case rhs
@@ -3229,6 +3237,7 @@ struct
           | M.RhsPSetQuery _                       => 1
           | M.RhsSum _                             => 1
           | M.RhsSumProj _                         => 1
+          | M.RhsSumGetTag _                       => 1
 
     structure Dec =
     struct
@@ -3280,6 +3289,8 @@ struct
        fn rhs => (case rhs of M.RhsSum r => SOME r | _ => NONE)
       val rhsSumProj = 
        fn rhs => (case rhs of M.RhsSumProj r => SOME r | _ => NONE)
+      val rhsSumGetTag = 
+       fn rhs => (case rhs of M.RhsSumGetTag r => SOME r | _ => NONE)
     end (* structure Dec *)
 
   end
