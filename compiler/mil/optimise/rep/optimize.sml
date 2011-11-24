@@ -1089,9 +1089,19 @@ struct
                   val analyseGlobal' = 
                    fn (s, e, v, g) => 
                        let
+                         val summary = getSummary s
                          val elt = 
                              (case g
                                of M.GSimple (M.SConstant c) => (SOME v, SOME c)
+                                | M.GSum {tag, ...} => 
+                                  let
+                                    val tagN = 
+                                        case MRS.iInfo (summary, MU.Id.G v)
+                                         of MRB.IiSum (tag, fields) => tag
+                                          | _                       => fail ("gSumProj", "Bad descriptor")
+                                    val () = FG.add (getFlowgraph s, tagN, CLat.elt (NONE, SOME tag))
+                                  in (SOME v, NONE)
+                                  end
                                 | _                         => (SOME v, NONE))
                          val summary = getSummary s
                          val node = MRS.variableNode (summary, v)
