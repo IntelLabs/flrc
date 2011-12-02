@@ -495,7 +495,7 @@ struct
     (* Turn a lib filename "lib<name>.a" into "-l<name>". Only works for
      * filename that is a base name, and only for GCC *)
     fun fixGCCLibName s = 
-        if (String.contains (s, #"\\") orelse String.contains (s, #"/")) andalso 
+        if (not (String.contains (s, #"\\") orelse String.contains (s, #"/"))) andalso 
            String.hasPrefix (s, { prefix = "lib" }) andalso String.hasSuffix (s, { suffix = ".a" }) 
           then "-l" ^ String.dropPrefix (String.dropSuffix (s, 2), 3) 
           else s
@@ -578,7 +578,7 @@ struct
         val libs =
             (case (gcs, ldTag, mt)
               of (Config.GcsNone,         _,        _    ) => []
-               | (Config.GcsConservative, LdGCC,    _    ) => [ifDebug (config, "gc-bdwd", "gc-bdw")]
+               | (Config.GcsConservative, LdGCC,    _    ) => [ifDebug (config, "libgc-bdwd.a", "libgc-bdw.a")]
                | (Config.GcsConservative, LdICC,    true ) => [ifDebug (config, "gc-bdw-dlld.lib", "gc-bdw-dll.lib")]
                | (Config.GcsConservative, LdICC,    false) => [ifDebug (config, "gc-bdwd.lib", "gc-bdw.lib")]
                | (Config.GcsConservative, LdOpc, _    )    => failPillar ()
@@ -608,7 +608,7 @@ struct
 
         val file = 
             (case ldTag
-              of LdGCC    => "ptkfutures_gcc_" ^ gcs ^ nm
+              of LdGCC    => "libptkfutures_gcc_" ^ gcs ^ nm ^ ".a"
                | LdICC    => "ptkfutures_" ^ gcs ^ nm ^ ".lib"
                | LdOpc    => "ptkfutures_pillar_" ^ nm ^ ".obj"
                | LdIpc    => "ptkfutures_p2c_" ^ nm ^ ".obj")
@@ -676,13 +676,13 @@ struct
         val extraLibs = List.map (Config.linkLibraries config, fn l => LdOptions.lib (cfg, l))
         val args = List.concat [LdOptions.exe (cfg, outFile),
                                 LdOptions.start cfg,
+                                options,
                                 preLibs,
                                 [inFile],
                                 postLibs,
-                                options,
-                                Config.linkStr config,
                                 extraPaths,
-                                extraLibs]
+                                extraLibs,
+                                Config.linkStr config]
         val cleanup = fn () => if Config.keepObj config then ()
                                else File.remove inFile
       in (ld, args, cleanup)
