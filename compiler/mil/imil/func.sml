@@ -903,7 +903,12 @@ struct
                            val projs = Vector.mapi (fvs, proj)
                          in (Vector.concat [Vector.new1 mv, projs, mvs], ret)
                          end
-                       | _ => fail ("decomposeCall", "Mismatched call calling convention")
+                       | _ => 
+                         let
+                           val l = Var.layout (p, IMT.iFuncGetFName callee)
+                           val s = Layout.toString l
+                         in fail ("decomposeCall", "Mismatched call calling convention for function "^s)
+                         end
                    end
                  | M.TInterProc {callee = M.IpEval {eval, typ}, ret, fx} => 
                    (case (MilUtils.Eval.thunk eval, calleeConv)
@@ -919,7 +924,12 @@ struct
                           val projs = Vector.mapi (fvs, proj)
                         in (Vector.concat [Vector.new1 mv, projs], ret)
                         end
-                       | _ => fail ("decomposeCall", "Mismatched eval calling convention"))
+                       | _ => 
+                         let
+                           val l = Var.layout (p, IMT.iFuncGetFName callee)
+                           val s = Layout.toString l
+                         in fail ("decomposeCall", "Mismatched eval calling convention for function "^s)
+                         end)
                  | _ => fail ("decomposeCall", "Not a call"))
           val pis = Vector.toListMap (pis, fn i => Instr.new' (p, IMT.MInstr i))
         in (pis, ret)

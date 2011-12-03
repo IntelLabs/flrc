@@ -1311,8 +1311,16 @@ struct
                        val pred = 
                            fn u => 
                               case Use.toTransfer u
-                               of SOME (M.TInterProc {callee = M.IpCall {call = M.CClosure {code, ...}, ...}, ...}) => 
-                                  Try.require (not (VS.member (#possible code, fcode)))
+                               of SOME t => 
+                                  (case t 
+                                    of M.TInterProc {callee = M.IpCall {call, ...}, ...} => 
+                                       (case call 
+                                         of M.CClosure {cls, code} => 
+                                            Try.require (not (VS.member (#possible code, fcode)))
+                                          | M.CDirectClosure {code = fname, ...} => 
+                                            Try.require (not (fcode = fname))
+                                          | M.CCode {ptr, code} => ())
+                                     | _ => ())
                                 | _ => ()
                      in Vector.foreach (uses, pred)
                      end
@@ -3205,12 +3213,20 @@ struct
                  val uses = IMil.Use.getUses (imil, fcode)
                  val () = 
                      let
-                       (* Be defensive.  *)
+                       (* If no calls remain *)
                        val pred = 
                            fn u => 
                               case Use.toTransfer u
-                               of SOME (M.TInterProc {callee = M.IpCall {call = M.CClosure {cls, code}, ...}, ...}) => 
-                                  Try.require (not (VS.member (#possible code, fcode)))
+                               of SOME t => 
+                                  (case t 
+                                    of M.TInterProc {callee = M.IpCall {call, ...}, ...} => 
+                                       (case call 
+                                         of M.CClosure {cls, code} => 
+                                            Try.require (not (VS.member (#possible code, fcode)))
+                                          | M.CDirectClosure {code = fname, ...} => 
+                                            Try.require (not (fcode = fname))
+                                          | M.CCode {ptr, code} => ())
+                                     | _ => ())
                                 | _ => ()
                      in Vector.foreach (uses, pred)
                      end
