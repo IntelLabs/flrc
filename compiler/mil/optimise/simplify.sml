@@ -1296,6 +1296,41 @@ struct
 
     val tuple = tupleNormalize
 
+    val closure = 
+        let
+          val f = 
+           fn ((d, imil, ws), (ig, cls, {code, fvs})) =>
+              let
+                 val fcode = <- code
+                 val iFunc = IFunc.getIFuncByName (imil, fcode)
+                 val () = Try.require (not (IFunc.getEscapes (imil, iFunc)))
+                 val uses = IMil.Use.getUses (imil, fcode)
+                 val () = 
+                     let
+                       (* Be defensive.  *)
+                       val pred = 
+                           fn u => 
+                              case Use.toTransfer u
+                               of SOME t => 
+                                  (case t 
+                                    of M.TInterProc {callee = M.IpCall {call, ...}, ...} => 
+                                       (case call 
+                                         of M.CClosure {cls, code} => 
+                                            Try.require (not (VS.member (#possible code, fcode)))
+                                          | M.CDirectClosure {code = fname, ...} => 
+                                            Try.require (not (fcode = fname))
+                                          | M.CCode {ptr, code} => ())
+                                     | _ => ())
+                                | _ => ()
+                     in Vector.foreach (uses, pred)
+                     end
+                 val g = M.GClosure {code = NONE, fvs = fvs}
+                 val () = IGlobal.replaceGlobal (imil, ig, (cls, g))
+              in [I.ItemGlobal ig]
+              end
+        in try (Click.pFunctionInitCode, f)
+        end
+
     val reduce = 
         Try.lift 
           (fn (s as (d, imil, ws), g) => 
@@ -1306,6 +1341,7 @@ struct
                        | (v, M.GRat r) => <@ rat (s, (g, v, r))
                        | (v, M.GInteger i) => <@ integer (s, (g, v, i))
                        | (v, M.GTuple r)   => <@ tuple (s, (g, v, r))
+                       | (v, M.GClosure r) => <@ closure (s, (g, v, r))
                        | _ => Try.fail ())
               in t
               end)
@@ -3175,7 +3211,25 @@ struct
                  val iFunc = IFunc.getIFuncByName (imil, fcode)
                  val () = Try.require (not (IFunc.getEscapes (imil, iFunc)))
                  val uses = IMil.Use.getUses (imil, fcode)
-                 val () = Try.V.lenEq (uses, 1)
+                 val () = 
+                     let
+                       (* If no calls remain *)
+                       val pred = 
+                           fn u => 
+                              case Use.toTransfer u
+                               of SOME t => 
+                                  (case t 
+                                    of M.TInterProc {callee = M.IpCall {call, ...}, ...} => 
+                                       (case call 
+                                         of M.CClosure {cls, code} => 
+                                            Try.require (not (VS.member (#possible code, fcode)))
+                                          | M.CDirectClosure {code = fname, ...} => 
+                                            Try.require (not (fcode = fname))
+                                          | M.CCode {ptr, code} => ())
+                                     | _ => ())
+                                | _ => ()
+                     in Vector.foreach (uses, pred)
+                     end
                  val rhs = M.RhsClosureInit {cls = cls, code = NONE, fvs = fvs}
                  val mi = MU.Instruction.new' (dests, rhs)
                  val () = IInstr.replaceInstruction (imil, i, mi)
