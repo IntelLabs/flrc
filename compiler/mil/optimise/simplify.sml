@@ -2289,7 +2289,9 @@ struct
     struct
 
       datatype 'a object = OTuple of 'a Vector.t
-                         | OThunk of 'a
+                         | OTkVal of 'a
+                         | OTkEnv of 'a Vector.t
+                         | OClEnv of 'a Vector.t
 
       type arg = M.operand object option
       type argVec = arg Vector.t
@@ -2337,9 +2339,12 @@ struct
                 val res = 
                     case <@ Def.toMilDef o Def.get @@ (imil, v)
                      of MU.Def.DefGlobal (M.GTuple {inits, ...})                   => OTuple inits
-                      | MU.Def.DefGlobal (M.GThunkValue {ofVal, ...})              => OThunk ofVal
+                      | MU.Def.DefGlobal (M.GThunkValue {ofVal, ...})              => OTkVal ofVal
+                      | MU.Def.DefGlobal (M.GClosure {fvs, ...})                   => OClEnv (Vector.map (fvs, #2))
                       | MU.Def.DefRhs (M.RhsTuple {inits, mdDesc})                 => OTuple inits
-                      | MU.Def.DefRhs (M.RhsThunkValue {typ, thunk = NONE, ofVal}) => OThunk ofVal
+                      | MU.Def.DefRhs (M.RhsThunkValue {typ, thunk = NONE, ofVal}) => OTkVal ofVal
+                      | MU.Def.DefRhs (M.RhsThunkInit {typ, thunk, code, fvs, fx}) => OTkEnv (Vector.map (fvs, #2))
+                      | MU.Def.DefRhs (M.RhsClosureInit {cls, code, fvs})          => OClEnv (Vector.map (fvs, #2))
                       | _                                                          => Try.fail ()
               in res
               end)
@@ -2404,7 +2409,10 @@ struct
                    fn object => 
                       (case object
                         of OTuple ts => OTuple (MilType.Typer.operands (config, si, ts))
-                         | OThunk t  => OThunk (MilType.Typer.operand (config, si, t)))
+                         | OTkVal t  => OTkVal (MilType.Typer.operand (config, si, t))
+                         | OTkEnv ts => OTkEnv (MilType.Typer.operands (config, si, ts))
+                         | OClEnv ts => OClEnv (MilType.Typer.operands (config, si, ts))
+                      )
 
                   val summarizeArgs = 
                    fn objects => Vector.map (objects, fn opt => Option.map (opt, typeOfObject))
@@ -2415,21 +2423,28 @@ struct
                   val combineObject =
                       Try.lift 
                         (fn (objO, tobjO) => 
-                            (case (typeOfObject (<- objO), <- tobjO)
-                              of (OTuple ts1, OTuple ts2) => 
-                                 let
-                                   val () = Try.require (Vector.length ts1 = Vector.length ts2)
-                                   val ts = Vector.map2 (ts1, ts2, fn (t1, t2) => MilType.Type.lub (config, t1, t2))
-                                   val () = Try.require (Vector.forall (ts, consistent))
-                                 in OTuple ts
-                                 end
-                               | (OThunk t1, OThunk t2) => 
+                            let
+                              val doTs = 
+                               fn (ts1, ts2) => 
+                                  let
+                                    val () = Try.require (Vector.length ts1 = Vector.length ts2)
+                                    val ts = Vector.map2 (ts1, ts2, fn (t1, t2) => MilType.Type.lub (config, t1, t2))
+                                    val () = Try.require (Vector.forall (ts, consistent))
+                                  in ts
+                                  end
+                            in
+                              case (typeOfObject (<- objO), <- tobjO)
+                               of (OTuple ts1, OTuple ts2) => OTuple (doTs (ts1, ts2))
+                               | (OTkVal t1, OTkVal t2) => 
                                  let
                                    val t = MilType.Type.lub (config, t1, t2)
                                    val () = Try.require (consistent t)
-                                 in OThunk t
+                                 in OTkVal t
                                  end
-                               | _ => Try.fail ()))
+                               | (OTkEnv ts1, OTkEnv ts2) => OTkEnv (doTs (ts1, ts2))
+                               | (OClEnv ts1, OClEnv ts2) => OClEnv (doTs (ts1, ts2))
+                               | _ => Try.fail ()
+                            end)
                       
                   val combineObjects = 
                    fn (objects, tobjects) => 
@@ -2481,11 +2496,27 @@ struct
                                      val () = Try.require (MU.FieldDescriptor.immutable fd)
                                   in ()
                                   end
-                                | OThunk t => 
-                                  case (Use.toRhs use, Use.toTransfer use)
-                                   of (SOME (M.RhsThunkGetValue _), _)                    => ()
-                                    | (_, SOME (M.TInterProc {callee = M.IpEval _, ...})) => ()
-                                    | _                                                   => Try.fail()
+                                | OTkVal t => 
+                                  (case (Use.toRhs use, Use.toTransfer use)
+                                    of (SOME (M.RhsThunkGetValue _), _)                    => ()
+                                     | (_, SOME (M.TInterProc {callee = M.IpEval _, ...})) => ()
+                                     | _                                                   => Try.fail())
+                                | OTkEnv ts => 
+                                  let
+                                    (* Ensure that every use is an environment for
+                                     * which we have a value. *)
+                                     val {typ, fvs, thunk, idx} = <@ MU.Rhs.Dec.rhsThunkGetFv <! Use.toRhs @@ use
+                                     val () = Try.require (idx < Vector.length ts)
+                                  in ()
+                                  end
+                                | OClEnv ts => 
+                                  let
+                                    (* Ensure that every use is an environment for
+                                     * which we have a value. *)
+                                     val {fvs, cls, idx} = <@ MU.Rhs.Dec.rhsClosureGetFv <! Use.toRhs @@ use
+                                     val () = Try.require (idx < Vector.length ts)
+                                  in ()
+                                  end
                             end)
                   val uses = Use.getUses (imil, v)
                   val isOk = Vector.forall (uses, isSome o ok)
@@ -2519,7 +2550,7 @@ struct
                        val () = WS.addUses (worklist, uses)
                      in vs
                      end
-                   | SOME (OThunk t) => 
+                   | SOME (OTkVal t) => 
                      let
                        val vnew = Var.clone (imil, v)
                        val vval = Var.related (imil, v, "cnts", t, M.VkLocal)
@@ -2533,7 +2564,41 @@ struct
                        val () = WS.addUses (worklist, uses)
                      in Vector.new1 vval
                      end
-                   | ONone => Vector.new1 v)
+                   | SOME (OTkEnv ts) => 
+                     let
+                       val vnew = Var.clone (imil, v)
+                       val mkvar = fn (i, t) => Var.related (imil, v, Int.toString i, t, M.VkLocal)
+                       val vs = Vector.mapi (ts, mkvar)
+                       val aa = Vector.map (vs, M.SVariable)
+                       val fks = Vector.map (ts, fn t => MU.FieldKind.fromTyp (config, t))
+                       val fvs = Vector.zip (fks, aa)
+                       val rhs = M.RhsThunkInit {typ = M.FkRef, thunk = NONE, code = NONE, fvs = fvs, fx = Effect.Total}
+                       val mi = MU.Instruction.new (vnew, rhs)
+                       val () = Use.replaceUses (imil, v, M.SVariable vnew)
+                       val inew = IInstr.insertAfter (imil, i, mi)
+                       val () = WS.addInstr (worklist, inew)
+                       val uses = Use.getUses (imil, vnew)
+                       val () = WS.addUses (worklist, uses)
+                     in vs
+                     end
+                   | SOME (OClEnv ts) => 
+                     let
+                       val vnew = Var.clone (imil, v)
+                       val mkvar = fn (i, t) => Var.related (imil, v, Int.toString i, t, M.VkLocal)
+                       val vs = Vector.mapi (ts, mkvar)
+                       val aa = Vector.map (vs, M.SVariable)
+                       val fks = Vector.map (ts, fn t => MU.FieldKind.fromTyp (config, t))
+                       val fvs = Vector.zip (fks, aa)
+                       val rhs = M.RhsClosureInit {cls = NONE, code = NONE, fvs = fvs}
+                       val mi = MU.Instruction.new (vnew, rhs)
+                       val () = Use.replaceUses (imil, v, M.SVariable vnew)
+                       val inew = IInstr.insertAfter (imil, i, mi)
+                       val () = WS.addInstr (worklist, inew)
+                       val uses = Use.getUses (imil, vnew)
+                       val () = WS.addUses (worklist, uses)
+                     in vs
+                     end
+                   | NONE => Vector.new1 v)
             val parmsV = 
                 Vector.map2 (parms, defTypes, rewriteParm)
             val parms = Vector.concatV parmsV
@@ -2549,8 +2614,10 @@ struct
              fn (arg, object) => 
                 (case object
                   of NONE => Vector.new1 arg
-                   | SOME (OThunk arg) => Vector.new1 arg
-                   | SOME (OTuple args) => args)
+                   | SOME (OTkVal arg) => Vector.new1 arg
+                   | SOME (OTuple args) => args
+                   | SOME (OTkEnv args) => args
+                   | SOME (OClEnv args) => args)
 
             val rewriteTarget = 
              fn (M.T {block, arguments}, objects) => 
