@@ -198,6 +198,7 @@ struct
          ("OptRational",      "Rationals represented as ints"  ),
          ("ClosureGetFv",     "Closure fv projections reduced" ),
          ("ClosureInitCode",  "Closure code ptrs killed"       ),
+         ("DeadParameter",    "Dead function args killed"      ),
          ("PSetCond",         "SetCond ops reduced"            ),
          ("PSetGet",          "SetGet ops reduced"             ),
          ("PSetNewEta",       "SetNew ops eta reduced"         ),
@@ -271,6 +272,7 @@ struct
     val blockKill = clicker "BlockKill"
     val callInline = clicker "CallInline"
     val dce = clicker "DCE"
+    val deadParameter = clicker "DeadParameter"
     val etaSwitch = clicker "EtaSwitch"
     val functionWrap = clicker "FunctionWrap"
     val globalized = clicker "Globalized"
@@ -1231,7 +1233,158 @@ struct
         in try (Click.functionWrap, f)
         end
 
-    val reduce = thunkToThunkVal or thunkEta or functionWrap
+    val deadParameter = 
+        let
+          val f = 
+           fn ((d, imil, ws), c) => 
+              let
+                val () = Try.require (not (IFunc.getEscapes (imil, c)))
+                val config = PD.getConfig d
+                val fname = IFunc.getFName (imil, c)
+                val cc = IFunc.getCallConv (imil, c)
+                val args = IFunc.getArgs (imil, c)
+                val () = case cc
+                          of M.CcThunk _ => Try.fail ()
+                           | _           => ()
+                val uses = Use.getUses (imil, fname)
+                val usedInInstrs = Vector.keepAllMap (uses, Use.toIInstr)
+                val usedInGlobals = Vector.keepAllMap (uses, Use.toIGlobal)
+                (* Find all of the calls, being defensive about
+                 * code annotations.
+                 *)
+                val calls = 
+                    let
+                      val getCall = 
+                          Try.lift 
+                            (fn ii => 
+                                let
+                                  val t = <@ IInstr.toTransfer ii
+                                  val {callee, ret, fx} = <@ MU.Transfer.Dec.tInterProc t
+                                  val {call, args} = <@ MU.InterProc.Dec.ipCall callee
+                                in (ii, call, args, ret, fx)
+                                end)
+                      val checkCall = 
+                       fn (ii, call, args, ret, fx) =>
+                          let
+                            val ok = SOME (ii, call, args, ret, fx)
+                            val r = 
+                                (case call
+                                  of M.CDirectClosure {cls, code} => 
+                                     if (code = fname) then ok else NONE
+                                   | M.CCode          {ptr, code} => 
+                                     if (ptr = fname) then ok else NONE
+                                   | M.CClosure {cls, code}       => 
+                                     if VS.member (#possible code, fname) then 
+                                       Try.fail ()
+                                     else
+                                       NONE)
+                          in r
+                          end
+                      val calls = Vector.keepAllMap (usedInInstrs, getCall)
+                      val calls = Vector.keepAllMap (calls, checkCall)
+                    in calls
+                    end
+
+                val (killClosure, argsP) = 
+                    let
+                      val deadC = 
+                       fn (v, dead) => dead andalso Vector.length (Use.getUses (imil, v)) = 0
+                      val killClosure = MU.CallConv.fold (cc, false, deadC)
+                      val dead = 
+                       fn (v, changed) => 
+                          let
+                            val d = Vector.length (Use.getUses (imil, v)) = 0
+                          in (d, changed orelse d)
+                          end
+                      val (argsP, changed) = Vector.mapAndFold (args, killClosure, dead)
+                      val () = Try.require changed
+                    in  (killClosure, argsP)
+                    end
+
+                (* Kill the function arguments*)
+                val () = 
+                    let
+                      val kill =
+                       fn vP => fn (i, v) => if Vector.sub (vP, i) then NONE else SOME v
+                      val cc = 
+                          if killClosure then 
+                            M.CcCode
+                          else
+                            cc
+                      val args = Vector.keepAllMapi (args, kill argsP)
+                      val () = IFunc.setCallConv (imil, c, cc)
+                      val () = IFunc.setArgs (imil, c, args)
+                      val getVT = fn v => MTT.variable (config, IMil.T.getSi imil, v)
+                      val ccT = MU.CallConv.map (cc, getVT)
+                      val argsT = Vector.map (args, getVT)
+                      val ressT = IFunc.getRtyps (imil, c)
+                      val t = M.TCode {cc = ccT, args = argsT, ress = ressT}
+                      val () = Var.setInfo (imil, fname, t, M.VkGlobal)
+                    in ()
+                    end
+                (* Modify all of the calls appropriately *)
+                val () = 
+                    let
+                      val rewrite = 
+                       fn (ii, call, args, ret, fx) => 
+                          let
+                            val call = 
+                                if killClosure then 
+                                  M.CCode {ptr = fname, code = {possible = VS.singleton fname, exhaustive = true}}
+                                else
+                                  call
+                            val kill = fn (i, a) => if Vector.sub (argsP, i) then NONE else SOME a
+                            val args = Vector.keepAllMapi (args, kill)
+                            val callee = M.IpCall {call = call, args = args}
+                            val ip = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                            val () = IInstr.replaceTransfer (imil, ii, ip)
+                          in ()
+                          end
+                    in Vector.foreach (calls, rewrite)
+                    end
+                (* Eliminate the function pointer from closures if the closure is being killed *)
+                val () =
+                    if killClosure then 
+                      let
+                        val doIInstr = 
+                            Try.lift
+                              (fn ii =>
+                                  let
+                                    val M.I {dests, n, rhs} = <@ IInstr.toInstruction ii
+                                    val {cls, code, fvs} = <@ MU.Rhs.Dec.rhsClosureInit rhs
+                                    val fname' = <- code
+                                    val () = Try.require (fname = fname')
+                                    val rhs = M.RhsClosureInit {cls = cls, code = NONE, fvs = fvs}
+                                    val mi = M.I {dests = dests, n = n, rhs = rhs}
+                                    val () = IInstr.replaceInstruction (imil, ii, mi)
+                                  in ()
+                                  end)
+                        val doIGlobal = 
+                            Try.lift
+                              (fn ig =>
+                                  let
+                                    val (v, g) = <@ IGlobal.toGlobal ig
+                                    val {code, fvs} = <@ MU.Global.Dec.gClosure g
+                                    val fname' = <- code
+                                    val () = Try.require (fname = fname')
+                                    val g = M.GClosure {code = NONE, fvs = fvs}
+                                    val () = IGlobal.replaceGlobal (imil, ig, (v, g))
+                                  in ()
+                                  end)
+                        val () = Vector.foreach (usedInInstrs, ignore o doIInstr)
+                        val () = Vector.foreach (usedInGlobals, ignore o doIGlobal)
+                      in ()
+                      end
+                    else
+                      ()
+                val () = WS.addUses (ws, uses) 
+                val l = [I.ItemFunc c]
+              in l
+              end
+        in try (Click.deadParameter, f)
+        end
+
+    val reduce = thunkToThunkVal or thunkEta or deadParameter or functionWrap
 
   end (* structure FuncR *)
 
@@ -2136,7 +2289,9 @@ struct
     struct
 
       datatype 'a object = OTuple of 'a Vector.t
-                         | OThunk of 'a
+                         | OTkVal of 'a
+                         | OTkEnv of 'a Vector.t
+                         | OClEnv of 'a Vector.t
 
       type arg = M.operand object option
       type argVec = arg Vector.t
@@ -2184,9 +2339,12 @@ struct
                 val res = 
                     case <@ Def.toMilDef o Def.get @@ (imil, v)
                      of MU.Def.DefGlobal (M.GTuple {inits, ...})                   => OTuple inits
-                      | MU.Def.DefGlobal (M.GThunkValue {ofVal, ...})              => OThunk ofVal
+                      | MU.Def.DefGlobal (M.GThunkValue {ofVal, ...})              => OTkVal ofVal
+                      | MU.Def.DefGlobal (M.GClosure {fvs, ...})                   => OClEnv (Vector.map (fvs, #2))
                       | MU.Def.DefRhs (M.RhsTuple {inits, mdDesc})                 => OTuple inits
-                      | MU.Def.DefRhs (M.RhsThunkValue {typ, thunk = NONE, ofVal}) => OThunk ofVal
+                      | MU.Def.DefRhs (M.RhsThunkValue {typ, thunk = NONE, ofVal}) => OTkVal ofVal
+                      | MU.Def.DefRhs (M.RhsThunkInit {typ, thunk, code, fvs, fx}) => OTkEnv (Vector.map (fvs, #2))
+                      | MU.Def.DefRhs (M.RhsClosureInit {cls, code, fvs})          => OClEnv (Vector.map (fvs, #2))
                       | _                                                          => Try.fail ()
               in res
               end)
@@ -2251,7 +2409,10 @@ struct
                    fn object => 
                       (case object
                         of OTuple ts => OTuple (MilType.Typer.operands (config, si, ts))
-                         | OThunk t  => OThunk (MilType.Typer.operand (config, si, t)))
+                         | OTkVal t  => OTkVal (MilType.Typer.operand (config, si, t))
+                         | OTkEnv ts => OTkEnv (MilType.Typer.operands (config, si, ts))
+                         | OClEnv ts => OClEnv (MilType.Typer.operands (config, si, ts))
+                      )
 
                   val summarizeArgs = 
                    fn objects => Vector.map (objects, fn opt => Option.map (opt, typeOfObject))
@@ -2262,21 +2423,28 @@ struct
                   val combineObject =
                       Try.lift 
                         (fn (objO, tobjO) => 
-                            (case (typeOfObject (<- objO), <- tobjO)
-                              of (OTuple ts1, OTuple ts2) => 
-                                 let
-                                   val () = Try.require (Vector.length ts1 = Vector.length ts2)
-                                   val ts = Vector.map2 (ts1, ts2, fn (t1, t2) => MilType.Type.lub (config, t1, t2))
-                                   val () = Try.require (Vector.forall (ts, consistent))
-                                 in OTuple ts
-                                 end
-                               | (OThunk t1, OThunk t2) => 
+                            let
+                              val doTs = 
+                               fn (ts1, ts2) => 
+                                  let
+                                    val () = Try.require (Vector.length ts1 = Vector.length ts2)
+                                    val ts = Vector.map2 (ts1, ts2, fn (t1, t2) => MilType.Type.lub (config, t1, t2))
+                                    val () = Try.require (Vector.forall (ts, consistent))
+                                  in ts
+                                  end
+                            in
+                              case (typeOfObject (<- objO), <- tobjO)
+                               of (OTuple ts1, OTuple ts2) => OTuple (doTs (ts1, ts2))
+                               | (OTkVal t1, OTkVal t2) => 
                                  let
                                    val t = MilType.Type.lub (config, t1, t2)
                                    val () = Try.require (consistent t)
-                                 in OThunk t
+                                 in OTkVal t
                                  end
-                               | _ => Try.fail ()))
+                               | (OTkEnv ts1, OTkEnv ts2) => OTkEnv (doTs (ts1, ts2))
+                               | (OClEnv ts1, OClEnv ts2) => OClEnv (doTs (ts1, ts2))
+                               | _ => Try.fail ()
+                            end)
                       
                   val combineObjects = 
                    fn (objects, tobjects) => 
@@ -2328,11 +2496,27 @@ struct
                                      val () = Try.require (MU.FieldDescriptor.immutable fd)
                                   in ()
                                   end
-                                | OThunk t => 
-                                  case (Use.toRhs use, Use.toTransfer use)
-                                   of (SOME (M.RhsThunkGetValue _), _)                    => ()
-                                    | (_, SOME (M.TInterProc {callee = M.IpEval _, ...})) => ()
-                                    | _                                                   => Try.fail()
+                                | OTkVal t => 
+                                  (case (Use.toRhs use, Use.toTransfer use)
+                                    of (SOME (M.RhsThunkGetValue _), _)                    => ()
+                                     | (_, SOME (M.TInterProc {callee = M.IpEval _, ...})) => ()
+                                     | _                                                   => Try.fail())
+                                | OTkEnv ts => 
+                                  let
+                                    (* Ensure that every use is an environment for
+                                     * which we have a value. *)
+                                     val {typ, fvs, thunk, idx} = <@ MU.Rhs.Dec.rhsThunkGetFv <! Use.toRhs @@ use
+                                     val () = Try.require (idx < Vector.length ts)
+                                  in ()
+                                  end
+                                | OClEnv ts => 
+                                  let
+                                    (* Ensure that every use is an environment for
+                                     * which we have a value. *)
+                                     val {fvs, cls, idx} = <@ MU.Rhs.Dec.rhsClosureGetFv <! Use.toRhs @@ use
+                                     val () = Try.require (idx < Vector.length ts)
+                                  in ()
+                                  end
                             end)
                   val uses = Use.getUses (imil, v)
                   val isOk = Vector.forall (uses, isSome o ok)
@@ -2366,7 +2550,7 @@ struct
                        val () = WS.addUses (worklist, uses)
                      in vs
                      end
-                   | SOME (OThunk t) => 
+                   | SOME (OTkVal t) => 
                      let
                        val vnew = Var.clone (imil, v)
                        val vval = Var.related (imil, v, "cnts", t, M.VkLocal)
@@ -2380,7 +2564,41 @@ struct
                        val () = WS.addUses (worklist, uses)
                      in Vector.new1 vval
                      end
-                   | ONone => Vector.new1 v)
+                   | SOME (OTkEnv ts) => 
+                     let
+                       val vnew = Var.clone (imil, v)
+                       val mkvar = fn (i, t) => Var.related (imil, v, Int.toString i, t, M.VkLocal)
+                       val vs = Vector.mapi (ts, mkvar)
+                       val aa = Vector.map (vs, M.SVariable)
+                       val fks = Vector.map (ts, fn t => MU.FieldKind.fromTyp (config, t))
+                       val fvs = Vector.zip (fks, aa)
+                       val rhs = M.RhsThunkInit {typ = M.FkRef, thunk = NONE, code = NONE, fvs = fvs, fx = Effect.Total}
+                       val mi = MU.Instruction.new (vnew, rhs)
+                       val () = Use.replaceUses (imil, v, M.SVariable vnew)
+                       val inew = IInstr.insertAfter (imil, i, mi)
+                       val () = WS.addInstr (worklist, inew)
+                       val uses = Use.getUses (imil, vnew)
+                       val () = WS.addUses (worklist, uses)
+                     in vs
+                     end
+                   | SOME (OClEnv ts) => 
+                     let
+                       val vnew = Var.clone (imil, v)
+                       val mkvar = fn (i, t) => Var.related (imil, v, Int.toString i, t, M.VkLocal)
+                       val vs = Vector.mapi (ts, mkvar)
+                       val aa = Vector.map (vs, M.SVariable)
+                       val fks = Vector.map (ts, fn t => MU.FieldKind.fromTyp (config, t))
+                       val fvs = Vector.zip (fks, aa)
+                       val rhs = M.RhsClosureInit {cls = NONE, code = NONE, fvs = fvs}
+                       val mi = MU.Instruction.new (vnew, rhs)
+                       val () = Use.replaceUses (imil, v, M.SVariable vnew)
+                       val inew = IInstr.insertAfter (imil, i, mi)
+                       val () = WS.addInstr (worklist, inew)
+                       val uses = Use.getUses (imil, vnew)
+                       val () = WS.addUses (worklist, uses)
+                     in vs
+                     end
+                   | NONE => Vector.new1 v)
             val parmsV = 
                 Vector.map2 (parms, defTypes, rewriteParm)
             val parms = Vector.concatV parmsV
@@ -2396,8 +2614,10 @@ struct
              fn (arg, object) => 
                 (case object
                   of NONE => Vector.new1 arg
-                   | SOME (OThunk arg) => Vector.new1 arg
-                   | SOME (OTuple args) => args)
+                   | SOME (OTkVal arg) => Vector.new1 arg
+                   | SOME (OTuple args) => args
+                   | SOME (OTkEnv args) => args
+                   | SOME (OClEnv args) => args)
 
             val rewriteTarget = 
              fn (M.T {block, arguments}, objects) => 
