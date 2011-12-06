@@ -49,6 +49,7 @@ sig
     structure NodeDominance : DOMINANCE where type node = node
     structure LabelDominance : DOMINANCE where type node = label
 
+    val layoutNode : t * node -> Layout.t
     (* Layout the cfg in dot  format. The second argument is the graph
      * label. *)
     val layoutDot : t * Layout.t option -> Layout.t
@@ -278,20 +279,26 @@ struct
   structure LabelDominance = DominanceF (type node = label
                                          val compare = I.labelCompare)
 
+  fun layoutNode (cfg, n) = 
+      let
+        val C {graph, entry, exit, ...} = cfg
+      in
+        if G.Node.equal (n, entry) then
+          L.str "Entry"
+        else if G.Node.equal (n, exit) then
+          L.str "Exit"
+        else
+          case nodeGetLabel (cfg, n)
+           of SOME l => Identifier.layoutLabel l
+            | NONE =>
+              fail ("layoutNode",
+                    "CFG node for block without label")
+      end
+
   fun layoutDot (cfg, label) =
       let
         val C {graph, entry, exit, ...} = cfg
-        fun nodeName (n) =
-            if G.Node.equal (n, entry) then
-              L.str "Entry"
-            else if G.Node.equal (n, exit) then
-              L.str "Exit"
-            else
-              case nodeGetLabel (cfg, n)
-               of SOME l => Identifier.layoutLabel l
-                | NONE =>
-                  fail ("layoutDot.nodeName",
-                        "CFG node for block without label")
+        fun nodeName n = layoutNode (cfg, n)
         val graphTitle =
             case label
              of SOME l => l 

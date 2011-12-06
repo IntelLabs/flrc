@@ -474,7 +474,7 @@ struct
               case r
                of A.RUncalled            => (keep,                funs                                               )
                 | A.RUnknown             => (VS.insert (keep, f), funs                                               )
-                | A.RFunc c              => (keep,                addEntry (funs, c, (f, MU.Cuts.none, NONE))        )
+                | A.RFunc c              => (keep,                addEntry (funs, c, (f, MU.Cuts.justExits, NONE))   )
                 | A.RCont (rvs, r, cuts) => (keep,                addEntry (funs, getFun r, (f, cuts, SOME (rvs, r))))
           val (keep, funs) = VD.fold (funs, (VS.empty, VD.empty), doOne)
         in
@@ -836,7 +836,8 @@ struct
               case getFun (env, f)
                of NONE => x
                 | SOME (FI fs) => List.fold (fs, x, doOneA cuts)
-          val (fs, funEntries, retMap, retBlks) = doOneB (x, MU.Cuts.none, ([], VD.empty, LD.empty, []))
+          (* justExits is the identity for inlineCall *)
+          val (fs, funEntries, retMap, retBlks) = doOneB (x, MU.Cuts.justExits, ([], VD.empty, LD.empty, []))
           (* Deconstruct the code *)
           val M.F {fx, escapes, recursive, cc, args, rtyps, body} = f
           val M.CB {entry, blocks} = body
