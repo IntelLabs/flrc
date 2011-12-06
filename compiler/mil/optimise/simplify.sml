@@ -198,6 +198,7 @@ struct
          ("OptRational",      "Rationals represented as ints"  ),
          ("ClosureGetFv",     "Closure fv projections reduced" ),
          ("ClosureInitCode",  "Closure code ptrs killed"       ),
+         ("DeadParameter",    "Dead function args killed"      ),
          ("PSetCond",         "SetCond ops reduced"            ),
          ("PSetGet",          "SetGet ops reduced"             ),
          ("PSetNewEta",       "SetNew ops eta reduced"         ),
@@ -271,6 +272,7 @@ struct
     val blockKill = clicker "BlockKill"
     val callInline = clicker "CallInline"
     val dce = clicker "DCE"
+    val deadParameter = clicker "DeadParameter"
     val etaSwitch = clicker "EtaSwitch"
     val functionWrap = clicker "FunctionWrap"
     val globalized = clicker "Globalized"
@@ -1231,7 +1233,158 @@ struct
         in try (Click.functionWrap, f)
         end
 
-    val reduce = thunkToThunkVal or thunkEta or functionWrap
+    val deadParameter = 
+        let
+          val f = 
+           fn ((d, imil, ws), c) => 
+              let
+                val () = Try.require (not (IFunc.getEscapes (imil, c)))
+                val config = PD.getConfig d
+                val fname = IFunc.getFName (imil, c)
+                val cc = IFunc.getCallConv (imil, c)
+                val args = IFunc.getArgs (imil, c)
+                val () = case cc
+                          of M.CcThunk _ => Try.fail ()
+                           | _           => ()
+                val uses = Use.getUses (imil, fname)
+                val usedInInstrs = Vector.keepAllMap (uses, Use.toIInstr)
+                val usedInGlobals = Vector.keepAllMap (uses, Use.toIGlobal)
+                (* Find all of the calls, being defensive about
+                 * code annotations.
+                 *)
+                val calls = 
+                    let
+                      val getCall = 
+                          Try.lift 
+                            (fn ii => 
+                                let
+                                  val t = <@ IInstr.toTransfer ii
+                                  val {callee, ret, fx} = <@ MU.Transfer.Dec.tInterProc t
+                                  val {call, args} = <@ MU.InterProc.Dec.ipCall callee
+                                in (ii, call, args, ret, fx)
+                                end)
+                      val checkCall = 
+                       fn (ii, call, args, ret, fx) =>
+                          let
+                            val ok = SOME (ii, call, args, ret, fx)
+                            val r = 
+                                (case call
+                                  of M.CDirectClosure {cls, code} => 
+                                     if (code = fname) then ok else NONE
+                                   | M.CCode          {ptr, code} => 
+                                     if (ptr = fname) then ok else NONE
+                                   | M.CClosure {cls, code}       => 
+                                     if VS.member (#possible code, fname) then 
+                                       Try.fail ()
+                                     else
+                                       NONE)
+                          in r
+                          end
+                      val calls = Vector.keepAllMap (usedInInstrs, getCall)
+                      val calls = Vector.keepAllMap (calls, checkCall)
+                    in calls
+                    end
+
+                val (killClosure, argsP) = 
+                    let
+                      val deadC = 
+                       fn (v, dead) => dead andalso Vector.length (Use.getUses (imil, v)) = 0
+                      val killClosure = MU.CallConv.fold (cc, false, deadC)
+                      val dead = 
+                       fn (v, changed) => 
+                          let
+                            val d = Vector.length (Use.getUses (imil, v)) = 0
+                          in (d, changed orelse d)
+                          end
+                      val (argsP, changed) = Vector.mapAndFold (args, killClosure, dead)
+                      val () = Try.require changed
+                    in  (killClosure, argsP)
+                    end
+
+                (* Kill the function arguments*)
+                val () = 
+                    let
+                      val kill =
+                       fn vP => fn (i, v) => if Vector.sub (vP, i) then NONE else SOME v
+                      val cc = 
+                          if killClosure then 
+                            M.CcCode
+                          else
+                            cc
+                      val args = Vector.keepAllMapi (args, kill argsP)
+                      val () = IFunc.setCallConv (imil, c, cc)
+                      val () = IFunc.setArgs (imil, c, args)
+                      val getVT = fn v => MTT.variable (config, IMil.T.getSi imil, v)
+                      val ccT = MU.CallConv.map (cc, getVT)
+                      val argsT = Vector.map (args, getVT)
+                      val ressT = IFunc.getRtyps (imil, c)
+                      val t = M.TCode {cc = ccT, args = argsT, ress = ressT}
+                      val () = Var.setInfo (imil, fname, t, M.VkGlobal)
+                    in ()
+                    end
+                (* Modify all of the calls appropriately *)
+                val () = 
+                    let
+                      val rewrite = 
+                       fn (ii, call, args, ret, fx) => 
+                          let
+                            val call = 
+                                if killClosure then 
+                                  M.CCode {ptr = fname, code = {possible = VS.singleton fname, exhaustive = true}}
+                                else
+                                  call
+                            val kill = fn (i, a) => if Vector.sub (argsP, i) then NONE else SOME a
+                            val args = Vector.keepAllMapi (args, kill)
+                            val callee = M.IpCall {call = call, args = args}
+                            val ip = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                            val () = IInstr.replaceTransfer (imil, ii, ip)
+                          in ()
+                          end
+                    in Vector.foreach (calls, rewrite)
+                    end
+                (* Eliminate the function pointer from closures if the closure is being killed *)
+                val () =
+                    if killClosure then 
+                      let
+                        val doIInstr = 
+                            Try.lift
+                              (fn ii =>
+                                  let
+                                    val M.I {dests, n, rhs} = <@ IInstr.toInstruction ii
+                                    val {cls, code, fvs} = <@ MU.Rhs.Dec.rhsClosureInit rhs
+                                    val fname' = <- code
+                                    val () = Try.require (fname = fname')
+                                    val rhs = M.RhsClosureInit {cls = cls, code = NONE, fvs = fvs}
+                                    val mi = M.I {dests = dests, n = n, rhs = rhs}
+                                    val () = IInstr.replaceInstruction (imil, ii, mi)
+                                  in ()
+                                  end)
+                        val doIGlobal = 
+                            Try.lift
+                              (fn ig =>
+                                  let
+                                    val (v, g) = <@ IGlobal.toGlobal ig
+                                    val {code, fvs} = <@ MU.Global.Dec.gClosure g
+                                    val fname' = <- code
+                                    val () = Try.require (fname = fname')
+                                    val g = M.GClosure {code = NONE, fvs = fvs}
+                                    val () = IGlobal.replaceGlobal (imil, ig, (v, g))
+                                  in ()
+                                  end)
+                        val () = Vector.foreach (usedInInstrs, ignore o doIInstr)
+                        val () = Vector.foreach (usedInGlobals, ignore o doIGlobal)
+                      in ()
+                      end
+                    else
+                      ()
+                val () = WS.addUses (ws, uses) 
+                val l = [I.ItemFunc c]
+              in l
+              end
+        in try (Click.deadParameter, f)
+        end
+
+    val reduce = thunkToThunkVal or thunkEta or deadParameter or functionWrap
 
   end (* structure FuncR *)
 

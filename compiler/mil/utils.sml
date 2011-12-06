@@ -112,6 +112,8 @@ sig
     type 'a t = 'a Mil.callConv
     val compare : 'a Compare.t -> 'a t Compare.t
     val eq : ('a * 'a -> bool) -> ('a t * 'a t -> bool)
+    val fold : 'a t * 'b * ('a * 'b -> 'b) -> 'b
+    val mapAndFold : 'a t * 'b * ('a * 'b -> ('c * 'b)) -> ('c t * 'b)
     val map : 'a t * ('a -> 'b) -> 'b t
     val foreach : 'a t * ('a -> unit) -> unit
     structure Dec :
@@ -1954,6 +1956,38 @@ struct
 
     val compare = Compare.callConv
     val eq = Eq.callConv
+
+    fun fold (cc, a, f) = 
+        case cc
+         of M.CcCode => a
+          | M.CcClosure {cls, fvs} =>
+            let
+              val a = f (cls, a)
+              val a = Vector.fold (fvs, a, f)
+            in a
+            end
+          | M.CcThunk {thunk, fvs} =>
+            let
+              val a = f (thunk, a)
+              val a = Vector.fold (fvs, a, f)
+            in a
+            end
+
+    fun mapAndFold (cc, a, f) = 
+        case cc
+         of M.CcCode => (M.CcCode, a)
+          | M.CcClosure {cls, fvs} =>
+            let
+              val (cls, a) = f (cls, a)
+              val (fvs, a) = Vector.mapAndFold (fvs, a, f)
+            in (M.CcClosure {cls = cls, fvs = fvs}, a)
+            end
+          | M.CcThunk {thunk, fvs} =>
+            let
+              val (thunk, a) = f (thunk, a)
+              val (fvs, a) = Vector.mapAndFold (fvs, a, f)
+            in (M.CcThunk {thunk = thunk, fvs = fvs}, a)
+            end
 
     fun map (cc, f) =
         case cc
