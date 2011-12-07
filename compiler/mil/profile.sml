@@ -539,11 +539,18 @@ functor MilProfilerF (type env
         let
           val dt = MilCfg.getNodeDomTree (cfg, MilCfg.entry cfg)
           val dom = CfgDominanceInfo.new dt
-          fun dominates (n1, n2) = CfgDominanceInfo.dominates (dom, n1, n2)
+          fun dominates (n1, n2) = 
+              CfgDominanceInfo.contains (dom, n1) andalso 
+              CfgDominanceInfo.contains (dom, n2) andalso
+              CfgDominanceInfo.dominates (dom, n1, n2)
 
           val pdt = MilCfg.getNodePDomTree (cfg, MilCfg.exit cfg)
           val pdom = CfgDominanceInfo.new pdt
-          fun postDominates (n1, n2) = CfgDominanceInfo.dominates (pdom, n1, n2)
+          fun postDominates (n1, n2) = 
+              CfgDominanceInfo.contains (pdom, n1) andalso 
+              CfgDominanceInfo.contains (pdom, n2) andalso
+              CfgDominanceInfo.dominates (pdom, n1, n2)
+
 
           (* Collect the loop headers and the all loop exit edges from cfg. *)
           fun analyzeLoops (allNodes  : Mil.block ID.LabelDict.t ID.LabelDict.t,
@@ -895,7 +902,9 @@ functor MilProfilerF (type env
                 let
                   val src = Graph.Edge.from e
                   val dst = Graph.Edge.to e
-                  val isBackEdg = ACfgDominanceInfo.dominates (dominance, dst, src)
+                  val isBackEdg = ACfgDominanceInfo.contains (dominance, dst) andalso 
+                                  ACfgDominanceInfo.contains (dominance, src) andalso
+                                  ACfgDominanceInfo.dominates (dominance, dst, src)
                   (* Sanity checking. *)
                   val () = if isBackEdg andalso 
                               not (Node.isLoopHeader dst) 

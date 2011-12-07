@@ -39,8 +39,9 @@ sig
     val unreachable : t * node -> node list
 
     val startLabel : t -> label
-
+    (* Nodes unreachable from the designated start node are not in tree *)
     val getNodeDomTree       : t * node -> node Tree.t
+    (* Nodes unreachable from the designated start node are not in tree *)
     val getNodePDomTree      : t * node -> node Tree.t
     val getLabelDomTree      : t -> label Tree.t
     val getLabelBlockDomTree : t -> (label * block) Tree.t

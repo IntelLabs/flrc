@@ -10,6 +10,9 @@ sig
   type t
   type node
 
+  (* Note: Cfgs may contain nodes that are not in the obvious dominator
+   * tree.
+   *)
   val new      : node Tree.t -> t
   val getTree  : t -> node Tree.t
   val dominates: t * node * node -> bool
