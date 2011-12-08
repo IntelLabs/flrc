@@ -1272,12 +1272,12 @@ struct
                                   of M.CDirectClosure {cls, code} => 
                                      if (code = fname) then ok else NONE
                                    | M.CCode          {ptr, code} => 
-                                     if (ptr = fname) then ok else NONE
+                                     if (ptr = fname) then ok else 
+                                     if VS.member (#possible code, fname) then Try.fail ()
+                                     else NONE
                                    | M.CClosure {cls, code}       => 
-                                     if VS.member (#possible code, fname) then 
-                                       Try.fail ()
-                                     else
-                                       NONE)
+                                     if VS.member (#possible code, fname) then Try.fail ()
+                                     else NONE)
                           in r
                           end
                       val calls = Vector.keepAllMap (usedInInstrs, getCall)
