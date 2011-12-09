@@ -4,34 +4,43 @@
 (* Provides utilities for extracting the set of bound variables from
    some mil AST subtree *)
 
-signature MIL_BOUND_VARS =
+signature MIL_BOUND =
 sig
-  type t
-  val rhs : t * Mil.rhs -> Identifier.VariableSet.t
-  val instruction : t * Mil.instruction -> Identifier.VariableSet.t
-  val call : t * Mil.call -> Identifier.VariableSet.t
-  val eval : t * Mil.eval -> Identifier.VariableSet.t
-  val transfer : t * Mil.transfer -> Identifier.VariableSet.t
-  val block : t * Mil.label * Mil.block -> Identifier.VariableSet.t
-  val blocks : t * Mil.block Mil.LD.t -> Identifier.VariableSet.t
-  val global : t * Mil.variable * Mil.global -> Identifier.VariableSet.t
-  val program : t * Mil.t -> Identifier.VariableSet.t
+  type t 
+  val rhs : Config.t * Mil.rhs -> t
+  val instruction : Config.t * Mil.instruction -> t
+  val call : Config.t * Mil.call -> t
+  val eval : Config.t * Mil.eval -> t
+  val transfer : Config.t * Mil.transfer -> t
+  val block : Config.t * Mil.label * Mil.block -> t
+  val blocks : Config.t * Mil.block Mil.LD.t -> t
+  val codeBody : Config.t * Mil.codeBody -> t
+  val code : Config.t * Mil.code -> t
+  val global : Config.t * Mil.variable * Mil.global -> t
+  val program : Config.t * Mil.t -> t
 end;
 
-structure MilBoundVars :> MIL_BOUND_VARS where type t = Config.t =
+structure MilBoundVarsLabels :> MIL_BOUND where type t = Mil.VS.t * Mil.LS.t =
 struct
-  type t = Config.t
-
   structure VS = Identifier.VariableSet
+  structure LS = Identifier.LabelSet
 
-  datatype state = S of VS.t ref
+  type t = VS.t * LS.t
 
-  fun mkState () = S (ref VS.empty)
-  fun finish (S state) = !state
+  datatype state = S of (VS.t ref * LS.t ref)
 
-  fun varBind (s as S bound, e, v) =
+  fun mkState () = S (ref VS.empty, ref LS.empty)
+  fun finish (S (vr, lr)) = (!vr, !lr)
+
+  fun varBind (s as S (vs, ls), e, v) =
       let
-        val () = bound := VS.insert (!bound, v)
+        val () = vs := VS.insert (!vs, v)
+      in e
+      end
+
+  fun labelBind (s as S (vs, ls), e, l) =
+      let
+        val () = ls := LS.insert (!ls, l)
       in e
       end
 
@@ -43,7 +52,7 @@ struct
                    val indent = 2
                    val externBind = SOME varBind
                    val variableBind = SOME varBind
-                   val labelBind = NONE
+                   val labelBind = SOME labelBind
                    val variableUse = NONE
                    val analyseJump = NONE
                    val analyseCut = NONE
@@ -79,7 +88,47 @@ struct
   val transfer = mk1 MA.analyseTransfer
   val block = mk2 MA.analyseBlock
   val blocks = mk1 MA.analyseBlocks
+  val codeBody = mk1 MA.analyseCodeBody
+  val code = mk1 MA.analyseCode
   val global = mk2 MA.analyseGlobal
   val program = mk1 MA.analyseProgram
+
+end;
+
+structure MilBoundVars :> MIL_BOUND where type t = Mil.VS.t =
+struct
+  type t = Mil.VS.t
+  structure MBVL = MilBoundVarsLabels
+
+  val rhs = #1 o MBVL.rhs
+  val instruction = #1 o MBVL.instruction
+  val call = #1 o MBVL.call
+  val eval = #1 o MBVL.eval
+  val transfer = #1 o MBVL.transfer
+  val block = #1 o MBVL.block
+  val blocks = #1 o MBVL.blocks
+  val codeBody = #1 o MBVL.codeBody
+  val code = #1 o MBVL.code
+  val global = #1 o MBVL.global
+  val program = #1 o MBVL.program
+
+end;
+
+structure MilBoundLabels :> MIL_BOUND where type t = Mil.LS.t =
+struct
+  type t = Mil.LS.t
+  structure MBVL = MilBoundVarsLabels
+
+  val rhs = #2 o MBVL.rhs
+  val instruction = #2 o MBVL.instruction
+  val call = #2 o MBVL.call
+  val eval = #2 o MBVL.eval
+  val transfer = #2 o MBVL.transfer
+  val block = #2 o MBVL.block
+  val blocks = #2 o MBVL.blocks
+  val codeBody = #2 o MBVL.codeBody
+  val code = #2 o MBVL.code
+  val global = #2 o MBVL.global
+  val program = #2 o MBVL.program
 
 end;

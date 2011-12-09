@@ -41,6 +41,7 @@ struct
     val transfer = lift2 transfer
     val block = lift3 block
     val blocks = lift2 blocks
+    val codeBody = lift2 codeBody
     val global = lift3 global
     val program = lift2 program
   end

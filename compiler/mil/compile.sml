@@ -30,6 +30,7 @@ struct
        (#"R", MilRep.Optimize.pass    ),
        (#"S", MilSimplify.pass        ),
        (#"s", MilLowerPSums.pass      ),
+       (#"T", MilThunkOptimize.pass   ),
        (#"t", MilLowerPTypes.pass     ),
        (#"V", MilCse.pass             ),
        (#"Y", MilLoopInvert.pass      ),
