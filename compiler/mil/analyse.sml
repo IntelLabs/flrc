@@ -12,10 +12,16 @@ sig
   val analyseTransfer : state * env * Mil.transfer -> unit
   val analyseBlock : state * env * Mil.label * Mil.block -> unit
   val analyseBlocks : state * env * Mil.block Mil.LD.t -> unit
+  val analyseCodeBody : state * env * Mil.codeBody -> unit
+  val analyseCode : state * env * Mil.code -> unit
   val analyseGlobal : state * env * Mil.variable * Mil.global -> unit
   val analyseProgram : state * env * Mil.t -> unit
 end;
 
+(* Each thing will be analyzed once.  There are no guarantees
+ * about ordering.  variable/label uses may be encountered before
+ * their binding sites.
+ *)
 functor MilAnalyseF (
   type state
   type env
@@ -371,7 +377,7 @@ functor MilAnalyseF (
       in ()
       end
 
-  fun analyseCode (s, e, v, f) =
+  fun analyseCode (s, e, f) =
       let
         val M.F {fx, escapes, recursive, cc, args, rtyps, body} = f
         val e =
@@ -396,13 +402,14 @@ functor MilAnalyseF (
 
   fun analyseGlobal (s, e, v, g) =
       let
+        val e = analyseBinder (s, e, v)
         val e = 
             case clientGlobal
              of NONE => e
               | SOME ag => ag (s, e, v, g)
       in
         case g
-         of M.GCode f                  => analyseCode (s, e, v, f)
+         of M.GCode f                  => analyseCode (s, e, f)
           | M.GErrorVal _              => ()
           | M.GIdx _                   => ()
           | M.GTuple {mdDesc, inits}   => analyseSimples (s, e, inits)
@@ -427,8 +434,6 @@ functor MilAnalyseF (
         val M.P {includes, externs, globals, symbolTable, entry} = p
         fun doOne (v, e) = analyseExtern (s, e, v)
         val e = VS.fold (MilUtils.Program.externVars p, e, doOne)
-        fun doOne (v, _, e) = analyseBinder (s, e, v)
-        val e = VD.fold (globals, e, doOne)
         fun doOne (v, g) = analyseGlobal (s, e, v, g)
         val () = VD.foreach (globals, doOne)
       in ()

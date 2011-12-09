@@ -6,6 +6,8 @@ sig
   type t
   val program     : Config.t * t * Mil.t -> Mil.t
   val global      : Config.t * t * Mil.variable * Mil.global -> Mil.variable * Mil.global
+  val code        : Config.t * t * Mil.code -> Mil.code
+  val codeBody    : Config.t * t * Mil.codeBody -> Mil.codeBody
   val block       : Config.t * t * Mil.label * Mil.block -> (Mil.label * Mil.block)
   val instruction : Config.t * t * Mil.instruction -> Mil.instruction
   val transfer    : Config.t * t * Mil.transfer -> Mil.transfer
@@ -109,6 +111,20 @@ struct
         in t
         end
 
+    fun codeBody (c, r, cb) = 
+        let
+          val (s, e) = mkStateEnv (c, r)
+          val cb = MR.codeBody (s, e, cb)
+        in cb
+        end
+
+    fun code (c, r, cd) = 
+        let
+          val (s, e) = mkStateEnv (c, r)
+          val cd = MR.code (s, e, cd)
+        in cd
+        end
+
     fun program (c, r, p) =
         let
           val (s, e) = mkStateEnv (c, r)
@@ -127,6 +143,8 @@ struct
     fun lift f (c, r, i) = f (c, lifts r, i)
     val instruction = lift VarLabel.instruction
     val transfer = lift VarLabel.transfer
+    val codeBody = lift VarLabel.codeBody
+    val code = lift VarLabel.code
     val program = lift VarLabel.program
   end
 
@@ -139,6 +157,8 @@ struct
     fun lift f (c, r, i) = f (c, lifts r, i)
     val instruction = lift VarLabel.instruction
     val transfer = lift VarLabel.transfer
+    val codeBody = lift VarLabel.codeBody
+    val code = lift VarLabel.code
     val program = lift VarLabel.program
   end
 

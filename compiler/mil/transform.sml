@@ -5,6 +5,7 @@ signature MIL_TRANSFORM = sig
   type state
   type env
   datatype order = ODfs | ODom | OAny
+  val codeBody : state * env * order * Mil.codeBody -> Mil.codeBody
   val globals : state * env * order * Mil.globals -> Mil.globals
   val program : state * env * order * Mil.t -> Mil.t
 end;
@@ -211,6 +212,14 @@ functor MilTransformF (
       in p
       end
 
+  val codeBody = 
+   fn (state, env, order, codeBody) => 
+      let
+        val changed = ref false
+        val codeBody' = doCodeBody (state, env, order, changed, codeBody)
+        val codeBody = if !changed then codeBody' else codeBody
+      in codeBody
+      end
   val globals = doGlobals
   val program = doProgram
 

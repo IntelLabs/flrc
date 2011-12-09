@@ -3,8 +3,9 @@
 
 signature RENAME = sig
 
-    type t
     type variable = Identifier.variable
+    type t = variable Identifier.VariableDict.t
+
 
     (* No renamings *)
     val none     : t
@@ -116,6 +117,8 @@ struct
                 | NONE => go (rs, map')
         in go (VD.toList map1, none)
         end
+
+    fun fromDict d = d
 
     fun layout map = 
         let
