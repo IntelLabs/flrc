@@ -557,6 +557,7 @@ sig
       val rhsPSetGet : t -> Mil.variable option
       val rhsPSetCond : t -> {bool : Mil.operand, ofVal: Mil.operand} option
       val rhsPSetQuery : t -> Mil.operand option
+      val rhsEnum : t -> {tag : Mil.operand, typ : Mil.fieldKind} option
       val rhsSum : t -> {tag : Mil.constant, ofVals : Mil.operand Vector.t, typs : Mil.fieldKind Vector.t} option
       val rhsSumProj : t -> {typs : Mil.fieldKind Vector.t, sum : Mil.variable, tag : Mil.constant, idx : int} option
       val rhsSumGetTag : t -> {typ : Mil.fieldKind, sum : Mil.variable} option
@@ -1090,6 +1091,7 @@ sig
       val simple : t -> Mil.simple option
       val pFunction : t -> {code : Mil.variable option, fvs : (Mil.fieldKind * Mil.operand) Vector.t} option
       val sum : t -> {tag : Mil.constant, ofVals : Mil.operand Vector.t, typs : Mil.fieldKind Vector.t} option
+      val sumOrEnum : t -> {tag : Mil.simple, ofVals : Mil.operand Vector.t, typs : Mil.fieldKind Vector.t} option
       val pSet : t -> Mil.simple option
     end (* structure Out *)
   end (* structure Def *)
@@ -1653,6 +1655,7 @@ struct
                              #cls, variable,
                              #idx, Int.compare)
           val psc  = C.rec2 (#bool, operand, #ofVal, operand)
+          val enm  = C.rec2 (#tag, operand, #typ, fieldKind)
           val sm   = C.rec3 (#tag, constant, #typs, C.vector fieldKind, #ofVals, C.vector operand)
           val smp  = C.rec4 (#typs, C.vector fieldKind, #sum, variable, #tag, constant, #idx, Int.compare)
           val smgt = C.rec2 (#typ, fieldKind, #sum, variable)
@@ -1724,6 +1727,9 @@ struct
             | (M.RhsPSetQuery      x1, M.RhsPSetQuery      x2) => s (x1, x2)
             | (M.RhsPSetQuery      _ , _                     ) => LESS
             | (_                     , M.RhsPSetQuery      _ ) => GREATER
+            | (M.RhsEnum           x1, M.RhsEnum           x2) => enm (x1, x2)
+            | (M.RhsEnum           _ , _                     ) => LESS
+            | (_                     , M.RhsEnum           _ ) => GREATER
             | (M.RhsSum            x1, M.RhsSum            x2) => sm (x1, x2)
             | (M.RhsSum            _ , _                     ) => LESS
             | (_                     , M.RhsSum            _ ) => GREATER
@@ -3094,6 +3100,7 @@ struct
           | M.RhsPSetGet _        => false
           | M.RhsPSetCond _       => false
           | M.RhsPSetQuery _      => false
+          | M.RhsEnum _           => false
           | M.RhsSum _            => false
           | M.RhsSumProj _        => false
           | M.RhsSumGetTag _      => false
@@ -3175,6 +3182,7 @@ struct
           | M.RhsPSetGet _            => T
           | M.RhsPSetCond _           => T
           | M.RhsPSetQuery _          => T
+          | M.RhsEnum _               => T
           | M.RhsSum _                => T
           | M.RhsSumProj _            => T
           | M.RhsSumGetTag _          => T
@@ -3238,6 +3246,7 @@ struct
            | M.RhsPSetGet _            => NONE
            | M.RhsPSetCond _           => SOME M.PokOptionSet
            | M.RhsPSetQuery _          => NONE
+           | M.RhsEnum _               => SOME M.PokTagged
            | M.RhsSum _                => SOME M.PokTagged
            | M.RhsSumProj _            => NONE
            | M.RhsSumGetTag _          => NONE)
@@ -3269,6 +3278,7 @@ struct
           | M.RhsPSetGet _                         => 1
           | M.RhsPSetCond _                        => 1
           | M.RhsPSetQuery _                       => 1
+          | M.RhsEnum _                            => 1
           | M.RhsSum _                             => 1
           | M.RhsSumProj _                         => 1
           | M.RhsSumGetTag _                       => 1
@@ -3319,6 +3329,8 @@ struct
        fn rhs => (case rhs of M.RhsPSetCond r => SOME r | _ => NONE)
       val rhsPSetQuery = 
        fn rhs => (case rhs of M.RhsPSetQuery r => SOME r | _ => NONE)
+      val rhsEnum = 
+       fn rhs => (case rhs of M.RhsEnum r => SOME r | _ => NONE)
       val rhsSum = 
        fn rhs => (case rhs of M.RhsSum r => SOME r | _ => NONE)
       val rhsSumProj = 
@@ -4709,6 +4721,13 @@ struct
           (case d
             of DefGlobal (M.GSum r) => SOME r
              | DefRhs (M.RhsSum r) => SOME r
+             | _ => NONE)
+      val sumOrEnum =
+       fn d =>
+          (case d
+            of DefGlobal (M.GSum {tag, ofVals, typs}) => SOME {tag = M.SConstant tag, ofVals = ofVals, typs = typs}
+             | DefRhs (M.RhsSum {tag, ofVals, typs})  => SOME {tag = M.SConstant tag, ofVals = ofVals, typs = typs}
+             | DefRhs (M.RhsEnum {tag, typ})          => SOME {tag = tag, ofVals = Vector.new0(), typs = Vector.new0()}
              | _ => NONE)
       val pSet =
        fn d =>

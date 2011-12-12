@@ -209,6 +209,7 @@ struct
                                | M.RhsPSetGet _        => data ()
                                | M.RhsPSetCond r       => setCondDeps r
                                | M.RhsPSetQuery _      => data ()
+                               | M.RhsEnum _           => ()
                                | M.RhsSum _            => ()
                                | M.RhsSumProj _        => data ()
                                | M.RhsSumGetTag _      => data ()
@@ -217,7 +218,7 @@ struct
                        end
                   val analyseInstruction = SOME analyseInstruction'
                   val analyseTransfer' = 
-                   fn (s, e, t) => 
+                   fn (s, e, lo, t) => 
                       let 
                         val summary = SE1.getSummary s
                         val fg = SE1.getFlowGraph s
@@ -231,7 +232,22 @@ struct
                         val () = 
                             (case t
                               of M.TGoto _      => ()
-                               | M.TCase r      => liveO (#on r)
+                               | M.TCase r      => 
+                                 let
+                                   val () = liveO (#on r)
+                                   val () = 
+                                       case #select r
+                                        of M.SeSum _ => 
+                                           let
+                                             val tagN = 
+                                                 case MRS.iInfo (summary, MU.Id.T (valOf lo))
+                                                  of MRB.IiSum (tag, fields) => tag
+                                                   | _                       => fail ("TCase", "Bad descriptor")
+                                           in liveN tagN
+                                           end
+                                         | M.SeConstant => ()
+                                 in ()
+                                 end
                                | M.TInterProc r => 
                                  let
                                    val {callee, ret, fx} = r
@@ -370,7 +386,7 @@ struct
                        end
                   val analyseInstruction = SOME analyseInstruction'
                   val analyseTransfer' = 
-                   fn (s, e, t) => 
+                   fn (s, e, lo, t) => 
                       let 
                         val summary = SE2.getSummary s
                         val fg = SE2.getFlowGraph s
@@ -381,7 +397,13 @@ struct
                                 | _             => ())
                         val () = 
                             case t
-                             of M.TCase r      => cmpd (#on r)
+                             of M.TCase r      => 
+                                (case #select r
+                                  of M.SeSum _    => 
+                                     (case MRS.iInfo (summary, MU.Id.T (valOf lo))
+                                       of MRB.IiSum (tag, fields) => FG.add (fg, tag, true)
+                                        | _                       => fail ("TCase", "Bad descriptor"))
+                                   | M.SeConstant => cmpd (#on r))
                               | _              => ()
                       in e
                       end
@@ -746,6 +768,13 @@ struct
                                              in replace rhs
                                              end
                   | M.RhsPSetQuery _      => keepIfAnyLiveV dests
+                  | M.RhsEnum r           => if deadV dests then kill () else
+                                             if liveO (#tag r) then keep () else
+                                             let
+                                               val tag = fieldDefault (#typ r)
+                                               val rhs = M.RhsEnum {tag = tag, typ = #typ r}
+                                             in replace rhs
+                                             end
                   | M.RhsSum r            => if deadV dests then kill () else
                                              let
                                                val {typs, ofVals, tag} = r

@@ -146,6 +146,7 @@ end
    sig
      val typ : Mil.typ * (Mil.constant * (Mil.typ Vector.t)) Vector.t -> Mil.typ
      val mk : Config.t * Mil.fieldKind * Mil.constant * Mil.fieldKind Vector.t * Mil.operand Vector.t -> Mil.rhs
+     val mkEnum : Config.t * Mil.fieldKind * Mil.operand -> Mil.rhs
      val mkGlobal : Config.t * Mil.fieldKind * Mil.constant * Mil.fieldKind Vector.t * Mil.simple Vector.t
                     -> Mil.global
      val getVal : Config.t * Mil.variable * Mil.fieldKind * Mil.fieldKind Vector.t * Mil.constant * int -> Mil.rhs
@@ -415,6 +416,7 @@ struct
         in M.TSum {tag = tt, arms = arms}
         end
     fun mk (c, fk, tag, fks, ofVals) = M.RhsSum {tag = tag, typs = fks, ofVals = ofVals}
+    fun mkEnum (c, fk, tag) = M.RhsEnum {typ = fk, tag = tag}
     fun mkGlobal (c, fk, tag, fks, ofVals) = 
         M.GSum {tag = tag, typs = fks, ofVals = ofVals}
     fun getVal (c, v, fk, fks, tag, idx) = M.RhsSumProj {typs = fks, sum = v, tag = tag, idx = idx}
@@ -661,6 +663,14 @@ struct
         let
           val mdd = mdd (c, fk, fks)
           val inits = Utils.Vector.cons (M.SConstant tag, ofVals)
+          val rhs = M.RhsTuple {mdDesc = mdd, inits = inits}
+        in rhs
+        end
+
+    fun mkEnum (c, fk, tag) =
+        let
+          val mdd = mdd (c, fk, Vector.new0 ())
+          val inits = Vector.new1 tag
           val rhs = M.RhsTuple {mdDesc = mdd, inits = inits}
         in rhs
         end

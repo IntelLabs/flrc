@@ -340,6 +340,12 @@ struct
                | M.RhsPSetGet _ => rhs
                | M.RhsPSetCond _ => rhs
                | M.RhsPSetQuery _ => rhs
+               | M.RhsEnum {tag, typ} => 
+                 let
+                   val (_, typs) = buildSumDescriptor (se, id)
+                   val () = checkSumDescriptor (se, id, typs, Vector.new1 typ)
+                 in M.RhsEnum {tag = tag, typ = Vector.sub (typs, 0)}
+                 end
                | M.RhsSum {tag, typs = typOlds, ofVals} => 
                  let
                    val (_, typs) = buildSumDescriptor (se, id)

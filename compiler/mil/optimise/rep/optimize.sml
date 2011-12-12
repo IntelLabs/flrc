@@ -427,6 +427,7 @@ struct
                                 | M.RhsPSetGet _        => ()
                                 | M.RhsPSetCond r       => let val () = fixed () val () = boxedO (#ofVal r) in () end
                                 | M.RhsPSetQuery _      => fixed ()
+                                | M.RhsEnum _           => fixed ()
                                 | M.RhsSum _            => fixed ()
                                 | M.RhsSumProj _        => ()
                                 | M.RhsSumGetTag _      => ())
@@ -435,7 +436,7 @@ struct
                        end
                   val analyseInstruction = SOME analyseInstruction'
                   val analyseTransfer' = 
-                   fn (s, e, t) => 
+                   fn (s, e, lo, t) => 
                       let 
                         val boxed = fn v => addBoxedIfRef (s, e, v)
                         val boxedO = boxed o opToVar
@@ -1067,6 +1068,7 @@ struct
                                 | M.RhsPSetGet _        => ()
                                 | M.RhsPSetCond _       => mark ()
                                 | M.RhsPSetQuery _      => mark ()
+                                | M.RhsEnum {tag, ...}  => mark ()
                                 | M.RhsSum {tag, ...}   => 
                                   let
                                     val tagN = 
@@ -1199,7 +1201,7 @@ struct
                         end
                     val instruction = fn _ => MRC.Continue
                     val transfer    = 
-                     fn (state, env, tfer) => 
+                     fn (state, env, (lo, tfer)) => 
                         (case tfer
                           of M.TCase {select = M.SeSum fk, on = M.SVariable sum, cases, default} => 
                              let
@@ -1216,7 +1218,7 @@ struct
                                         let
                                           val t = M.TCase {select = M.SeConstant, on = oper, 
                                                            cases = cases, default = default}
-                                        in MRC.ContinueWith (env, t)
+                                        in MRC.ContinueWith (env, (lo, t))
                                         end
                                       | NONE => MRC.Continue)
                              in res
@@ -1522,7 +1524,7 @@ struct
                     val operand     = fn _ => MRC.Stop
                     val instruction = fn _ => MRC.Stop
                     val transfer    = 
-                     fn (state, env, t) => 
+                     fn (state, env, (lo, t)) => 
                         let
                           val flowgraph = getFlowgraph state
                           val summary = getSummary state
@@ -1593,7 +1595,7 @@ struct
                                             | NONE => M.CClosure {cls = cls, code = code})
                                      val callee = M.IpCall {call = call, args = args}
                                      val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
-                                   in  MRC.StopWith (env, t)
+                                   in  MRC.StopWith (env, (lo, t))
                                    end
                                  | M.TInterProc {callee = M.IpCall {call = M.CCode {ptr, code}, args}, ret, fx} => 
                                    let
@@ -1601,7 +1603,7 @@ struct
                                      val call = M.CCode {ptr = ptr, code = code}
                                      val callee = M.IpCall {call = call, args = args}
                                      val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
-                                   in  MRC.StopWith (env, t)
+                                   in  MRC.StopWith (env, (lo, t))
                                    end
                                  | M.TInterProc {callee = M.IpEval {eval = M.EThunk {thunk, code}, typ}, ret, fx} => 
                                    let
@@ -1616,7 +1618,7 @@ struct
                                             | NONE => M.EThunk {thunk = thunk, code = code})
                                      val callee = M.IpEval {eval = eval, typ = typ}
                                      val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
-                                   in  MRC.StopWith (env, t)
+                                   in  MRC.StopWith (env, (lo, t))
                                    end
                                  | _ => MRC.Stop)
                         in r
@@ -1719,7 +1721,7 @@ struct
                   val analyseConstant = NONE
                   val analyseInstruction = NONE
                   val analyseTransfer' = 
-                   fn (s, e, t) => 
+                   fn (s, e, _, t) => 
                       let
                         val summary = getSummary s
                         val add = 
