@@ -176,6 +176,7 @@ struct
                                 | M.RhsPSetGet _        => noFlatten ()
                                 | M.RhsPSetCond _       => noFlatten ()
                                 | M.RhsPSetQuery _      => noFlatten ()
+                                | M.RhsEnum _           => noFlatten ()
                                 | M.RhsSum _            => noFlatten ()
                                 | M.RhsSumProj _        => noFlatten ()
                                 | M.RhsSumGetTag _      => noFlatten ())
@@ -184,7 +185,7 @@ struct
                        end
                   val analyseInstruction = SOME analyseInstruction'
                   val analyseTransfer' = 
-                   fn (s, e, t) => 
+                   fn (s, e, lo, t) => 
                       let 
                         val summary = getSummary s
                         val noFlatten = 
@@ -328,7 +329,7 @@ struct
                        end
                   val analyseInstruction = SOME analyseInstruction'
                   val analyseTransfer' = 
-                   fn (s, e, t) => 
+                   fn (s, e, lo, t) => 
                       let 
                         val config = getConfig e
                         val noFlatten = fn v => noFlatten (s, e, v)

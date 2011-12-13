@@ -846,6 +846,14 @@ struct
                  in ()
                  end
                | M.RhsPSetQuery oper => node () <-- Build.base (MU.Bool.t (getConfig se))
+               | M.RhsEnum {tag, typ} => 
+                 let
+                   val tagNode = fieldKindOperand (se, (typ, tag))
+                   val fields = Vector.new0 ()
+                   val () = addSumDescriptor (se, MU.Id.I n, tagNode, fields)
+                   val () = node () <-- Build.sum' {tag = tagNode, arms = Vector.new0 ()}
+                 in ()
+                 end
                | M.RhsSum {tag, typs, ofVals} => 
                  let
                    val tagNode = newShallowTypedBottomNode (se, typOfConstant (se, tag))

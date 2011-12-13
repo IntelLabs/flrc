@@ -239,6 +239,7 @@ struct
             | M.RhsPSetGet _ => r
             | M.RhsPSetCond {bool, ofVal} => M.RhsPSetCond {bool = operand (nm, bool), ofVal = operand (nm, ofVal)}
             | M.RhsPSetQuery opnd => M.RhsPSetQuery (operand (nm, opnd))
+            | M.RhsEnum {typ, tag} => M.RhsEnum {typ = typ, tag = operand (nm, tag)}
             | M.RhsSum {tag, typs, ofVals} => 
               M.RhsSum {tag = constant (nm, tag), typs = typs, ofVals = operands (nm, ofVals)}
             | M.RhsSumProj {typs, sum, tag, idx} => 
@@ -1255,6 +1256,11 @@ struct
               | "ClosureInit" => closureInit NONE
               | "ClosureMk" => P.map (parenSeq (fieldKind (state, env)), fn fks => M.RhsClosureMk {fvs = fks})
               | "Cont" => P.map (paren (label (state, env)), M.RhsCont)
+              | "Enum" => 
+                let
+                  val p = paren (operand (state, env) &&- keycharSF #":" && fieldKind (state, env))
+                in P.map (p, fn (tag, typ) => M.RhsEnum {tag = tag, typ = typ})
+                end
               | "GetKind" => P.map (paren (variable (state, env)), M.RhsObjectGetKind)
               | "IdxGet" => P.map (pair (variable (state, env), operand (state, env)),
                                    fn (i, v) => M.RhsIdxGet {idx = i, ofVal = v})

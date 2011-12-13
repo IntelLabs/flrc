@@ -55,7 +55,7 @@ struct
         | (M.IpCall _, M.RTail   _) => let val () = incTailcalls s in e end
         | _                         => e
 
-  fun analyseTransfer (s, e, t) =
+  fun analyseTransfer (s, e, l, t) =
       case t
        of M.TInterProc {callee, ret, ...} =>
           analyseInterProc (s, e, callee, ret)

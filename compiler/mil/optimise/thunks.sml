@@ -308,6 +308,7 @@ struct
                                | M.RhsPSetGet _        => computation ()
                                | M.RhsPSetCond r       => ()
                                | M.RhsPSetQuery _      => computation ()
+                               | M.RhsEnum _           => ()
                                | M.RhsSum _            => ()
                                | M.RhsSumProj _        => computation ()
                                | M.RhsSumGetTag _      => computation ()
@@ -316,7 +317,7 @@ struct
                        end
                   val analyseInstruction = SOME analyseInstruction'
                   val analyseTransfer' = 
-                   fn (s, e, t) => 
+                   fn (s, e, lo, t) => 
                       let 
                         val computation = fn () => currentFunctionIsComputation (s, e)
                         (* Could allow some control flow, but need to account for loops.

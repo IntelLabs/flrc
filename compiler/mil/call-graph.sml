@@ -307,7 +307,7 @@ struct
         of M.IpCall {call, ...} => analyseCall (s, e, cl, call)
          | M.IpEval {typ, eval} => analyseEval (s, e, cl, eval))
 
-  fun analyseTransfer (s, e, t) =
+  fun analyseTransfer (s, e, _, t) =
       case t
        of M.TInterProc {callee, ret, fx} =>
           let

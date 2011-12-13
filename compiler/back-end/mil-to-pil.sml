@@ -1703,6 +1703,7 @@ struct
           | M.RhsPSetGet _ => notCoreMil (env, "genRhs", "PSetGEt")
           | M.RhsPSetCond _ => notCoreMil (env, "genRhs", "PSetCond")
           | M.RhsPSetQuery _ => notCoreMil (env, "genRhs", "PSetQuery")
+          | M.RhsEnum _      => notCoreMil (env, "genRhs", "Enum")
           | M.RhsSum _       => notCoreMil (env, "genRhs", "Sum")
           | M.RhsSumProj _   => notCoreMil (env, "genRhs", "SumProj")
           | M.RhsSumGetTag _ => notCoreMil (env, "genRhs", "SumGetTag")

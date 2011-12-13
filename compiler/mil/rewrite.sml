@@ -21,7 +21,7 @@ sig
   val simple      : Mil.simple                  rewriter
   val operand     : Mil.operand                 rewriter
   val instruction : Mil.instruction             rewriterE
-  val transfer    : Mil.transfer                rewriter
+  val transfer    : (Mil.label option * Mil.transfer)  rewriter  
   val block       : (Mil.label * Mil.block)     rewriter
   val codeBody    : Mil.codeBody                rewriter
   val code        : Mil.code                    rewriter
@@ -40,7 +40,7 @@ functor MilRewriterF (
   val variable    : (state, env, Mil.variable   ) MilRewriterClient.rewriter
   val operand     : (state, env, Mil.operand    ) MilRewriterClient.rewriter
   val instruction : (state, env, Mil.instruction) MilRewriterClient.rewriter
-  val transfer    : (state, env, Mil.transfer   ) MilRewriterClient.rewriter
+  val transfer    : (state, env, Mil.label option * Mil.transfer) MilRewriterClient.rewriter
   val block       : (state, env, Mil.label * Mil.block) MilRewriterClient.rewriter
   val global      : (state, env, Mil.variable * Mil.global) MilRewriterClient.rewriter
   val bind        : (state, env, Mil.variable   ) MilRewriterClient.binder
@@ -187,6 +187,8 @@ struct
           | M.RhsPSetCond {bool, ofVal} =>
             M.RhsPSetCond {bool = doOp bool, ofVal = doOp ofVal}
           | M.RhsPSetQuery oper => M.RhsPSetQuery (doOp oper)
+          | M.RhsEnum {tag, typ} =>
+            M.RhsEnum {tag = doOp tag, typ = typ}
           | M.RhsSum {tag, typs, ofVals} =>
             M.RhsSum {tag = tag, typs = typs, ofVals = doOps ofVals}
           | M.RhsSumProj {typs, sum, tag, idx} =>
@@ -296,24 +298,28 @@ struct
           end
         | M.RTail {exits} => r
                                        
-  fun transfer (state, env, transfer) = 
+  fun transfer (state, env, (l, transfer)) = 
       let
-        fun doTransfer (state, env, transfer) = 
-            case transfer
-             of M.TGoto t => M.TGoto (target (state, env, t))
-              | M.TCase s => M.TCase (switch (state, env, s))
-              | M.TInterProc {callee, ret, fx} =>
-                M.TInterProc {callee = interProc (state, env, callee),
-                              ret = return (state, env, ret),
-                              fx = fx}
-              | M.TReturn os => M.TReturn (operands (state, env, os))
-              | M.TCut {cont, args, cuts = cs} =>
-                M.TCut {cont = variable (state, env, cont),
-                        args = operands (state, env, args),
-                        cuts = cuts (state, env, cs)}
-              | M.THalt opnd => M.THalt (operand (state, env, opnd))
+        fun doTransfer (state, env, (l, transfer)) = 
+            let
+              val t = 
+                  case transfer
+                   of M.TGoto t => M.TGoto (target (state, env, t))
+                    | M.TCase s => M.TCase (switch (state, env, s))
+                    | M.TInterProc {callee, ret, fx} =>
+                      M.TInterProc {callee = interProc (state, env, callee),
+                                    ret = return (state, env, ret),
+                                    fx = fx}
+                    | M.TReturn os => M.TReturn (operands (state, env, os))
+                    | M.TCut {cont, args, cuts = cs} =>
+                      M.TCut {cont = variable (state, env, cont),
+                              args = operands (state, env, args),
+                              cuts = cuts (state, env, cs)}
+                    | M.THalt opnd => M.THalt (operand (state, env, opnd))
+            in (l, t)
+            end
       in
-        callClientCode (clientTransfer, doTransfer, state, env, transfer)
+        callClientCode (clientTransfer, doTransfer, state, env, (l, transfer))
       end
 
   fun block (state, env, labelled_blk) =
@@ -322,7 +328,8 @@ struct
           let
             val (env, ps) = bindVars (state, env, parameters)
             val (env, is) = instructions (state, env, is)
-            val t = transfer (state, env, t)
+            val (labelO, t) = transfer (state, env, (SOME label, t))
+            val label = Utils.Option.get (labelO, label)
             val blk = M.B {parameters = ps, instructions = is, transfer = t}
           in (label, blk)
           end

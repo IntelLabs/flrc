@@ -219,6 +219,7 @@ struct
     | RhsPSetCond      of {bool : operand, 
                            ofVal : operand} (* if bool then {ofVal} else {} *)
     | RhsPSetQuery     of operand (* {} => false | _ => true *)
+    | RhsEnum          of {tag : operand, typ : fieldKind}  (* non value carrying sum object *)
     | RhsSum           of {tag : constant, 
                            ofVals : operand Vector.t,
                            typs   : fieldKind Vector.t}

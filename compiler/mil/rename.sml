@@ -107,7 +107,7 @@ struct
     fun transfer (c, r, t) =
         let
           val (s, e) = mkStateEnv (c, r)
-          val t = MR.transfer (s, e, t)
+          val (_, t) = MR.transfer (s, e, (NONE, t))
         in t
         end
 
