@@ -703,6 +703,9 @@ struct
            in l
            end
          | M.RhsPSetQuery oper => L.seq [L.str "?", layoutOperand (env, oper)]
+         | M.RhsEnum {tag, typ} =>
+           L.seq [L.str "Enum", L.paren (L.seq [layoutOperand (env, tag),
+                                                L.str " : ", layoutFieldKindShort (env, typ)])]
          | M.RhsSum {tag, typs, ofVals} =>
            L.seq [L.str "Tagged",
                   L.tuple [layoutConstant (env, tag), 

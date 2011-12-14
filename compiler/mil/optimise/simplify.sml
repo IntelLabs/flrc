@@ -182,6 +182,7 @@ struct
          ("BlockKill",        "Blocks killed"                  ),
          ("CallInline",       "Calls inlined (inline once)"    ),
          ("DCE",              "Dead instrs/globals eliminated" ),
+         ("EnumToSum",        "Enums to Sums"                  ),
          ("EtaSwitch",        "Cases eta reduced"              ),
          ("FunctionWrap",     "Known functions wrapped"        ),
          ("Globalized",       "Objects globalized"             ),
@@ -273,6 +274,7 @@ struct
     val callInline = clicker "CallInline"
     val dce = clicker "DCE"
     val deadParameter = clicker "DeadParameter"
+    val enumToSum = clicker "EnumToSum"
     val etaSwitch = clicker "EtaSwitch"
     val functionWrap = clicker "FunctionWrap"
     val globalized = clicker "Globalized"
@@ -1679,8 +1681,9 @@ struct
                        of M.SeSum fk => 
                           let
                             val v = <@ MU.Simple.Dec.sVariable on
-                            val nm = #tag <! MU.Def.Out.sum <! Def.toMilDef o Def.get @@ (imil, v)
-                          in nm 
+                            val tag = #tag <! MU.Def.Out.sumOrEnum <! Def.toMilDef o Def.get @@ (imil, v) 
+                            val c = <@ MU.Simple.Dec.sConstant tag
+                          in c
                           end
                         | M.SeConstant => <@ MU.Simple.Dec.sConstant on
 
@@ -2797,6 +2800,15 @@ struct
                            (* can ignore l *)
                          in []
                          end
+                       | M.RhsEnum {tag, typ} => 
+                         let
+                           val c = Try.<@ MU.Simple.Dec.sConstant tag
+                           val v = Try.V.singleton dests
+                           val l = add (v, M.GSum {tag = c, typs = Vector.new0 (), ofVals = Vector.new0()})
+                           (* can ignore l *)
+                         in []
+                         end
+
                        | M.RhsSum {tag, typs, ofVals} => 
                          let
                            val () = Try.require (Vector.forall (ofVals, const))
@@ -3562,6 +3574,22 @@ struct
         in try (Click.pSetQuery, f)
         end
 
+    val enumToSum = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dests, {tag, typ})) => 
+              let
+                val c = <@ MU.Simple.Dec.sConstant tag
+                val rhs = M.RhsSum {tag = c, ofVals = Vector.new0(), typs = Vector.new0 ()}
+                val mi = MU.Instruction.new' (dests, rhs)
+                val ()= IInstr.replaceInstruction (imil, i, mi)
+              in [I.ItemInstr i]
+              end
+        in try (Click.enumToSum, f)
+        end
+
+    val enum = enumToSum
+
     val sumEta = 
         let
           val f = 
@@ -3665,6 +3693,7 @@ struct
                 | M.RhsPSetGet r        => pSetGet (state, (i, dests, r))
                 | M.RhsPSetCond r       => pSetCond (state, (i, dests, r))
                 | M.RhsPSetQuery r      => pSetQuery (state, (i, dests, r))
+                | M.RhsEnum r           => enum (state, (i, dests, r))
                 | M.RhsSum r            => sum (state, (i, dests, r))
                 | M.RhsSumProj r        => sumProj (state, (i, dests, r))
                 | M.RhsSumGetTag r      => sumGetTag (state, (i, dests, r))

@@ -263,8 +263,9 @@ struct
                    of M.SeSum fk => 
                       let
                         val v = <@ MU.Operand.Dec.sVariable on
-                        val tag = #tag <! MU.Def.Out.sum <! IMil.Def.toMilDef o IMil.Def.get @@ (imil, v)
-                      in tag
+                        val tag = #tag <! MU.Def.Out.sumOrEnum <! IMil.Def.toMilDef o IMil.Def.get @@ (imil, v)
+                        val c = <@ MU.Simple.Dec.sConstant tag
+                      in c
                       end
                     | M.SeConstant  => <@ MU.Operand.Dec.sConstant on
               val (l, p) = 

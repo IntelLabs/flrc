@@ -22,6 +22,7 @@ local
         inline-profile.sml
         inline-leaves.sml
         rep/rep.mlb
+        thunks.sml
         branch-remove.sml
         loop-invert.sml
         vectorize.sml
@@ -34,6 +35,7 @@ in
         structure MilRemoveBranch
         structure MilRep
         structure MilSimplify
+        structure MilThunkOptimize
         structure MilVectorize
         structure MilInlineAggressive   
         structure MilInlineProfile   

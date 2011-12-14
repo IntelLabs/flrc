@@ -173,7 +173,7 @@ struct
                 end
               | IMT.MTransfer t => 
                 let
-                  val t = R.transfer (state, env, t)
+                  val (_, t) = R.transfer (state, env, (NONE, t))
                 in IMT.MTransfer t
                 end
               | IMT.MLabel (l, vs) => 

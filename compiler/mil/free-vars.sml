@@ -11,6 +11,7 @@ sig
   val transfer : t * Mil.transfer -> Identifier.VariableSet.t
   val block : t * Mil.label * Mil.block -> Identifier.VariableSet.t
   val blocks : t * Mil.block Mil.LD.t -> Identifier.VariableSet.t
+  val codeBody : t * Mil.codeBody -> Identifier.VariableSet.t
   val global : t * Mil.variable * Mil.global -> Identifier.VariableSet.t
   val program : t * Mil.t -> Identifier.VariableSet.t
 end;
@@ -77,9 +78,10 @@ struct
   val instruction = mk1 MA.analyseInstruction
   val call = mk1 MA.analyseCall
   val eval = mk1 MA.analyseEval
-  val transfer = mk1 MA.analyseTransfer
+  val transfer = mk1 (fn (state, config, y) => MA.analyseTransfer (state, config, NONE, y))
   val block = mk2 MA.analyseBlock
   val blocks = mk1 MA.analyseBlocks
+  val codeBody = mk1 MA.analyseCodeBody
   val global = mk2 MA.analyseGlobal
   val program = mk1 MA.analyseProgram
 

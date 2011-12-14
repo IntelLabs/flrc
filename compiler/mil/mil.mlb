@@ -22,6 +22,7 @@ local
         free-vars.sml
         bound-vars.sml
         rename.sml      
+        code-copy.sml
         stream.sml
         stream2.sml
         transform.sml
@@ -52,6 +53,7 @@ in
         structure MilFragment
         structure MilFreeVars
         structure MilBoundVars
+        structure MilCodeCopy
         structure MilLayout
         structure MilExtendedLayout
         structure MilLoop

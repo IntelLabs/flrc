@@ -291,6 +291,14 @@ struct
         POM.Sum.mk (config, MU.Constant.fkOf (config, c), c, fks, opers)
       end
 
+  val doEnum = 
+   fn (state, env, (tag, fk)) =>
+      let
+        val config = envGetConfig env
+      in
+        POM.Sum.mkEnum (config, fk, tag)
+      end
+
   fun doSumProj (state, env, (fks, v, tag, idx)) =
       let
         val config = envGetConfig env
@@ -344,6 +352,8 @@ struct
                   SOME (doPSetQuery (state, env, dests, v))
                 else
                   NONE
+              | M.RhsEnum {tag, typ} => 
+                lowerToRhs (state, env, lowerSums, doEnum, dests, (tag, typ))
               | M.RhsSum {tag, typs, ofVals} => 
                 lowerToRhs (state, env, lowerSums, doSum, dests, (tag, typs, ofVals))
               | M.RhsSumProj {typs, sum, tag, idx} =>

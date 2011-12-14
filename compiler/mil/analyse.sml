@@ -9,13 +9,20 @@ sig
   val analyseInstruction : state * env * Mil.instruction -> env
   val analyseCall : state * env * Mil.call ->  unit
   val analyseEval : state * env * Mil.eval ->  unit
-  val analyseTransfer : state * env * Mil.transfer -> unit
+  val analyseTransfer : state * env * Mil.label option * Mil.transfer -> unit
   val analyseBlock : state * env * Mil.label * Mil.block -> unit
   val analyseBlocks : state * env * Mil.block Mil.LD.t -> unit
+  val analyseCodeBody : state * env * Mil.codeBody -> unit
+  val analyseCode : state * env * Mil.code -> unit
   val analyseGlobal : state * env * Mil.variable * Mil.global -> unit
   val analyseProgram : state * env * Mil.t -> unit
 end;
 
+(* Each thing will be analyzed once.  There are no guarantees
+ * about ordering.  variable/label uses may be encountered before
+ * their binding sites.  Labels will be analyzed before the block
+ * which they bind is analyzed.
+ *)
 functor MilAnalyseF (
   type state
   type env
@@ -29,7 +36,7 @@ functor MilAnalyseF (
   val analyseCut         : (state * env * Mil.label -> unit) option
   val analyseConstant    : (state * env * Mil.constant -> unit) option
   val analyseInstruction : (state * env * Mil.instruction -> env) option
-  val analyseTransfer    : (state * env * Mil.transfer -> env) option
+  val analyseTransfer    : (state * env * Mil.label option * Mil.transfer -> env) option
   val analyseBlock       : (state * env * Mil.label * Mil.block -> env) option
   val analyseGlobal      : (state * env * Mil.variable * Mil.global -> env) option
 ) :> MilAnalyse where type state = state
@@ -213,6 +220,7 @@ functor MilAnalyseF (
           in ()
           end
         | M.RhsPSetQuery oper => analyseOperand (s, e, oper)
+        | M.RhsEnum {tag, typ} => analyseOperand (s, e, tag)
         | M.RhsSum {tag, typs, ofVals} => analyseOperands (s, e, ofVals)
         | M.RhsSumProj {typs, sum, tag, idx} => analyseVariable (s, e, sum)
         | M.RhsSumGetTag {typ, sum} => analyseVariable (s, e, sum)
@@ -319,12 +327,12 @@ functor MilAnalyseF (
           end
         | M.RTail {exits} => ()
 
-  fun analyseTransfer (s, e, t) =
+  fun analyseTransfer (s, e, l, t) =
       let
         val e =
             case clientTransfer
              of NONE => e
-              | SOME at => at (s, e, t)
+              | SOME at => at (s, e, l, t)
       in
         case t
          of M.TGoto t => analyseTarget (s, e, t)
@@ -357,7 +365,7 @@ functor MilAnalyseF (
         val e = analyseBinders (s, e, parameters)
         fun doOne (i, e) = analyseInstruction (s, e, i)
         val e = Vector.fold (instructions, e, doOne)
-        val () = analyseTransfer (s, e, transfer)
+        val () = analyseTransfer (s, e, SOME l, transfer)
       in ()
       end
 
@@ -371,7 +379,7 @@ functor MilAnalyseF (
       in ()
       end
 
-  fun analyseCode (s, e, v, f) =
+  fun analyseCode (s, e, f) =
       let
         val M.F {fx, escapes, recursive, cc, args, rtyps, body} = f
         val e =
@@ -396,13 +404,14 @@ functor MilAnalyseF (
 
   fun analyseGlobal (s, e, v, g) =
       let
+        val e = analyseBinder (s, e, v)
         val e = 
             case clientGlobal
              of NONE => e
               | SOME ag => ag (s, e, v, g)
       in
         case g
-         of M.GCode f                  => analyseCode (s, e, v, f)
+         of M.GCode f                  => analyseCode (s, e, f)
           | M.GErrorVal _              => ()
           | M.GIdx _                   => ()
           | M.GTuple {mdDesc, inits}   => analyseSimples (s, e, inits)
@@ -427,8 +436,6 @@ functor MilAnalyseF (
         val M.P {includes, externs, globals, symbolTable, entry} = p
         fun doOne (v, e) = analyseExtern (s, e, v)
         val e = VS.fold (MilUtils.Program.externVars p, e, doOne)
-        fun doOne (v, _, e) = analyseBinder (s, e, v)
-        val e = VD.fold (globals, e, doOne)
         fun doOne (v, g) = analyseGlobal (s, e, v, g)
         val () = VD.foreach (globals, doOne)
       in ()

@@ -820,6 +820,11 @@ struct
                    val _ = operand (s, e, msg', oper)
                  in some M.TNone
                  end
+               | M.RhsEnum {tag, typ} =>
+                 let
+                   val _ = operand (s, e, msg, tag)
+                 in some M.TNone
+                 end
                | M.RhsSum {tag, typs, ofVals} =>
                  let
                    val _ = sumTag (s, e, msg, tag)
