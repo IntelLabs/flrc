@@ -1796,6 +1796,14 @@ struct
         Pil.S.sequence [pre, Pil.S.sequence moves, Pil.S.goto succ]
       end
 
+  fun genHalt (state, env, opnd) = 
+      let
+        val M.F {rtyps, ...} = getFunc env
+        val void = Vector.length rtyps = 0
+        val halt = if void then RT.haltV else RT.halt
+      in Pil.S.call (Pil.E.namedConstant halt, [genOperand (state, env, opnd)])
+      end
+
   fun genCase (state, env, cb, src, {select, on, cases, default}) =
       let
         val () = 
@@ -1832,7 +1840,7 @@ struct
             (Pil.E.cast (Pil.T.sintp, genConstant (state, env, c)), genGoto (state, env, cb, src, t))
       in
         case (Vector.length cases, default)
-         of (0, NONE) => Fail.fail ("MilToPil", "genCase", "no cases")
+         of (0, NONE) => genHalt (state, env, M.SConstant (MU.Sintp.int (getConfig env, ~1)))
           | (0, SOME t) => genGoto (state, env, cb, src, t)
           | (1, NONE) => genGoto (state, env, cb, src, #2 (Vector.sub (cases, 0)))
           | (1, SOME t) => doIf (Vector.sub (cases, 0), t)
@@ -2029,13 +2037,7 @@ struct
               val cut = Pil.S.contCutTo (getConfig env, c, args, cuts)
             in cut
             end
-          | M.THalt opnd => 
-            let
-              val M.F {rtyps, ...} = getFunc env
-              val void = Vector.length rtyps = 0
-              val halt = if void then RT.haltV else RT.halt
-            in Pil.S.call (Pil.E.namedConstant halt, [genOperand (state, env, opnd)])
-            end
+          | M.THalt opnd => genHalt (state, env, opnd)
        end
 
   (*** Blocks ***)

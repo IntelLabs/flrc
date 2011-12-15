@@ -402,9 +402,16 @@ struct
                     | _                             => NONE
 
               val () = Click.rcbr d
-                       
-              val sw = {select = select, on = on, cases = cases, default = default}
-              val nmt = IMil.MTransfer (M.TCase sw)
+              val t = 
+                  if Vector.length cases > 0 orelse isSome default then
+                    let
+                      val sw = {select = select, on = on, cases = cases, default = default}
+                      val t = M.TCase sw
+                    in t
+                    end
+                  else
+                    M.THalt (M.SConstant (MU.Sintp.int (PD.getConfig d, ~1)))
+              val nmt = IMil.MTransfer t
               val () = IMil.IInstr.replaceMil (imil, instr, nmt)
               val () = Debug.debugDo (d, fn () => Debug.printNewInstr (d, imil, instr))
             in ()

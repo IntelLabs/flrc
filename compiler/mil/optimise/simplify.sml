@@ -47,6 +47,7 @@ struct
   structure PD = PassData
   structure SS = StringSet
   structure VS = M.VS
+  structure LS = M.LS
   structure LU = LayoutUtils
   structure L = Layout
   structure MEL = MilExtendedLayout
@@ -225,6 +226,7 @@ struct
          ("ThunkToThunkVal",  "Thunks made Thunk Values"       ),
          ("ThunkValueBeta",   "ThunkValues beta reduced"       ),
          ("ThunkValueEta",    "ThunkValues eta reduced"        ),
+         ("TrivialSwitch",    "Trivial switches reduced"       ),
          ("TupleBeta",        "Tuple subscripts reduced"       ),
          ("TupleToField",     "Tuple sub/set -> project"       ),
          ("TupleFieldNorm",   "Tuple fields normalized"        ),
@@ -316,6 +318,7 @@ struct
     val thunkToThunkVal = clicker "ThunkToThunkVal"
     val thunkValueBeta = clicker "ThunkValueBeta"
     val thunkValueEta = clicker "ThunkValueEta"
+    val trivialSwitch = clicker "TrivialSwitch"
     val tupleBeta = clicker "TupleBeta"
     val tupleVariableToField = clicker "TupleToField"
     val tupleFieldNormalize = clicker "TupleFieldNorm"
@@ -1804,7 +1807,28 @@ struct
           in try (Click.switchToSetCond, f)
           end
 
-      val reduce = simpleBoolOp or betaSwitch or etaSwitch or switchToSetCond
+
+     (* Turn unary cases into gotos, and nullary cases to halts.
+      *)
+      val trivialSwitch = 
+          let
+            val f = 
+             fn ((d, imil, ws), (i, {select, on, cases, default})) =>
+                let
+                  val config = PD.getConfig d
+                  val t = 
+                      case (Vector.length cases, default)
+                       of (0, NONE)    => M.THalt (M.SConstant (MU.Sintp.int (config, ~1)))
+                        | (0, SOME tg) => M.TGoto tg
+                        | (1, NONE)    => M.TGoto (#2 (Vector.sub (cases, 0)))
+                        | _            => Try.fail ()
+                  val () = IInstr.replaceTransfer (imil, i, t)
+                in [I.ItemInstr i]
+                end
+          in try (Click.trivialSwitch, f)
+          end
+
+      val reduce = simpleBoolOp or betaSwitch or etaSwitch or switchToSetCond or trivialSwitch
     end (* structure TCase *)
 
     val tCase = TCase.reduce
@@ -2119,7 +2143,7 @@ struct
 
     val tReturn = fn _ => NONE
 
-    val tCut = 
+    val tCut1 = 
         let
           val f = 
            fn ((d, imil, ws), (i, {cont, args, cuts})) =>
@@ -2132,6 +2156,26 @@ struct
               end
         in try (Click.tCut, f)
         end
+
+    val tCut2 = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, {cont, args, cuts})) =>
+              let
+                val M.C {exits, targets} = cuts
+                val () = Try.require (not exits)
+                val t = 
+                    case LS.size targets
+                     of 0  => M.THalt (M.SConstant (MU.Sintp.int (PD.getConfig d, ~1)))
+                      | 1  => M.TGoto (M.T {block = valOf (LS.getAny targets), arguments = args})
+                      | _  => Try.fail ()
+                val () = IInstr.replaceTransfer (imil, i, t)
+              in [I.ItemInstr i]
+              end
+        in try (Click.tCut, f)
+        end
+
+    val tCut = tCut1 or tCut2 
 
     fun tHalt (state, (i, opnd)) = NONE
 
@@ -4074,6 +4118,7 @@ struct
          fn () =>
             let
               val () = doSimplify ws (d, imil)
+              val () = WS.clear ws (* In case we skipped simplify *)
               val () = doCodeSimplify ws (d, imil)
               val () = doCfgSimplify ws (d, imil)
             in ()

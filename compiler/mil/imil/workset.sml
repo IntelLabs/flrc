@@ -17,6 +17,7 @@ sig
   val addCode   : ws * iFunc -> unit
   val hasWork : ws -> bool
   val chooseWork : ws -> item option
+  val clear : ws -> unit
 end
 
 structure IMilWorkSet : 
@@ -104,5 +105,7 @@ struct
       (case IID.choose items
         of SOME (_, w) => SOME w
          | NONE => NONE)
+
+  val clear = fn (WS {items}) => IID.clear items
 
 end
