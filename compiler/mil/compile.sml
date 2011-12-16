@@ -21,7 +21,7 @@ struct
        (#"C", MilContify.pass         ),
        (#"D", MilDblDiamond.pass      ),
        (#"E", MilRep.Dce.pass         ),
-       (#"F", MilRep.Flatten.pass  ),
+       (#"F", MilRep.Flatten.pass     ),
        (#"f", MilLowerClosures.pass   ),
        (#"I", MilInlineLeaves.pass    ),
        (#"J", MilInlineAggressive.pass),
@@ -49,6 +49,8 @@ struct
       let
         val || = Parse.||
         val && = Parse.&&
+        val -&& = Parse.-&&
+        infixr 6 -&&
         infixr && ||
         val $ = Parse.$
 
@@ -73,6 +75,14 @@ struct
         val lbrace = consume #"{"
         val rbrace = consume #"}"
 
+        val whitespace = 
+            let
+              val whiteChar = 
+               fn c => c = Char.space orelse c = Char.newline orelse c = #"\t" orelse c = #"\r"
+              val white = Parse.satisfy whiteChar
+            in Parse.ignore (Parse.oneOrMore white)
+            end
+
         val delimited : unit Parse.t * 'a Parse.t * unit Parse.t -> 'a Parse.t =
          fn (left, item, right) => 
             let
@@ -80,6 +90,7 @@ struct
               val f = fn ((), (i, ())) => i
             in Parse.map (p, f)
             end
+
         val nat : int Parse.t = 
             let
               val p = Parse.oneOrMore (Parse.satisfy Char.isDigit)
@@ -105,7 +116,7 @@ struct
         and rec passSeq' : unit -> controlItem list list Parse.t = 
          fn () => Parse.oneOrMore ($passHead')
         and rec passHead' : unit -> controlItem list Parse.t =
-         fn () => Parse.oneOrMore simple || $iterated'  || $constructed' 
+         fn () => Parse.oneOrMore simple || $iterated'  || $constructed' || (whitespace -&& $passHead')
         and rec iterated' : unit -> controlItem list Parse.t = 
          fn () => Parse.map(exponentiated ($parenthesized'), List.concat)
         and rec parenthesized' : unit -> controlItem list Parse.t = 
@@ -157,7 +168,7 @@ struct
   val o0String = filter "fst"
   val o1String = filter "SfstS"
   val o2String = filter "[{S}VIVIBfst]S"
-  val o3String = filter "[{S}REVCVIFREDCVYLREVIJKBFREVfst]S"
+  val o3String = filter "[{S} TREV CIV FREV DCYLV REV TIJKTV B FREV fst]S"
 
   val o0Control = Option.valOf (parseControl o0String)
   val o1Control = Option.valOf (parseControl o1String)

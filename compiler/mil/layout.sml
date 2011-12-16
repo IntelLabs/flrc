@@ -950,7 +950,7 @@ struct
          | M.GPSet opnd => L.seq [L.str "PSet", L.paren (layoutSimple (env, opnd))]
 
    fun layoutGlobal (env, (v, g)) =
-       L.mayAlign [layoutBinder (env, v), LU.indent (L.seq [L.str "= ", layoutGlobalOnly (env, g)])]
+       L.mayAlign [L.seq [layoutBinder (env, v), L.str " ="], LU.indent (layoutGlobalOnly (env, g))]
        
    fun layoutGlobals (env, globals) = 
        let
