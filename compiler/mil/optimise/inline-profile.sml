@@ -120,7 +120,7 @@ struct
         Config.Control.mk (name, description, parser, default) 
 
     (* Minimum call site execution frequency *)
-    val defaultValue = IntInf.fromInt 10
+    val defaultValue = IntInf.fromInt 1
     fun default (_) = defaultValue
                       
     fun parser (s : string) =
@@ -358,19 +358,6 @@ struct
   (* Profiling information. *)
   structure ProfInfo =
   struct
-(*
-    structure MilCfg = MilCfgF (type env      = PD.t
-                                val getConfig = PD.getConfig
-                                val passname  = passname
-                                val indent    = 2)
-*)
-(*    
-    structure MilCallGraph = 
-    MilCallGraphF (type env           = PD.t
-                   val config         = PD.getConfig
-                   val layoutVariable = fn (e, v) => L.str ""
-                   val indent         = 2)
-*)    
 
     structure Profiler = MilProfilerF (type env         = PD.t
                                        val getConfig    = PD.getConfig
@@ -408,26 +395,26 @@ struct
           val env = PD.getConfig d
           val mil as Mil.P {globals, symbolTable=smt, ...} = IMil.T.unBuild imil
           val globalsList = VD.toList globals
-          fun getBBFreqStr (b) = 
+          fun layoutBBFreq (b) = 
               case LD.lookup (blkAbsFreq, b)
-               of SOME f => SOME (IntInf.toString f)
-                | NONE => NONE
-          fun getEdgProbStr (src : Mil.label) =
+               of SOME f => L.str (IntInf.toString f)
+                | NONE   => L.empty
+          fun layoutEdge (src : Mil.label, tgt: Mil.label) =
               case LD.lookup (edgProb, src)
-               of NONE => (fn (dst : Mil.label) => NONE)
+               of NONE     => L.empty
                 | SOME dic => 
-               fn (tgt : Mil.label) => 
-                  case LD.lookup (dic, tgt)
-                   of NONE => NONE
-                    | SOME prob => SOME ("P " ^ Real.toString (prob))
+                  (case LD.lookup (dic, tgt)
+                    of NONE      => L.empty
+                     | SOME prob => L.str ("P " ^ Real.toString (prob)))
           fun layoutFunc (f : Mil.variable, code) =
               let
                 val si = Identifier.SymbolInfo.SiTable smt
                 val header = L.seq [L.str "G ", ML.layoutVariable (env, si, f),
                                     L.str " = "]
-(*                val body = ML.layoutCode' (env, si, code, SOME getBBFreqStr,
-                                           SOME getEdgProbStr)*)
-                val body = ML.layoutCode (env, si, code)
+                val body = ML.General.layoutCode (env, si, {varBind = NONE, 
+                                                            block = SOME layoutBBFreq, 
+                                                            edge = SOME layoutEdge,
+                                                            cb = NONE}, code)
               in
                 L.mayAlign [header, LU.indent body]
               end
@@ -479,14 +466,14 @@ struct
           L.seq [srcFunLay, L.str "::", blkLay, L.str " -> ", 
                  tgtFunLay, L.str " [", freqLay, L.str "]", inlinedLay]
         end  
-                                                  
+
     datatype funInfo = FI of {
              freq      : ProfInfo.Profiler.absFrequency ref,
              size      : int ref,
              recursive : bool,
              callSites : csInfo LD.t ref
     }
-                             
+
     datatype t = T of {
              funInfoDict : funInfo VD.t,
              callSites   : csInfo LD.t ref
@@ -782,6 +769,9 @@ struct
     val foreach : t * (Mil.label * csInfo -> unit) -> unit =
      fn (T {callSites, ...}, f) => LD.foreach (!callSites, f)
 
+    val fold : t * 'a * (Mil.label * csInfo * 'a -> 'a) -> 'a =
+     fn (T {callSites, ...}, acc, f) => LD.fold (!callSites, acc, f)
+
   end
   
   datatype policyInfo = PI of {
@@ -935,69 +925,42 @@ struct
         (* Print the call sites information. *)
         val () = Debug.printLayout (d, CallSitesInfo.layout (callSitesInfo, 
                                                              imil))
-        (* --- *)
-        val bestCS = ref NONE
-        fun selectCS (cs) = bestCS := SOME cs
-        fun isBestCS (_, csi) =
-            case !bestCS 
-             of NONE => true
-              | SOME (_, besti) => IntInf.< (CallSitesInfo.getFreq (besti),
-                                             CallSitesInfo.getFreq (csi))
 
         (* A valid call site is one that comply with the constraints. *)
-        fun validCS (blk, csInfo) = 
+        fun validCS csInfo = 
             let
               val execFreq  = CallSitesInfo.getFreq   (csInfo)
-              val isRecCall = CallSitesInfo.isRecCall (csInfo)
               val tgtFun    = CallSitesInfo.getTgtFun (csInfo)
-(*              val isRecFunc = CallSitesInfo.isRecursive (imil, d, callSitesInfo, tgtFun)*)
-(*              val tgtFunSz  = CallSitesInfo.getFunSize  (d, callSitesInfo, tgtFun)*)
+              val recursive = CallSitesInfo.isRecursive (imil, d, callSitesInfo, tgtFun)
               fun noRecInlining (f) = getRecInliningCount (info, f) >=
                                       recCallLimit (info)
             in
-              if not (CallSitesInfo.isFunExist (callSitesInfo, tgtFun)) then
-                false
-              else if CallSitesInfo.inlined (csInfo) then
-                false
-              else if IntInf.< (execFreq, minExecFreq) then
-                false
-              else if CallSitesInfo.getFunSize (d, callSitesInfo, tgtFun) > currBudget then
-                false
-              else if CallSitesInfo.isRecursive (imil, d, callSitesInfo, tgtFun) andalso noRecInlining tgtFun then
-                false
-              else if CallSitesInfo.isRecursive (imil, d, callSitesInfo, tgtFun)  andalso noRecursiveFuncs (info) then
-                false
-              else
-                true
+              CallSitesInfo.isFunExist (callSitesInfo, tgtFun)
+              andalso not (CallSitesInfo.inlined csInfo)
+              andalso IntInf.>= (execFreq, minExecFreq) 
+              andalso CallSitesInfo.getFunSize (d, callSitesInfo, tgtFun) <= currBudget 
+              andalso not (recursive andalso noRecInlining tgtFun)
+              andalso not (recursive andalso noRecursiveFuncs info)
             end
 
-        fun analyzeCS cs = if validCS (cs) andalso isBestCS (cs) then 
-                             selectCS (cs)
-                           else
-                             ()
-
-        (* XXX EB: Debug version. Remove it latter. *)
-        fun analyzeCSDbg (cs as (blk, csInfo)) = 
-            let
-              val l = L.seq [CallSitesInfo.layoutCSInfo (imil, csInfo)]
-            in
-              if not (validCS (cs)) then
-                Debug.printLayout (d, L.seq [L.str "NOT VALID: ", l])
-              else if not (isBestCS (cs)) then
-                Debug.printLayout (d, L.seq [L.str "NOT BEST: ", l])
-              else
-                (Debug.printLayout (d, L.seq [L.str "BEST SO FAR: ", l]);
-                 selectCS (cs))
-            end
+        val choose =
+         fn (l, cs1, acc) =>
+            if validCS cs1 then
+              case acc
+               of NONE     => SOME cs1
+                | SOME cs2 => 
+                  if CallSitesInfo.getFreq cs2 < CallSitesInfo.getFreq cs1 then
+                    SOME cs1
+                  else
+                    acc
+            else
+              acc
 
         val csi as CallSitesInfo.T {funInfoDict, callSites} = callSitesInfo
 
-        val () = CallSitesInfo.foreach (callSitesInfo, analyzeCS)
+        val bestCS = CallSitesInfo.fold (callSitesInfo, NONE, choose)
         val () = Time.report (d, "select best call site", startTime)
-      in
-        case !bestCS
-         of SOME (blk, csInfo) => SOME csInfo
-          | NONE => NONE
+      in bestCS
       end
       
   (* XXX EB: Debug function. Remove it latter. *)
