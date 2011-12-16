@@ -143,6 +143,8 @@ struct
     val (minExecFreq, getMinExecFreq) =
         Config.Control.mk (name, description, parser, default) 
 
+    val maxRounds = 4
+
     (* Recursive call inlining limit. *)
     val defaultValue = 3
 
@@ -783,7 +785,8 @@ struct
            initPrgSize  : int,
            initBudget   : int,
            currBudget   : int ref,
-           nIterations  : int ref
+           nIterations  : int ref,
+           rounds       : int ref
   }
                   
   fun getRecInliningCountRef (PI {recInlining as ref d, ...}, f) =
@@ -808,10 +811,12 @@ struct
   fun setInlinedCS (PI {inlinedCS, ...}, csInfo) = inlinedCS := csInfo
   fun getInlinedCS (PI {inlinedCS, ...} ) = !inlinedCS
   fun incIterations (PI {nIterations, ...}) = nIterations := !nIterations + 1
+  fun incRounds (PI {rounds, ...}) = rounds := !rounds + 1
   fun getCallSitesInfo (PI {callSites, ...}) = callSites 
   fun getInitPrgSz (PI {initPrgSize, ...}) = initPrgSize
   fun getCurrBudget (PI {currBudget , ...}) = !currBudget 
   fun getIterations (PI {nIterations, ...}) = !nIterations
+  fun getRounds (PI {rounds, ...}) = !rounds
   fun getMinExecFreq (PI {constraints, ...}) = 
       Constraints.getMinExecFreq (constraints)
   fun recCallLimit (PI {constraints, ...}) = 
@@ -875,7 +880,8 @@ struct
                        initPrgSize  = initPrgSize,
                        initBudget   = budgetSize,
                        currBudget   = ref budgetSize,
-                       nIterations  = ref 0}
+                       nIterations  = ref 0,
+                       rounds       = ref 0}
       in
         info
       end
@@ -976,18 +982,18 @@ struct
   (* Optimize the program, rebuild the call sites info, and try to
    * select the best call site. *)
   fun optimizeAndSelect (d, imil, info) = 
-      let
-        val startTime = Time.start ()
-        val () = MilSimplify.program (d, imil)
-        (* XXX EB: Debug
-        val () = Debug.checkIMil (d, imil)
-        val () = printIMil (d, imil)
-        --- *)
-        val () = Time.report (d, "optimize (before select best cs)", startTime)
-        val () = recomputePolicyInfo (d, imil, info)
-      in
-        selectBestCallSite (d, imil, info)
-      end
+      if getRounds info < Control.maxRounds then 
+        let
+          val () = incRounds info
+          val startTime = Time.start ()
+          val () = MilSimplify.program (d, imil)
+          val () = Time.report (d, "optimize (before select best cs)", startTime)
+          val () = recomputePolicyInfo (d, imil, info)
+        in
+          selectBestCallSite (d, imil, info)
+        end
+      else
+        NONE
 
   fun updateCallSitesInfo (d, 
                            PI {callSites, newBlocksMap, inlinedCS, ...}, 
