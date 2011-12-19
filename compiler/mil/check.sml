@@ -774,7 +774,8 @@ struct
                    fun doOne (i, (fk, opnd)) =
                        let
                          fun msg' () = msg () ^ ": free variable " ^ Int.toString i
-                         val _ = operand (s, e, msg', opnd)
+                         val t = operand (s, e, msg', opnd)
+                         val () = consistentFieldKind (s, e, msg', fk, t)
                        in ()
                        end
                    val () = Vector.foreachi (fvs, doOne)
@@ -826,8 +827,10 @@ struct
                  let
                    val _ = sumTag (s, e, msg, tag)
                    fun msg2 () = msg () ^ ": of vals"
-                   val _ = operands (s, e, msg2, ofVals)
+                   val ts = operands (s, e, msg2, ofVals)
                    val () = sameLength (s, e, msg2, typs, ofVals)
+                   val () = Vector.foreach2 (typs, ts, 
+                                          fn (fk, t) => consistentFieldKind (s, e, msg2, fk, t))
                  in some M.TNone
                  end
                | M.RhsSumProj {typs, sum, tag, idx} =>
@@ -1297,7 +1300,8 @@ struct
                   fun doOne (i, (fk, opnd)) =
                       let
                         fun msg' () = msg () ^ ": free variable " ^ Int.toString i
-                        val _ = operand (s, e, msg', opnd)
+                        val t = operand (s, e, msg', opnd)
+                        val () = consistentFieldKind (s, e, msg', fk, t)
                       in ()
                       end
                   val () = Vector.foreachi (fvs, doOne)
