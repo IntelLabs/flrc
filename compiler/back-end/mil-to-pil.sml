@@ -2244,16 +2244,16 @@ struct
                  val seen = LS.insert (seen, src)
                  val b = MU.CodeBody.block (cb, src)
                  val {blocks, exits} = MU.Block.successors b
-                 val folder = fn (tgt, s) => visitEdge ((src, tgt), s)
-               in LS.fold (blocks, (seen, be), folder)
+                 val folder = fn (tgt, be) => visitEdge ((src, tgt), (seen, be))
+               in LS.fold (blocks, be, folder)
                end
         and rec visitEdge = 
          fn (e as (src, tgt), s as (seen, be)) =>
             if LS.member (seen, tgt) then
-              (seen, LLS.insert (be, e))
+              LLS.insert (be, e)
             else
-               visit (tgt, s)
-        val (seen, backEdges) = visit (entry, (LS.empty, LLS.empty))
+              visit (tgt, s)
+        val backEdges = visit (entry, (LS.empty, LLS.empty))
       in backEdges
       end
 
