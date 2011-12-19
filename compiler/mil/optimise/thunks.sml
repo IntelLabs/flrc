@@ -17,6 +17,7 @@ struct
 
   structure M = Mil
   structure MU = MilUtils
+  structure MPU = MU.Prims.Utils
   structure PD = PassData
   structure L = Layout
   structure LU = LayoutUtils
@@ -276,7 +277,11 @@ struct
                          val () = 
                              case rhs
                               of M.RhsSimple s         => ()
-                               | M.RhsPrim _           => computation ()
+                               | M.RhsPrim r           => 
+                                 if Effect.subset (MPU.Effects.t (#prim r), Effect.Total) then
+                                   ()
+                                 else
+                                   computation ()
                                | M.RhsTuple r          => ()
                                | M.RhsTupleSub tf      => computation ()
                                | M.RhsTupleSet r       => computation ()
