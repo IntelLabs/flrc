@@ -258,6 +258,13 @@ struct
           ()
   end
 
+  structure Chat = ChatF (struct 
+                            type env = PD.t
+                            val extract = PD.getConfig
+                            val name = passname
+                            val indent = 2
+                          end)
+
   structure Time = 
   struct
     val start  : unit -> Time.t = Time.now 
@@ -266,8 +273,8 @@ struct
         let
           val t2 = Time.now ()
         in 
-          Debug.print (d, "Subpass \"" ^ subpass ^ "\" executed in " ^ 
-                          Time.toString (Time.- (t2, t1))^ "s.\n")
+          Chat.log1 (d, "Subpass \"" ^ subpass ^ "\" executed in " ^ 
+                        Time.toString (Time.- (t2, t1))^ "s.\n")
         end
   end
 

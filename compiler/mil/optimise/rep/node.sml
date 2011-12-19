@@ -46,6 +46,8 @@ sig
                 * Mil.fieldVariance option 
                 -> unit
   val setShape : node * node MilRepObject.Shape.shape option -> unit
+  val setAlignment : node * Mil.valueSize option -> unit
+  val setFieldVariance : node * Mil.fieldVariance option -> unit
   val layout : Config.t * Mil.symbolInfo * node * ((id -> Layout.t option) option) -> Layout.t
 
   structure Unify :
@@ -187,6 +189,22 @@ struct
         val ndR as ref (ND {fk, alignment, shape, variance}) = nodeGetNodeData n
         val nd = ND {fk = fk, alignment = alignment, shape = s, variance = variance}
         val () = ndR := nd
+      in ()
+      end
+
+  val setAlignment = 
+   fn (n, alignment) => 
+      let
+        val ndR as ref (ND {fk, alignment=_, shape, variance}) = nodeGetNodeData n
+        val () = setData (n, shape, fk, alignment, variance)
+      in ()
+      end
+
+  val setFieldVariance = 
+   fn (n, variance) => 
+      let
+        val ndR as ref (ND {fk, alignment, shape, variance=_}) = nodeGetNodeData n
+        val () = setData (n, shape, fk, alignment, variance)
       in ()
       end
 

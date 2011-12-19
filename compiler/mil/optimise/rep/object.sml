@@ -49,6 +49,7 @@ sig
     sig
       val tuple : 'node shape -> {pok : Mil.pObjKind option, fields : 'node Vector.t, array : 'node option} option
       val thunkVal : 'node shape -> 'node option
+      val sum : 'node shape -> {tag : 'node, arms : (Mil.constant * ('node Vector.t)) Vector.t} option
     end
   end (* structure Shape *)
 
@@ -806,6 +807,18 @@ struct
             of TThunk (_, res, _) => SOME res
              | _ => NONE)
 
+      val sum = 
+       fn s => 
+          (case s
+            of TSum (tag, arms) => 
+               let
+                 val arms = CD.toVector arms
+                 val doOne =
+                  fn (c, seq) => (c, #1 (Seq.deconstruct seq))
+                 val arms = Vector.map (arms, doOne)
+               in SOME {tag = tag, arms = arms}
+               end
+             | _ =>  NONE)
     end (* structure Dec *)
   end (* structure Shape *)
 
