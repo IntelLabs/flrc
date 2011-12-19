@@ -127,6 +127,9 @@ struct
               of MRB.IiTupleDescriptor {fixed, array} => 
                  M.TD {fixed = Vector.map (fixed, fn n => fieldDescriptorForNode n),
                        array = Option.map (array, fn n => fieldDescriptorForNode n)}
+               | MRB.IiMetaData {pok, pinned, fixed, array} => 
+                 M.TD {fixed = Vector.map (fixed, fn n => fieldDescriptorForNode n),
+                       array = Option.map (array, fn (_, n) => fieldDescriptorForNode n)}
                | _ => fail ("buildTupleDescriptor", "Id has no tuple descriptor entry"))
       in td
       end
@@ -436,7 +439,14 @@ struct
                  in M.GThunkValue {typ = typ, ofVal = ofVal}
                  end
                | M.GSimple _ => g
-               | M.GClosure _ => g
+               | M.GClosure {code, fvs} => 
+                 let
+                   val (fvsOld, opers) = Vector.unzip fvs
+                   val fvs = buildClosureDescriptor (se, id)
+                   val () = checkClosureDescriptor (se, id, fvs, fvsOld)
+                   val fvs = Vector.zip (fvs, opers)
+                 in M.GClosure {code = code, fvs = fvs}
+                 end
                | M.GSum {tag, typs = typOlds, ofVals} => 
                  let
                    val (typ, typs) = buildSumDescriptor (se, id)

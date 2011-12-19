@@ -536,6 +536,9 @@ struct
                                         val getConfig = getConfig
                                       end)
 
+      val nodeIsLive = 
+       fn (state, env, n) => FG.query (getFlowGraph state, n)
+
       val variableIsDead = 
        fn (state, env, v) => VS.member (getDead env, v)
 
@@ -587,6 +590,7 @@ struct
             val fg = getFlowGraph state
             val fieldDefault = fn fk => fieldDefault (state, env, fk)
             val dead = fn v => variableIsDead (state, env, v)
+            val liveN = fn n => nodeIsLive (state, env, n)
             val live = not o dead
             val deadV = fn vs => Vector.forall (vs, dead)
             val liveV = not o deadV
@@ -641,6 +645,7 @@ struct
                                 | M.FiVectorVariable _ => field
                 in M.TF {tupDesc = tupDesc, tup = tup, field = field}
                 end
+
             val thunkGetFv = 
              fn {typ, fvs, thunk, idx} => 
                 let
@@ -652,6 +657,7 @@ struct
                   val r = {typ = typ, fvs = fvs, thunk = thunk, idx = idx}
                 in r
                 end
+
             val closureGetFv = 
              fn {fvs, cls, idx} => 
                 let
@@ -664,16 +670,50 @@ struct
                 in r
                 end
 
+            val getSumDescriptor = 
+             fn () =>
+                case MRS.iInfo (summary, MU.Id.I n)
+                 of MRB.IiSum p => p
+                  | _           => fail ("sumDesc", "Bad descriptor")
+
             val sumProj = 
              fn {typs, sum, tag, idx} => 
                 let
-                  val nodes = 
-                      case MRS.iInfo (summary, MU.Id.I n)
-                       of MRB.IiSum (tag, fields) => fields
-                        | _                => fail ("sumProj", "Bad descriptor")
+                  val (tagN, nodes) = getSumDescriptor ()
                   val idx = adjustIndex (idx, nodes)
-                  val r = {typs = typs, sum = sum, tag = tag, idx = idx}
-                in r
+                  val rhs = 
+                      if liveN tagN then
+                        M.RhsSumProj {typs = typs, sum = sum, tag = tag, idx = idx}
+                      else
+                        let
+                          val fds = Vector.map (typs, MU.FieldDescriptor.unalignedRO)
+                          val td = MU.Tuple.td fds
+                          val rhs = MU.Tuple.proj (td, sum, idx)
+                        in rhs
+                        end
+                in rhs
+                end
+
+            val sum = 
+             fn {typs, ofVals, tag} =>
+                let
+                  val typs = 
+                      let val f = fn (t, oper) => if liveO oper then SOME t else NONE
+                      in Vector.keepAllMap2 (typs, ofVals, f)
+                      end
+                  val ofVals = Vector.keepAll (ofVals, liveO)
+                  val (tagN, _) = getSumDescriptor ()
+                  val rhs = 
+                      if liveN tagN then
+                        M.RhsSum {typs = typs, ofVals = ofVals, tag = tag}
+                      else
+                        let
+                          val fds = Vector.map (typs, MU.FieldDescriptor.unalignedRO)
+                          val mdd = MU.Tuple.mdd (M.PokTagged, fds)
+                          val rhs = MU.Tuple.new (mdd, ofVals)
+                        in rhs
+                        end
+                in rhs
                 end
 
             val replace = fn rhs => SOME (MS.instruction (M.I {dests = dests, n = n, rhs = rhs}))
@@ -771,25 +811,18 @@ struct
                   | M.RhsEnum r           => if deadV dests then kill () else
                                              if liveO (#tag r) then keep () else
                                              let
-                                               val tag = fieldDefault (#typ r)
-                                               val rhs = M.RhsEnum {tag = tag, typ = #typ r}
+                                               val mdd = MU.Tuple.mdd (M.PokTagged, Vector.new0())
+                                               val rhs = MU.Tuple.new (mdd, Vector.new0 ())
                                              in replace rhs
                                              end
                   | M.RhsSum r            => if deadV dests then kill () else
                                              let
-                                               val {typs, ofVals, tag} = r
-                                               val typs = 
-                                                   let val f = fn (t, oper) => if liveO oper then SOME t else NONE
-                                                   in Vector.keepAllMap2 (typs, ofVals, f)
-                                                   end
-                                               val ofVals = Vector.keepAll (ofVals, liveO)
-                                               val rhs = M.RhsSum {typs = typs, ofVals = ofVals, tag = tag}
+                                               val rhs = sum r
                                              in replace rhs
                                              end
                   | M.RhsSumProj r        => if deadV dests then kill () else
                                              let
-                                               val r = sumProj r
-                                               val rhs = M.RhsSumProj r
+                                               val rhs = sumProj r
                                              in replace rhs
                                              end
                   | M.RhsSumGetTag r      => keepIfAnyLiveV dests
@@ -940,6 +973,7 @@ struct
             val fieldDefault = fn fk => fieldDefault (state, env, fk)
             val dead = fn v => variableIsDead (state, env, v)
             val live = not o dead
+            val liveN = fn n => nodeIsLive (state, env, n)
             val deadV = fn vs => Vector.forall (vs, dead)
             val liveV = not o deadV
             val keep = fn () => (env, NONE)
@@ -1008,7 +1042,20 @@ struct
                           in Vector.keepAllMap2 (typs, ofVals, f)
                           end
                       val ofVals = Vector.keepAll (ofVals, liveO)
-                      val g = M.GSum {typs = typs, ofVals = ofVals, tag = tag}
+                      val tagN = 
+                          case MRS.iInfo (getSummary state, MU.Id.G v)
+                           of MRB.IiSum (tagN, _) => tagN
+                            | _                   => fail ("GSum", "Bad descriptor")
+                      val g = 
+                          if liveN tagN then
+                            M.GSum {typs = typs, ofVals = ofVals, tag = tag}
+                          else
+                            let
+                              val fds = Vector.map (typs, MU.FieldDescriptor.unalignedRO)
+                              val mdd = MU.Tuple.mdd (M.PokTagged, fds)
+                              val g = M.GTuple {mdDesc = mdd, inits = ofVals}
+                            in g
+                            end
                     in (env, SOME [(v, g)])
                     end
                   | M.GPSet s => 
@@ -1142,6 +1189,14 @@ struct
            fn n => FG.query (fg, n)
           val deadN = not o liveN
           val filterV = fn v => Vector.keepAll (v, liveN)
+          val mkFieldNode = 
+           fn n => 
+              let
+                val () = MRN.setAlignment (n, SOME M.Vs8)
+                val () = MRN.setFieldVariance (n, SOME M.FvReadOnly)
+              in ()
+              end
+
           val update = 
            fn info => 
               case info 
@@ -1195,14 +1250,41 @@ struct
                   end
                 | MRB.IiThunk {typ, fvs} => MRB.IiThunk {typ = typ, fvs = filterV fvs}
                 | MRB.IiClosure fvs      => MRB.IiClosure (filterV fvs)
-                | MRB.IiSum (tag, ns)    => MRB.IiSum (tag, filterV ns)
+                | MRB.IiSum (tag, ns)    => 
+                  if liveN tag then
+                    MRB.IiSum (tag, filterV ns)
+                  else
+                    let
+                      val fixed = filterV ns
+                      val () = Vector.foreach (fixed, mkFieldNode)
+                    in MRB.IiMetaData {pok = M.PokTagged, pinned = false, fixed = fixed, array = NONE}
+                    end
           val () = MRS.updateIInfo (summary, update)
 
           val doNode =
            fn (_, n) => 
               let
                 val doIt = 
-                 fn s => MRN.setShape (n, SOME (MRO.Shape.filter (s, deadN)))
+                 fn s => 
+                    let
+                      val s = MRO.Shape.filter (s, deadN)
+                      val s = case MRO.Shape.Dec.sum s
+                               of SOME {tag, arms} => 
+                                  let
+                                    val fields = 
+                                        if Vector.length arms = 1 then
+                                          #2 (Vector.sub (arms, 0))
+                                        else
+                                          Vector.new0 ()
+                                    val () = Vector.foreach (fields, mkFieldNode)
+                                    val s = MRO.Shape.Build.tuple {pok = SOME M.PokTagged, 
+                                                                   fields = fields, 
+                                                                   array = NONE}
+                                  in s
+                                  end
+                                | NONE => s
+                    in MRN.setShape (n, SOME s)
+                    end
               in 
                 if liveN n then
                   Option.foreach (MRN.shape' n, doIt)
