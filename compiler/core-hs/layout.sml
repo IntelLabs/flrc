@@ -7,6 +7,7 @@ sig
   val layoutPName          : CoreHs.pName            -> Layout.t
   val layoutAnMName        : CoreHs.anMName          -> Layout.t
   val layoutMName          : CoreHs.mName            -> Layout.t
+  val layoutCC             : CoreHs.callconv         -> Layout.t
   val layoutKind           : CoreHs.kind             -> Layout.t
   val layoutTy             : CoreHs.ty               -> Layout.t
   val layoutVBind          : CoreHs.vBind            -> Layout.t
@@ -76,6 +77,11 @@ struct
 
   fun layoutQName (m, v) = L.seq [layoutMName m, L.str v]
   fun qNameToString name = Layout.toString (layoutQName name)
+
+  val layoutCC 
+    = fn Prim    => L.str "prim"
+      |  CCall   => L.str "ccall"
+      |  StdCall => L.str "stdcall" 
 
   fun layoutKind (Karrow (k1, k2)) = L.paren (L.mayAlign [ L.seq [layoutAKind k1, L.str " ->"]
                                                          , layoutKind k2])
@@ -204,8 +210,8 @@ struct
     | layoutExp (Note (s, e)) =
       L.mayAlign [ L.str ("%note \"" ^ escape s ^ "\"")
                  , layoutExp e]
-    | layoutExp (External (p, n, t)) =
-      L.mayAlign [ L.str ("%external ccall \"" ^ escape n ^ "\"")
+    | layoutExp (External (p, cc, n, t)) =
+      L.mayAlign [ L.seq [L.str "%external ", layoutCC cc, L.str (" \"" ^ escape n ^ "\"")]
                  , layoutATy t]
     | layoutExp e = layoutFExp e
 

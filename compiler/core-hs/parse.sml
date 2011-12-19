@@ -69,7 +69,7 @@ struct
   val coreLabel =
       reservedH "label" >>
       P.stringLiteral   >>= (fn s =>
-      return (C.External ("", s, CHP.tAddrzh)))
+      return (C.External ("", C.Prim, s, CHP.tAddrzh)))
 
   datatype CoercionTy = TransC | InstC | SymC | UnsafeC | LeftC | RightC
 
@@ -295,17 +295,22 @@ struct
 
   val coreLit = coreLiteral >>= (return o C.Lit)
 
+  val callconv = 
+      (P.symbol "prim" >> return C.Prim) || 
+      (P.symbol "ccall" >> return C.CCall) || 
+      (P.symbol "stdcall" >> return C.StdCall)
+
   (* TODO: handle the difference between ccall and stdcall *)
   val coreExternal =
       (reservedH "external" >>
-       (P.symbol "prim" || P.symbol "ccall" || P.symbol "stdcall") >>
+       callconv             >>= (fn c =>
        P.stringLiteral      >>= (fn s =>
        $ coreAtySaturated   >>= (fn t =>
-       return (C.External ("", s, t))))) ||
+       return (C.External ("", c, s, t)))))) ||
       (reservedH "dynexternal" >>
-       (P.symbol "prim" || P.symbol "ccall" || P.symbol "stdcall") >>
+       callconv                >>= (fn c =>
        $ coreAtySaturated      >>= (fn t =>
-       return (C.External ("", "[dynamic]", t))))
+       return (C.External ("", c, "[dynamic]", t)))))
 
 
   fun caseVarBinds () =
@@ -774,13 +779,13 @@ struct
             in
               (C.Note (s, e), m)
             end
-          | scanExp env (C.External (_, s, t), m) = 
+          | scanExp env (C.External (_, c, s, t), m) = 
             let
               val (t, m) = scanTy (t, m)
             in
               (* TODO: pName here is imprecise because this external call might be a 
                * result of inlining, so this is only a best effort guess. *)
-              (C.External (pName, s, t), m)
+              (C.External (pName, c, s, t), m)
             end
 
 
