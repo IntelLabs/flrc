@@ -268,13 +268,21 @@ struct
   structure Time = 
   struct
     val start  : unit -> Time.t = Time.now 
-    val report : PassData.t * string * Time.t -> unit = 
+    val report1 : PassData.t * string * Time.t -> unit = 
      fn (d, subpass, t1) =>
         let
           val t2 = Time.now ()
         in 
           Chat.log1 (d, "Subpass \"" ^ subpass ^ "\" executed in " ^ 
-                        Time.toString (Time.- (t2, t1))^ "s.\n")
+                        Time.toString (Time.- (t2, t1))^ "s.")
+        end
+    val report2 : PassData.t * string * Time.t -> unit = 
+     fn (d, subpass, t1) =>
+        let
+          val t2 = Time.now ()
+        in 
+          Chat.log2 (d, "Subpass \"" ^ subpass ^ "\" executed in " ^ 
+                        Time.toString (Time.- (t2, t1))^ "s.")
         end
   end
 
@@ -846,10 +854,10 @@ struct
                    ProfInfo.printFunctions (d, imil, profiling)
                  else
                    ()
-        val () = Time.report (d, "profiling analysis", startTime)
+        val () = Time.report1 (d, "profiling analysis", startTime)
         val startTime = Time.start ()
         val callSites = CallSitesInfo.new (d, imil, profiling)
-        val () = Time.report (d, "call sites information analysis", startTime)
+        val () = Time.report1 (d, "call sites information analysis", startTime)
       in
         callSites
       end
@@ -972,7 +980,7 @@ struct
         val csi as CallSitesInfo.T {funInfoDict, callSites} = callSitesInfo
 
         val bestCS = CallSitesInfo.fold (callSitesInfo, NONE, choose)
-        val () = Time.report (d, "select best call site", startTime)
+        val () = Time.report2 (d, "select best call site", startTime)
       in bestCS
       end
       
@@ -994,7 +1002,7 @@ struct
           val () = incRounds info
           val startTime = Time.start ()
           val () = MilSimplify.program (d, imil)
-          val () = Time.report (d, "optimize (before select best cs)", startTime)
+          val () = Time.report1 (d, "optimize (before select best cs)", startTime)
           val () = recomputePolicyInfo (d, imil, info)
         in
           selectBestCallSite (d, imil, info)
@@ -1056,6 +1064,7 @@ struct
    *)
   fun policy (info: policyInfo, d: PD.t, imil: IMil.t) =
       let
+        val () = Chat.log1 (d, "Starting inline profile round "^ Int.toString (getIterations info))
         val () = incIterations (info)
         val lastInlined = getInlinedCS (info)
         val () = updateCallSitesInfo (d, info, imil)
