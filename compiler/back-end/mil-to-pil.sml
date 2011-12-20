@@ -2239,21 +2239,25 @@ struct
       let
         (* By invariant, l has not been visited *)
         val rec visit = 
-            fn (src, (seen, be)) => 
+            fn (src, (path, done, be)) => 
                let
-                 val seen = LS.insert (seen, src)
+                 val path = LS.insert (path, src)
                  val b = MU.CodeBody.block (cb, src)
                  val {blocks, exits} = MU.Block.successors b
-                 val folder = fn (tgt, be) => visitEdge ((src, tgt), (seen, be))
-               in LS.fold (blocks, be, folder)
+                 val folder = fn (tgt, (done, be)) => visitEdge ((src, tgt), (path, done, be))
+                 val (done, be) = LS.fold (blocks, (done, be), folder)
+                 val done = LS.insert (done, src)
+               in (done, be)
                end
         and rec visitEdge = 
-         fn (e as (src, tgt), s as (seen, be)) =>
-            if LS.member (seen, tgt) then
-              LLS.insert (be, e)
+         fn (e as (src, tgt), s as (path, done, be)) =>
+            if LS.member (path, tgt) then
+              (done, LLS.insert (be, e))
+            else if LS.member (done, tgt) then
+              (done, be)
             else
               visit (tgt, s)
-        val backEdges = visit (entry, (LS.empty, LLS.empty))
+        val (_, backEdges) = visit (entry, (LS.empty, LS.empty, LLS.empty))
       in backEdges
       end
 
