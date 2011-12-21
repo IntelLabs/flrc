@@ -296,7 +296,7 @@ struct
       let
         val () = Debug.incExec ()
         val () = Debug.printStartMsg (d)
-        val () = Inliner.program (d, imil)
+        val () = Inliner.program (d, imil, NONE)
         val () = PD.report (d, passname)
         val () = Debug.printCallGraphEnd (imil, d)
         val () = Debug.printEndMsg (d)

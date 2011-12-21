@@ -23,6 +23,7 @@ struct
        (#"E", MilRep.Dce.pass         ),
        (#"F", MilRep.Flatten.pass     ),
        (#"f", MilLowerClosures.pass   ),
+       (#"H", MilInlineSmall.pass     ),
        (#"I", MilInlineLeaves.pass    ),
        (#"J", MilInlineAggressive.pass),
        (#"K", MilInlineProfile.pass   ),
@@ -167,8 +168,8 @@ struct
   val filter = fn s => String.keepAll (s, enabled)
   val o0String = filter "fst"
   val o1String = filter "SfstS"
-  val o2String = filter "[{S}VIVIBfst]S"
-  val o3String = filter "[{S} TREV CIV FREV DCYLV REV TIJKTV B FREV fst]S"
+  val o2String = filter "[{S}VHIVHIBfst]S"
+  val o3String = filter "[{S} TREV CHIV FREV HDCYLV REV THIJKTV B FREV fst]S"
 
   val o0Control = Option.valOf (parseControl o0String)
   val o1Control = Option.valOf (parseControl o1String)
