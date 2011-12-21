@@ -272,7 +272,7 @@ struct
         val () = dbgString (d, " - Starting the aggressive inliner"^
                                " (Iteration # "^nExec'^")...\n")
                  
-        val () = Inliner.program (d, imil)
+        val () = Inliner.program (d, imil, NONE)
         val () = PD.report (d, passname)
         val () = dbgString (d, " - Finishing the aggressive inliner...\n")
       in
