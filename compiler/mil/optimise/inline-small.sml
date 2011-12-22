@@ -11,14 +11,15 @@ struct
 
   val passname = "MilInlineSmall"
 
-  val stats = [("InlineSmall", "Small/nonrec functions inlined")]
+  val stats = [("InlineSmall", "Small functions inlined")]
 
   structure M = Mil
   structure PD = PassData
-  structure Cfg = IMil.Cfg
-  structure WS = IMil.WorkSet
   structure Use = IMil.Use
-  structure MOU = MilOptUtils
+  structure IFunc = IMil.IFunc
+  structure MU = MilUtils
+  structure WS = IMil.WorkSet
+  structure MS = MilSimplify
 
   structure Chat = ChatF(struct type env = PD.t
                          val extract = PD.getConfig
@@ -26,118 +27,78 @@ struct
                          val indent = 0
                          end)
                    
+  val <@ = Try.<@
 
+  val inlineSmallLimit = 5
 
- 
-  val inlineSmallLimit = 50
+  val rounds = 5
 
   val (debugPassD, debugPass) =
       Config.Debug.mk (passname, "debug the Mil inline small pass")
 
-  fun debugShowPre (d, imil, fname)  = 
-      if Config.debug andalso debugPass (PD.getConfig d) then
-        if (Config.debugLevel (PD.getConfig d, passname)) > 0 then 
-          let
-            val () = print ("Inlining function:\n")
-            val () = IMil.printCfg (imil, Cfg.getCfgByName (imil, fname))
-            val () = print "\n"
-          in ()
-          end
-        else 
-          let
-            val () = print ("Inlining function: ")
-            val () = IMil.printVar (imil, fname)
-            val () = print "\n"
-          in ()
-          end
-        else ()
-
-  fun debugShowPost (d, imil)  = 
-      if Config.debug andalso 
-         debugPass (PD.getConfig d) andalso
-         (Config.debugLevel (PD.getConfig d, passname)) > 1 then 
-        let
-          val () = print ("After inlining:\n")
-          val mil = IMil.unBuild imil
-          val () = MilLayout.printGlobalsOnly (PD.getConfig d, mil)
-          val () = print "\n"
-        in ()
-        end
-      else ()
-
-  fun tryInlineSmall (d, imil, worklist, (fname, c)) = 
-      Try.try
-        (fn () => 
-            let
-              val () = Try.require (Cfg.getSize (imil, c) < inlineSmallLimit)
-              val () = Try.require (not (Cfg.getRecursive (imil, c)))
-              val uses = Cfg.getUses (imil, c)
-              fun getCandidateCall u = 
-                  Try.try
-                    (fn () => 
-                        let
-                          val i = Try.<- (MOU.useToIInstr (imil, u))
-                          val t = Try.<- (MOU.iinstrToTransfer (imil, i))
-                          fun warn f = 
-                              if f = fname then ()
-                              else 
-                                let 
-                                  val () = Chat.warn0 (d, 
-                                                       "Fun code used in call "^
-                                                       "but not callee!")
-                                in Try.fail()
-                                end
-                                
-                          fun doConv conv = 
-                              (case conv
-                                of M.CCode f => warn f
-                                 | M.CDirectClosure (f, c) => warn f
-                                 | _ => Try.fail())
-
-                          val () = 
-                              case t
-                               of M.TCall (conv, _, _, _, _) => doConv conv
-                                | M.TTailCall (conv, _, _) => doConv conv
-                                | _ => Try.fail()
-                        in i
-                        end)
-
-              val calls = Vector.keepAllMap (uses, getCandidateCall)
-              val () = Try.require (Vector.length calls > 0)
-              val () = debugShowPre (d, imil, fname)
-              val ils = Vector.map (calls, 
-                                 fn call => Cfg.inlineCopy (imil, fname, call))
-              val () = PD.click (d, "InlineSmall")
-              val () = debugShowPost (d, imil)
-              val () = 
-                  Vector.foreach 
-                    (ils, 
-                     (fn is =>           
-                         List.foreach (is, fn i => WS.addInstr (worklist, i))))
-              val () = WS.addItem (worklist, IMil.ICode c)
-            in ()
-            end)
-      
-
-  fun inlineSmall (d, imil, w) = 
+  val inlineOne = 
+   fn (d, imil, f) =>
       let
-        val cfgs = Cfg.getCfgs imil
-        fun help c = 
-            let
-              val () = 
-                  if Try.bool (tryInlineSmall (d, imil, w, c)) then
-                    MilSimplify.simplify (d, imil, w)
-                  else ()
-            in ()
-            end
-        val () = List.foreach (cfgs, help)
+        val fname = IFunc.getFName (imil, f)
+        fun getCandidateCall u = 
+            Try.try
+              (fn () => 
+                  let
+                    val t = <@ Use.toTransfer u
+                    val {callee, ...} = <@ MU.Transfer.Dec.tInterProc t
+                    val {call, ...} = <@ MU.InterProc.Dec.ipCall callee
+                    val () = 
+                        (case call
+                          of M.CCode {ptr, code} => Try.require (ptr = fname)
+                           | M.CDirectClosure {cls, code} => Try.require (code = fname)
+                           | _ => Try.fail())
+                    val () = PD.click (d, "InlineSmall")
+                  in <@ Use.toIInstr u
+                  end)
+        val uses = IFunc.getUses (imil, f)
+        val calls = Vector.keepAllMap (uses, getCandidateCall)
+        val calls = Vector.toList calls
+      in calls
+      end
+
+  val inlineAll =
+   fn (d, imil) => 
+      let
+        val funcs = IMil.Enumerate.T.funcs imil
+        val small = List.keepAll (funcs, fn f => IFunc.getSize (imil, f) < inlineSmallLimit)
+        val calls = List.concatMap (small, fn c => inlineOne (d, imil, c))
+      in calls
+      end
+
+  val chooseCalls : unit * PassData.t * IMil.t -> IMil.iInstr list = 
+   fn ((), pd, imil) => inlineAll (pd, imil)
+
+  val optimize = 
+   fn ((), pd, imil, il) => 
+      let
+        val ws = WS.new ()
+        val () = List.foreach (il, fn i => WS.addInstr (ws, i))
+        val () = MS.simplify (pd, imil, ws)
       in ()
       end
 
+  structure RewriterClient =
+  struct
+    type policyInfo = unit
+    val analyze = fn _ => ()
+    type callId = IMil.iInstr
+    val callIdToCall =  fn (info, imil, i) => i
+    val associateCallToCallId = fn _ => ()
+    val rewriteOperation = fn _ => InlineFunctionCopy
+    val policy = chooseCalls
+    val optimizer = SOME optimize
+  end
+    
+  structure Inliner = MilInlineRewriterF(RewriterClient)
+
   fun program (imil, d) = 
       let
-        val w = WS.new()
-        val () = inlineSmall (d, imil, w)
+        val () = Inliner.program (d, imil, SOME rounds)
         val () = PD.report (d, passname)
       in ()
       end

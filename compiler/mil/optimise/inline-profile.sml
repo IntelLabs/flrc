@@ -1115,7 +1115,7 @@ struct
       let
         val () = Debug.incExec ()
         val () = Debug.printStartMsg (d)
-        val () = Inliner.program (d, imil)
+        val () = Inliner.program (d, imil, NONE)
         val () = MilSimplify.program (d, imil)
         val () = PD.report (d, passname)
         val () = Debug.printEndMsg (d)

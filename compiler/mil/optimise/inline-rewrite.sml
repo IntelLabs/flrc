@@ -6,7 +6,8 @@
 (* Signature of a Mil Inline Rewriter. *)
 signature MIL_INLINE_REWRITER = 
   sig
-    val program : PassData.t * IMil.t -> unit
+    (* Passdata, program, rounds *)
+    val program : PassData.t * IMil.t * int option -> unit
   end
 
 (* Operations that can be performed by the inliner. *)
@@ -171,27 +172,45 @@ struct
    * the policy function returns an empty list of call sites to inline. *)
   fun iterativeRewrite (info : policyInfo, 
                         d    : PD.t, 
-                        imil : IMil.t) : unit =
-      Try.exec
-        (fn () =>
+                        imil : IMil.t, 
+                        roundsO : int option) : unit =
+      let
+        val inline = 
+         fn () =>
+            case policy (info, d, imil)
+             of [] => false
+              | l  => 
+                let
+                  val il = rewriteCallSites (info, d, l, imil)
+                  val () = optimizeIMil (info, d, imil, il)
+                in true
+                end
+
+        val inlineBounded = 
+         fn rounds =>
             let
-              (* Collect the call sites to inline. *)
-              val callsToRewrite : callId list = policy (info, d, imil)
-              val () = Try.require (not (List.isEmpty (callsToRewrite)))
-              (* Inline the call sites. *)
-              val il = rewriteCallSites (info, d, callsToRewrite, imil)
-              (* Optimize before next inline iteration. *)
-              val () = optimizeIMil (info, d, imil, il)
-            in 
-              (* Keep inlining/cloning until policy returns a nil list. *)
-              iterativeRewrite (info, d, imil)
-            end)
+              val rec loop =
+               fn i => 
+                  if i < rounds andalso inline () then
+                    loop (i+1)
+                  else
+                    ()
+            in loop 0
+            end
+
+        val rec inlineUnbounded = 
+         fn () => if inline () then inlineUnbounded () else ()
+            
+      in case roundsO
+          of NONE        => inlineUnbounded ()
+           | SOME rounds => inlineBounded rounds
+      end
       
-  fun program (d : PD.t, imil : IMil.t) : unit =
+  fun program (d : PD.t, imil : IMil.t, roundsO : int option) : unit =
       let
         val info = analyze (d, imil)
       in
-        iterativeRewrite (info, d, imil)
+        iterativeRewrite (info, d, imil, roundsO)
       end
       
 end (* Functor MilInlineRewriterF *)

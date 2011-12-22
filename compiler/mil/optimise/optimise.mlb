@@ -21,6 +21,7 @@ local
         inline-aggressive.sml
         inline-profile.sml
         inline-leaves.sml
+        inline-small.sml
         rep/rep.mlb
         thunks.sml
         branch-remove.sml
@@ -30,7 +31,6 @@ in
         structure MilContify
         structure MilCse
         structure MilDblDiamond
-        structure MilInlineLeaves
         structure MilLicm
         structure MilRemoveBranch
         structure MilRep
@@ -38,6 +38,8 @@ in
         structure MilThunkOptimize
         structure MilVectorize
         structure MilInlineAggressive   
+        structure MilInlineLeaves
         structure MilInlineProfile   
+        structure MilInlineSmall
         structure MilLoopInvert
 end
