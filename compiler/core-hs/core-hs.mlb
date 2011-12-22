@@ -19,7 +19,7 @@ local
         to-mil.sml
         link-option.sml
 in
-        structure ToMilUtils
+        structure HsToMilUtils
         structure CoreHs
         structure ANormPrim
         structure ANormLazy

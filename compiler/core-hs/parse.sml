@@ -54,6 +54,7 @@ struct
   structure QS = SetF (struct type t = C.identifier C.qualified val compare = CHU.compareQName end)
   structure QD = DictF (struct type t = C.identifier C.qualified val compare = CHU.compareQName end)
   structure SD = StringDict
+  structure TMU = HsToMilUtils
 
   structure Debug =
   struct
@@ -899,6 +900,8 @@ struct
   fun readModule ((), pd, basename) =
       let
         val config = PassData.getConfig pd
+        val libRoot = Path.fromString (TMU.getGhcLibRoot config)
+        val hcrRoot = Path.snoc (libRoot, "hcrlib")
          
         fun readOne (mname : C.anMName, defd : defDict, scanned : MS.t) =
             if MS.member (scanned, mname) 
@@ -908,8 +911,7 @@ struct
                   val _ = print' ("scan " ^ Layout.toString (CoreHsLayout.layoutAnMName mname) ^ " scanned = " ^ Int.toString(MS.size scanned) ^ "\n")
                   val path = mNameToPath mname
                   val f1 = Config.pathToHostString (config, path) ^ ".hcr"
-                  val path = Path.cons ("hcrlib", path)
-                  val path = Path.append (Config.pLibDirectory config, path)
+                  val path = Path.append (hcrRoot, path)
                   val f2 = Config.pathToHostString (config, path) ^ ".hcr"
                   fun scan module = 
                       let
@@ -924,7 +926,9 @@ struct
                     then scan (parseFile (f1, config))
                     else if File.doesExist f2 
                       then scan (parseFile (f2, config))
-                      else Fail.fail (passname, "readModule", "file " ^ f1 ^ " not found in current directory or in $PLIB/hcrlib")
+                      else Fail.fail (passname, "readModule", "file " ^ f1 ^ 
+                                      " not found in current directory or in " ^
+                                      Config.pathToHostString (config, hcrRoot))
                 end
 
         fun traceDef (name, def as (_, depends), state as (defd, traced, scanned)) =
@@ -969,7 +973,7 @@ struct
                 of NONE => Fail.fail (passname, "readModule", "main program not found")
                  | SOME def => 
                    let 
-                     val (_, traced, _) = traceDef (CHU.mainVar, def, (defd, QD.empty, scanned))
+                     val (_, traced, _) = traceDef (CHU.mainVar, def, (defd, QD.empty, scanned)) (* TODO: should be wrapperMainVar *)
                      val _ = print' ("traced = " ^ Layout.toString (Layout.sequence ("{", "}", ",") (List.map(QD.domain traced, CoreHsLayout.layoutQName))) ^ "\n")
                      val (tdefs, vdefs) = QD.fold (traced, ([], []), fn (_, (TDef d, _), (ts, vs)) => (d :: ts, vs)
                                                                       | (n, (VDef d, s), (ts, vs)) => (ts, (n, (d, s)) :: vs)
