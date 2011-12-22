@@ -62,7 +62,7 @@ signature CONFIG = sig
 			  rootsInGlobals: bool,
 			  style: gcStyle,
 			  tagOnly: bool},
-		     ghcOpt: int,
+		     ghcOpt: string list,
 		     home : Path.t,
                      host : os,
 		     keep: {cp: bool, hcr : bool, obj: bool, pil: bool},
@@ -117,7 +117,7 @@ signature CONFIG = sig
   val logLevel: t * 'a -> int
   val output: t -> outputKind
   val pOpt: t -> int
-  val ghcOpt: t -> int
+  val ghcOpt: t -> string list
   val parStyle: t -> parStyle
   val passEnabled: t * string -> bool
   val passGet: t * string
@@ -288,7 +288,7 @@ structure Config :> CONFIG = struct
          debugLev         : verbosity,
          feature_         : StringSet.t,
          gc               : gcConfig,
-         ghcOpt           : int,
+         ghcOpt           : string list,
          home             : Path.t,
          host             : os,
          keep             : {cp : bool, hcr : bool, pil : bool, obj : bool},
