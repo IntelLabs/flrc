@@ -100,25 +100,26 @@ struct
       Config.Feature.mk ("Plsr:disable-tail-call",
                          "implement tail calls as ordinary calls")
 
+  datatype compiler = CcGCC | CcICC | CcOpc | CcIpc
+  datatype linker = LdGCC | LdICC | LdOpc | LdIpc
+
   val pillarStack =   2097152  (* Decimal integer in bytes (  0x200000) *)
   val smallStack  =  33554432  (* Decimal integer in bytes ( 0x2000000) *)
   val largeStack  = 536870912  (* Decimal integer in bytes (0x20000000) *) 
 
-  fun stackSize (config : Config.t) = 
-      (case (Config.stack config, Config.output config)
-        of (SOME i, _) => i
-         | (NONE, Config.OkPillar) => pillarStack
-         | (NONE, Config.OkC) => smallStack)
+  fun stackSize (config : Config.t, ld) = 
+      (case (Config.stack config, Config.output config, ld)
+        of (SOME i, _, _) => i
+         | (NONE, Config.OkPillar, LdOpc) => pillarStack
+         | (NONE, Config.OkPillar,     _) => smallStack
+         | (NONE, Config.OkC,      _    ) => smallStack)
 
-  fun stackStr (config : Config.t) = 
+  fun stackStr (config : Config.t, ld) = 
       let
-        val i = stackSize config
+        val i = stackSize (config, ld)
         val s = Int.toString i
       in s
       end
-
-  datatype compiler = CcGCC | CcICC | CcOpc | CcIpc
-  datatype linker = LdGCC | LdICC | LdOpc | LdIpc
 
   fun sourceFile (config, compiler, fname) = fname^".c"
 
@@ -523,10 +524,10 @@ struct
 
     fun stack (config, ld) = 
         (case ld
-          of LdGCC    => ["--stack="^(stackStr config)]
-           | LdICC    => ["-stack:"^(stackStr config)]
-           | LdOpc    => ["-stack:"^(stackStr config)]
-           | LdIpc    => ["-stack:"^(stackStr config)]
+          of LdGCC    => ["--stack="^(stackStr (config, ld))]
+           | LdICC    => ["-stack:"^(stackStr (config, ld))]
+           | LdOpc    => ["-stack:"^(stackStr (config, ld))]
+           | LdIpc    => ["-stack:"^(stackStr (config, ld))]
         )
 
     fun control (config, ld) = 
