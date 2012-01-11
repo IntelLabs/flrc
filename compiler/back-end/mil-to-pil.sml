@@ -1272,15 +1272,23 @@ struct
         val newTuple =
             case array
              of SOME (i, _) =>
-                Pil.E.call (Pil.E.variable RT.Tuple.newVariable,
-                            [dest,
-                             vtable,
-                             Pil.E.int fixedSize,
-                             Pil.E.int (OM.extraSize (state, env, td)),
-                             genOperand (state, env, Vector.sub (inits, i))])
+                let
+                  val new = if pinned then RT.Tuple.newPinnedVariable else RT.Tuple.newVariable
+                in
+                  Pil.E.call (Pil.E.variable new,
+                              [dest,
+                               vtable,
+                               Pil.E.int fixedSize,
+                               Pil.E.int (OM.extraSize (state, env, td)),
+                               genOperand (state, env, Vector.sub (inits, i))])
+                end
               | NONE =>
-                Pil.E.call (Pil.E.variable RT.Tuple.newFixed,
-                            [dest, vtable, Pil.E.int fixedSize])
+                let
+                  val new = if pinned then RT.Tuple.newPinnedFixed else RT.Tuple.newFixed
+                in
+                  Pil.E.call (Pil.E.variable new,
+                              [dest, vtable, Pil.E.int fixedSize])
+                end
         val newTuple = Pil.S.expr newTuple
         fun af (off, fk, t, e) =
             let
