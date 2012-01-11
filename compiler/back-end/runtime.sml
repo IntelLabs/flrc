@@ -72,9 +72,12 @@ sig
 
     val xtras : Pil.identifier
 
-    val static      : Pil.identifier
-    val newFixed    : Pil.identifier
-    val newVariable : Pil.identifier
+    val static            : Pil.identifier
+    val newFixed          : Pil.identifier
+    val newVariable       : Pil.identifier
+    val newPinnedFixed    : Pil.identifier
+    val newPinnedVariable : Pil.identifier
+
 
   end
 
@@ -338,9 +341,11 @@ struct
 
     val xtras = Pil.identifier "extras"
 
-    val static      = Pil.identifier "pLsrTupleStatic"
-    val newFixed    = Pil.identifier "pLsrTupleNewFixed"
-    val newVariable = Pil.identifier "pLsrTupleNewVariable"
+    val static            = Pil.identifier "pLsrTupleStatic"
+    val newFixed          = Pil.identifier "pLsrTupleNewFixed"
+    val newVariable       = Pil.identifier "pLsrTupleNewVariable"
+    val newPinnedFixed    = Pil.identifier "pLsrTupleNewPinnedFixed"
+    val newPinnedVariable = Pil.identifier "pLsrTupleNewPinnedVariable"
 
   end
 
