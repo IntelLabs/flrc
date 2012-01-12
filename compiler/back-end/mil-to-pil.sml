@@ -1280,14 +1280,16 @@ struct
                                vtable,
                                Pil.E.int fixedSize,
                                Pil.E.int (OM.extraSize (state, env, td)),
-                               genOperand (state, env, Vector.sub (inits, i))])
+                               genOperand (state, env, Vector.sub (inits, i)),
+                               Pil.E.int alignment
+                             ])
                 end
               | NONE =>
                 let
                   val new = if pinned then RT.Tuple.newPinnedFixed else RT.Tuple.newFixed
                 in
                   Pil.E.call (Pil.E.variable new,
-                              [dest, vtable, Pil.E.int fixedSize])
+                              [dest, vtable, Pil.E.int fixedSize, Pil.E.int alignment])
                 end
         val newTuple = Pil.S.expr newTuple
         fun af (off, fk, t, e) =
