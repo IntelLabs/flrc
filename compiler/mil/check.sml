@@ -858,6 +858,7 @@ struct
         val ts = rhs (s, e, msg, r)
         (* XXX NG: If we used the dominator tree then we would bind dest *)
         val () = bindVarsTo (s, e, msg, dests, ts)
+        val e = bindVars (s, e, dests, M.VkLocal)
       in e
       end
 
@@ -1051,6 +1052,9 @@ struct
       in ()
       end
 
+  (* XXX we bind the return variables in all of the continuations
+   * including the cut continuations, which isn't right. This
+   * is an improvement over not checking any scope at all.  -leaf *)
   fun return (s, e, msg, r, ts) =
       case r
        of M.RNormal {rets, block, cuts = cs} =>
@@ -1063,7 +1067,8 @@ struct
             val () = labelUse (s, e, msg', block, Vector.new0 ())
             fun msg' () = msg () ^ ": cuts"
             val () = cuts (s, e, msg', cs)
-          in ()
+            val e = bindVars (s, e, rets, M.VkLocal)
+          in e
           end
         | M.RTail {exits} =>
           let
@@ -1073,7 +1078,7 @@ struct
                 case ts
                  of NONE => ()
                   | SOME ts => checkConsistentTyps (s, e, msg', rts, ts)
-          in ()
+          in e
           end
 
   fun checkContTyp (s, e, msg, t, ts) =
@@ -1093,15 +1098,23 @@ struct
 
   fun transfer (s, e, msg, t) =
       case t
-       of M.TGoto t => target (s, e, fn () => msg () ^ ": target", t)
-        | M.TCase sw => switch (s, e, msg, sw)
+       of M.TGoto t => 
+          let
+            val () = target (s, e, fn () => msg () ^ ": target", t)
+          in e
+          end
+        | M.TCase sw => 
+          let
+            val () = switch (s, e, msg, sw)
+          in e
+          end
         | M.TInterProc {callee, ret, fx} =>
           let
             fun msg' () = msg () ^ ": callee"
             val ts = interProc (s, e, msg', callee)
             fun msg' () = msg () ^ ": return"
-            val () = return (s, e, msg', ret, ts)
-          in ()
+            val e = return (s, e, msg', ret, ts)
+          in e
           end
         | M.TReturn os =>
           let
@@ -1109,7 +1122,7 @@ struct
             val ts = operands (s, e, msg', os)
             val rts = getRTyps e
             val () = checkConsistentTyps (s, e, msg', rts, ts)
-          in ()
+          in e
           end
         | M.TCut {cont, args, cuts = cs} =>
           let
@@ -1120,7 +1133,7 @@ struct
             val () = checkContTyp (s, e, msg, t, ts)
             fun msg' () = msg () ^ ": cuts"
             val () = cuts (s, e, msg', cs)
-          in ()
+          in e
           end
         | M.THalt opnd =>
           let
@@ -1132,41 +1145,30 @@ struct
                  of M.TNumeric (MP.NtInteger (MP.IpFixed t)) => 
                     if IntArb.equalTyps(t, MU.Sintp.intArbTyp (getConfig e)) then () else badTyp ()
                   | _ => badTyp ()
-          in ()
+          in e
           end
 
   fun block (s, e, l, M.B {parameters, instructions, transfer = t}) =
       let
         fun msgi j () =
             "label " ^ I.labelString l ^ " instruction " ^ Int.toString j
-        (* XXX NG: If we used the dominator tree then we would bind params *)
+        val e = bindVars (s, e, parameters, M.VkLocal)
         fun doOne (j, i, e) = instruction (s, e, msgi j, i)
         val e = Vector.foldi (instructions, e, doOne)
         fun msg' () = "label " ^ I.labelString l ^ " transfer"
-        val () = transfer (s, e, msg', t)
+        val e = transfer (s, e, msg', t)
       in e
       end
 
-  fun addVarDefs (s, e, M.B {parameters, instructions, transfer}) =
+  fun blockTree (s, e, Tree.T ((l, b), trees)) =
       let
-        val e = bindVars (s, e, parameters, M.VkLocal)
-        fun doOne (M.I {dests, ...}, e) = bindVars (s, e, dests, M.VkLocal)
-        val e = Vector.fold (instructions, e, doOne)
-        val e =
-            case transfer
-             of M.TGoto _ => e
-              | M.TCase _ => e
-              | M.TInterProc {ret, ...} =>
-                (case ret
-                  of M.RNormal {rets, ...} => bindVars (s, e, rets, M.VkLocal)
-                   | M.RTail _ => e)
-              | M.TReturn _ => e
-              | M.TCut _ => e
-              | M.THalt _ => e
-      in e
+        val e = block (s, e, l, b)
+      in blockForest (s, e, trees)
       end
+  and blockForest (s, e, trees) = 
+      Vector.foreach (trees, fn tree => blockTree (s, e, tree))
 
-  fun codeBody (s, e, msg, M.CB {entry, blocks}) =
+  fun codeBody (s, e, msg, b as M.CB {entry, blocks}) =
       let
         fun doLabel (l, M.B {parameters, ...}, e) =
             let
@@ -1175,9 +1177,9 @@ struct
             in e
             end
         val e = LD.fold (blocks, e, doLabel)
-        (* XXX NG: Should use the dominator tree to do this properly *)
-        val e = LD.fold (blocks, e, fn (l, b, e) => addVarDefs (s, e, b))
-        val () = LD.foreach (blocks, fn (l, b) => ignore (block (s, e, l, b)))
+        val cfg = MilCfg.build (getConfig e, getSi e, b)
+        val domtree = MilCfg.getLabelBlockDomTree cfg
+        val () = blockTree (s, e, domtree)
         val () = label (s, e, entry)
       in ()
       end
