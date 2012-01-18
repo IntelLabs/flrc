@@ -560,12 +560,13 @@ struct
                    fn rcl =>
                      let
                        val _ = prints "Closing RC\n"
-                       val (rcn, rc, _) = closeRegion (config, sm, rcl, rc, rvs)
+                       val rcv = VS.toVector rcv
+                       val (rcn, rc, _) = closeRegion (config, sm, rcl, rc, rcv)
                        val _ = printRegion ("After closing: ", rc)
-                       val r1 = <- (adjustTarget (rcl, rcn, r1, rvs))
+                       val r1 = <- (adjustTarget (rcl, rcn, r1, rcv))
                        val _ = printRegion ("Adjusted R1: ", r1)
-                       val rvs = V.map (rvs, UF.curry Rename.use r2dict)
-                       val r2 = <- (adjustTarget (rcl, rcn, r2, rvs))
+                       val rcv = V.map (rcv, UF.curry Rename.use r2dict)
+                       val r2 = <- (adjustTarget (rcl, rcn, r2, rcv))
                        val _ = printRegion ("Adjusted R2: ", r2)
                      in (r1, r2, rc)
                      end,
