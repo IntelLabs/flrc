@@ -16,7 +16,6 @@ sig
     val createdMutable  : Pil.identifier 
     val alwaysImmutable : Pil.identifier 
     val register : Pil.identifier 
-    val pin : Pil.identifier 
   end
 
   structure GC :
@@ -276,7 +275,6 @@ struct
     val alwaysImmutable = Pil.identifier "PGC_ALWAYS_IMMUTABLE"
 
     val register = Pil.identifier "pLsrVTableRegister"
-    val pin      = Pil.identifier "pLsrVTablePin"
 
   end
 

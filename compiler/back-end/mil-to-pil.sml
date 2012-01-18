@@ -878,17 +878,9 @@ struct
                           (Pil.E.int size, Pil.E.int offset,
                            Pil.E.int (if isRef then 1 else 0))
                   val mut = Pil.E.namedConstant (genVtMutability mut)
-                  val args = [Pil.E.addrOf vt', ag, fs, refsv, vs, vlo, vr, mut]
+                  val pinned = if pinned then Pil.E.int 1 else Pil.E.int 0
+                  val args = [Pil.E.addrOf vt', ag, fs, refsv, vs, vlo, vr, mut, pinned]
                   val vtr = Pil.E.call (Pil.E.namedConstant RT.MD.register, args)
-                in addReg0 (state, Pil.S.expr vtr) 
-                end 
-              else ()
-          (* Generate code to pin the vtable *)
-          val () = 
-              if pinned then 
-                let
-                  val args = [Pil.E.addrOf vt']
-                  val vtr = Pil.E.call (Pil.E.namedConstant RT.MD.pin, args)
                 in addReg0 (state, Pil.S.expr vtr) 
                 end 
               else ()
