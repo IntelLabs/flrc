@@ -529,6 +529,8 @@ struct
   fun mNameToPath (C.M (C.P pname, prefix, name)) =
       let
         val d = CHU.zDecodeString pname
+        val prefix = List.map (prefix, CHU.zDecodeString)
+        val name = CHU.zDecodeString name
         (* look for main package in current directory *)
         val d = if d = "main" then "." else d
         val d = Path.fromString d
@@ -908,8 +910,11 @@ struct
               then (defd, scanned)
               else
                 let
-                  val _ = print' ("scan " ^ Layout.toString (CoreHsLayout.layoutAnMName mname) ^ " scanned = " ^ Int.toString(MS.size scanned) ^ "\n")
                   val path = mNameToPath mname
+                  val _ = print' ("scan " ^ Layout.toString
+                            (CoreHsLayout.layoutAnMName mname) ^ " scanned = " ^
+                            Int.toString(MS.size scanned) ^ " path = " ^
+                            Config.pathToHostString (config, path) ^ "\n")
                   val f1 = Config.pathToHostString (config, path) ^ ".hcr"
                   val path = Path.append (hcrRoot, path)
                   val f2 = Config.pathToHostString (config, path) ^ ".hcr"
@@ -969,11 +974,11 @@ struct
               val defd = scanModule module 
               val scanned = MS.fromList [mname, CHU.primMname]
             in
-              case QD.lookup (defd, CHU.mainVar) (* TODO: should be wrapperMainVar *)
+              case QD.lookup (defd, CHU.wrapperMainVar) 
                 of NONE => Fail.fail (passname, "readModule", "main program not found")
                  | SOME def => 
                    let 
-                     val (_, traced, _) = traceDef (CHU.mainVar, def, (defd, QD.empty, scanned)) (* TODO: should be wrapperMainVar *)
+                     val (_, traced, _) = traceDef (CHU.wrapperMainVar, def, (defd, QD.empty, scanned)) 
                      val _ = print' ("traced = " ^ Layout.toString (Layout.sequence ("{", "}", ",") (List.map(QD.domain traced, CoreHsLayout.layoutQName))) ^ "\n")
                      val (tdefs, vdefs) = QD.fold (traced, ([], []), fn (_, (TDef d, _), (ts, vs)) => (d :: ts, vs)
                                                                       | (n, (VDef d, s), (ts, vs)) => (ts, (n, (d, s)) :: vs)
