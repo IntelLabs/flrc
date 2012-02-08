@@ -973,12 +973,13 @@ struct
               val module as (C.Module (mname, _, _)) = parseFile (infile, config)
               val defd = scanModule module 
               val scanned = MS.fromList [mname, CHU.primMname]
+              val mainVar = if Config.ghcNoMainWrapper config then CHU.mainVar else CHU.wrapperMainVar
             in
-              case QD.lookup (defd, CHU.wrapperMainVar) 
+              case QD.lookup (defd, mainVar)
                 of NONE => Fail.fail (passname, "readModule", "main program not found")
                  | SOME def => 
                    let 
-                     val (_, traced, _) = traceDef (CHU.wrapperMainVar, def, (defd, QD.empty, scanned)) 
+                     val (_, traced, _) = traceDef (mainVar, def, (defd, QD.empty, scanned)) 
                      val _ = print' ("traced = " ^ Layout.toString (Layout.sequence ("{", "}", ",") (List.map(QD.domain traced, CoreHsLayout.layoutQName))) ^ "\n")
                      val (tdefs, vdefs) = QD.fold (traced, ([], []), fn (_, (TDef d, _), (ts, vs)) => (d :: ts, vs)
                                                                       | (n, (VDef d, s), (ts, vs)) => (ts, (n, (d, s)) :: vs)

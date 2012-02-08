@@ -425,6 +425,24 @@ struct
 
   val unitMname : anMName = mkPrimMname "Unit"
 
+  (* substitute a type variable v in type vty with an actual type t *)
+  fun substTy (v, vty, t)
+    = let
+        fun sub ty =
+            case ty
+              of Tvar u => if u = v then vty else ty
+               | Tcon _ => ty
+               | Tapp (t1, t2) => Tapp (sub t1, sub t2)
+               | Tforall (tb, t1) => Tforall (tb, sub t1)
+               | TransCoercion (t1, t2) => TransCoercion (sub t1, sub t2)
+               | SymCoercion t1 => SymCoercion (sub t1)
+               | UnsafeCoercion (t1, t2) => UnsafeCoercion (sub t1, sub t2)
+               | InstCoercion (t1, t2) => InstCoercion (sub t1, sub t2)
+               | LeftCoercion t1 => LeftCoercion (sub t1)
+               | RightCoercion t1 => RightCoercion (sub t1)
+      in
+        sub t
+      end
 end
 
 structure CoreHsPrims =
@@ -476,15 +494,23 @@ struct
   val opsState : (var * ty) list = [("realWorldzh", tRWS)]
 
   val tcArrayzh            : tcon qualified = pvz "Array"
+  val tArrayzh             : ty -> ty       = fn t => Tapp (Tcon tcArrayzh, t)
   val tcByteArrayzh        : tcon qualified = pvz "ByteArray"
-  val ktByteArrayzh        : kind      = Kunlifted
+  val tByteArrayzh         : ty             = Tcon tcByteArrayzh
+  val ktByteArrayzh        : kind           = Kunlifted
   val tcMutableArrayzh     : tcon qualified = pvz "MutableArray"
-  val ktMutableArrayzh     : kind      = Karrow (Klifted, Karrow (Klifted, Kunlifted))
+  val tMutableArrayzh      : ty -> ty -> ty = fn s => fn a => Tapp (Tapp (Tcon tcMutableArrayzh, s), a)
+  val ktMutableArrayzh     : kind           = Karrow (Klifted, Karrow (Klifted, Kunlifted))
   val tcMutableByteArrayzh : tcon qualified = pvz "MutableByteArray"
-  val ktMutableByteArrayzh : kind      = Karrow (Klifted, Kunlifted)
+  val tMutableByteArrayzh  : ty -> ty       = fn s => Tapp (Tcon tcMutableByteArrayzh, s)
+  val ktMutableByteArrayzh : kind           = Karrow (Klifted, Kunlifted)
 
+  val tcTVarzh             : tcon qualified = pvz "TVar"
+  val tTVarzh              : ty -> ty -> ty = fn s => fn a => Tapp (Tapp (Tcon tcTVarzh, s), a)
   val tcMVarzh             : tcon qualified = pvz "MVar"
+  val tMVarzh              : ty -> ty -> ty = fn s => fn a => Tapp (Tapp (Tcon tcMVarzh, s), a)
   val tcMutVarzh           : tcon qualified = pvz "MutVar"
+  val tMutVarzh            : ty -> ty -> ty = fn s => fn a => Tapp (Tapp (Tcon tcMutVarzh, s), a)
   val errorVals : (var * ty) list = []
 
  
@@ -501,6 +527,7 @@ struct
   val tIntegerzh   : ty = Tcon (primId "Integer#")
 
   val tcStablePtrzh : tcon qualified = pvz "StablePtr"
+  val tStablePtrzh  : ty -> ty       = fn t => Tapp (Tcon tcStablePtrzh, t)
   val tcIO          : tcon qualified = (SOME (CHU.mkBaseMname "IOBase"), "IO")
 end
 

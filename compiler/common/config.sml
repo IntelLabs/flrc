@@ -63,6 +63,7 @@ signature CONFIG = sig
 			  style: gcStyle,
 			  tagOnly: bool},
 		     ghcOpt: string list,
+		     ghcNoMainWrapper: bool,
 		     home : Path.t,
                      host : os,
 		     keep: {cp: bool, hcr : bool, obj: bool, pil: bool},
@@ -118,6 +119,7 @@ signature CONFIG = sig
   val output: t -> outputKind
   val pOpt: t -> int
   val ghcOpt: t -> string list
+  val ghcNoMainWrapper: t -> bool
   val parStyle: t -> parStyle
   val passEnabled: t * string -> bool
   val passGet: t * string
@@ -289,6 +291,7 @@ structure Config :> CONFIG = struct
          feature_         : StringSet.t,
          gc               : gcConfig,
          ghcOpt           : string list,
+         ghcNoMainWrapper : bool,
          home             : Path.t,
          host             : os,
          keep             : {cp : bool, hcr : bool, pil : bool, obj : bool},
@@ -327,6 +330,7 @@ structure Config :> CONFIG = struct
     fun home c                        = get (c, #home)
     fun host c                        = get (c, #host)
     fun ghcOpt c                      = get (c, #ghcOpt)
+    fun ghcNoMainWrapper c            = get (c, #ghcNoMainWrapper)
     fun linkStr c                     = get (c, #linkStr)
     fun linkDirectories c             = get (c, #linkDirectories)
     fun linkLibraries c               = get (c, #linkLibraries)

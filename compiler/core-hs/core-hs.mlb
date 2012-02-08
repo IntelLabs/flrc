@@ -13,6 +13,7 @@ local
         anorm-lazy.sml
         anorm-strict.sml
         ghc-prim.sml
+        normalize.sml
         to-lazy.sml
         to-strict.sml
         fvs.sml
@@ -21,6 +22,7 @@ local
 in
         structure HsToMilUtils
         structure CoreHs
+        structure CoreNormalize
         structure ANormPrim
         structure ANormLazy
         structure ANormStrict
