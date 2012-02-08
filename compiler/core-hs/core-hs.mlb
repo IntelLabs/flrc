@@ -12,6 +12,12 @@ local
         anorm-prim.sml
         anorm-lazy.sml
         anorm-strict.sml
+        anorm-strict-utils.sml
+        anorm-strict-rewrite.sml
+        anorm-strict-analyze.sml
+        anorm-strict-free-vars.sml
+        anorm-strict-clone.sml
+        anorm-strict-optimize.sml
         ghc-prim.sml
         normalize.sml
         to-lazy.sml
@@ -35,6 +41,7 @@ in
         structure ANormLazyToStrict 
         structure GHCPrim
         structure ANormStrictFVS
+        structure ANormStrictOptimize
         structure ANormStrictToMil
         structure CoreHsLinkOption
 end
