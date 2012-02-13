@@ -56,6 +56,7 @@ local
             $(SML_LIB)/basis/basis.mlb
           in
             structure Posix
+            structure TextIO
           end
         in
           pass.sml

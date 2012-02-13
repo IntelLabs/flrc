@@ -193,6 +193,7 @@ sig
   val startFile : Config.t * string -> unit
   val endFile : Config.t * string -> unit
   val doPassPart : Config.t * string * (unit -> 'a) -> 'a
+  val runCmd : string * string list * bool -> string
   val run :
       Config.t * (Config.t * string -> unit) * Path.t * string list -> unit
   val runWithSh :
@@ -440,24 +441,70 @@ struct
 
   fun apply (T f1) = f1
 
+  fun lookupCmdInEnv cmd =
+      case Process.getEnv "PATH"
+        of NONE => Fail.fail ("pass", "run", "missing PATH variable in environment")
+         | SOME paths => 
+          let
+            val (d, s, ext) = case MLton.Platform.OS.host
+                            of MLton.Platform.OS.MinGW => (#";", "\\", ".exe")
+                             | _ => (#":", "/", "")
+            (* try to be smart about file extensions of executables *)
+            val basename = #file (OS.Path.splitDirFile cmd)
+            val cmdExe = if String.contains (basename, #".") then cmd else cmd ^ ext
+            fun find (d :: dirs) = 
+                let
+                  val p = d ^ s ^ cmdExe
+                in
+                  if File.doesExist p andalso File.canRun p
+                    then p
+                    else find dirs
+                end
+              | find [] = Fail.fail ("pass", "run", "command " ^ cmd ^
+                                     " cannot be found in PATH")
+          in
+            if File.doesExist cmdExe andalso File.canRun cmdExe
+              then cmdExe
+              else find (String.split (paths, d))
+          end
+
+  (*
+   * When silent, it returns the output from running the command;
+   * otherwise, prints output and return empty string.
+   *)
+  fun runCmd (cmd, args, silent) = 
+      let 
+        val cmdPath = lookupCmdInEnv cmd
+        val p = MLton.Process.create 
+                   { args = args
+                   , env  = NONE
+                   , path = cmdPath
+                   , stderr = MLton.Process.Param.null
+                   , stdin  = MLton.Process.Param.null
+                   , stdout = MLton.Process.Param.pipe
+                   }
+        fun echo h = case TextIO.inputLine h 
+                       of NONE => ""
+                        | SOME s => (print s; echo h)
+        val wrap = if silent then TextIO.inputAll else echo
+      in
+        wrap (MLton.Process.Child.textIn (MLton.Process.getStdout p))
+          before 
+            (case MLton.Process.reap p 
+              of Posix.Process.W_EXITED => ()
+               | Posix.Process.W_EXITSTATUS s => Fail.fail ("pass", "run", "command exit status " ^ Word8.toString s)
+               | Posix.Process.W_SIGNALED s => Fail.fail ("pass", "run", "command signaled " ^ SysWord.toString (Posix.Signal.toWord s))
+               | Posix.Process.W_STOPPED s => Fail.fail ("pass", "run", "command stop signaled " ^ SysWord.toString (Posix.Signal.toWord s)))
+      end
+
   fun run (config, logger, cmd, args) = 
       let
         val cmd = Config.pathToHostString (config, cmd)
         val () = logger (config, String.concatWith (cmd::args, " "))
-        val args = cmd::args
         val () = MLton.GC.collect ()
         val () = MLton.GC.pack ()
-        val doit = 
-         fn () => ((Process.wait (MLton.Process.spawnp {file = cmd, args = args}))
-                   handle any => Fail.fail ("Pass", "run", "Command could not be run: "^Exn.toString any))
-        fun silently doit = 
-            Out.ignore(Out.standard, 
-                       (fn () => 
-                           Out.ignore(Out.error, doit)))
-        val () = if Config.silent config then
-                   silently doit
-                 else
-                   doit ()
+        val _  = runCmd (cmd, args, Config.silent config) handle any => 
+                       Fail.fail ("Pass", "run", "Command could not be run: "^Exn.toString any)
         val () = MLton.GC.unpack ()
       in ()
       end
