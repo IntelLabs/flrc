@@ -479,7 +479,7 @@ struct
                    { args = args
                    , env  = NONE
                    , path = cmdPath
-                   , stderr = MLton.Process.Param.null
+                   , stderr = MLton.Process.Param.self
                    , stdin  = MLton.Process.Param.null
                    , stdout = MLton.Process.Param.pipe
                    }
