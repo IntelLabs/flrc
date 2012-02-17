@@ -193,7 +193,7 @@ sig
   val startFile : Config.t * string -> unit
   val endFile : Config.t * string -> unit
   val doPassPart : Config.t * string * (unit -> 'a) -> 'a
-  val runCmd : string * string list * bool -> string
+  val runCmd : string * string list * string list * bool -> string
   val run :
       Config.t * (Config.t * string -> unit) * Path.t * string list -> unit
   val runWithSh :
@@ -441,7 +441,7 @@ struct
 
   fun apply (T f1) = f1
 
-  fun lookupCmdInEnv cmd =
+  fun lookupCmdInEnv (cmd, morePaths) =
       case Process.getEnv "PATH"
         of NONE => Fail.fail ("pass", "run", "missing PATH variable in environment")
          | SOME paths => 
@@ -449,6 +449,7 @@ struct
             val (d, s, ext) = case MLton.Platform.OS.host
                             of MLton.Platform.OS.MinGW => (#";", "\\", ".exe")
                              | _ => (#":", "/", "")
+            val paths = morePaths @ String.split (paths, d)
             (* try to be smart about file extensions of executables *)
             val basename = #file (OS.Path.splitDirFile cmd)
             val cmdExe = if String.contains (basename, #".") then cmd else cmd ^ ext
@@ -465,16 +466,16 @@ struct
           in
             if File.doesExist cmdExe andalso File.canRun cmdExe
               then cmdExe
-              else find (String.split (paths, d))
+              else find paths
           end
 
   (*
    * When silent, it returns the output from running the command;
    * otherwise, prints output and return empty string.
    *)
-  fun runCmd (cmd, args, silent) = 
+  fun runCmd (cmd, args, morePaths, silent) = 
       let 
-        val cmdPath = lookupCmdInEnv cmd
+        val cmdPath = lookupCmdInEnv (cmd, morePaths)
         val p = MLton.Process.create 
                    { args = args
                    , env  = NONE
@@ -503,7 +504,7 @@ struct
         val () = logger (config, String.concatWith (cmd::args, " "))
         val () = MLton.GC.collect ()
         val () = MLton.GC.pack ()
-        val _  = runCmd (cmd, args, Config.silent config) handle any => 
+        val _  = runCmd (cmd, args, [], Config.silent config) handle any => 
                        Fail.fail ("Pass", "run", "Command could not be run: "^Exn.toString any)
         val () = MLton.GC.unpack ()
       in ()

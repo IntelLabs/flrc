@@ -77,6 +77,7 @@ sig
   val append : t * t -> t
   val setVolume : t * volume -> t
   val removeVolume : t -> t
+  val dropLast : t -> t
 end
 
 structure Path :> PATH =
@@ -323,5 +324,12 @@ struct
       (case path
         of PRel arcs => path
          | PAbs (_, arcs) => PRel arcs)
+
+  val dropLast : t -> t =
+    fn path =>
+      (case path
+        of PRel (_::arcs) => PRel arcs
+         | PAbs (v, _::arcs) => PAbs (v, arcs)
+         | _ => Fail.fail ("Path", "dropLast", "cannot drop empty path"))
 
 end (* structure Path *)
