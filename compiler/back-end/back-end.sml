@@ -314,7 +314,14 @@ struct
           of CcGCC    => ["-msse3"] (* without -msse, we should use -ffloat-store in float*)
            | CcICC    => ["-QxT"]
            | CcOpc    => ["-QxB"]
-           | CcIpc    => ["-QxT"])
+           | CcIpc    => 
+             let
+               val Config.VC {isa, ...} = Config.vectorConfig config
+             in case isa
+                 of Config.ViAVX        => ["-QxAVX"]
+                  | Config.ViSSE (a, b) => ["-QxSSE"^Int.toString a^"."^Int.toString b]
+                  | _                   => ["-QxHost"]
+             end)
 
     fun opt (config, compiler) =
         let
