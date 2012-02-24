@@ -299,14 +299,14 @@ struct
               case Real32.class f
                of Real64.Class.INF => 
                   if f < 0.0 then 
-                    "-INFINITY"
+                    "-INFINITY32"
                   else
-                    "INFINITY"
+                    "INFINITY32"
                 | Real64.Class.NAN => 
                   if Real32.signBit f then
-                    "-NAN"
+                    "-NAN32"
                   else
-                    "NAN"
+                    "NAN32"
                 | _ => 
                   fixNeg (Real32.toString f)
         in (L.str s, 16)
@@ -317,14 +317,14 @@ struct
               case Real64.class f
                of Real64.Class.INF => 
                   if f < 0.0 then 
-                    "-INFINITY"
+                    "-INFINITY64"
                   else
-                    "INFINITY"
+                    "INFINITY64"
                 | Real64.Class.NAN => 
                   if Real64.signBit f then
-                    "-NAN"
+                    "-NAN64"
                   else
-                    "NAN"
+                    "NAN64"
                 | _ => 
                   fixNeg (Real64.toString f)
         in (L.str s, 16)
