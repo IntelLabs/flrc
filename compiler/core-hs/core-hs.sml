@@ -464,6 +464,8 @@ struct
   val tcAddrzh = pvz "Addr"
   val tAddrzh  = Tcon tcAddrzh
   val ktAddrzh = Kunlifted
+  val tcAny : tcon qualified = pv "Any"
+  val tAny  : ty             = Tcon tcAny
 
   val tcBool : tcon qualified = (SOME CHU.boolMname, "Bool")
   val tBool  : ty             = Tcon tcBool
