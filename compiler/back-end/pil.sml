@@ -293,8 +293,42 @@ struct
 
     fun boolean b = (L.str (if b then "1" else "0"), 16)
 
-    fun float f = (L.str (fixNeg (Real32.toString f)), 16)
-    fun double f = (L.str (fixNeg (Real64.toString f)), 16)
+    fun float f = 
+        let
+          val s = 
+              case Real32.class f
+               of Real64.Class.INF => 
+                  if f < 0.0 then 
+                    "-INFINITY"
+                  else
+                    "INFINITY"
+                | Real64.Class.NAN => 
+                  if Real32.signBit f then
+                    "-NAN"
+                  else
+                    "NAN"
+                | _ => 
+                  fixNeg (Real32.toString f)
+        in (L.str s, 16)
+        end
+    fun double f = 
+        let
+          val s = 
+              case Real64.class f
+               of Real64.Class.INF => 
+                  if f < 0.0 then 
+                    "-INFINITY"
+                  else
+                    "INFINITY"
+                | Real64.Class.NAN => 
+                  if Real64.signBit f then
+                    "-NAN"
+                  else
+                    "NAN"
+                | _ => 
+                  fixNeg (Real64.toString f)
+        in (L.str s, 16)
+        end
 
     fun char c = (L.seq [ L.str "'", L.str (Char.escapeC c), L.str "'"], 16)
 
