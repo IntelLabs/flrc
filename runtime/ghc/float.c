@@ -86,4 +86,24 @@ __decodeFloat_Int (sint32 *man, sint32 *exp, float flt)
     }
 }
 
+double __word_encodeDouble (uint32 j, sint32 e)
+{
+    double r;
 
+    r = (double)j;
+    /* Now raise to the exponent */
+    if ( r != 0.0 ) /* Lennart suggests this avoids a bug in MIPS's ldexp */
+        r = ldexp(r, e);
+    return r;
+}
+
+float __word_encodeFloat (uint32 j, sint32 e)
+{
+    float r;
+
+    r = (float)j;
+    /* Now raise to the exponent */
+    if ( r != 0.0 ) /* Lennart suggests this avoids a bug in MIPS's ldexp */
+        r = ldexpf(r, e);
+    return r;
+}
