@@ -361,7 +361,7 @@ struct
        val thunkSize : state * env * M.fieldKind * M.fieldKind Vector.t -> int
        (* Return the offset of the result in a thunk *)
        val thunkResultOffset :
-           state * env * M.fieldKind * M.fieldKind Vector.t -> int
+           state * env * M.fieldKind -> int
        (* Return the offset of a free variable in a thunk *)
        val thunkFvOffset :
            state * env * M.fieldKind * M.fieldKind Vector.t * int-> int
@@ -541,7 +541,13 @@ struct
         objectSizeG (state, env, MU.FieldKind.numBytes, fn _ => 1,
                      fks, NONE, thunkFixedSize (state, env, typ))
 
-    fun thunkResultOffset (state, env, typ, fks) = thunkBase (state, env, typ)
+    fun thunkResultOffset (state, env, typ) = 
+        let
+          val tb = thunkBase (state, env, typ)
+          val rs = MU.FieldKind.numBytes (getConfig env, typ)
+          val tb = align (tb, rs)
+        in tb
+        end
 
     fun thunkFvOffset (state, env, typ, fks, i) =
         fieldOffsetG (state, env, MU.FieldKind.numBytes, fn _ => 1,
@@ -616,6 +622,16 @@ struct
           val thunkSizeFloat = mk (RT.Thunk.fixedSize M.FkFloat, tfsFloat)
           val tfsDouble = thunkFixedSize (state, env, M.FkDouble)
           val thunkSizeDouble = mk (RT.Thunk.fixedSize M.FkDouble, tfsDouble)
+          val troRef = thunkResultOffset (state, env, M.FkRef)
+          val thunkResultOffsetRef = mk (RT.Thunk.resultOffset M.FkRef, troRef)
+          val tro32 = thunkResultOffset (state, env, M.FkBits M.Fs32)
+          val thunkResultOffset32 = mk (RT.Thunk.resultOffset (M.FkBits M.Fs32), tro32)
+          val tro64 = thunkResultOffset (state, env, M.FkBits M.Fs64)
+          val thunkResultOffset64 = mk (RT.Thunk.resultOffset (M.FkBits M.Fs64), tro64)
+          val troFloat = thunkResultOffset (state, env, M.FkFloat)
+          val thunkResultOffsetFloat = mk (RT.Thunk.resultOffset M.FkFloat, troFloat)
+          val troDouble = thunkResultOffset (state, env, M.FkDouble)
+          val thunkResultOffsetDouble = mk (RT.Thunk.resultOffset M.FkDouble, troDouble)
           val smallRationalMin = mk (RT.Rat.smallMin, 
                                      IntInf.toInt RT.Rat.optMin)
           val smallRationalMax = mk (RT.Rat.smallMax, 
@@ -634,6 +650,8 @@ struct
                           funCodeOffset, funSize,
                           sumTagOffset, sumValOffset, sumSize,
                           thunkSizeRef, thunkSize32, thunkSize64, thunkSizeFloat, thunkSizeDouble,
+                          thunkResultOffsetRef, thunkResultOffset32, thunkResultOffset64, 
+                          thunkResultOffsetFloat, thunkResultOffsetDouble,
                           smallRationalMax, smallRationalMin, smallIntegerMax, smallIntegerMin]
         end
 
@@ -944,7 +962,7 @@ struct
                 else
                   ()
             val () = Vector.foreachi (fks, doOne)
-            val off = OM.thunkResultOffset (state, env, typ, fks)
+            val off = OM.thunkResultOffset (state, env, typ)
             val () =
                 if off mod ws <> 0 then
                   Fail.unimplemented ("MilToPil.MD", "genMetaDataThunk",
@@ -1558,7 +1576,7 @@ struct
   fun genThunkGetValueE (state, env, typ, t, thunk) =
       let
         val off =
-            Pil.E.int (OM.thunkResultOffset (state, env, typ, Vector.new0 ()))
+            Pil.E.int (OM.thunkResultOffset (state, env, typ))
         val get = Pil.E.call (Pil.E.namedConstant RT.Object.field,
                               [thunk, off, Pil.E.hackTyp (Pil.T.ptr t)])
       in get
