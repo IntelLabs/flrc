@@ -192,27 +192,30 @@ sig
   structure Thunk :
   sig
 
-    val boxedTyp     : Mil.fieldKind -> Pil.identifier 
-    val unboxedTyp   : Mil.fieldKind -> Pil.identifier 
-    val returnTyp    : Mil.fieldKind -> Pil.identifier
+    val boxedTyp       : Mil.fieldKind -> Pil.identifier 
+    val unboxedTyp     : Mil.fieldKind -> Pil.identifier 
+    val returnTyp      : Mil.fieldKind -> Pil.identifier
 
-    val staticValue  : Mil.fieldKind -> Pil.identifier 
-    val new          : Mil.fieldKind -> Pil.identifier 
-    val newValue     : Mil.fieldKind -> Pil.identifier 
-    val init         : Mil.fieldKind -> Pil.identifier 
-    val setValue     : Mil.fieldKind -> Pil.identifier 
-    val spawn        : Mil.fieldKind -> Pil.identifier 
-    val isEvaled     : Mil.fieldKind -> Pil.identifier 
-    val eval         : Mil.fieldKind -> Pil.identifier 
-    val evalDirect   : Mil.fieldKind -> Pil.identifier 
-    val call         : Mil.fieldKind -> Pil.identifier 
-    val callDirect   : Mil.fieldKind -> Pil.identifier 
-    val return       : Mil.fieldKind -> Pil.identifier 
-    val cut          : Mil.fieldKind -> Pil.identifier 
-    val fixedSize    : Mil.fieldKind -> Pil.identifier 
-    val resultOffset : Mil.fieldKind -> Pil.identifier 
-    val vTable       : Mil.fieldKind -> Pil.identifier 
-    val blackHole    : Mil.fieldKind -> Pil.identifier
+    val staticValue    : Mil.fieldKind -> Pil.identifier 
+    val new            : Mil.fieldKind -> Pil.identifier 
+    val newValue       : Mil.fieldKind -> Pil.identifier 
+    val init           : Mil.fieldKind -> Pil.identifier 
+    val setValue       : Mil.fieldKind -> Pil.identifier 
+    val spawn          : Mil.fieldKind -> Pil.identifier 
+    val isEvaled       : Mil.fieldKind -> Pil.identifier 
+    val eval           : Mil.fieldKind -> Pil.identifier 
+    val evalDirect     : Mil.fieldKind -> Pil.identifier 
+    val call           : Mil.fieldKind -> Pil.identifier 
+    val callDirect     : Mil.fieldKind -> Pil.identifier 
+    val tailCall       : Mil.fieldKind -> Pil.identifier 
+    val tailCallDirect : Mil.fieldKind -> Pil.identifier 
+    val return         : Mil.fieldKind -> Pil.identifier 
+    val cut            : Mil.fieldKind -> Pil.identifier 
+    val fixedSize      : Mil.fieldKind -> Pil.identifier 
+    val resultOffset   : Mil.fieldKind -> Pil.identifier 
+    val vTable         : Mil.fieldKind -> Pil.identifier 
+    val blackHole      : Mil.fieldKind -> Pil.identifier
+    val zeroFV         : unit -> Pil.identifier
   end
 
   val exit      : Pil.identifier 
@@ -711,27 +714,30 @@ struct
           | M.FkFloat       => "Float"
           | M.FkDouble      => "Double"
 
-    fun boxedTyp     fk = Pil.identifier ("PlsrThunkB"             ^ typ fk)
-    fun unboxedTyp   fk = Pil.identifier ("PlsrThunkU"             ^ typ fk)
-    fun returnTyp    fk = Pil.identifier ("PlsrThunkReturnType"    ^ typ fk)
+    fun boxedTyp        fk = Pil.identifier ("PlsrThunkB"             ^ typ fk)
+    fun unboxedTyp      fk = Pil.identifier ("PlsrThunkU"             ^ typ fk)
+    fun returnTyp       fk = Pil.identifier ("PlsrThunkReturnType"    ^ typ fk)
 
-    fun staticValue  fk = Pil.identifier ("pLsrThunkStaticValue"   ^ typ fk)
-    fun new          fk = Pil.identifier ("pLsrThunkNew"           ^ typ fk)
-    fun newValue     fk = Pil.identifier ("pLsrThunkNewValue"      ^ typ fk)
-    fun init         fk = Pil.identifier ("pLsrThunkSetInit"       ^ typ fk)
-    fun setValue     fk = Pil.identifier ("pLsrThunkSetValue"      ^ typ fk)
-    fun spawn        fk = Pil.identifier ("pLsrThunkSpawn"         ^ typ fk)
-    fun isEvaled     fk = Pil.identifier ("pLsrThunkIsEvaled"      ^ typ fk)
-    fun eval         fk = Pil.identifier ("pLsrThunkEval"          ^ typ fk)
-    fun evalDirect   fk = Pil.identifier ("pLsrThunkEvalDirect"    ^ typ fk)
-    fun call         fk = Pil.identifier ("pLsrThunkCall"          ^ typ fk)
-    fun callDirect   fk = Pil.identifier ("pLsrThunkCallDirect"    ^ typ fk)
-    fun return       fk = Pil.identifier ("pLsrThunkReturn"        ^ typ fk)
-    fun cut          fk = Pil.identifier ("pLsrThunkCut"           ^ typ fk)
-    fun fixedSize    fk = Pil.identifier ("pLsrThunkFixedSize"     ^ typ fk)
-    fun resultOffset fk = Pil.identifier ("pLsrThunkResultOffset"  ^ typ fk)
-    fun vTable       fk = Pil.identifier ("pLsrThunkValVTable"     ^ typ fk)
-    fun blackHole    fk = Pil.identifier ("pLsrThunkBlackHole"     ^ typ fk)
+    fun staticValue     fk = Pil.identifier ("pLsrThunkStaticValue"   ^ typ fk)
+    fun new             fk = Pil.identifier ("pLsrThunkNew"           ^ typ fk)
+    fun newValue        fk = Pil.identifier ("pLsrThunkNewValue"      ^ typ fk)
+    fun init            fk = Pil.identifier ("pLsrThunkSetInit"       ^ typ fk)
+    fun setValue        fk = Pil.identifier ("pLsrThunkSetValue"      ^ typ fk)
+    fun spawn           fk = Pil.identifier ("pLsrThunkSpawn"         ^ typ fk)
+    fun isEvaled        fk = Pil.identifier ("pLsrThunkIsEvaled"      ^ typ fk)
+    fun eval            fk = Pil.identifier ("pLsrThunkEval"          ^ typ fk)
+    fun evalDirect      fk = Pil.identifier ("pLsrThunkEvalDirect"    ^ typ fk)
+    fun call            fk = Pil.identifier ("pLsrThunkCall"          ^ typ fk)
+    fun callDirect      fk = Pil.identifier ("pLsrThunkCallDirect"    ^ typ fk)
+    fun tailCall        fk = Pil.identifier ("pLsrThunkTailCall"      ^ typ fk)
+    fun tailCallDirect  fk = Pil.identifier ("pLsrThunkTailCallDirect"^ typ fk)
+    fun return          fk = Pil.identifier ("pLsrThunkReturn"        ^ typ fk)
+    fun cut             fk = Pil.identifier ("pLsrThunkCut"           ^ typ fk)
+    fun fixedSize       fk = Pil.identifier ("pLsrThunkFixedSize"     ^ typ fk)
+    fun resultOffset    fk = Pil.identifier ("pLsrThunkResultOffset"  ^ typ fk)
+    fun vTable          fk = Pil.identifier ("pLsrThunkValVTable"     ^ typ fk)
+    fun blackHole       fk = Pil.identifier ("pLsrThunkBlackHole"     ^ typ fk)
+    fun zeroFV          () = Pil.identifier ("pLsrThunkZeroFV"                )
   end
 
   val exit = Pil.identifier "pLsrExit"
