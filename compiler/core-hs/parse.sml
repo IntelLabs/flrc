@@ -63,7 +63,7 @@ struct
     fun verbose (config, s) = if Config.verbose config then print s else ()
   end
 
-  fun print' s = () 
+  fun print' s = ()
 
   fun reservedH w = oneChar #"%" >> $$ P.reserved w
 
@@ -118,6 +118,9 @@ struct
 
   fun isUpperName s = if String.isEmpty s then false else Char.isUpper (String.sub (s, 0))
 
+  (* special type constructor ~ is not an upperName! *)
+  val z7eU = P.symbol "z7eU" 
+
   val coreQualifiedCon =
       corePackageName       >>= (fn (C.P pkgId) =>
       ((oneChar #":"        >>
@@ -135,8 +138,8 @@ struct
       case maybeRest
         of NONE =>  return (C.Tvar packageIdOrVarName)
          | SOME (modHierarchy, baseName) =>
-             (oneChar #"." >>
-              upperName    >>= (fn theId =>
+             (oneChar #"."        >>
+              (upperName || z7eU) >>= (fn theId =>
               return (C.Tcon (SOME (C.M (C.P packageIdOrVarName, modHierarchy, baseName)), theId))))))
 
   val coreDconOrVar =
@@ -194,8 +197,8 @@ struct
       return (List.foldr (tBinds, bodyTy, C.Tforall))))
 
   (* NOTE: quick hack to type check new core syntax *)
-  and coreAty () = coreTcon || (P.parens (optional (oneString "ghczmprim:GHCziPrim.sym") >>
-  let val _ = print' "got sym\n" in P.whiteSpace >> $ coreType end) >>= return o ATy)
+  and coreAty () = coreTcon || (P.parens (optional (oneString "ghczmprim:GHCziPrim.sym" >>
+                                P.whiteSpace) >>= (fn _ => let val _ = print' ("in paren\n") in $ coreType end)) >>= return o ATy)
 
   and coreAtySaturated () = $ coreAty >>= (fn t =>
       case t
@@ -204,6 +207,9 @@ struct
 
   and coreBty () =
       $ coreAty                       >>= (fn hd =>
+      let val _ = case hd of ATy t => print' ("coreBty hd ATy = " ^ Layout.toString (CoreHsLayout.layoutTy t) ^ "\n")
+                           | _ => ()
+      in
       P.whiteSpace                    >>
       zeroOrMore ($ coreAtySaturated) >>= (fn maybeRest =>
       let
@@ -221,15 +227,23 @@ struct
                    | RightCo k => app1 k maybeRest "right"
                    | InstCo k  => app2 k maybeRest "inst"
       in t
-      end))
+      end) end)
 
   and coreType () =
       $ coreForallTy ||
       ($ coreBty                                >>= (fn hd =>
-       zeroOrMore (P.symbol "->" >> $ coreType) >>= (fn rest =>
+       let val _ = print' ("coreType hd = " ^ Layout.toString (CoreHsLayout.layoutTy hd) ^ "\n")
+       in
+       zeroOrMore (P.symbol "->" >>= (fn s =>
+       let val _ = print' ("->\n")
+       in coreType ()
+       end)) >>= (fn rest =>
+       let val _ = print' ("coreType rest = " ^ Int.toString (List.length rest) ^ "\n")
+       in 
        return (case rest
                  of [] => hd
-                  | _  => List.fold (hd::rest, (C.Tcon CHU.tcArrow), UF.flipIn C.Tapp)))))
+                  | _  => List.fold (hd::rest, (C.Tcon CHU.tcArrow), UF.flipIn C.Tapp)) 
+       end) end))
 
   and equalityKind () =
       $ coreBty      >>= (fn ty1 =>
@@ -267,9 +281,12 @@ struct
 
   fun aCoreVbind idP =
       idP           >>= (fn nm =>
+      let val _ = print' ("aCoreVbind got name\n")
+      in
       P.symbol "::" >>
       $ coreType    >>= (fn t =>
-      return (nm, t)))
+      let val _ = print' ("aCoreVbind ty = " ^ Layout.toString (CoreHsLayout.layoutTy t) ^ "\n")
+      in return (nm, t) end) end)
   val lambdaBind = aCoreVbind P.identifier
   val topVbind = aCoreVbind coreQualifiedName
   val coreVbind = P.parens (lambdaBind >>= return o C.Vb)
@@ -325,13 +342,15 @@ struct
   fun coreVdef () =
     (topVbind || (lambdaBind >>= (fn (v, ty) =>
                   return (CHU.unqual v, ty))))  >>= (fn (vdefLhs, vdefTy) =>
-    let val _ = print' ("parse def " ^ Layout.toString (CoreHsLayout.layoutQName vdefLhs) ^ "\n")
+    let val _ = print' ("parse def " ^ Layout.toString (CoreHsLayout.layoutQName vdefLhs) ^ " " ^ Layout.toString (CoreHsLayout.layoutTy vdefTy) ^ "\n")
     in
     P.whiteSpace   >>
     P.symbol "="   >>
     P.whiteSpace   >>
     $ coreFullExp  >>= (fn vdefRhs =>
-    return (C.Vdef (vdefLhs, vdefTy, vdefRhs)))
+    let val _ = print' ("got Rhs = " ^ Layout.toString (CoreHsLayout.layoutExp vdefRhs) ^ "\n") 
+    in
+    return (C.Vdef (vdefLhs, vdefTy, vdefRhs)) end)
     end
     )
 
@@ -364,9 +383,12 @@ struct
   and coreLam () =
       P.symbol "\\"     >>
       coreLambdaBinds   >>= (fn binds =>
+      let val _ = print' ("got binds " ^ Layout.toString
+      (Layout.seq (List.map (binds, CoreHsLayout.layoutBind))) ^ "\n")
+      in
       P.symbol "->"     >>
       $ coreFullExp     >>= (fn body =>
-      return (List.foldr (binds, body, C.Lam))))
+      return (List.foldr (binds, body, C.Lam))) end)
 
   and coreLet () =
       reservedH "let" >>
