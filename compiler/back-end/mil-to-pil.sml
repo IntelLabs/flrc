@@ -1400,6 +1400,8 @@ struct
         val fte = Pil.E.hackTyp ft
         val (off, ssk, M.FD {kind, ...}) = doTupleField (state, env, tf)
         val off = Pil.E.int off
+        val es = MU.FieldKind.numBytes (getConfig env, kind)
+        val es = Pil.E.int es
         val d = genVarE (state, env, dest)
         val assign = fn (loader, args) => Pil.E.assign (d, Pil.E.call (Pil.E.namedConstant loader, args))
         val call = fn (loader, args) => Pil.E.call (Pil.E.namedConstant loader, d::args)
@@ -1407,7 +1409,7 @@ struct
         val a =
             case ssk
              of SskScalarFixed                            => assign (RT.Object.field, [v, off, fte])
-              | SskScalarVariable e                       => assign (RT.Object.extra, [v, off, fte, e])
+              | SskScalarVariable e                       => assign (RT.Object.extra, [v, off, fte, es, e])
               | SskVectorFixed et                         => call (RT.Prims.vectorLoadF   (config, et, kind), 
                                                                    [v, off])
               | SskVectorVariableStrided (et, i, e)       => call (RT.Prims.vectorLoadVS  (config, et, kind), 
@@ -1429,6 +1431,8 @@ struct
         val ft = Pil.E.hackTyp (Pil.T.ptr (genTyp (state, env, ft)))
         val (off, ssk, M.FD {kind, ...}) = doTupleField (state, env, tf)
         val off = Pil.E.int off
+        val es = MU.FieldKind.numBytes (getConfig env, kind)
+        val es = Pil.E.int es
         val nv = genOperand (state, env, ofVal)
         fun doWB trg = writeBarrier (state, env, v, trg, nv, kind, false)
         val scalar = fn (field, args) => doWB (Pil.E.call (Pil.E.namedConstant field, args))
@@ -1437,7 +1441,7 @@ struct
         val set =
             case ssk
              of SskScalarFixed                            => scalar (RT.Object.field, [v, off, ft])
-              | SskScalarVariable e                       => scalar (RT.Object.extra, [v, off, ft, e])
+              | SskScalarVariable e                       => scalar (RT.Object.extra, [v, off, ft, es, e])
               | SskVectorFixed et                         => vector (RT.Prims.vectorStoreF (config, et, kind), 
                                                                      [v, off, nv])
               | SskVectorVariableStrided (et, i, e)       => vector (RT.Prims.vectorStoreVS (config, et, kind), 
