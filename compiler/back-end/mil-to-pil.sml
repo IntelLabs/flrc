@@ -1400,6 +1400,8 @@ struct
         val fte = Pil.E.hackTyp ft
         val (off, ssk, M.FD {kind, ...}) = doTupleField (state, env, tf)
         val off = Pil.E.int off
+        val es = MU.FieldKind.numBytes (getConfig env, kind)
+        val es = Pil.E.int es
         val d = genVarE (state, env, dest)
         val assign = fn (loader, args) => Pil.E.assign (d, Pil.E.call (Pil.E.namedConstant loader, args))
         val call = fn (loader, args) => Pil.E.call (Pil.E.namedConstant loader, d::args)
@@ -1407,7 +1409,7 @@ struct
         val a =
             case ssk
              of SskScalarFixed                            => assign (RT.Object.field, [v, off, fte])
-              | SskScalarVariable e                       => assign (RT.Object.extra, [v, off, fte, e])
+              | SskScalarVariable e                       => assign (RT.Object.extra, [v, off, fte, es, e])
               | SskVectorFixed et                         => call (RT.Prims.vectorLoadF   (config, et, kind), 
                                                                    [v, off])
               | SskVectorVariableStrided (et, i, e)       => call (RT.Prims.vectorLoadVS  (config, et, kind), 
@@ -1429,6 +1431,8 @@ struct
         val ft = Pil.E.hackTyp (Pil.T.ptr (genTyp (state, env, ft)))
         val (off, ssk, M.FD {kind, ...}) = doTupleField (state, env, tf)
         val off = Pil.E.int off
+        val es = MU.FieldKind.numBytes (getConfig env, kind)
+        val es = Pil.E.int es
         val nv = genOperand (state, env, ofVal)
         fun doWB trg = writeBarrier (state, env, v, trg, nv, kind, false)
         val scalar = fn (field, args) => doWB (Pil.E.call (Pil.E.namedConstant field, args))
@@ -1437,7 +1441,7 @@ struct
         val set =
             case ssk
              of SskScalarFixed                            => scalar (RT.Object.field, [v, off, ft])
-              | SskScalarVariable e                       => scalar (RT.Object.extra, [v, off, ft, e])
+              | SskScalarVariable e                       => scalar (RT.Object.extra, [v, off, ft, es, e])
               | SskVectorFixed et                         => vector (RT.Prims.vectorStoreF (config, et, kind), 
                                                                      [v, off, nv])
               | SskVectorVariableStrided (et, i, e)       => vector (RT.Prims.vectorStoreVS (config, et, kind), 
@@ -1955,12 +1959,9 @@ struct
 
   fun genEval (state, env, cc, fk, e, ret) =
       let
-        val (thunk, slowf, slowargs) =
-            case e
-             of M.EThunk {thunk, ...} => (thunk, RT.Thunk.call fk, [thunk])
-              | M.EDirectThunk {thunk, code, ...} =>
-                (thunk, RT.Thunk.callDirect fk, [code, thunk])
-        val (cuts, t, cont, g) =
+        val thunk = MU.Eval.thunk e
+        val thunk = genVarE (state, env, thunk)
+        val (fastpath, slowpath, g) =
             case ret
              of M.RNormal {rets, block, cuts} =>
                 (case Vector.length rets
@@ -1970,49 +1971,79 @@ struct
                        val () = addLocal (state, rv)
                        val rt = getVarTyp (state, rv)
                        val rv = genVarE (state, env, rv)
-                       fun cont e = Pil.S.expr (Pil.E.assign (rv, e))
                        val g = Pil.S.goto (genLabel (state, env, block))
-                     in (cuts, rt, cont, g)
+                       val t = genTyp (state, env, rt)
+                       val (slowf, slowargs) =
+                           case e
+                            of M.EThunk {thunk, ...} => (RT.Thunk.call fk, [thunk])
+                             | M.EDirectThunk {thunk, code, ...} =>
+                               (RT.Thunk.callDirect fk, [code, thunk])
+                       val slowf = Pil.E.namedConstant slowf
+                       val slowargs = List.map (slowargs, fn v => genVarE (state, env, v))
+                       val cuts = genCutsTo (state, env, cuts)
+                       val slowpath = Pil.E.callAlsoCutsTo (getConfig env, slowf, slowargs, cuts)
+                       val slowpath = Pil.E.cast (t, slowpath)
+                       val slowpath = Pil.S.expr (Pil.E.assign (rv, slowpath))
+                       val fastpath = genThunkGetValueE (state, env, fk, t, thunk)
+                       val fastpath = Pil.S.expr (Pil.E.assign (rv, fastpath))
+                     in (fastpath, slowpath, g)
                      end
                    | _ => Fail.fail ("MilToPil", "genEval", "rets must be 1"))
               | M.RTail {exits} =>
                 let
-                  val cuts = M.C {exits = exits, targets = LS.empty}
                   val rtyp = MU.Code.thunkTyp (getFunc env)
-                  val cont = 
-                      (case rewriteThunks (env, cc)
-                        of SOME t => 
-                           (fn e =>
-                               let
-                                 val stm = getStm state
-                                 val vret = MSTM.variableFresh (stm, "ret", rtyp, M.VkLocal)
-                                 val () = addLocal (state, vret)
-                                 val vret = genVarE (state, env, vret)
-                                 val evals = Pil.S.expr (Pil.E.assign (vret, e))
-                                 val rets = 
-                                     Pil.S.call (Pil.E.namedConstant (RT.Thunk.return fk),
-                                                 [genVarE (state, env, t), vret])
-                               in Pil.S.sequence [evals, rets]
-                               end)
-                         | NONE => fn e => Pil.S.returnExpr e)
-                  val g = Pil.S.empty
-                in (cuts, rtyp, cont, g)
+                  val t = genTyp (state, env, rtyp)
+                  val (fastpath, slowpath) = 
+                      case rewriteThunks (env, cc)
+                       of SOME tvar => 
+                          let
+                            val (slowf, slowargs) =
+                                case e
+                                 of M.EThunk {thunk, ...} => (RT.Thunk.call fk, [thunk])
+                                  | M.EDirectThunk {thunk, code, ...} =>
+                                    (RT.Thunk.callDirect fk, [code, thunk])
+                            val slowf = Pil.E.namedConstant slowf
+                            val slowargs = List.map (slowargs, fn v => genVarE (state, env, v))
+                            val cuts = M.C {exits = exits, targets = LS.empty}
+                            val cuts = genCutsTo (state, env, cuts)
+                            val slowpath = Pil.E.callAlsoCutsTo (getConfig env, slowf, slowargs, cuts)
+                            val slowpath = Pil.E.cast (t, slowpath)
+                            val stm = getStm state
+                            val vret = MSTM.variableFresh (stm, "ret", rtyp, M.VkLocal)
+                            val () = addLocal (state, vret)
+                            val vret = genVarE (state, env, vret)
+                            val cont = 
+                             fn e => 
+                                let
+                                  val evals = Pil.S.expr (Pil.E.assign (vret, e))
+                                  val rets = 
+                                      Pil.S.call (Pil.E.namedConstant (RT.Thunk.return fk),
+                                                  [genVarE (state, env, tvar), vret])
+                                in Pil.S.sequence [evals, rets]
+                                end
+                            val fastpath = genThunkGetValueE (state, env, fk, t, thunk)
+                          in (cont fastpath, cont slowpath)
+                          end
+                        | NONE => 
+                          let
+                            val (slowf, slowargs) =
+                                case e
+                                 of M.EThunk {thunk, ...} => (RT.Thunk.tailCall fk, [thunk])
+                                  | M.EDirectThunk {thunk, code, ...} =>
+                                    (RT.Thunk.tailCallDirect fk, [code, thunk])
+                            val slowf = Pil.E.namedConstant slowf
+                            val slowargs = List.map (slowargs, fn v => genVarE (state, env, v))
+                            val slowpath = Pil.S.expr (Pil.E.call (slowf, slowargs))
+                            val fastpath = genThunkGetValueE (state, env, fk, t, thunk)
+                            val fastpath = Pil.S.returnExpr fastpath
+                          in (fastpath, slowpath)
+                          end
+                in (fastpath, slowpath, Pil.S.empty)
                 end
-        val t = genTyp (state, env, t)
-        val thunk = genVarE (state, env, thunk)
-        val slowf = Pil.E.namedConstant slowf
-        val slowargs = List.map (slowargs, fn v => genVarE (state, env, v))
-        val cuts = genCutsTo (state, env, cuts)
-        val slowpath = Pil.E.callAlsoCutsTo (getConfig env, slowf, slowargs, cuts)
-        val slowpath = Pil.E.cast (t, slowpath)
-        val slowpath = cont slowpath
-        val fastpath = genThunkGetValueE (state, env, fk, t, thunk)
-        val fastpath = cont fastpath
         val control =
             Pil.E.call (Pil.E.namedConstant (RT.Thunk.isEvaled fk), [thunk])
         val res = Pil.S.ifThenElse (control, fastpath, slowpath)
-        val res = Pil.S.sequence [res, g]
-      in res
+      in Pil.S.sequence [res, g]
       end
 
   fun genInterProc (state, env, cc, ip, ret) =
@@ -2217,8 +2248,9 @@ struct
                 let
                   val t = genTyp (state, env, Vector.sub (fvts, i))
                   val f = genThunkFvProjection (state, env, rfk, fvfks, te, i, t)
-                  val z = Pil.S.expr (writeBarrier (state, env, te, f, Pil.E.int 0, fk, false))
-                in [z]
+                  val z = writeBarrier (state, env, te, f, Pil.E.int 0, fk, false)
+                  val f = Pil.S.call (Pil.E.variable (RT.Thunk.zeroFV ()), [z])
+                in [f]
                 end
               else
                 []
