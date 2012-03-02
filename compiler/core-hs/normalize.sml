@@ -98,6 +98,7 @@ struct
                    | CH.InstCoercion (t1, t2) => cast (false, t2)
                    | CH.LeftCoercion ty => cast (false, ty)
                    | CH.RightCoercion ty => cast (false, ty)
+                   | CH.NthCoercion (_, ty) => cast (false, ty)
                    | CH.Tforall (tb, ty) => CH.Tforall (tb, cast (false, ty))
                    | CH.Tapp (t1, t2) => CH.Tapp (cast (false, t1), cast (false, t2))
                    | _ => ty)

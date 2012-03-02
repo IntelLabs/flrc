@@ -34,6 +34,7 @@ structure CoreHs = struct
       | InstCoercion of ty * ty
       | LeftCoercion of ty
       | RightCoercion of ty
+      | NthCoercion of (int * ty)
 
   and kind
       = Klifted
@@ -440,6 +441,7 @@ struct
                | InstCoercion (t1, t2) => InstCoercion (sub t1, sub t2)
                | LeftCoercion t1 => LeftCoercion (sub t1)
                | RightCoercion t1 => RightCoercion (sub t1)
+               | NthCoercion (i, t1) => NthCoercion (i, sub t1)
       in
         sub t
       end

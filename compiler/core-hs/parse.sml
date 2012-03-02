@@ -72,13 +72,14 @@ struct
       P.stringLiteral   >>= (fn s =>
       return (C.External ("", C.Prim, s, CHP.tAddrzh)))
 
-  datatype CoercionTy = TransC | InstC | SymC | UnsafeC | LeftC | RightC
+  datatype CoercionTy = TransC | InstC | SymC | UnsafeC | LeftC | RightC | NthC
 
   val symCo    = oneString "sym"    >> return SymC
   val transCo  = oneString "trans"  >> return TransC
   val unsafeCo = oneString "unsafe" >> return UnsafeC
   val leftCo   = oneString "left"   >> return LeftC
   val rightCo  = oneString "right"  >> return RightC
+  val nthCo    = oneString "nth"    >> return NthC
   val instCo   = oneString "inst"   >> return InstC
 
   datatype ATyOp
@@ -88,6 +89,7 @@ struct
     | Unsafe  of (C.ty * C.ty -> C.ty)
     | LeftCo  of (C.ty        -> C.ty)
     | RightCo of (C.ty        -> C.ty)
+    | NthCo   of (int * C.ty  -> C.ty)
     | InstCo  of (C.ty * C.ty -> C.ty)
 
   val upperName =
@@ -164,14 +166,15 @@ struct
   val coreTcon =
       (coreTvarOrQualifiedCon >>= (return o ATy)) ||
       (oneChar #"%" >>
-       any [symCo, transCo, unsafeCo, instCo, leftCo, rightCo] >>= (fn maybeCoercion =>
+       any [symCo, transCo, unsafeCo, instCo, leftCo, rightCo, nthCo] >>= (fn maybeCoercion =>
        return (case maybeCoercion
-                of TransC  => Trans   (fn (x, y) => C.TransCoercion (x, y))
-                 | SymC    => Sym     (fn x      => C.SymCoercion x)
-                 | UnsafeC => Unsafe  (fn (x, y) => C.UnsafeCoercion (x, y))
-                 | LeftC   => LeftCo  (fn x      => C.LeftCoercion x)
+                of TransC  => Trans   C.TransCoercion 
+                 | SymC    => Sym     C.SymCoercion 
+                 | UnsafeC => Unsafe  C.UnsafeCoercion
+                 | LeftC   => LeftCo  C.LeftCoercion 
                  | RightC  => RightCo C.RightCoercion
-                 | InstC   => InstCo  (fn (x, y) => C.InstCoercion (x, y)))))
+                 | NthC    => NthCo   C.NthCoercion
+                 | InstC   => InstCo  C.InstCoercion)))
 
   val liftedKind   = P.symbol "*" >> return C.Klifted
   val unliftedKind = P.symbol "#" >> return C.Kunlifted
@@ -211,23 +214,29 @@ struct
                            | _ => ()
       in
       P.whiteSpace                    >>
-      zeroOrMore ($ coreAtySaturated) >>= (fn maybeRest =>
       let
         fun fail err m n = error (err ^ " expects " ^ Int.toString m ^ " arguments, but got " ^ Int.toString n)
-        fun app1 k (x :: [])      _   = return (k x)
-          | app1 _ args           err = fail err 1 (length args)
-        fun app2 k (x :: y :: []) _   = return (k (x, y))
-          | app2 _ args           err = fail err 2 (length args)
-        val t = case hd
-                  of ATy t     => return (List.fold (maybeRest, t, UF.flipIn C.Tapp))
-                   | Trans k   => app2 k maybeRest "trans"
-                   | Sym k     => app1 k maybeRest "sym"
-                   | Unsafe k  => app2 k maybeRest "unsafe"
-                   | LeftCo k  => app1 k maybeRest "left"
-                   | RightCo k => app1 k maybeRest "right"
-                   | InstCo k  => app2 k maybeRest "inst"
-      in t
-      end) end)
+        fun app0 t tys = return (List.fold (tys, t, UF.flipIn C.Tapp))
+        fun app1 k _   (x :: []) = return (k x)
+          | app1 _ err args      = fail err 1 (length args)
+        fun app2 k _   (x :: y :: []) = return (k (x, y))
+          | app2 _ err args           = fail err 2 (length args)
+        val moreTys = zeroOrMore ($ coreAtySaturated) 
+        val nthTy = P.integer >>= (fn i => 
+                    ($ coreAtySaturated) >>= (fn ty => 
+                    return (IntInf.toInt i, ty)))
+      in
+        case hd
+          of ATy t     => moreTys >>= app0 t
+           | Trans k   => moreTys >>= app2 k "trans"
+           | Sym k     => moreTys >>= app1 k "sym"
+           | Unsafe k  => moreTys >>= app2 k "unsafe"
+           | LeftCo k  => moreTys >>= app1 k "left"
+           | RightCo k => moreTys >>= app1 k "right"
+           | InstCo k  => moreTys >>= app2 k "inst"
+           | NthCo k   => nthTy   >>= return o k
+      end
+      end)
 
   and coreType () =
       $ coreForallTy ||
@@ -648,6 +657,12 @@ struct
               val (t, m) = scanTy (t, m) 
             in 
               (C.RightCoercion t, m) 
+            end
+          | scanTy (C.NthCoercion (i, t), m) = 
+            let 
+              val (t, m) = scanTy (t, m) 
+            in 
+              (C.NthCoercion (i, t), m) 
             end
           | scanTy (x, m) = (x, m)
 

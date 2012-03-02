@@ -131,6 +131,8 @@ struct
       L.seq [L.str "%right ", layoutATy t]
     | layoutTy (InstCoercion (t1, t2)) =
       L.seq [L.str "%inst ", separate [layoutATy t1, layoutATy t2]]
+    | layoutTy (NthCoercion (i, t1)) =
+      L.seq [L.str "%nth ", separate [Int.layout i, layoutATy t1]]
     | layoutTy t = layoutBTy t
 
   and layoutTBind (t, Klifted) = L.str t
