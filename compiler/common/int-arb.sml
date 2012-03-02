@@ -235,13 +235,13 @@ struct
       let
         val ti = toIntInf t
         val r = 
-            (case Int.maxInt
-              of SOME max => 
-                 if IntInf.<= (ti, IntInf.fromInt max) then
+            (case (Int.maxInt, Int.minInt)
+              of (SOME max, SOME min) => 
+                 if IntInf.>= (ti, IntInf.fromInt min) andalso IntInf.<= (ti, IntInf.fromInt max) then
                    SOME (IntInf.toInt ti)
                  else
                    NONE
-               | NONE => SOME (IntInf.toInt ti))
+               | _ => SOME (IntInf.toInt ti))
       in r
       end
 

@@ -1190,10 +1190,11 @@ struct
                let
                  val iif = IntArb.toIntInf i
                in
+                 (*
                  if iif < 0 then 
                    Fail.fail ("MilToPil", "genConstant", "Can't produce integer constant" ^ (IntArb.stringOf i))
-                 else
-                   Pil.E.intInf iif
+                 else *)
+                 Pil.E.intInf iif
                end)
         | M.CBoolean b => Pil.E.boolean b
         | M.CFloat r => Pil.E.float r
