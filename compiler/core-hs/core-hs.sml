@@ -5,6 +5,7 @@
 
 structure CoreHs = struct
 
+  type strictness = bool
 
   type identifier = string
 
@@ -95,7 +96,7 @@ structure CoreHs = struct
       | Nonrec of vDef
 
   datatype cDef
-      = Constr of dcon qualified * tBind list * ty list
+      = Constr of dcon qualified * tBind list * (ty * strictness) list
 
   datatype tDef
       = Data of tcon qualified * tBind list * cDef list

@@ -271,6 +271,12 @@ struct
 
   val coreTbinds = zeroOrMore ($ coreTbind)
 
+  val coreAtySaturated1 = 
+      optional (P.symbol "!") >>= (fn strict =>
+      $ coreAtySaturated      >>= (fn ty => 
+      return (ty, UO.bool strict)))
+
+  (*
   fun coreTbindsOrTyGen separator =
       let
         val b1 = P.symbol "("       >>
@@ -286,6 +292,13 @@ struct
                  $$ coreTbindsOrTyGen separator >>= (fn (tbs,tys) =>
                  return (b::tbs,tys)))
       in optional (b1 || b2) >>= (fn res => return (UO.get (res, ([], []))))
+      end
+  *)
+  fun coreTbindsOrTyGen separator =
+      let
+        val b = separator >> $ coreTbindGen'
+      in
+        zeroOrMore (b || P.parens b) 
       end
 
   fun aCoreVbind idP =
@@ -482,9 +495,9 @@ struct
   val coreCdef =
       coreQualifiedCon                              >>= (fn dataConName =>
       P.whiteSpace                                  >>
-      coreTbindsOrTyGen (P.symbol "@" >> return ()) >>= (fn (tbs,tys1) =>
-      zeroOrMore ($ coreAtySaturated)               >>= (fn tys2       =>
-      return (C.Constr (dataConName, tbs, tys1 @ tys2)))))
+      coreTbindsOrTyGen (P.symbol "@" >> return ()) >>= (fn tbs         =>
+      zeroOrMore coreAtySaturated1                  >>= (fn tys         =>
+      return (C.Constr (dataConName, tbs, tys)))))
 
   val coreCdefs = sepBy coreCdef (P.symbol ";")
 
@@ -698,14 +711,15 @@ struct
 
          fun scanVBinds env (vbs, m) = foldL' (vbs, (env, m), scanVBind)
 
-         fun scanTys (tys, m) = foldL (tys, m, scanTy)
+         fun scanTys (tys, m) = foldL (tys, m, scanTy) 
 
         fun scanCDef (C.Constr ((q, n), tbs, tys), m) = 
             let
               val q = case q of NONE => SOME mname | _ => q
+              val (tys, sts) = List.unzip tys
               val (tys, m) = scanTys (tys, m)
             in
-              (C.Constr ((q, n), tbs, tys), m)
+              (C.Constr ((q, n), tbs, List.zip (tys, sts)), m)
             end
 
         fun scanCDefs (cdefs, m) = foldL (cdefs, m, scanCDef)

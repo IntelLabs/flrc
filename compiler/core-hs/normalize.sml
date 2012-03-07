@@ -321,7 +321,7 @@ struct
             val typ = List.fold (tbs, CH.Tcon name, fn ((t, _), ty) => CH.Tapp (ty, CH.Tvar t))
             fun insertCon (CH.Constr (con, tbs', tys), vdict) =
                 let 
-                  val ty = List.foldr (tys, typ, CU.tArrow) 
+                  val ty = List.foldr (List.map (tys, #1), typ, CU.tArrow) 
                   val ty = List.foldr (tbs @ tbs', ty, CH.Tforall)
                 in
                   QD.insert (vdict, con, ty)
@@ -342,7 +342,7 @@ struct
 
   fun doModule (CH.Module (name, tdefs, vdefgs))
     = let 
-        val tdefs  = CH.Data (CP.tcStatezh, [("s", CH.Klifted)], [CH.Constr (CP.tcStatezh, [], [CH.Tvar "s"])]) :: tdefs
+        val tdefs  = CH.Data (CP.tcStatezh, [("s", CH.Klifted)], [CH.Constr (CP.tcStatezh, [], [(CH.Tvar "s", true)])]) :: tdefs
         val tdefs  = CH.Data (CP.tcRealWorld, [], [CH.Constr (CP.tcRealWorld, [], [])]) :: tdefs
         val vdefgs = CH.Nonrec (CH.Vdef (CP.vRealWorldzh, CH.Tcon CP.tcRealWorld, CH.Dcon CP.tcRealWorld)) :: vdefgs
         val dict   = List.fold (tdefs, emptyDict, doTDef)

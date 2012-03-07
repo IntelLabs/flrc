@@ -101,6 +101,9 @@ struct
     | layoutATy (Tcon c) = layoutQName c
     | layoutATy t = L.paren (layoutTy t)
 
+  and layoutATy1 (ty, strict) = 
+    if strict then L.seq [ L.str "!", layoutATy ty ] else layoutATy ty 
+
   and layoutAppTy (Tapp (t1, t2)) ts = layoutAppTy t1 (t2::ts)
     | layoutAppTy t ts = separate (map layoutATy (t::ts))
 
@@ -231,7 +234,7 @@ struct
   fun layoutCDef (Constr (qdcon, tbinds, tys)) =
       L.mayAlign [ L.seq [layoutQName qdcon , L.str " "]
                  , separate (map layoutAtTBind tbinds)
-                 , separate (map layoutATy tys)]
+                 , separate (map layoutATy1 tys)]
 
   fun layoutTDef (Data (qtcon, tbinds, cdefs)) =
       L.mayAlign [ L.seq [L.str "%data ", layoutQName qtcon, L.str " ", 
