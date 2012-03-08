@@ -280,6 +280,13 @@ structure Utils = struct
         in (l1, l2, l3)
         end
 
+    fun unzip4 l =
+        let
+          fun doOne ((a, b, c, d), (l1, l2, l3, l4)) = (a::l1, b::l2, c::l3, d::l4)
+          val (l1, l2, l3, l4) = MltonList.foldr (l, ([], [], [], []), doOne)
+        in (l1, l2, l3, l4)
+        end
+
     val mapFoldl : ('a list * 'c * (('a * 'c) -> ('b * 'c)))
                    -> ('b list * 'c) =
        fn (l, ix, f) =>
