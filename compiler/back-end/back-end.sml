@@ -103,20 +103,20 @@ struct
   datatype compiler = CcGCC | CcICC | CcOpc | CcIpc
   datatype linker = LdGCC | LdICC | LdOpc | LdIpc
 
-  val pillarStack =   2097152  (* Decimal integer in bytes (  0x200000) *)
+  val opcStack    =   2097152  (* Decimal integer in bytes (  0x200000) *)
   val smallStack  =  33554432  (* Decimal integer in bytes ( 0x2000000) *)
   val largeStack  = 536870912  (* Decimal integer in bytes (0x20000000) *) 
 
-  fun stackSize (config : Config.t, ld) = 
+  fun defaultStackSize (config : Config.t, ld) = 
       (case (Config.stack config, Config.output config, ld)
         of (SOME i, _, _) => i
-         | (NONE, Config.OkPillar, LdOpc) => pillarStack
+         | (NONE, Config.OkPillar, LdOpc) => opcStack
          | (NONE, Config.OkPillar,     _) => smallStack
          | (NONE, Config.OkC,      _    ) => smallStack)
 
-  fun stackStr (config : Config.t, ld) = 
+  fun defaultStackStr (config : Config.t, ld) = 
       let
-        val i = stackSize (config, ld)
+        val i = defaultStackSize (config, ld)
         val s = Int.toString i
       in s
       end
@@ -254,10 +254,13 @@ struct
                | CcOpc    => ["PPILER_BACKEND_OPC"]
                | CcIpc    => ["PPILER_BACKEND_IPC"])
 
+        val stackSize = ["PLSR_STACK_SIZE_WORKER=4",
+                         "PLSR_STACK_SIZE_MAIN=0"]
         val ds = 
             List.concat [[ws], 
                          gc, 
                          futures, 
+                         stackSize,
                          thunks,
                          debug, 
                          pbase, 
@@ -537,12 +540,12 @@ struct
            | LdIpc    => []
         )
 
-    fun stack (config, ld) = 
+    fun defaultStack (config, ld) = 
         (case ld
-          of LdGCC    => ["--stack="^(stackStr (config, ld))]
-           | LdICC    => ["-stack:"^(stackStr (config, ld))]
-           | LdOpc    => ["-stack:"^(stackStr (config, ld))]
-           | LdIpc    => ["-stack:"^(stackStr (config, ld))]
+          of LdGCC    => ["--stack="^(defaultStackStr (config, ld))]
+           | LdICC    => ["-stack:"^(defaultStackStr (config, ld))]
+           | LdOpc    => ["-stack:"^(defaultStackStr (config, ld))]
+           | LdIpc    => ["-stack:"^(defaultStackStr (config, ld))]
         )
 
     fun control (config, ld) = 
@@ -674,7 +677,7 @@ struct
         val options = List.concat [LdOptions.link cfg,
                                    pLibOptions,
                                    LdOptions.opt cfg, 
-                                   LdOptions.stack cfg,
+                                   LdOptions.defaultStack cfg,
                                    LdOptions.control cfg,
                                    LdOptions.debug cfg]
         val (preLibs, postLibs) = libraries (config, ldTag)
