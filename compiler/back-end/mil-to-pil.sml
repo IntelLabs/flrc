@@ -380,8 +380,14 @@ struct
 
     fun vtableOffset (state, env) = 0
 
+    fun vtableAlignment (state, env) = wordSize (state, env)
+
     fun fieldBase (state, env) =
         vtableOffset (state, env) + wordSize (state, env)
+
+    fun fieldBaseAlignment (state, env) = vtableAlignment (state, env)
+
+    fun fieldBaseInfo (state, env) = (fieldBase (state, env), fieldBaseAlignment (state, env))
 
     (* Compute size and padding for an object. Returns (size, algn, paddings, padding)
      * where size is the total size of the object in bytes, algn is the alignment
@@ -402,7 +408,7 @@ struct
                        algn  : 'a -> int,            (* specified alignment of field *)
                        fds   : 'a Vector.t, 
                        fdo   : 'a Option.t, 
-                       start : int   (* starting offset *)
+                       start : (int * int) (* starting offset and alignment *)
                       ) =
         let
           val config = getConfig env
@@ -410,12 +416,12 @@ struct
               let
                 val fsz = nb (config, fd)
                 val alignment = Int.max (fsz, algn fd)
-                val fieldStart = align (off, fsz)
+                val fieldStart = align (off, alignment)
                 val fieldEnd = fieldStart + fsz
                 val max = Int.max (alignment, max)
               in (fieldStart - off, (fieldEnd, max))
               end
-          val (paddings, (fieldEnd, max)) = Vector.mapAndFold (fds, (start, 4), doOne)
+          val (paddings, (fieldEnd, max)) = Vector.mapAndFold (fds, start, doOne)
           val (size, max) = 
               case fdo
                of NONE    => (fieldEnd, max)
@@ -439,7 +445,7 @@ struct
                      algn  : 'a -> int,            (* specified alignment of field *)
                      fds   : 'a Vector.t, 
                      fdo   : 'a Option.t, 
-                     start : int   (* starting offset *)
+                     start : int * int   (* starting offset and alignment *)
                     ) =
         let
           val (size, _, _, _) = fieldPaddingG (state, env, nb, algn, fds, fdo, start)
@@ -471,7 +477,7 @@ struct
                 val fd = get (fds, fdo, i)
                 val fsz = nb (config, fd)
                 val alignment = Int.max (fsz, algn fd)
-                val fieldStart = align (off, fsz)
+                val fieldStart = align (off, alignment)
               in
                 if i = j then
                   fieldStart
@@ -484,7 +490,7 @@ struct
     fun fieldPadding (state, env, M.TD {fixed, array, ...}) =
         fieldPaddingG (state, env, 
                       MU.FieldDescriptor.numBytes, MU.FieldDescriptor.alignmentBytes,
-                      fixed, array, fieldBase (state, env))
+                      fixed, array, fieldBaseInfo (state, env))
 
     fun fieldOffset (state, env, M.TD {fixed, array, ...}, i) =
         fieldOffsetG (state, env, 
@@ -500,14 +506,14 @@ struct
     fun fixedSize (state, env, M.TD {fixed, array, ...}) =
         objectSizeG (state, env, 
                      MU.FieldDescriptor.numBytes, MU.FieldDescriptor.alignmentBytes,
-                     fixed, array, fieldBase (state, env))
+                     fixed, array, fieldBaseInfo (state, env))
 
     fun objectAlignment (state, env, M.TD {fixed, array, ...}) = 
         let
           val (_, alignment, _, _) = 
               fieldPaddingG (state, env, 
                              MU.FieldDescriptor.numBytes, MU.FieldDescriptor.alignmentBytes,
-                             fixed, array, fieldBase (state, env))
+                             fixed, array, fieldBaseInfo (state, env))
         in alignment
         end
 
@@ -517,36 +523,48 @@ struct
           | SOME fd => MU.FieldDescriptor.numBytes (getConfig env, fd)
 
     (* Highly runtime specific assumptions:
-     *   A thunk is a fixed structure, followed by the results field, followed
-     *   by free variables.
+     *  A thunk is a vtable, a sequence of word sized fields, followed by the results field, 
+     *  followed by free variables.
      *)
 
-    fun thunkBase (state, env, fk) =
-        (if lightweightThunks (getConfig env) then 2
-         else case parStyle env
-               of Config.PNone => 3
-                | Config.PAll  => 5
-                | Config.PAuto => 5
-                | Config.PPar  => 5) * wordSize (state, env)
-
+    (* Fieldkinds for the sequence of word sized fields *)
+    fun thunkBaseElements (state, env) =
+        let
+          val count = 
+              (if lightweightThunks (getConfig env) then 2
+               else case parStyle env
+                     of Config.PNone => 3
+                      | Config.PAll  => 5
+                      | Config.PAuto => 5
+                      | Config.PPar  => 5)
+        in Vector.new (count, M.FkBits (MU.FieldSize.ptrSize (getConfig env)))
+        end
+ 
+    (* Size of the thunk struct (with no free variables included) *)
     fun thunkFixedSize (state, env, fk) =
         let
-          val tb = thunkBase (state, env, fk)
-          val rs = MU.FieldKind.numBytes (getConfig env, fk)
-          val tb = align (tb, rs)
-        in tb + rs
+          val fks = thunkBaseElements (state, env)
+          val fks = Utils.Vector.snoc (fks, fk)
+          val sz = objectSizeG (state, env, MU.FieldKind.numBytes, fn _ => 1,
+                                fks, NONE, (0, 1))
+        in sz
         end
 
+    (* Size of the thunk including free variables.  The initial part of the
+     * object imposes no alignment restrictions on the rest of the object. *)
     fun thunkSize (state, env, typ, fks) =
         objectSizeG (state, env, MU.FieldKind.numBytes, fn _ => 1,
-                     fks, NONE, thunkFixedSize (state, env, typ))
+                     fks, NONE, (thunkFixedSize (state, env, typ), 0))
 
+    (* Offset of the thunk result field *)
     fun thunkResultOffset (state, env, typ) = 
         let
-          val tb = thunkBase (state, env, typ)
-          val rs = MU.FieldKind.numBytes (getConfig env, typ)
-          val tb = align (tb, rs)
-        in tb
+          val fks = thunkBaseElements (state, env)
+          val idx = Vector.length fks
+          val fks = Utils.Vector.snoc (fks, typ)
+          val off = fieldOffsetG (state, env, MU.FieldKind.numBytes, fn _ => 1,
+                                  fks, NONE, idx, 0)
+        in off
         end
 
     fun thunkFvOffset (state, env, typ, fks, i) =
