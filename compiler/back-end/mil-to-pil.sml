@@ -399,9 +399,9 @@ struct
      * Each field is padded to its natural alignment or the specified
      * alignment, whichever is greater.  The entire object is padded
      * such that the end of the fixed portion is aligned to the maximum of the
-     * natural and specified alignment of the array portion (if any).  The object is
-     * aligned to the maximum of the natural and specified alignments of the fixed and 
-     * array fields (minimum 4 byte aligned).
+     * natural and specified alignment of the fixed elements and the array 
+     * portion (if any).  The object is aligned to the maximum of the natural 
+     * and specified alignments of the fixed and array fields (minimum 4 byte aligned).
      *)
     fun fieldPaddingG (state, env, 
                        nb    : Config.t * 'a -> int, (* number of bytes in field *)
@@ -422,14 +422,11 @@ struct
               in (fieldStart - off, (fieldEnd, max))
               end
           val (paddings, (fieldEnd, max)) = Vector.mapAndFold (fds, start, doOne)
-          val (size, max) = 
+          val max = 
               case fdo
-               of NONE    => (fieldEnd, max)
-                | SOME fd => 
-                  let
-                    val a = Int.max (nb (config, fd), algn fd)
-                  in (align (fieldEnd, a), Int.max (a, max))
-                  end
+               of NONE    => max
+                | SOME fd => Int.max (nb (config, fd), algn fd)
+          val size = align (fieldEnd, max)
           val padding = size - fieldEnd
         in (size, max, paddings, padding)
         end
@@ -554,7 +551,7 @@ struct
      * object imposes no alignment restrictions on the rest of the object. *)
     fun thunkSize (state, env, typ, fks) =
         objectSizeG (state, env, MU.FieldKind.numBytes, fn _ => 1,
-                     fks, NONE, (thunkFixedSize (state, env, typ), 0))
+                     fks, NONE, (thunkFixedSize (state, env, typ), 1))
 
     (* Offset of the thunk result field *)
     fun thunkResultOffset (state, env, typ) = 
