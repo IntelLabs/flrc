@@ -121,6 +121,19 @@ struct
       in s
       end
 
+  fun mainStackSize (config : Config.t, cc) = 
+      (case (Config.stack config, cc)
+        of (SOME i,   _) => i
+         | (NONE, CcOpc) => opcStack
+         | (NONE,     _) => smallStack)
+
+  fun mainStackStr (config : Config.t, cc) = 
+      let
+        val i = mainStackSize (config, cc)
+        val s = Int.toString i
+      in s
+      end
+
   fun sourceFile (config, compiler, fname) = fname^".c"
 
   fun objectFile (config, compiler, fname) = 
@@ -255,7 +268,7 @@ struct
                | CcIpc    => ["PPILER_BACKEND_IPC"])
 
         val stackSize = ["PLSR_STACK_SIZE_WORKER=4",
-                         "PLSR_STACK_SIZE_MAIN=0"]
+                         "PLSR_STACK_SIZE_MAIN="^mainStackStr (config, compiler)]
         val ds = 
             List.concat [[ws], 
                          gc, 
@@ -545,7 +558,7 @@ struct
           of LdGCC    => ["--stack="^(defaultStackStr (config, ld))]
            | LdICC    => ["-stack:"^(defaultStackStr (config, ld))]
            | LdOpc    => ["-stack:"^(defaultStackStr (config, ld))]
-           | LdIpc    => ["-stack:"^(defaultStackStr (config, ld))]
+           | LdIpc    => []
         )
 
     fun control (config, ld) = 
