@@ -125,11 +125,20 @@ struct
       (case (Config.stack config, cc)
         of (SOME i,   _) => i
          | (NONE, CcOpc) => opcStack
-         | (NONE,     _) => smallStack)
+         | (NONE,     _) => smallStack) div (1024 * 1024)
 
   fun mainStackStr (config : Config.t, cc) = 
       let
         val i = mainStackSize (config, cc)
+        val s = Int.toString i
+      in s
+      end
+
+  fun workerStackSize (config : Config.t, cc) = 4
+
+  fun workerStackStr (config : Config.t, cc) = 
+      let
+        val i = workerStackSize (config, cc)
         val s = Int.toString i
       in s
       end
@@ -267,7 +276,7 @@ struct
                | CcOpc    => ["PPILER_BACKEND_OPC"]
                | CcIpc    => ["PPILER_BACKEND_IPC"])
 
-        val stackSize = ["PLSR_STACK_SIZE_WORKER=4",
+        val stackSize = ["PLSR_STACK_SIZE_WORKER="^workerStackStr (config, compiler),
                          "PLSR_STACK_SIZE_MAIN="^mainStackStr (config, compiler)]
         val ds = 
             List.concat [[ws], 
