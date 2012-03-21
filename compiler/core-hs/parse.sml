@@ -1006,7 +1006,11 @@ struct
                               of SOME def => traceDef (name, def, (defd, traced, scanned))
                                | NONE => (case QD.lookup (defd, name')
                                  of SOME def => traceDef (name', def, (defd, traced, scanned))
-                                  | NONE => Fail.fail (passname, "traceDef", Layout.toString (CoreHsLayout.layoutQName name) ^ " not found"))
+                                  | NONE => 
+                                    (* Some types have no type constructors so they are not in ExtCore *)
+                                    if not (String.isEmpty n) andalso (Char.isUpper (String.sub (n, 0)))
+                                      then state 
+                                      else Fail.fail (passname, "traceDef", Layout.toString (CoreHsLayout.layoutQName name) ^ " not found"))
                           end
                     | trace ((NONE,   _), state) = state
 
