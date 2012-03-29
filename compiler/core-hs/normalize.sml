@@ -79,7 +79,8 @@ struct
   fun applyTy (fty, vty)
     = case fty
         of CH.Tforall ((v, _), t) => CU.substTy (v, vty, t)
-         | _ => failMsg ("applyTy", Layout.toString (CL.layoutTy fty) ^ " doesn't start with forall")
+         | _ => resultTy fty 
+                (* failMsg ("applyTy", Layout.toString (CL.layoutTy fty) ^ " doesn't start with forall") *)
 
   fun castTy (tdict, ty) 
     = let
