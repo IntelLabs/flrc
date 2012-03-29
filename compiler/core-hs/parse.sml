@@ -51,6 +51,7 @@ struct
   structure UO = Utils.Option
   structure SS = StringSet
   structure MS = SetF (struct type t = C.anMName val compare = CHU.compareAnMName end)
+  structure MD = DictF (struct type t = C.anMName' val compare = CHU.compareAnMName' end)
   structure QS = SetF (struct type t = C.identifier C.qualified val compare = CHU.compareQName end)
   structure QD = DictF (struct type t = C.identifier C.qualified val compare = CHU.compareQName end)
   structure SD = StringDict
@@ -64,6 +65,33 @@ struct
   end
 
   fun print' s = ()
+
+  val sCache : string SD.t ref = ref SD.empty
+  val pCache : C.pName SD.t ref = ref SD.empty
+  val mCache : C.anMName MD.t ref = ref MD.empty
+
+  fun clearCache () = 
+      let
+        val _ = sCache := SD.empty
+        val _ = pCache := SD.empty
+        val _ = mCache := MD.empty
+      in ()
+      end
+
+  fun cache (m, lookup, insert, f) k = 
+      case lookup (!m, k) 
+        of SOME v => v
+         | NONE   => let val v = f k
+                         val _ = m := insert (!m, k, v) 
+                     in v 
+                     end
+
+  val cacheS = cache (sCache, SD.lookup, SD.insert, (fn x => x))
+  val cacheP = cache (pCache, SD.lookup, SD.insert, C.P)
+  val cacheM = cache (mCache, MD.lookup, MD.insert, C.M)
+
+  val stringLiteral = P.stringLiteral >>= (return o cacheS)
+  val identifier = P.identifier >>= (return o cacheS)
 
   fun reservedH w = oneChar #"%" >> $$ P.reserved w
 
@@ -96,17 +124,17 @@ struct
       upper                    >>= (fn firstChar =>
       zeroOrMore L.identLetter >>= (fn rest =>
       P.whiteSpace             >>
-      return (implode (firstChar :: rest))))
+      return (cacheS (implode (firstChar :: rest)))))
 
   val coreHierModuleNames = upperName  >>= (return o CHU.splitModuleName)
 
-  val corePackageName = (P.identifier || upperName) >>= (return o C.P)
+  val corePackageName = (P.identifier || upperName) >>= (return o cacheP)
 
   val coreModuleName =
       corePackageName     >>= (fn pkgName =>
       oneChar #":"        >>
       coreHierModuleNames >>= (fn (modHierarchy, baseName) =>
-      return (C.M (pkgName, modHierarchy, baseName))))
+      return (cacheM (pkgName, modHierarchy, baseName))))
 
   val coreQualifiedName =
       corePackageName                                >>= (fn (C.P packageIdOrVarName) =>
@@ -115,8 +143,9 @@ struct
         of NONE =>  return (NONE, packageIdOrVarName)
          | SOME (modHierarchy, baseName) =>
            (oneChar #"." >>
-            P.identifier >>= (fn theId =>
-            return (SOME (C.M (C.P packageIdOrVarName, modHierarchy, baseName)), theId)))))
+            identifier >>= (fn theId =>
+            return (SOME (cacheM (cacheP packageIdOrVarName, modHierarchy, baseName)), 
+                    theId)))))
 
   fun isUpperName s = if String.isEmpty s then false else Char.isUpper (String.sub (s, 0))
 
@@ -129,9 +158,9 @@ struct
         coreHierModuleNames >>= (fn (modHierarchy, baseName) =>
         oneChar #"."        >>
         upperName           >>= (fn conName =>
-        return (SOME (C.M (C.P pkgId, modHierarchy, baseName)), conName)))) ||
+        return (SOME (cacheM (cacheP pkgId, modHierarchy, baseName)), conName)))) ||
        (if isUpperName pkgId
-          then return (NONE,pkgId)
+          then return (NONE, pkgId)
           else error ("Expected a constructor name, got: " ^ pkgId))))
 
   val coreTvarOrQualifiedCon =
@@ -142,7 +171,7 @@ struct
          | SOME (modHierarchy, baseName) =>
              (oneChar #"."        >>
               (upperName || z7eU) >>= (fn theId =>
-              return (C.Tcon (SOME (C.M (C.P packageIdOrVarName, modHierarchy, baseName)), theId))))))
+              return (C.Tcon (SOME (cacheM (cacheP packageIdOrVarName, modHierarchy, baseName)), theId))))))
 
   val coreDconOrVar =
   corePackageName >>= (fn (C.P firstPart) =>
@@ -155,9 +184,9 @@ struct
       of NONE => return ((if isUpper firstPart then C.Dcon else C.Var) name)
        | SOME (modHierarchy, baseName) =>
           (oneChar #"." >>
-           (upperName || P.identifier) >>= (fn theId =>
+           (upperName || identifier) >>= (fn theId =>
            let
-             val fullname = (SOME (C.M (C.P firstPart, modHierarchy, baseName)), theId)
+             val fullname = (SOME (cacheM (cacheP firstPart, modHierarchy, baseName)), theId)
            in
              return ((if isUpper theId then C.Dcon else C.Var) fullname)
            end))
@@ -181,7 +210,7 @@ struct
   val openKind     = P.symbol "?" >> return C.Kopen
 
   fun coreTbindGen' () =
-      P.identifier                            >>= (fn tyVar =>
+      identifier                            >>= (fn tyVar =>
       let val _ = print' ("got tyVar " ^ tyVar ^ "\n")
       in
       optional (P.symbol "::" >> $ coreKind) >>= (fn kdecl =>
@@ -309,7 +338,7 @@ struct
       $ coreType    >>= (fn t =>
       let val _ = print' ("aCoreVbind ty = " ^ Layout.toString (CoreHsLayout.layoutTy t) ^ "\n")
       in return (nm, t) end) end)
-  val lambdaBind = aCoreVbind P.identifier
+  val lambdaBind = aCoreVbind identifier
   val topVbind = aCoreVbind coreQualifiedName
   val coreVbind = P.parens (lambdaBind >>= return o C.Vb)
   val coreTbinding = $ coreAtTbind >>= (return o C.Tb)
@@ -324,7 +353,7 @@ struct
          | NONE     => return (C.Lint lhs)))
 
   val charLit = P.charLiteral >>= return o C.Lchar
-  val stringLit = P.stringLiteral >>= return o C.Lstring
+  val stringLit = stringLiteral >>= return o C.Lstring
   val aLit = intOrRatLit || charLit || stringLit
 
   val coreLiteral =
@@ -344,7 +373,7 @@ struct
   val coreExternal =
       (reservedH "external" >>
        callconv             >>= (fn c =>
-       P.stringLiteral      >>= (fn s =>
+       stringLiteral      >>= (fn s =>
        $ coreAtySaturated   >>= (fn t =>
        return (C.External ("", c, s, t)))))) ||
       (reservedH "dynexternal" >>
@@ -450,7 +479,7 @@ struct
 
   and coreNote () =
       reservedH "note" >>
-      P.stringLiteral  >>= (fn s =>
+      stringLiteral  >>= (fn s =>
       $ coreFullExp    >>= (fn e =>
       return (C.Note (s,e))))
 
@@ -556,6 +585,7 @@ struct
         val instrm = InStreamWithPos.mk instrm
         (*val () = print ("start parsing " ^ f ^ "\n")*)
         val result = parse (coreModule, instrm)
+        val _ = clearCache ()
         val () = TextIO.closeIn strm
       in
         case result
