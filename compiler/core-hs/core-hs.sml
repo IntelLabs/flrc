@@ -17,8 +17,11 @@ structure CoreHs = struct
   datatype pName
       = P of identifier
 
+  type anMName'
+      = pName * identifier list * identifier
+
   datatype anMName
-      = M of pName * identifier list * identifier
+      = M of anMName'
 
   type mName = anMName option
   
@@ -317,12 +320,14 @@ struct
 
   fun comparePName (P p, P q) = String.compare (p, q)
 
-  fun compareAnMName (M (p, m, n), M (p', m', n')) =
+  fun compareAnMName' ((p, m, n), (p', m', n')) =
     case comparePName (p, p')
       of Relation.EQUAL => (case compareList (m, m')
          of Relation.EQUAL => String.compare (n, n')
           | r => r)
        | r => r
+
+  fun compareAnMName (M p, M q) = compareAnMName' (p, q)
 
   fun compareMName (NONE, NONE) = Relation.EQUAL
     | compareMName (SOME _, NONE) = Relation.GREATER
