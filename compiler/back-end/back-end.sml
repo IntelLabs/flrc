@@ -60,6 +60,10 @@ struct
          | Config.PAll => true
          | Config.PPar => true
 
+  fun singleThreaded (config : Config.t) = #singleThreaded (Config.runtime config)
+
+  fun multiThreaded (config : Config.t) = useFutures config orelse not(singleThreaded config)
+
   fun ifDebug (config, ad, a) = if Config.pilDebug config then ad else a
    
   val (gcWriteBarriersF, gcWriteBarriers) =
@@ -108,8 +112,8 @@ struct
   val largeStack  = 536870912  (* Decimal integer in bytes (0x20000000) *) 
 
   fun defaultStackSize (config : Config.t, ld) = 
-      (case (Config.stack config, Config.output config, ld)
-        of (SOME i, _, _) => i
+      (case (#stackMain (Config.runtime config), Config.output config, ld)
+        of (SOME i, _, _)                 => i
          | (NONE, Config.OkPillar, LdOpc) => opcStack
          | (NONE, Config.OkPillar,     _) => smallStack
          | (NONE, Config.OkC,      _    ) => smallStack)
@@ -122,7 +126,7 @@ struct
       end
 
   fun mainStackSize (config : Config.t, cc) = 
-      (case (Config.stack config, cc)
+      (case (#stackMain (Config.runtime config), cc)
         of (SOME i,   _) => i
          | (NONE, CcOpc) => opcStack
          | (NONE,     _) => smallStack) div (1024 * 1024)
@@ -134,7 +138,11 @@ struct
       in s
       end
 
-  fun workerStackSize (config : Config.t, cc) = 4
+  fun workerStackSize (config : Config.t, cc) = 
+      (case (#stackWorker (Config.runtime config), cc)
+        of (SOME i,   _) => i
+         | (NONE, CcOpc) => opcStack
+         | (NONE,     _) => opcStack*2) div (1024 * 1024)
 
   fun workerStackStr (config : Config.t, cc) = 
       let
@@ -222,6 +230,9 @@ struct
         val futures = 
             if useFutures config then ["P_USE_PARALLEL_FUTURES"] else []
 
+        val singleThreaded = 
+            if singleThreaded config then ["PLSR_SINGLE_THREADED"] else []
+
         val thunks = 
             if lightweightThunks config then ["PLSR_LIGHTWEIGHT_THUNKS"] else []
 
@@ -282,6 +293,7 @@ struct
             List.concat [[ws], 
                          gc, 
                          futures, 
+                         singleThreaded,
                          stackSize,
                          thunks,
                          debug, 
@@ -593,7 +605,7 @@ struct
   fun gcLibraries (config, ldTag) = 
       let
 
-        val mt = useFutures config
+       val mt = multiThreaded config
         val gcs = #style (Config.gc config)
         fun agc (config, opc) =
             (case Config.agc config
@@ -627,7 +639,7 @@ struct
 
   fun futureLibraries (config, ldTag) = 
       let
-        val mt = useFutures config
+        val mt = multiThreaded config
         val nm =
             if mt then
               ifDebug (config, "paralleld", "parallel")
@@ -671,7 +683,6 @@ struct
 
   fun libraries (config, ldTag) = 
       let
-        val mt = useFutures config
         val (prtBegin, prtEnd) = 
             (case ldTag
               of LdOpc    => ([ifDebug (config, "crt_prtbegind.obj", "crt_prtbegin.obj")], 

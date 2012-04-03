@@ -287,7 +287,7 @@ struct
 
     val rseCallBack        = Pil.identifier "PrtRseCallback"
 
-    val reportRoots        = Pil.identifier "pLsrGcReportRoots"
+    val reportRoots        = Pil.identifier "pLsrPPilerReportRoots"
     val registerGlobals    = Pil.identifier "pLsrGcRegisterGlobals"
 
     val writeBarrierRef    = Pil.identifier "pLsrWriteBarrierRefBase"

@@ -23,6 +23,9 @@ signature CONFIG = sig
 		   showPre: bool,
 		   statPost: bool,
 		   statPre: bool}
+  type runtimeConfig = {stackWorker    : int option,
+                        stackMain      : int option,
+                        singleThreaded : bool}
   datatype stopPoint = SpCp | SpH | SpM | SpPil | SpHsc | SpO | SpExe
   datatype thunkScheme = TsEither | TsDirect | TsHybrid | TsTwoVersion
   datatype toolset = TsIpc (* Intel Pillar Compiler *)
@@ -85,8 +88,8 @@ signature CONFIG = sig
                      pLibDirectory : Path.t,
 		     printResult: bool,
 		     report: StringSet.t,
+                     runtime : runtimeConfig,
 		     sloppyFp: bool,
-		     stack: int option,
 		     stop: stopPoint,
 		     targetWordSize: wordSize,
 		     thunkScheme: thunkScheme,
@@ -140,9 +143,9 @@ signature CONFIG = sig
   val pLibDirectory : t -> Path.t
   val printResult: t -> bool
   val reportEnabled: t * string -> bool
+  val runtime : t -> runtimeConfig
   val silent: t -> bool
   val sloppyFp: t -> bool
-  val stack: t -> int option
   val stop: t -> stopPoint
   val stopLt: stopPoint * stopPoint -> bool
   val targetWordSize: t -> wordSize
@@ -259,6 +262,13 @@ structure Config :> CONFIG = struct
          showPost : bool,
          statPost : bool
     }
+    (* stackWorker is the default stack size to use for the worker threads
+     * stackMain is the default stack size to use for the main thread 
+     * singleThreaded true means that no concurrent runtime constructs are allowed 
+     *)
+    type runtimeConfig = {stackWorker    : int option,
+                          stackMain      : int option,
+                          singleThreaded : bool}
 
     datatype stopPoint = SpCp | SpH | SpM | SpPil | SpHsc | SpO | SpExe
 
@@ -309,7 +319,7 @@ structure Config :> CONFIG = struct
          pOpt             : int,
          printResult      : bool,
          report           : StringSet.t,
-         stack            : int option,
+         runtime          : runtimeConfig,
          stop             : stopPoint,
          sloppyFp         : bool,
          targetWordSize   : wordSize,
@@ -342,7 +352,7 @@ structure Config :> CONFIG = struct
     fun pLibDirectory c               = get (c, #pLibDirectory)
     fun pOpt c                        = get (c, #pOpt)
     fun printResult c                 = get (c, #printResult)
-    fun stack c                       = get (c, #stack)
+    fun runtime c                     = get (c, #runtime)
     fun stop c                        = get (c, #stop)
     fun sloppyFp c                    = get (c, #sloppyFp)
     fun targetWordSize c              = get (c, #targetWordSize)
