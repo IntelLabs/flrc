@@ -1001,7 +1001,7 @@ struct
                  * Find the index of this free variable. Also return the code pointer
                  * of the eval if it was a direct eval.
                  *)
-                val (idx, cptrO) = 
+                val (idx, innerCode) = 
                     let
                       val t = 
                           case transfers
@@ -1014,14 +1014,16 @@ struct
                        *)
                       val _ = <@ MU.Return.Dec.rTail ret
                       val eval = #eval <! MU.InterProc.Dec.ipEval @@ callee
-                      val cptrO = Option.map (MU.Eval.Dec.eDirectThunk eval, fn {thunk, code} => code)
-                      val () = Option.foreach (cptrO, fn cptr => ignore (<@ IFunc.getIFuncByName' (imil, cptr)))
+                      val innerCode = MU.Eval.codes eval
+                      (* in case we're post-lowering, ensure that we have code pointers *)
+                      val () = VS.foreach (#possible innerCode, 
+                                        fn cptr => ignore (<@ IFunc.getIFuncByName' (imil, cptr)))
                       val evalThunk = MU.Eval.thunk eval
                       (* Not a recursive eval (we can't eta reduce x = thunk {eval x}) *)
                       val () = Try.require (evalThunk <> thunk)
                      (* The evaled thunk must be one of the free variables - find its index *)
                       val idx = <@ Vector.index (fvs, fn v => v = evalThunk)
-                    in (idx, cptrO)
+                    in (idx, innerCode)
                     end
 
                 val changed = ref false
@@ -1068,16 +1070,17 @@ struct
                 val () = if !all then () else IFunc.markEscaping (imil, c)
                 (* If the eta reduced thunk has unknown calls (possibly because
                  * we are about to introduce them), we must also mark the code
-                 * pointer from the inner eval (if present) as escaping, since
+                 * pointers from the inner eval as escaping, since
                  * some or all of those calls are now calls to the inner code.
                  *)
                 val () = 
                     if IFunc.getEscapes(imil, c) then
-                      Option.foreach (cptrO, fn cptr => IFunc.markEscaping (imil, IFunc.getIFuncByName (imil, cptr)))
+                      VS.foreach (#possible innerCode, 
+                               fn cptr => IFunc.markEscaping (imil, IFunc.getIFuncByName (imil, cptr)))
                     else
                       ()
-                (* If we didn't get all of the inits, drop the inner code pointer *)
-                val cptrO = if !all then cptrO else NONE
+                (* If we didn't get all of the inits, drop the inner code pointers *)
+                val innerCode = if !all then innerCode else MU.Codes.all
                 val fixCodes = 
                     Try.lift
                       (fn u => 
@@ -1089,8 +1092,8 @@ struct
                             (* If we successfully eta reduced all inits, and we have 
                              * the code pointer from the inner eval, we can just
                              * replace the outer code pointer with the inner
-                             * code pointer. Otherwise we must mark it as 
-                             * an unknown call and remove the outer code
+                             * codes. Otherwise we must mark it as 
+                             * an unknown call and remove the outer codes
                              * pointer from the set
                              *)
                             val eval = 
@@ -1098,20 +1101,14 @@ struct
                                  of M.EDirectThunk {thunk, code} => 
                                     let
                                       val () = Try.require (fname = code)
-                                      val eval = 
-                                          case cptrO
-                                           of SOME cptr => M.EDirectThunk {thunk = thunk, code = cptr}
-                                            | _         => M.EThunk {thunk = thunk, code = MU.Codes.all}
+                                      val eval = M.EThunk {thunk = thunk, code = innerCode}
                                     in eval
                                     end
                                   | M.EThunk {thunk, code = {possible, exhaustive}} => 
                                     let
                                       val possible = VS.remove (possible, fname)
-                                      val code = 
-                                          case cptrO
-                                           of SOME cptr => {possible = VS.insert (possible, cptr), 
-                                                            exhaustive = exhaustive}
-                                            | _         => {possible = possible, exhaustive = false}
+                                      val code = {possible = possible, exhaustive = exhaustive}
+                                      val code = MU.Codes.union (code, innerCode)
                                     in M.EThunk {thunk = thunk, code = code}
                                     end
                             val callee = M.IpEval {typ = typ, eval = eval}
