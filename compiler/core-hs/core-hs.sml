@@ -536,6 +536,8 @@ struct
   val tDoublezh    : ty = Tcon (primId "Double#")
   val tIntegerzh   : ty = Tcon (primId "Integer#")
 
+  val tcWeakPtrzh : tcon qualified = pvz "Weak"
+  val tWeakPtrzh  : ty -> ty       = fn t => Tapp (Tcon tcWeakPtrzh, t)
   val tcStablePtrzh : tcon qualified = pvz "StablePtr"
   val tStablePtrzh  : ty -> ty       = fn t => Tapp (Tcon tcStablePtrzh, t)
   val tcIO          : tcon qualified = (SOME (CHU.mkBaseMname "IOBase"), "IO")
