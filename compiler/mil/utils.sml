@@ -617,6 +617,7 @@ sig
     type t = Mil.codes
     val possible : t -> Mil.VS.t
     val exhaustive : t -> bool
+    val union : t * t -> t
     val compare : t Compare.t
     val eq : t * t -> bool
     val all : t
@@ -3427,7 +3428,8 @@ struct
 
     fun possible   ({possible,    ...} : t) = possible
     fun exhaustive ({exhaustive, ...} : t) = exhaustive
-
+    fun union ({possible = p1, exhaustive = e1}, {possible = p2, exhaustive = e2}) =
+        {possible = VS.union (p1, p2), exhaustive = e1 andalso e2}
     val compare = Compare.codes
     val eq = Eq.codes
 
