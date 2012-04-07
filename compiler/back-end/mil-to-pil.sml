@@ -8,7 +8,8 @@ sig
   val instrumentAllocationSites : Config.t -> bool
   val backendYields : Config.t -> bool
   val lightweightThunks : Config.t -> bool
-  val assertSmallInts : Config.t -> bool  
+  val assertSmallInts : Config.t -> bool
+  val noGMP : Config.t -> bool
   val features : Config.Feature.feature list
   val program : PassData.t * string * Mil.t -> Layout.t
 end;
@@ -2374,14 +2375,18 @@ struct
    val (assertSmallIntsF, assertSmallInts) = 
        Config.Feature.mk ("Plsr:tagged-ints-assert-small",
                           "use 32 bit ints for rats (checked)")
-       
-  fun genStaticIntInf (state, env, i) = 
+   val (noGMPF, noGMP') = 
+       Config.Feature.mk ("Plsr:no-gmp", "don't use gmp library for integers")
+
+   val noGMP = 
+    fn c => 
+       case Config.toolset c
+        of Config.TsGcc => true
+         | Config.TsIcc => true
+         | _ => noGMP' c
+
+  fun genStaticIntInfNative (state, env, i) = 
       let
-        val () = if assertSmallInts (getConfig env) then
-                   Fail.fail ("MilToPil", "genStaticIntInf", 
-                              "Failed small int assertion")
-                 else
-                   ()
         (* Just used to create unique variables for the
          * structure components.  These variables are needed
          * to work around a pillar bug.  -leaf *)
@@ -2427,6 +2432,36 @@ struct
         val () = addGlobal (state, e)
       in (code, e)
       end
+
+  fun genStaticIntInfGMP (state, env, i) = 
+      let
+        val vi = 
+            let
+              val stm = getStm state
+              val v = MSTM.variableFresh (stm, "integer_ubx", M.TPAny, M.VkLocal)
+            in genVarE (state, env, v)
+            end
+        val iDef = Pil.D.macroCall (RT.Integer.staticUnboxed, [vi])
+        val code = [iDef]
+        val e = Pil.E.call (Pil.E.variable RT.Integer.staticRef, [vi])
+        val () = addGlobal (state, e)
+      in (code, e)
+      end
+
+  fun genStaticIntInf (state, env, i) = 
+      let
+        val () = if assertSmallInts (getConfig env) then
+                   Fail.fail ("MilToPil", "genStaticIntInf", 
+                              "Failed small int assertion")
+                 else
+                   ()
+      in
+        if noGMP (getConfig env) then
+          genStaticIntInfNative (state, env, i)
+        else
+          genStaticIntInfGMP (state, env, i)
+      end
+
 
   fun genGlobal (state, env, var, global, preDefined) = 
       let
@@ -2531,14 +2566,18 @@ struct
               | M.GRat r =>
                 let
                   val (num, den) = Rat.toInts r
-                  val c = Pil.D.comment ("Rat: " ^ Rat.toString r)         
-                  val (code_n, num) = genStaticIntInf (state, env, ~num)
-                  val (code_d, den) = genStaticIntInf (state, env, den)
+                  val c = Pil.D.comment ("Rat: " ^ Rat.toString r)
                   val newv  = Pil.E.variable (unboxedVar (state, env, var))
-                  val rDef = Pil.D.macroCall (RT.Rat.staticDef, [newv, num, den])
+                  val code = 
+                      let
+                        val (code_n, num) = genStaticIntInf (state, env, ~num)
+                        val (code_d, den) = genStaticIntInf (state, env, den)
+                        val rDef = Pil.D.macroCall (RT.Rat.staticDef, [newv, num, den])
+                      in Pil.D.sequence (code_n@code_d@[rDef])
+                      end
                   val () = addGlobalReg newv
                   val d = mkGlobalDef (var, newv, "GRat")
-                  val d = Pil.D.sequence (c::code_n@code_d@[rDef, d])
+                  val d = Pil.D.sequence [c,code,d]
                 in d
                 end
               | M.GInteger i =>
@@ -2652,19 +2691,14 @@ struct
 
   (*** Initialisation ***)
 
-  fun genInit (state, env, entry, globals) = 
+  fun genInitGlobal (state, env, v, g) = 
       let
-        (* The runtime needs to know the \core\char\ord name *)
-        val ord = IM.nameMake (getStm state, Prims.ordString)
-        val ord = genName (state, env, ord)
-        val or = Pil.E.call (Pil.E.variable RT.Name.registerCoreCharOrd, [ord])
-        val () = addReg1 (state, Pil.S.expr or)
-        val registrations0 = getRegs0 state
-        val registrations1 = getRegs1 state
-        val () = Stats.addToStat (getStats state, "registrations",
-                                  List.length registrations0 + List.length registrations1)
-        (* For each global index, initialise its entries. *)
-        fun initIdx (v, g, idxs) =
+        fun infString w = 
+            if IntInf.>= (w, 0) 
+            then Pil.E.string ("0x" ^ (IntInf.format (w, StringCvt.HEX)))
+            else Pil.E.string ("-0x" ^ (IntInf.format (~w, StringCvt.HEX)))
+                 
+        val code = 
             case g
              of M.GIdx d => 
                 let
@@ -2682,11 +2716,48 @@ struct
                       in Pil.S.expr res
                       end
                   val inits = List.map (elts, genIndices)
-                in
-                  (Pil.S.sequence inits)::idxs
+                in Pil.S.sequence inits
                 end
-              | _ => idxs
-        val idxs = VD.fold (globals, [], initIdx)
+              | M.GInteger i => 
+                if noGMP (getConfig env) then Pil.S.empty else
+                let
+                  val dest = genVarE (state, env, v)
+                  val s = infString i
+                  val code = Pil.S.call (Pil.E.namedConstant RT.Integer.staticInit, [dest, s])
+                in code
+                end
+              | M.GRat r => 
+                if noGMP (getConfig env) then Pil.S.empty else
+                let
+                  val dest = genVarE (state, env, v)
+                  val (num, den) = Rat.toInts r
+                  val sNum = infString (~num)
+                  val sDen = infString den
+                  val code = Pil.S.call (Pil.E.namedConstant RT.Rat.staticInit, [dest, sNum, sDen])
+                in code
+                end
+              | _ => Pil.S.empty
+      in code
+      end
+
+  fun genInit (state, env, entry, globals) = 
+      let
+        (* The runtime needs to know the \core\char\ord name *)
+        val ord = IM.nameMake (getStm state, Prims.ordString)
+        val ord = genName (state, env, ord)
+        val or = Pil.E.call (Pil.E.variable RT.Name.registerCoreCharOrd, [ord])
+        val () = addReg1 (state, Pil.S.expr or)
+        val registrations0 = getRegs0 state
+        val registrations1 = getRegs1 state
+        val () = Stats.addToStat (getStats state, "registrations",
+                                  List.length registrations0 + List.length registrations1)
+        (* For each global, generate any necessary initialization code. *)
+        fun initGlobals (v, g, inits) =
+            let
+              val code = genInitGlobal (state, env, v, g)
+            in code::inits
+            end
+        val idxs = VD.fold (globals, [], initGlobals)
         (* Report globals *)
         val (xtras, globals) = 
             if gcGlobals env then genReportGlobals (state, env) else ([], [])
@@ -2793,6 +2864,7 @@ struct
        instrumentFunctionsF,
        assertSmallIntsF,
        backendYieldsF,
-       lightweightThunksF]
+       lightweightThunksF,
+       noGMPF]
 
 end;

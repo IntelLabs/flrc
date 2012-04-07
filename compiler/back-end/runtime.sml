@@ -94,6 +94,9 @@ sig
     val staticDef     : Pil.identifier
     val staticRef     : Pil.identifier
 
+    val staticMk      : Pil.identifier
+    val staticInit    : Pil.identifier
+
     val optFromSInt32 : Pil.identifier
 
   end
@@ -116,8 +119,8 @@ sig
     val signZero      : Pil.identifier
     val staticCons    : Pil.identifier
     val staticEmpty   : Pil.identifier
-    val static        : Pil.identifier
-    val fromCString   : Pil.identifier
+    val staticUnboxed : Pil.identifier
+    val staticInit    : Pil.identifier
 
     val staticConsUnboxedDef   : Pil.identifier
     val staticConsRef          : Pil.identifier
@@ -369,6 +372,9 @@ struct
     val staticDef     = Pil.identifier "pLsrRationalStaticUnboxedDef"
     val staticRef     = Pil.identifier "pLsrRationalStaticRef"
 
+    val staticMk      = Pil.identifier "pLsrRationalStaticUnboxedMk"
+    val staticInit    = Pil.identifier "pLsrRationalStaticInit"
+
     val optFromSInt32 = Pil.identifier "pLsrSmallRationalFromSInt32"
 
   end
@@ -395,8 +401,8 @@ struct
     val signZero      = Pil.identifier "pLsrIntegerSignZero"
     val staticCons    = Pil.identifier "pLsrIntegerDigitListStaticCons"
     val staticEmpty   = Pil.identifier "pLsrIntegerDigitListStaticEmpty"
-    val static        = Pil.identifier "pLsrIntegerStatic"
-    val fromCString   = Pil.identifier "pLsrIntegerFromCString"
+    val staticUnboxed = Pil.identifier "pLsrIntegerStaticUnboxed"
+    val staticInit    = Pil.identifier "pLsrIntegerStaticGlobalInit"
 
     val staticConsUnboxedDef   
       = Pil.identifier "pLsrIntegerDigitListStaticConsUnboxedDef"

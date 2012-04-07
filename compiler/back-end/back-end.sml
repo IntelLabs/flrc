@@ -80,6 +80,8 @@ struct
 
   val lightweightThunks = MilToPil.lightweightThunks
 
+  val noGMP = MilToPil.noGMP
+
   val (instrumentAllocationF, instrumentAllocation) =
       Config.Feature.mk ("Plsr:instrument-allocation",
                          "gather allocation statistics")
@@ -175,16 +177,25 @@ struct
             if useFutures config then
               [pLibInclude (config, "mcrt")]
             else []
+        val gmp = 
+            if noGMP config then
+              []
+            else 
+              [pLibInclude (config, "gmp")]
         val files = 
             (case compiler
               of CcGCC => 
-                 [pLibInclude (config, "gc-bdw"), runtimeDirectory config, pLibInclude (config, "prt-pthreads")] @ mcrt
+                 [pLibInclude (config, "gc-bdw"), runtimeDirectory config, pLibInclude (config, "prt-pthreads")] 
+                 @ mcrt @ gmp
                | CcICC => 
-                 [pLibInclude (config, "gc-bdw"), runtimeDirectory config, pLibInclude (config, "prt-pthreads")] @ mcrt
+                 [pLibInclude (config, "gc-bdw"), runtimeDirectory config, pLibInclude (config, "prt-pthreads")] 
+                 @ mcrt @ gmp
                | CcOpc => 
-                 [runtimeDirectory config, pLibInclude (config, "prt"), pLibInclude (config, "pgc")] @ mcrt
+                 [runtimeDirectory config, pLibInclude (config, "prt"), pLibInclude (config, "pgc")] 
+                 @ mcrt @gmp
                | CcIpc => 
-                 [runtimeDirectory config, pLibInclude (config, "prt-pthreads"), pLibInclude (config, "pgc")])
+                 [runtimeDirectory config, pLibInclude (config, "prt-pthreads"), pLibInclude (config, "pgc")]
+                 @gmp)
 
         val flags = List.map (files, fn s => "-I" ^ Config.pathToHostString (config, s))
       in flags
@@ -278,7 +289,11 @@ struct
             (if usePortableTaggedInts config then ["P_TAGGED_INT32_PORTABLE"] 
              else if assumeSmallInts config then ["P_TAGGED_INT32_ASSUME_SMALL"] 
              else if MilToPil.assertSmallInts config then ["P_TAGGED_INT32_ASSERT_SMALL"]
-             else [])
+             else []) @
+            (if noGMP config then
+               ["PLSR_NO_GMP_INTEGERS"]
+             else
+               [])
 
         val backend = 
             (case compiler
@@ -605,7 +620,7 @@ struct
   fun gcLibraries (config, ldTag) = 
       let
 
-       val mt = multiThreaded config
+        val mt = multiThreaded config
         val gcs = #style (Config.gc config)
         fun agc (config, opc) =
             (case Config.agc config
@@ -639,9 +654,8 @@ struct
 
   fun futureLibraries (config, ldTag) = 
       let
-        val mt = multiThreaded config
         val nm =
-            if mt then
+            if useFutures config then
               ifDebug (config, "paralleld", "parallel")
             else
               ifDebug (config, "sequentiald", "sequential")
@@ -678,7 +692,9 @@ struct
                | (LdGCC, true) => fail ("unmanagedLibraries", "gcc does not link with mcrt")
                | (_,     true) => mcrtLib
                | _             => [])
-      in threads @ libs
+        val gmpLibs = 
+            if noGMP config then [] else ["libgmp.a", "libgcc.a"]
+      in threads @ libs @ gmpLibs
       end
 
   fun libraries (config, ldTag) = 
