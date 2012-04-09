@@ -186,13 +186,13 @@ struct
    * Normalize an expression when its type is not given and return the 
    * result expression and its type. 
    *)
-  fun normExp (dict as { vdict, tdict, ... }, exp)
+  fun normExp (cfg, dict as { vdict, tdict, ... }, exp)
     = case exp 
         of CH.Var (u as (m, v)) =>
           (case QD.lookup (vdict, u)
             of SOME t => (exp, t)
              | NONE => if m = SOME CU.primMname 
-                         then let val ty = GP.getTy v in (saturate (dict, exp, ty), ty) end
+                         then let val ty = GP.getTy (cfg, v) in (saturate (dict, exp, ty), ty) end
                          else failMsg ("norm/Var", "variable " ^ v ^ " not found"))
         | CH.Dcon con => 
           (case QD.lookup (vdict, con)
@@ -216,8 +216,8 @@ struct
         | CH.App (f, e) =>
           let 
               (* val _ = print ("doExp " ^ Layout.toString (CL.layoutExp exp) ^ "\n") *)
-              val (f, fty) = normExp (dict, f)
-              val (e, ety) = normExp (dict, e)
+              val (f, fty) = normExp (cfg, dict, f)
+              val (e, ety) = normExp (cfg, dict, e)
               (* val _ = print ("got f = " ^ Layout.toString (CL.layoutExp f) ^ "\n") *)
               val rty = resultTy fty
             in
@@ -232,16 +232,16 @@ struct
             end
         | CH.Case (e, (v, vty), ty, alts) =>
           let
-            val (e, _) = normExp (dict, e)
+            val (e, _) = normExp (cfg, dict, e)
             val dict = insertVar (dict, (NONE, v), vty)
-            val alts = List.map (alts, fn a => normAlt (dict, a))
+            val alts = List.map (alts, fn a => normAlt (cfg, dict, a))
           in
             (CH.Case (e, (v, vty), ty, alts), ty)
           end
         | CH.Cast (e, ty) => 
           let
             val ty = castTy (tdict, ty)
-            val (e, ety) = normExp (dict, e)
+            val (e, ety) = normExp (cfg, dict, e)
             val v = freshVar (dict, varPrefix)
           in
             (CH.Cast (CH.Let (CH.Nonrec (CH.Vdef ((NONE, v), ety, e)), CH.Var (NONE, v)), ty), ty)
@@ -251,63 +251,63 @@ struct
             of CH.Vb (v, vty) => 
               let
                 val dict = insertVar (dict, (NONE, v), vty)
-                val (e, ety) = normExp (dict, e)
+                val (e, ety) = normExp (cfg, dict, e)
               in
                 (CH.Lam (bind, e), CU.tArrow (vty, ety))
               end
             | CH.Tb (v, vkind) => 
               let
                 val dict = insertVar (dict, (NONE, v), CH.Tvar v) (* dummy type is not used *)
-                val (e, ety) = normExp (dict, e)
+                val (e, ety) = normExp (cfg, dict, e)
               in
                 (CH.Lam (bind, e), CH.Tforall ((v, vkind), ety))
               end)
         | CH.Let (vdefg, e) =>
           let
-            val (dict, vdefg) = normVDefg (dict, vdefg)
-            val (e, ty) = normExp (dict, e)
+            val (dict, vdefg) = normVDefg (cfg, dict, vdefg)
+            val (e, ty) = normExp (cfg, dict, e)
           in 
             (CH.Let (vdefg, e), ty)
           end
        | CH.Appt (e, ty) => 
          let
-           val (e, ety) = normExp (dict, e)
+           val (e, ety) = normExp (cfg, dict, e)
            val ety = applyTy (ety, ty)
          in
            (tryBetaTy (e, ty), ety)
          end
        | CH.Note (s, e) => 
          let
-           val (e, ety) = normExp (dict, e)
+           val (e, ety) = normExp (cfg, dict, e)
          in
            (CH.Note (s, e), ety)
          end
 
-  and normAlt (dict, alt)
+  and normAlt (cfg, dict, alt)
     = (case alt
         of CH.Acon (con, tbs, vbs, e) =>
           let
             (* ignore tbs since we cannot handle gadt yet *)
             val dict = List.fold (vbs, dict, fn ((v, vty), dict) => insertVar (dict, (NONE, v), vty))
-            val (e, _) = normExp (dict, e)
+            val (e, _) = normExp (cfg, dict, e)
           in 
             CH.Acon (con, tbs, vbs, e)
           end
-        | CH.Alit (l, e) => CH.Alit (l, #1 (normExp (dict, e)))
-        | CH.Adefault e  => CH.Adefault (#1 (normExp (dict, e))))
+        | CH.Alit (l, e) => CH.Alit (l, #1 (normExp (cfg, dict, e)))
+        | CH.Adefault e  => CH.Adefault (#1 (normExp (cfg, dict, e))))
 
-  and normVDefg (dict, vdefg)
+  and normVDefg (cfg, dict, vdefg)
     = (case vdefg
         of CH.Rec vdefs =>
           let
             val dict = List.fold (vdefs, dict, fn (CH.Vdef (v, vty, _), dict) => insertVar (dict, v, vty))
-            val vdefs = List.map (vdefs, fn CH.Vdef (v, vty, e) => CH.Vdef (v, vty, #1 (normExp (dict, e))))
+            val vdefs = List.map (vdefs, fn CH.Vdef (v, vty, e) => CH.Vdef (v, vty, #1 (normExp (cfg, dict, e))))
           in
             (dict, CH.Rec vdefs)
           end
         | CH.Nonrec (CH.Vdef (v, vty, e)) =>
           let
-            val (e, _) = normExp (dict, e)
+            val (e, _) = normExp (cfg, dict, e)
             val dict = insertVar (dict, v, vty)
           in
             (dict, CH.Nonrec (CH.Vdef (v, vty, e)))
@@ -341,7 +341,7 @@ struct
             { vdict = vdict, tdict = tdict, varCount = varCount }
           end)
 
-  fun doModule (CH.Module (name, tdefs, vdefgs))
+  fun doModule (cfg, CH.Module (name, tdefs, vdefgs))
     = let 
         val tdefs  = CH.Data (CP.tcStatezh, [("s", CH.Klifted)], [CH.Constr (CP.tcStatezh, [], [(CH.Tvar "s", true)])]) :: tdefs
         val tdefs  = CH.Data (CP.tcRealWorld, [], [CH.Constr (CP.tcRealWorld, [], [])]) :: tdefs
@@ -349,7 +349,7 @@ struct
         val dict   = List.fold (tdefs, emptyDict, doTDef)
         fun oneVDefg (vdefg, (vdefgs, dict))
           = let 
-              val (dict, vdefg) = normVDefg (dict, vdefg)
+              val (dict, vdefg) = normVDefg (cfg, dict, vdefg)
             in
               (vdefg :: vdefgs, dict)
             end
@@ -358,7 +358,7 @@ struct
         CH.Module (name, tdefs, List.rev vdefgs)
       end
 
-  fun normalize (x, pd) = doModule x
+  fun normalize (x, pd) = doModule (PassData.getConfig pd, x)
 
   fun layout  (module, _) = CoreHsLayout.layoutModule module
   val helper = { printer = layout, stater = layout }
