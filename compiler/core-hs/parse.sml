@@ -606,12 +606,12 @@ struct
         val prefix = List.map (prefix, CHU.zDecodeString)
         val name = CHU.zDecodeString name
         (* look for main package in current directory *)
-        val d = if d = "main" then "." else d
-        val d = Path.fromString d
-        val d = List.fold (prefix, d, Utils.Function.flipIn Path.snoc)
-        val d = Path.snoc (d, name)
+        val d = if d = "main" then "" else d
+        val p = Path.fromString "."
+        val p = List.fold (prefix, p, Utils.Function.flipIn Path.snoc)
+        val p = Path.snoc (p, name)
       in 
-        d
+        (d, p)
       end
 
 
@@ -983,15 +983,22 @@ struct
   fun readModule ((), pd, basename) =
       let
         val config = PassData.getConfig pd
-        val libRoot = Path.fromString (TMU.getGhcLibRoot config)
-        val hcrRoot = Path.snoc (libRoot, "hcrlib")
-         
+        
         fun readOne (mname : C.anMName, defd : defDict, scanned : MS.t) =
             if MS.member (scanned, mname) 
               then (defd, scanned)
               else
                 let
-                  val path = mNameToPath mname
+                  val (pname, path) = mNameToPath mname
+                  val hcrRoot = 
+                      case pname
+                        of "" => Path.fromString "."
+                         | _ => (case #dirs (#options (TMU.getGhcPkg (config, pname)))
+                           of [p] => Path.fromString p
+                            | ps => Fail.fail (passname, "readModule",
+                                             "invalid lib path returned by ghc-pkg " ^
+                                             Layout.toString (List.layout String.layout ps)))
+                  val _ = print' ("hcrRoot = " ^ Config.pathToHostString (config, hcrRoot) ^ "\n")
                   val _ = print' ("scan " ^ Layout.toString
                             (CoreHsLayout.layoutAnMName mname) ^ " scanned = " ^
                             Int.toString(MS.size scanned) ^ " path = " ^
@@ -1008,13 +1015,12 @@ struct
                         (defd, scanned)
                       end
                 in
-                  if File.doesExist f1
-                    then scan (parseFile (f1, config))
-                    else if File.doesExist f2 
-                      then scan (parseFile (f2, config))
-                      else Fail.fail (passname, "readModule", "file " ^ f1 ^ 
-                                      " not found in current directory or in " ^
-                                      Config.pathToHostString (config, hcrRoot))
+                  if File.doesExist f2
+                    then scan (parseFile (f2, config))
+                    else if File.doesExist f1 
+                      then scan (parseFile (f1, config))
+                      else Fail.fail (passname, "readModule", "file " ^ f2 ^ 
+                                      " or " ^ f1 ^ " are not found")
                 end
 
         fun traceDef (name, def as (_, depends), state as (defd, traced, scanned)) =
