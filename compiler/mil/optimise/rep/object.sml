@@ -914,7 +914,7 @@ struct
               in
                 LU.parenSeq [L.str "env = ", d]
               end
-              
+
           val l = 
               (case env
                 of (Shape.EEnv env) => dict (int, ID.layout, env)

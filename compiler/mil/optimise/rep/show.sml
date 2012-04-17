@@ -37,34 +37,37 @@ struct
         val stm = STM.fromExistingNoInfo symbolTable
         val renameVar = 
          fn (v, rename) => 
-            let
-              val info = ST.variableInfo (symbolTable, v)
-              val id = MRS.variableClassId (summary, v)
-              val string = Int.toString id
-              val string = 
-                  if MRS.variableUsesKnown (summary, v) then
-                    string
-                  else 
-                    string ^ "^"
-              val string = 
-                  if MRS.variableDefsKnown (summary, v) then
-                    string
-                  else
-                    string ^ "?"
-              val string = "id="^string
-              val string = 
-                  let
-                    val info = STM.variableString (stm, v)
-                    val info = 
-                        case String.findSubstring (info, {substring = ".id="})
-                         of SOME i => String.prefix (info, i)
-                          | NONE => info
-                    val string = info^"."^string
-                  in string
-                  end
-              val newv = STM.variableFresh (stm, string, info)
-            in Rename.renameTo (rename, v, newv)
-            end
+            if MRS.variableHasNode (summary, v) then 
+              let
+                val info = ST.variableInfo (symbolTable, v)
+                val id = MRS.variableClassId (summary, v)
+                val string = Int.toString id
+                val string = 
+                    if MRS.variableUsesKnown (summary, v) then
+                      string
+                    else 
+                      string ^ "^"
+                val string = 
+                    if MRS.variableDefsKnown (summary, v) then
+                      string
+                    else
+                      string ^ "?"
+                val string = "id="^string
+                val string = 
+                    let
+                      val info = STM.variableString (stm, v)
+                      val info = 
+                          case String.findSubstring (info, {substring = ".id="})
+                           of SOME i => String.prefix (info, i)
+                            | NONE => info
+                      val string = info^"."^string
+                    in string
+                    end
+                val newv = STM.variableFresh (stm, string, info)
+              in Rename.renameTo (rename, v, newv)
+              end
+            else
+              rename
         val keepVar = 
          fn v => 
             let

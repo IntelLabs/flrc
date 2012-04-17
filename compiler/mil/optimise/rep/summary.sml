@@ -23,6 +23,7 @@ sig
   val variableTyp : summary * Mil.variable -> Mil.typ
   val variableFlatTyp : summary * Mil.variable -> Mil.typ
   val variableNode : summary * Mil.variable -> MilRepNode.node
+  val variableHasNode : summary * Mil.variable -> bool
   val nodeTyp : summary * MilRepNode.node -> Mil.typ
   val nodeFlatTyp : summary * MilRepNode.node -> Mil.typ
   val listVariables : summary -> Mil.variable list
@@ -174,6 +175,13 @@ struct
         val iInfo = getIInfo summary
         val () = IIdD.modify (iInfo, f)
       in ()
+      end
+
+  val variableHasNode = 
+   fn (summary, v) => 
+      let
+        val varNodes = getVarNodes summary
+      in VD.contains (varNodes, v)
       end
 
   val variableNode = 

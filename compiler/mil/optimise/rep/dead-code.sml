@@ -516,9 +516,13 @@ struct
     struct
 
       datatype rCtxt = RCLive | RCDeadFun | RCDeadThunk of M.typ 
-      datatype state = S of {stm : M.symbolTableManager, summary : MRS.summary, fg : bool FG.t}
+      datatype state = S of {extraGlobals : M.global VD.t ref,
+                             stm : M.symbolTableManager, 
+                             summary : MRS.summary, 
+                             fg : bool FG.t}
       datatype env = E of {pd : PD.t, dead : VS.t, thunk : rCtxt}
 
+      val getExtraGlobals = fn (S {extraGlobals, ...}) => extraGlobals
       val getStm = fn (S {stm, ...}) => stm
       val getSummary = fn (S {summary, ...}) => summary
       val getFlowGraph = fn (S {fg, ...}) => fg
@@ -535,6 +539,17 @@ struct
                                         val getStm = getStm
                                         val getConfig = getConfig
                                       end)
+
+      val newErrorVal = 
+       fn (state, env, t) => 
+          let
+            val stm = getStm state
+            val r as ref extraGlobals = getExtraGlobals state
+            val v = MU.SymbolTableManager.variableFresh (stm, "dead", t, M.VkGlobal)
+            val g = M.GErrorVal t
+            val () = r := VD.insert (extraGlobals, v, g)
+          in v
+          end
 
       val nodeIsLive = 
        fn (state, env, n) => FG.query (getFlowGraph state, n)
@@ -833,10 +848,12 @@ struct
       val transfer =
        fn (state, env, t) => 
           let
+            val summary = getSummary state
             val dead = fn v => variableIsDead (state, env, v)
             val live = not o dead
             val deadV = fn vs => Vector.forall (vs, dead)
             val liveV = not o deadV
+            val liveN = fn n => nodeIsLive (state, env, n)
             val keep = fn () => (env, NONE)
             val toVar = 
              fn oper => case oper
@@ -932,7 +949,21 @@ struct
                                    | M.CClosure {cls, code}       => M.CClosure {cls = cls, code = doCodes code}
                                    | M.CDirectClosure {code, cls} => 
                                      if dead cls then
-                                       M.CCode {ptr = code, code = {possible = VS.singleton code, exhaustive = true}}
+                                       let
+                                         (* There is a corner case where the closure being called is dead,
+                                          * but the actual is live (because the call is unreachable). *)
+                                         val formalLive = 
+                                             case MRS.iInfo (summary, MU.Id.G code)
+                                              of MRB.IiCode {cargs as M.CcClosure {cls, fvs}, ...} => liveN cls
+                                               | _ => fail ("transfer", "Bad function information")
+                                       in
+                                         if formalLive then
+                                           M.CClosure {cls = newErrorVal (state, env, M.TRef), 
+                                                       code = {possible = VS.empty, exhaustive = true}}
+                                         else
+                                           M.CCode {ptr = code, 
+                                                    code = {possible = VS.singleton code, exhaustive = true}}
+                                       end
                                      else
                                        call
                          val callee = M.IpCall {call = call, args = args}
@@ -1083,9 +1114,10 @@ struct
       val globals = 
        fn (pd, summary, stm, fg, dead, globals) =>
           let
-            val state = S {stm = stm, summary = summary, fg = fg}
+            val state = S {extraGlobals = ref VD.empty, stm = stm, summary = summary, fg = fg}
             val env = E {pd = pd, dead = dead, thunk = RCLive}
             val globals = Transform.globals (state, env, Transform.OAny, globals)
+            val globals = VD.union (globals, !(getExtraGlobals state), fn (k, a, b) => fail ("globals", "impossible"))
           in globals
           end
     end (* structure Rewrite *)
