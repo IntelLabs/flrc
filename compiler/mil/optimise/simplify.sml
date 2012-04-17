@@ -182,6 +182,7 @@ struct
          ("BetaSwitch",       "Cases beta reduced"             ),
          ("BlockKill",        "Blocks killed"                  ),
          ("CallInline",       "Calls inlined (inline once)"    ),
+         ("CodeTrim",         "Code annotations trimmed"       ),
          ("DCE",              "Dead instrs/globals eliminated" ),
          ("EnumToSum",        "Enums to Sums"                  ),
          ("EtaSwitch",        "Cases eta reduced"              ),
@@ -274,6 +275,7 @@ struct
     val betaSwitch = clicker "BetaSwitch"
     val blockKill = clicker "BlockKill"
     val callInline = clicker "CallInline"
+    val codeTrim = clicker "CodeTrim"
     val constParameter = clicker "ConstParameter"
     val dce = clicker "DCE"
     val enumToSum = clicker "EnumToSum"
@@ -1561,7 +1563,89 @@ struct
         in try (Click.constParameter, f)
         end
 
-    val reduce = thunkToThunkVal or thunkEta or constParameter or functionWrap
+    val codeTrim = 
+        let
+          val f = 
+           fn ((d, imil, ws), c) => 
+              let
+                val config = PD.getConfig d
+                val fname = IFunc.getFName (imil, c)
+                val cc = IFunc.getCallConv @@ (imil, c)
+                (* Make sure it's thunk or closure calling convention *)
+                val _ = Try.require (isSome(MU.CallConv.Dec.ccClosure cc) orelse 
+                                     isSome (MU.CallConv.Dec.ccThunk cc))
+                val notF = 
+                 fn v => Utils.Option.? (not(v = fname))
+                val notFO = 
+                 fn oper => 
+                    (case oper
+                      of M.SConstant c => Utils.Option.? true
+                       | M.SVariable v => notF v)
+                (* To be defensive, check for aliases introduced via transfers.  *)
+                val check = 
+                 fn use => 
+                    let
+                      val ii = <@ Use.toIInstr use
+                      val {callee, ret, fx} = <@ MU.Transfer.Dec.tInterProc <! IInstr.toTransfer @@ ii
+                      val () = 
+                          case callee
+                           of M.IpCall {call, args} => Vector.foreach (args, <@ notFO)
+                            | M.IpEval _            => ()
+                    in (ii, callee, ret, fx)
+                    end
+                (* Eliminate any closure calls *)
+                val changed = ref false
+                val fix = 
+                 fn (ii, callee, ret, fx) => 
+                    let
+                      val filterCode = 
+                       fn code as {possible, exhaustive} =>
+                          if VS.member (possible, fname) then
+                            let
+                              val () = changed := true
+                            in {possible = VS.remove (possible, fname), exhaustive = exhaustive}
+                            end
+                          else
+                            code
+                      val callee = 
+                          case callee 
+                          of M.IpCall {call, args} => 
+                             let
+                               val call = 
+                                   case call
+                                    of M.CCode _              => call
+                                     | M.CClosure {cls, code} => M.CClosure {cls = cls, code = filterCode code}
+                                     | M.CDirectClosure _     => call
+                             in M.IpCall {call = call, args = args}
+                             end
+                           | M.IpEval {typ, eval}        => 
+                             let
+                               val eval = 
+                                   case eval
+                                    of M.EThunk {thunk, code}       => M.EThunk {thunk = thunk, code = filterCode code}
+                                     | M.EDirectThunk {thunk, code} => eval
+                             in M.IpEval {typ = typ, eval = eval}
+                             end
+                      val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                      val () = IInstr.replaceTransfer (imil, ii, t)
+                    in ()
+                    end
+
+                val uses = Use.getUses (imil, fname)
+                val calls = Vector.map (uses, check)
+                (* If every use of the code pointer is in a call/eval (and not as an argument 
+                 * in the call), then the code pointer is never used to initialize a closure.
+                 * Therefore, it cannot be involved in a pure closure call (since such a call
+                 * requires a code pointer in a closure).
+                 *)
+                val () = Vector.foreach (calls, fix)
+                val () = Try.require (!changed)
+              in [I.ItemFunc c]
+              end
+        in try (Click.codeTrim, f)
+        end
+
+    val reduce = thunkToThunkVal or thunkEta or constParameter or functionWrap or codeTrim
 
   end (* structure FuncR *)
 
