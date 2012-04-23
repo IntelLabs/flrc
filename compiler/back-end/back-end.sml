@@ -82,9 +82,21 @@ struct
 
   val noGMP = MilToPil.noGMP
 
+  val (gmpUseMallocF, gmpUseMalloc) = 
+      Config.Feature.mk ("Plsr:gmp-use-malloc",
+                         "use malloc for gmp integer wrappers")
+
+  val (gmpUsePinningF, gmpUsePinning) = 
+      Config.Feature.mk ("Plsr:gmp-use-pinning",
+                         "use pinning for gmp integer wrappers")
+
   val (instrumentAllocationF, instrumentAllocation) =
       Config.Feature.mk ("Plsr:instrument-allocation",
                          "gather allocation statistics")
+
+  val (instrumentGCsF, instrumentGcs) =
+      Config.Feature.mk ("Plsr:instrument-gcs",
+                         "gather allocation statistics per gc")
 
   val (instrumentVtbAllocationF, instrumentVtbAllocation) =
       Config.Feature.mk ("Plsr:instrument-vtb-alc",
@@ -101,6 +113,10 @@ struct
   val (assumeSmallIntsF, assumeSmallInts) = 
       Config.Feature.mk ("Plsr:tagged-ints-assume-small",
                          "use 32 bit ints for tagged ints (unchecked)")
+
+  val (noTaggedIntRecoverF, noTaggedIntRecover) = 
+      Config.Feature.mk ("Plsr:no-recover-tagged-ints",
+                         "don't check output of AP arithmetic for small ints")
 
   val (disableTailCallF, disableTailCall) = 
       Config.Feature.mk ("Plsr:disable-tail-call",
@@ -293,7 +309,18 @@ struct
             (if noGMP config then
                ["PLSR_NO_GMP_INTEGERS"]
              else
-               [])
+               []) @
+            (if noTaggedIntRecover config then
+               []
+             else
+               ["PLSR_TAGGED_INTEGER_RECOVER"]) @
+            (if gmpUseMalloc config then
+               ["PLSR_GMP_USE_MALLOC"]
+             else if gmpUsePinning config then
+               []
+             else case compiler 
+                   of CcIpc => ["PLSR_GMP_USE_PCDECL"]
+                    | _     => [])
 
         val backend = 
             (case compiler
@@ -801,8 +828,12 @@ struct
                                   disableTailCallF,
                                   gcWriteBarriersF, 
                                   gcAllBarriersF,
+                                  gmpUseMallocF,
+                                  gmpUsePinningF,
                                   instrumentAllocationF,
+                                  instrumentGCsF,
                                   instrumentVtbAllocationF,
+                                  noTaggedIntRecoverF,
                                   vtableChangeF,
                                   usePortableTaggedIntsF],
                       subPasses = []}
