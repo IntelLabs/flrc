@@ -82,6 +82,7 @@ struct
     = fn Prim    => L.str "prim"
       |  CCall   => L.str "ccall"
       |  StdCall => L.str "stdcall" 
+      |  Dynamic => L.str "dynamic" 
 
   fun layoutKind (Karrow (k1, k2)) = L.paren (L.mayAlign [ L.seq [layoutAKind k1, L.str " ->"]
                                                          , layoutKind k2])

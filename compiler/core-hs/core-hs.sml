@@ -51,7 +51,7 @@ structure CoreHs = struct
 
   type tBind = tvar * kind
 
-  datatype callconv = Prim | CCall | StdCall
+  datatype callconv = Prim | CCall | StdCall | Dynamic
 
   datatype bind
       = Vb of vBind
@@ -535,12 +535,14 @@ struct
   val tFloatzh     : ty = Tcon (primId "Float#")
   val tDoublezh    : ty = Tcon (primId "Double#")
   val tIntegerzh   : ty = Tcon (primId "Integer#")
+  val tThreadIdzh  : ty = Tcon (primId "ThreadId#")
 
   val tcWeakPtrzh : tcon qualified = pvz "Weak"
   val tWeakPtrzh  : ty -> ty       = fn t => Tapp (Tcon tcWeakPtrzh, t)
   val tcStablePtrzh : tcon qualified = pvz "StablePtr"
   val tStablePtrzh  : ty -> ty       = fn t => Tapp (Tcon tcStablePtrzh, t)
   val tcIO          : tcon qualified = (SOME (CHU.mkBaseMname "IOBase"), "IO")
+
 end
 
 

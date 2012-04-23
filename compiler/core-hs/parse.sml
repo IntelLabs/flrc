@@ -379,7 +379,7 @@ struct
       (reservedH "dynexternal" >>
        callconv                >>= (fn c =>
        $ coreAtySaturated      >>= (fn t =>
-       return (C.External ("", c, "[dynamic]", t)))))
+       return (C.External ("", C.Dynamic, "", t)))))
 
 
   fun caseVarBinds () =
@@ -631,9 +631,9 @@ struct
   type defDict = (definition * QS.t) QD.t
 
   (*
-   * Given a program and a base set of qualified names, return 
-   * a mapping from qualified names to their definitions (either
-   * value or type) as well as the set of names they depend on.
+   * Given a program , return a mapping from qualified names to their 
+   * definitions (either value or type) as well as the set of names 
+   * they depend on.
    *)
   val scanModule : C.module -> defDict = 
     fn (C.Module (mname as (C.M (C.P pName, _, _)), tdefs, vdefgs)) =>

@@ -343,6 +343,7 @@ struct
 
   fun doModule (cfg, CH.Module (name, tdefs, vdefgs))
     = let 
+        (* Prepare a few built-in definitions *)
         val tdefs  = CH.Data (CP.tcStatezh, [("s", CH.Klifted)], [CH.Constr (CP.tcStatezh, [], [(CH.Tvar "s", true)])]) :: tdefs
         val tdefs  = CH.Data (CP.tcRealWorld, [], [CH.Constr (CP.tcRealWorld, [], [])]) :: tdefs
         val vdefgs = CH.Nonrec (CH.Vdef (CP.vRealWorldzh, CH.Tcon CP.tcRealWorld, CH.Dcon CP.tcRealWorld)) :: vdefgs
