@@ -1,3 +1,6 @@
+/* The Intel P to C/Pillar Compiler */
+/* COPYRIGHT_NOTICE_1 */
+
 /* place holders for now */
 int rts_getThreadId (uint32 tid)
 {

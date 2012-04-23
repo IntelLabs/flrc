@@ -1,3 +1,4 @@
+(* COPYRIGHT_NOTICE_1 *)
 (*
  * Translation from CoreHs.t to ANormLazy.t.
  *)

@@ -1,3 +1,6 @@
+/* The Intel P to C/Pillar Compiler */
+/* COPYRIGHT_NOTICE_1 */
+
 /* The following double/float decoding code is taken from GHC */
 #include <float.h>
 #define SIZEOF_DOUBLE 8

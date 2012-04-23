@@ -1,3 +1,6 @@
+/* The Intel P to C/Pillar Compiler */
+/* COPYRIGHT_NOTICE_1 */
+
 /* -----------------------------------------------------------------------------
  *
  * (c) The GHC Team, 1995-2009

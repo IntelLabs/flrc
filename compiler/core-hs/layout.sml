@@ -1,3 +1,4 @@
+(* COPYRIGHT_NOTICE_1 *)
 signature CORE_HS_LAYOUT =
 sig
   val escape               : string -> string
