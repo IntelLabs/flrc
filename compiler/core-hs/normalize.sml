@@ -158,6 +158,10 @@ struct
           in
             if isInlineable v then subst body else CH.App (f, e)
           end
+        | CH.Let (def as (CH.Nonrec (CH.Vdef ((NONE, v), _, _))), g as (CH.Lam _)) =>
+          (case e
+            of CH.Var (NONE, w) => if w <> v then CH.Let (def, tryBeta (g, e)) else CH.App (f, e)
+             | _ => CH.App (f, e))
         | _ => CH.App (f, e)
 
   fun tryBetaTy (f, ty) =
