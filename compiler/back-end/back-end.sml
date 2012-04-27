@@ -94,7 +94,7 @@ struct
       Config.Feature.mk ("Plsr:instrument-allocation",
                          "gather allocation statistics")
 
-  val (instrumentGCsF, instrumentGcs) =
+  val (instrumentGCsF, instrumentGCs) =
       Config.Feature.mk ("Plsr:instrument-gcs",
                          "gather allocation statistics per gc")
 
