@@ -266,12 +266,17 @@ struct
         val instr =
             List.concat
               [if instrumentAllocation config
-               then ["P_INSTRUMENT_ALLOCATION"]
+               then ["PLSR_INSTRUMENT_ALLOCATION"]
                else [],
                if instrumentVtbAllocation config orelse
                   instrumentAllocationSites config
-               then ["P_INSTRUMENT_VTB_ALC"]
-               else []]
+               then ["PLSR_INSTRUMENT_VTB_ALC"]
+               else [],
+               if instrumentGCs config then 
+                 ["PLSR_INSTRUMENT_GCS"]
+               else
+                 []
+              ]
 
         val tailcall = 
             if disableTailCall config then ["PLSR_DISABLE_TAILCALL"] else []
