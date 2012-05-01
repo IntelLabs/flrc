@@ -15,6 +15,7 @@ struct
   structure CL = CoreHsLayout
   structure GP = GHCPrim
   structure QD = DictF (struct type t = CH.identifier CH.qualified val compare = CU.compareQName end)
+  structure SD = StringDict
 
   val passname = "CoreNormalize"
   fun failMsg (msg0, msg1) = Fail.fail (passname, msg0, msg1)
@@ -24,21 +25,22 @@ struct
    *)
   type dict = { vdict : CH.ty   QD.t
               , tdict : CH.tDef QD.t
+              , wrapper : (CH.vDefg SD.t) ref (* for saturated prims, constructors and externs *)
               , varCount : int ref
               }
 
-  val emptyDict = { vdict = QD.empty, tdict = QD.empty, varCount = ref 0 }
+  val emptyDict : dict = { vdict = QD.empty, tdict = QD.empty, wrapper = ref SD.empty, varCount = ref 0 }
 
-  fun insertVar ({ vdict, tdict, varCount }, v, vty) 
-    = { vdict = QD.insert (vdict, v, vty), tdict = tdict, varCount = varCount }
+  fun insertVar ({ vdict, tdict, wrapper, varCount }, v, vty) 
+    = { vdict = QD.insert (vdict, v, vty), tdict = tdict, wrapper = wrapper, varCount = varCount }
 
-  fun freshVar ({ vdict, tdict, varCount }, v)
+  fun freshVar ({ vdict, varCount, ... }, m, v)
     = let
         fun try n = 
             let 
-              val u = v ^ (Int.toString n)
+              val u = (m, v ^ (Int.toString n))
             in
-              case QD.lookup (vdict, (NONE, u))
+              case QD.lookup (vdict, u)
                 of NONE => (u, n)
                  | _ => try (n + 1)
             end
@@ -56,7 +58,7 @@ struct
   val typPrefix = "t"
   val inlinePrefix = "i"
 
-  fun freshInlineableVar (dict, v) = freshVar (dict, inlinePrefix ^ v)
+  fun freshInlineableVar (dict, v) = #2 (freshVar (dict, NONE, inlinePrefix ^ v))
   fun isInlineable v = String.hasPrefix (v, { prefix = inlinePrefix })
 
   fun resultTy ty 
@@ -140,6 +142,29 @@ struct
              | _ => e)
         | _ => e
 
+  fun saturateWrapper (dict, e, ty)
+    = let
+        val { wrapper, ... } = dict
+        val name = case e 
+                     of CH.Var u  => CL.qNameToString u
+                      | CH.Dcon c => CL.qNameToString c
+                      | CH.External (_, _, f, _) => f
+                      | _ => failMsg ("saturateWrapper", "impossible")
+        fun wrap () = 
+            let
+              val v = freshVar (dict, SOME CU.mainMname, name)
+              val def = CH.Nonrec (CH.Vdef (v, ty, saturate (dict, e, ty)))
+              val () = wrapper := SD.insert (!wrapper, name, def)
+            in
+              CH.Var v
+            end
+        val _ = print ("saturate " ^ name ^ " with type " ^ Layout.toString (CL.layoutTy ty) ^ "\n")
+      in
+        case SD.lookup (!wrapper, name)
+          of SOME (CH.Nonrec (CH.Vdef (v, _, _))) => CH.Var v
+           | _ => wrap ()
+      end    
+
   fun tryBeta (f, e) =
       case f 
         of CH.Lam (CH.Vb (v, _), body) =>
@@ -197,11 +222,11 @@ struct
           (case QD.lookup (vdict, u)
             of SOME t => (exp, t)
              | NONE => if m = SOME CU.primMname 
-                         then let val ty = GP.getTy (cfg, v) in (saturate (dict, exp, ty), ty) end
+                         then let val ty = GP.getTy (cfg, v) in (saturateWrapper (dict, exp, ty), ty) end
                          else failMsg ("norm/Var", "variable " ^ v ^ " not found"))
         | CH.Dcon con => 
           (case QD.lookup (vdict, con)
-            of SOME t => (saturate (dict, exp, t), t)
+            of SOME t => (saturateWrapper (dict, exp, t), t)
              | NONE => 
               (case CU.isUtupleDc con
                 of SOME n => 
@@ -213,10 +238,20 @@ struct
                     val ty = List.foldr (tvs, ty, CU.tArrow)
                     val ty = List.foldr (vs, ty, fn (v, ty) => CH.Tforall ((v, CH.Kopen), ty))
                   in 
+                    (*
+                     * Even unboxed tuple has to go through saturate because A-normalizationmay 
+                     * result in them being partially applied. Note that we don't use saturateWrapper 
+                     * here because constructors for unboxed tuple do not have a uniform type.
+                     *)
                     (saturate (dict, exp, ty), ty)
                   end
                  | NONE => failMsg ("norm/Dcon", "constructor " ^ CL.qNameToString con ^ " not found")))
-        | CH.External (p, _, _, ty) => (saturate (dict, exp, ty), ty)
+        (* FIXME: Dynamic extern needs different handling *)
+        | CH.External (p, cc, _, ty) => 
+          (case cc
+            of CH.CCall   => (saturateWrapper (dict, exp, ty), ty) 
+             | CH.StdCall => (saturateWrapper (dict, exp, ty), ty) 
+             | _          => (saturate (dict, exp, ty), ty))         (* do not wrap non-function calls *)
         | CH.Lit (CH.Literal (lit, ty)) => (exp, ty)
         | CH.App (f, e) =>
           let 
@@ -230,9 +265,9 @@ struct
                 of CH.Var v => (tryBeta (f, e), rty)
                 | _ =>
                   let
-                    val v = freshVar (dict, varPrefix)
+                    val v = freshVar (dict, NONE, varPrefix)
                   in 
-                    (CH.Let (CH.Nonrec (CH.Vdef ((NONE, v), ety, e)), tryBeta (f, CH.Var (NONE, v))), rty)
+                    (CH.Let (CH.Nonrec (CH.Vdef (v, ety, e)), tryBeta (f, CH.Var v)), rty) 
                   end
             end
         | CH.Case (e, (v, vty), ty, alts) =>
@@ -247,9 +282,9 @@ struct
           let
             val ty = castTy (tdict, ty)
             val (e, ety) = normExp (cfg, dict, e)
-            val v = freshVar (dict, varPrefix)
+            val v = freshVar (dict, NONE, varPrefix)
           in
-            (CH.Cast (CH.Let (CH.Nonrec (CH.Vdef ((NONE, v), ety, e)), CH.Var (NONE, v)), ty), ty)
+            (CH.Cast (CH.Let (CH.Nonrec (CH.Vdef (v, ety, e)), CH.Var v), ty), ty)
           end
         | CH.Lam (bind, e) =>
           (case bind 
@@ -318,7 +353,7 @@ struct
             (dict, CH.Nonrec (CH.Vdef (v, vty, e)))
           end)
 
-  fun doTDef (typ, { vdict, tdict, varCount })
+  fun doTDef (typ, { vdict, tdict, wrapper, varCount })
     = (case typ
         of CH.Data (name, tbs, cdefs) => 
           let
@@ -335,7 +370,7 @@ struct
             val vdict = List.fold (cdefs, vdict, insertCon)
             (* val tdict = QD.insert (tdict, name, typ) *)
           in
-            { vdict = vdict, tdict = tdict, varCount = varCount }
+            { vdict = vdict, tdict = tdict, wrapper = wrapper, varCount = varCount }
           end
         | CH.Newtype (name, tcon, tbs, ty) => 
           let
@@ -343,7 +378,7 @@ struct
             (* tcon seems to be only used in casting *)
             val tdict = QD.insert (tdict, tcon, typ)
           in
-            { vdict = vdict, tdict = tdict, varCount = varCount }
+            { vdict = vdict, tdict = tdict, wrapper = wrapper, varCount = varCount }
           end)
 
   fun doModule (cfg, CH.Module (name, tdefs, vdefgs))
@@ -359,9 +394,9 @@ struct
             in
               (vdefg :: vdefgs, dict)
             end
-        val (vdefgs, _) = List.fold (vdefgs, ([], dict), oneVDefg)
+        val (vdefgs, { wrapper, ...}) = List.fold (vdefgs, ([], dict), oneVDefg)
       in 
-        CH.Module (name, tdefs, List.rev vdefgs)
+        CH.Module (name, tdefs, SD.range (!wrapper) @ (List.rev vdefgs))
       end
 
   fun normalize (x, pd) = doModule (PassData.getConfig pd, x)
