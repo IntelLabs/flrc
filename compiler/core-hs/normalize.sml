@@ -158,7 +158,7 @@ struct
             in
               CH.Var v
             end
-        val _ = print ("saturate " ^ name ^ " with type " ^ Layout.toString (CL.layoutTy ty) ^ "\n")
+        (* val _ = print ("saturate " ^ name ^ " with type " ^ Layout.toString * (CL.layoutTy ty) ^ "\n") *)
       in
         case SD.lookup (!wrapper, name)
           of SOME (CH.Nonrec (CH.Vdef (v, _, _))) => CH.Var v
