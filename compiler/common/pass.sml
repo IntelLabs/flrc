@@ -7,7 +7,9 @@
 
 signature PASS_DATA =
 sig
+
   type t
+
   val getConfig : t -> Config.t
   val getStats : t -> Stats.t
   val getLevel : t -> int
@@ -180,6 +182,10 @@ sig
    *   check that each pass in ps2 comes after the passes it is supposed to
    *)
   val check : ('a, 'b) t list * ('a, 'b) t list -> bool
+  type driverInfo =
+       Config.Control.control list * Config.Debug.debug list * Config.Feature.feature list *
+       (string * string) list * {description : string, optional : bool} StringDict.t
+  val addPassDriverInfo : ('a, 'b) t * driverInfo -> driverInfo
   val doPass : ('a, 'b) t -> ('a, 'b) processor
   val doPassWrap : ('a, 'b) t * ('c -> 'a) * ('b -> 'd) -> ('c, 'd) processor
   val doSubPass : ('a, 'b) t -> ('a, 'b) processor
@@ -370,6 +376,26 @@ struct
        val depsOk = loop (List.rev ps2, StringSet.empty)
      in allCompuls andalso depsOk
      end
+
+  type driverInfo =
+       Config.Control.control list * Config.Debug.debug list * Config.Feature.feature list *
+       (string * string) list * {description : string, optional : bool} StringDict.t
+
+  fun addPassDriverInfo (p, (cs, ds, fs, ss, pm)) =
+      let
+        val n = getName p
+        val d = getDescriptionS p
+        val opt = isOptional p
+        val a = getAssociates p
+        val cs = cs @ #controls a
+        val ds = ds @ #debugs a
+        val fs = fs @ #features a
+        val ss = ss @ getStats p
+        val pd = {description = d, optional = opt}
+        val pm = StringDict.insert (pm, n, pd)
+        val x = List.fold (#subPasses a, (cs, ds, fs, ss, pm), addPassDriverInfo)
+      in x
+      end
 
   fun doPassPart (config, part, f) =
       let

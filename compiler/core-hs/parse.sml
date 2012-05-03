@@ -5,6 +5,7 @@ signature CORE_HS_PARSE =
 sig
   val pass : (unit, CoreHs.t) Pass.t
   val parseFile : string * Config.t -> CoreHs.t
+  val noMainWrapper : Config.t -> bool
 end
 
 structure CoreHsParse :> CORE_HS_PARSE =
@@ -979,6 +980,8 @@ struct
         List.concat (List.map (clo, toDefg))
       end
 
+  val (noMainWrapperF, noMainWrapper) =
+      Config.Feature.mk (passname ^ ":noMainWrapper", "do not generate the usual GHC main wrapper")
 
   fun readModule ((), pd, basename) =
       let
@@ -1064,7 +1067,7 @@ struct
               val module as (C.Module (mname, _, _)) = parseFile (infile, config)
               val defd = scanModule module 
               val scanned = MS.fromList [mname, CHU.primMname]
-              val mainVar = if Config.ghcNoMainWrapper config then CHU.mainVar else CHU.wrapperMainVar
+              val mainVar = if noMainWrapper config then CHU.mainVar else CHU.wrapperMainVar
             in
               case QD.lookup (defd, mainVar)
                 of NONE => Fail.fail (passname, "readModule", "main program not found")
@@ -1100,7 +1103,7 @@ struct
                      mustBeAfter = [],
                      stats       = stats}
 
-  val associates = {controls = [], debugs = [Debug.debugPassD], features = [], subPasses = []}
+  val associates = {controls = [], debugs = [Debug.debugPassD], features = [noMainWrapperF], subPasses = []}
 
   val pass = Pass.mkFilePass (description, associates, readModule)
 
