@@ -581,6 +581,7 @@ struct
 
   fun parseFile (f : string, config:Config.t) : C.t =
       let
+        val _ = clearCache ()
         val strm = TextIO.openIn f
         val instrm = TextIO.getInstream strm
         val instrm = InStreamWithPos.mk instrm

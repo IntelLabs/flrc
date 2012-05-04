@@ -29,7 +29,7 @@ struct
               , varCount : int ref
               }
 
-  val emptyDict : dict = { vdict = QD.empty, tdict = QD.empty, wrapper = ref SD.empty, varCount = ref 0 }
+  fun emptyDict () : dict = { vdict = QD.empty, tdict = QD.empty, wrapper = ref SD.empty, varCount = ref 0 }
 
   fun insertVar ({ vdict, tdict, wrapper, varCount }, v, vty) 
     = { vdict = QD.insert (vdict, v, vty), tdict = tdict, wrapper = wrapper, varCount = varCount }
@@ -387,7 +387,7 @@ struct
         val tdefs  = CH.Data (CP.tcStatezh, [("s", CH.Klifted)], [CH.Constr (CP.tcStatezh, [], [(CH.Tvar "s", true)])]) :: tdefs
         val tdefs  = CH.Data (CP.tcRealWorld, [], [CH.Constr (CP.tcRealWorld, [], [])]) :: tdefs
         val vdefgs = CH.Nonrec (CH.Vdef (CP.vRealWorldzh, CH.Tcon CP.tcRealWorld, CH.Dcon CP.tcRealWorld)) :: vdefgs
-        val dict   = List.fold (tdefs, emptyDict, doTDef)
+        val dict   = List.fold (tdefs, emptyDict (), doTDef)
         fun oneVDefg (vdefg, (vdefgs, dict))
           = let 
               val (dict, vdefg) = normVDefg (cfg, dict, vdefg)
