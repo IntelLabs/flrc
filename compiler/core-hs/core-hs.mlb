@@ -12,6 +12,7 @@ local
         anorm-prim.sml
         anorm-lazy.sml
         anorm-strict.sml
+        anorm-strict-layout.sml
         anorm-strict-utils.sml
         anorm-strict-rewrite.sml
         anorm-strict-analyze.sml
@@ -32,6 +33,7 @@ in
         structure ANormPrim
         structure ANormLazy
         structure ANormStrict
+        structure ANormStrictLayout
         structure CoreHsLayout
         structure ANormPrimLayout
         structure ANormLazyLayout
