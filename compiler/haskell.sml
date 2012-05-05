@@ -71,9 +71,9 @@ struct
       in x
       end
 
-  val controls = []
+  val controls = ANormStrictLayout.controls
 
-  val debugs = []
+  val debugs = ANormStrictLayout.debugs
 
   val features = []
 
