@@ -122,6 +122,7 @@ struct
              of M.CcClosure {cls, ...} => closureIsNonEscaping (d, imil, cls)
               | M.CcThunk {thunk, ...} => closureIsNonEscaping (d, imil, thunk)
               | M.CcCode => true
+              | M.CcUnmanaged _ => false
       in res
       end
 

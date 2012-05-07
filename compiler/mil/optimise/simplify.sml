@@ -1457,6 +1457,7 @@ struct
                               in ()
                               end
                             | M.CcCode => ()
+                            | M.CcUnmanaged _ => ()
                       val cc = 
                           if killClosure then 
                             M.CcCode

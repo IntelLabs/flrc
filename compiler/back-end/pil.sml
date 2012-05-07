@@ -33,6 +33,7 @@ signature PIL = sig
     val array : t -> t
     val arrayConstant : t * int -> t
     val code : t * t list -> t
+    val codeCC : t * string * t list -> t
     val strct : identifier option * (identifier * t) list -> t
   end
   type varDec
@@ -141,76 +142,77 @@ struct
   (* Types *)
   structure T = struct
 
-    type t = L.t * (L.t -> L.t) * (L.t * L.t -> L.t)
+    type t = L.t * string * (L.t * string -> L.t) * (L.t * string * L.t -> L.t)
 
-    fun dec ((b, _, f), i) = f (b, i)
+    fun dec ((b, q, _, f), i) = f (b, q, i)
 
-    fun abs (b, f, _) = f b
+    fun abs (b, q, f, _) = f (b, q)
 
-    fun sdec (b, i) = L.seq [b, L.str " ", i]
+    fun sdec (b, q, i) = L.seq [b, L.str " ", if q = "" then L.empty else L.str (q ^ " "), i]
 
-    fun sabs b = b
+    fun sabs (b, q) = if q = "" then b else L.seq [b, L.str (" " ^ q)]
 
-    val void = (L.str "void", sabs, sdec)
-    val sint8 = (L.str "sint8", sabs, sdec)
-    val sint16 = (L.str "sint16", sabs, sdec)
-    val sint32 = (L.str "sint32", sabs, sdec)
-    val sint64 = (L.str "sint64", sabs, sdec)
-    val sint128 = (L.str "sint128", sabs, sdec)
-    val uint8 = (L.str "uint8", sabs, sdec)
-    val uint16 = (L.str "uint16", sabs, sdec)
-    val uint32 = (L.str "uint32", sabs, sdec)
-    val uint64 = (L.str "uint64", sabs, sdec)
-    val uint128 = (L.str "uint128", sabs, sdec)
-    val sintp = (L.str "sintp", sabs, sdec)
-    val uintp = (L.str "uintp", sabs, sdec)
-    val char = (L.str "char", sabs, sdec)
-    val bool = (L.str "bool", sabs, sdec)
-    val float = (L.str "float", sabs, sdec)
-    val double = (L.str "double", sabs, sdec)
-    val continuation = (L.str "PilContinuation", sabs, sdec)
+    val void = (L.str "void", "", sabs, sdec)
+    val sint8 = (L.str "sint8", "", sabs, sdec)
+    val sint16 = (L.str "sint16", "", sabs, sdec)
+    val sint32 = (L.str "sint32", "", sabs, sdec)
+    val sint64 = (L.str "sint64", "", sabs, sdec)
+    val sint128 = (L.str "sint128", "", sabs, sdec)
+    val uint8 = (L.str "uint8", "", sabs, sdec)
+    val uint16 = (L.str "uint16", "", sabs, sdec)
+    val uint32 = (L.str "uint32", "", sabs, sdec)
+    val uint64 = (L.str "uint64", "", sabs, sdec)
+    val uint128 = (L.str "uint128", "", sabs, sdec)
+    val sintp = (L.str "sintp", "", sabs, sdec)
+    val uintp = (L.str "uintp", "", sabs, sdec)
+    val char = (L.str "char", "", sabs, sdec)
+    val bool = (L.str "bool", "", sabs, sdec)
+    val float = (L.str "float", "", sabs, sdec)
+    val double = (L.str "double", "", sabs, sdec)
+    val continuation = (L.str "PilContinuation", "", sabs, sdec)
 
-    fun named i = (i, sabs, sdec)
+    fun named i = (i, "", sabs, sdec)
 
-    fun ptr (b, _, f2) =
+    fun ptr (b, q, _, f2) =
         let
-          fun f3 b = f2 (b, L.str "(*)")
-          fun f4 (b, i) = f2 (b, L.paren (L.seq [L.str "*", i]))
+          fun f3 (b, q) = f2 (b, "", L.paren (L.seq [L.str q, L.str "*"]))
+          fun f4 (b, q, i) = f2 (b, "", L.paren (L.seq [L.str q, L.str "*", i]))
         in
-          (b, f3, f4)
+          (b, q, f3, f4)
         end
 
-    fun array (b, _, f2) =
+    fun array (b, q, _, f2) =
         let
-          fun f3 b = f2 (b, L.str "[]")
-          fun f4 (b, i) = f2 (b, L.seq [i, L.str "[]"])
+          fun f3 (b, q) = f2 (b, q, L.str "[]")
+          fun f4 (b, q, i) = f2 (b, q, L.seq [i, L.str "[]"])
         in
-          (b, f3, f4)
+          (b, q, f3, f4)
         end
 
-    fun arrayConstant ((b, _, f2), n) =
+    fun arrayConstant ((b, q, _, f2), n) =
         let
-          fun f3 b = f2 (b, L.seq [L.str "[", Int.layout n, L.str "]"])
-          fun f4 (b, i) = f2 (b, L.seq [i, L.seq [L.str "[", Int.layout n, L.str "]"]])
+          fun f3 (b, q) = f2 (b, q, L.seq [L.str "[", Int.layout n, L.str "]"])
+          fun f4 (b, q, i) = f2 (b, q, L.seq [i, L.seq [L.str "[", Int.layout n, L.str "]"]])
         in
-          (b, f3, f4)
+          (b, q, f3, f4)
         end
 
-    fun codeA ((b, _, f2), args) =
+    fun codeA ((b, q, _, f2), cc, args) =
         let
           val args =
               if List.isEmpty args then
                 L.str "(void)"
               else
                 L.tuple args
-          fun f3 b = Fail.fail ("Pil", "code",
-                                "C doesn't allow abstract unboxed code type")
-          fun f4 (b, i) = f2 (b, L.seq [i, args])
+          fun f3 (b, q') = Fail.fail ("Pil", "code", "C doesn't allow abstract unboxed code type")
+          fun f4 (b, q', i) = f2 (b, q, L.seq [i, args])
         in
-          (b, f3, f4)
+          (b, cc, f3, f4)
         end
 
-    fun code (rt, ats) = codeA (rt, List.map (ats, abs))
+    fun codeCC (rt, cc, ats) = codeA (rt, cc, List.map (ats, abs))
+
+    fun code (rt, ats) = codeCC (rt, "", ats)
 
     fun strct (n, fields) =
         let
@@ -223,7 +225,7 @@ struct
                           LU.indent (L.mayAlign ls),
                           L.str "}"]
         in
-          (b, sabs, sdec)
+          (b, "", sabs, sdec)
         end
 
   end
@@ -607,7 +609,7 @@ struct
 
     fun functionA (prefix, rt, f, args, locals, body) =
         let
-          val hdr = T.dec (T.codeA (rt, args), f)
+          val hdr = T.dec (T.codeA (rt, "", args), f)
           val body = List.concat body
         in
           L.align [L.seq [prefix, hdr],

@@ -311,6 +311,7 @@ struct
                                         end
                                     val () = case cc
                                               of M.CcCode => ()
+                                               | M.CcUnmanaged _ => ()
                                                | M.CcClosure {cls, fvs} => doFvs (cls, fvs)
                                                | M.CcThunk {thunk, fvs} => doFvs (thunk, fvs)
                                     val e = SE1.setCurrent (e, v)
@@ -1026,6 +1027,7 @@ struct
                       val cc = 
                           case cc
                            of M.CcCode               => cc
+                            | M.CcUnmanaged _        => cc
                             | M.CcClosure {cls, fvs} => if dead cls then M.CcCode 
                                                         else M.CcClosure {cls = cls, fvs = filterV fvs}
                             | M.CcThunk {thunk, fvs} => M.CcThunk {thunk = thunk, fvs = filterV fvs}
@@ -1237,6 +1239,7 @@ struct
                     val cargs = 
                         case cargs
                          of M.CcCode => cargs
+                          | M.CcUnmanaged _ => cargs
                           | M.CcClosure {cls, fvs} => 
                             if deadN cls then
                               M.CcCode

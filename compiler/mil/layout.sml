@@ -223,12 +223,18 @@ struct
 
    fun layoutEffects (env, fx) = Effect.layout fx
 
+   fun layoutAbiCallConv (env, cc) =
+       case cc
+        of M.AbiCdecl   => L.str "cdecl"
+         | M.AbiStdcall => L.str "stdcall"
+
    fun layoutCallConv f (env, cc) =
        let
          fun ct (s, v, vs) = L.seq [L.str s, semiCommaLP (f (env, v), layoutVector (env, f, vs))]
        in
          case cc
           of M.CcCode               => L.str "CcCode"
+           | M.CcUnmanaged abi      => L.seq [L.str "CcUnamanged ", layoutAbiCallConv (env, abi)]
            | M.CcClosure {cls, fvs} => ct ("CcClosure", cls, fvs)
            | M.CcThunk {thunk, fvs} => ct ("CcThunk", thunk, fvs)
        end

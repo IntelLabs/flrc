@@ -193,6 +193,7 @@ struct
                   unknownCallers orelse
                   (case MU.Code.cc (FMil.getCode (getFMil env, v))
                     of M.CcCode => false
+                     | M.CcUnmanaged _ => true
                      | M.CcClosure _ => false
                      | M.CcThunk _ => true)
           (* Nodes *)

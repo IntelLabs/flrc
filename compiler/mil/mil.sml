@@ -15,8 +15,13 @@ struct
   type label = Identifier.label
   type effects = Effect.set
 
+  datatype abiCallConv =
+      AbiCdecl
+    | AbiStdcall
+
   datatype 'a callConv =
       CcCode
+    | CcUnmanaged of abiCallConv
     | CcClosure of {cls   : 'a, fvs : 'a Vector.t}
     | CcThunk   of {thunk : 'a, fvs : 'a Vector.t}
 
