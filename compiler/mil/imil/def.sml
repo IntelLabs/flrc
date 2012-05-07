@@ -31,9 +31,11 @@ end
 struct
   open IMilPublicTypes
 
+  structure IMC = IMilCommon
   structure IMT = IMilTypes
   structure IVD = IMilTypes.IVD
   structure MU = MilUtils
+  structure Chat = IMC.Chat
 
   val fail = 
    fn (f, s) => Fail.fail ("def.sml", f, s)
@@ -48,9 +50,8 @@ struct
               | NONE => 
                 let
                   val s = (Layout.toString o IMilLayout.var) (p, v)
-                in
-                  fail ("getDef",
-                        "Unknown variable: "^s)
+                  val () = Chat.warn1 (p, "Def.getDef: " ^  "Unknown variable: "^s)
+                in IMT.DefUnk
                 end
       in d
       end

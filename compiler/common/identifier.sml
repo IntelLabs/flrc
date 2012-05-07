@@ -3,6 +3,7 @@
 
 (* Identifier hints, record all hints here:
  *
+ * atmp  - A Normal strict temp
  * bln   - Boolean variable
  * cnts  - Thunk contents var (simplify.sml)
  * cont  - Continuation variable (hil-to-chil.sml)

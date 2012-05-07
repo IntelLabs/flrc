@@ -267,6 +267,23 @@ struct
 
   val getModule : 't qualified -> mName = #1
 
+  val compareCoreLit : coreLit * coreLit -> order = 
+   fn (l1, l2) => 
+      (case (l1, l2)
+        of (Lint i1, Lint i2)            => IntInf.compare (i1, i2)
+         | (Lint _, _)                   => GREATER
+         | (_,      Lint _)              => LESS
+         | (Lrational r1, Lrational r2)  => Rat.compare (r1, r2)
+         | (Lrational _, _)              => GREATER
+         | (_, Lrational _)              => LESS
+         | (Lchar i1, Lchar i2)          => Int.compare (i1, i2)
+         | (Lchar _, _)                  => GREATER
+         | (_, Lchar _)                  => LESS
+         | (Lstring s1, Lstring s2)      => String.compare (s1, s2))
+
+  val eqCoreLit : coreLit * coreLit -> bool = 
+      fn (l1, l2) => compareCoreLit (l1, l2) = EQUAL
+
   (* eqKind : kind * kind -> bool *)
   fun eqKind (Klifted,         Klifted)         = true
     | eqKind (Kunlifted,       Kunlifted)       = true
