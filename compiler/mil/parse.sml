@@ -27,7 +27,7 @@ sig
 
   val templateFile : Config.t * string * Mil.symbolTableManager -> templateFile
 
-  val pass : (unit, Mil.t * string Identifier.VariableDict.t) Pass.t
+  val pass : (unit, Mil.t * string Identifier.VariableDict.t option) Pass.t
 
 end;
 
@@ -1834,14 +1834,14 @@ struct
       in p
       end
                      
-  fun readFile (() : unit, pd : PassData.t, basename : Path.t) : M.t * string VD.t =
+  fun readFile (() : unit, pd : PassData.t, basename : Path.t) : M.t * string VD.t option =
       let
         val config = PassData.getConfig pd
         val basename = Config.pathToHostString (config, basename)
         val infile = basename ^ ".mil"
         fun cleanup () = ()
         val p = Exn.finally (fn () => parseFile (config, infile), cleanup)
-      in (p, VD.empty)
+      in (p, NONE)
       end
 
   fun wrapIR { printer, stater } = { printer = fn ((x, _), c) => printer (x, c)
