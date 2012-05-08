@@ -138,6 +138,7 @@ struct
   fun callConvU (s, e, f, m, cc) =
       case cc
        of M.CcCode => ()
+        | M.CcUnmanaged _ => ()
         | M.CcClosure {cls, fvs} =>
           let
             val () = f (s, e, m, cls)
@@ -154,6 +155,7 @@ struct
   fun callConvE (s, e, f, cc) =
       case cc
        of M.CcCode => e
+        | M.CcUnmanaged _ => e
         | M.CcClosure {cls, fvs} =>
           let
             val e = f (s, e, cls)

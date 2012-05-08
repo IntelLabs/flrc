@@ -13,7 +13,7 @@ functor Driver
    val controls : Config.Control.control list
    val debugs : Config.Debug.debug list
    val features : Config.Feature.feature list
-   val exts : (string * (unit, Mil.t * string Identifier.VariableDict.t) Pass.processor) list
+   val exts : (string * (unit, Mil.t * string Identifier.VariableDict.t option) Pass.processor) list
    val langVersions : string list)
   :> DRIVER =
 struct

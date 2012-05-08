@@ -385,6 +385,7 @@ functor MilAnalyseF (
         val e =
             case cc
              of M.CcCode => e
+              | M.CcUnmanaged _ => e
               | M.CcClosure {cls, fvs} =>
                 let
                   val e = analyseBinder (s, e, cls)

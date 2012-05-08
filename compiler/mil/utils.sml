@@ -28,6 +28,7 @@ sig
     val name               : Mil.name t
     val label              : Mil.label t
     val effects            : Mil.effects t
+    val abiCallConv        : Mil.abiCallConv t
     val callConv           : 'a t -> 'a Mil.callConv t
     val typKind            : Mil.typKind t
     val pObjKind           : Mil.pObjKind t
@@ -71,6 +72,7 @@ sig
     val name               : Mil.name t
     val label              : Mil.label t
     val effects            : Mil.effects t
+    val abiCallConv        : Mil.abiCallConv t
     val callConv           : 'a t -> 'a Mil.callConv t
     val typKind            : Mil.typKind t
     val pObjKind           : Mil.pObjKind t
@@ -107,6 +109,18 @@ sig
     val global             : Mil.global t
   end
 
+  structure AbiCallConv :
+  sig
+    type t = Mil.abiCallConv
+    val compare : t Compare.t
+    val eq : t * t -> bool
+    structure Dec :
+    sig
+      val abiCdecl   : t -> unit option
+      val abiStdcall : t -> unit option
+    end
+  end
+
   structure CallConv :
   sig
     type 'a t = 'a Mil.callConv
@@ -118,9 +132,10 @@ sig
     val foreach : 'a t * ('a -> unit) -> unit
     structure Dec :
     sig
-      val ccCode    : 'a t -> unit option
-      val ccClosure : 'a t -> {cls : 'a, fvs : 'a Vector.t} option
-      val ccThunk   : 'a t -> {thunk : 'a, fvs : 'a Vector.t} option
+      val ccCode      : 'a t -> unit option
+      val ccUnmanaged : 'a t -> AbiCallConv.t option
+      val ccClosure   : 'a t -> {cls : 'a, fvs : 'a Vector.t} option
+      val ccThunk     : 'a t -> {thunk : 'a, fvs : 'a Vector.t} option
     end (* structure Dec *)
   end
 
@@ -1331,19 +1346,31 @@ struct
 
     val effects = Effect.compare
 
+    fun abiCallConv (cc1, cc2) =
+        let
+          fun ord cc =
+              case cc
+               of M.AbiCdecl   => 0
+                | M.AbiStdcall => 1
+        in C.fromOrd ord (cc1, cc2)
+        end
+
     fun callConv cmp (c1, c2) =
         let
           val ccClosure = C.rec2 (#cls, cmp, #fvs, C.vector cmp)
           val ccThunk   = C.rec2 (#thunk, cmp, #fvs, C.vector cmp)
         in
           case (c1, c2)
-           of (M.CcCode,       M.CcCode      ) => EQUAL
-            | (M.CcCode,       _             ) => LESS
-            | (_,              M.CcCode      ) => GREATER
-            | (M.CcClosure x1, M.CcClosure x2) => ccClosure (x1, x2)
-            | (M.CcClosure _,  _             ) => LESS
-            | (_,              M.CcClosure _ ) => GREATER
-            | (M.CcThunk x1,   M.CcThunk x2  ) => ccThunk (x1, x2)
+           of (M.CcCode,         M.CcCode        ) => EQUAL
+            | (M.CcCode,         _               ) => LESS
+            | (_,                M.CcCode        ) => GREATER
+            | (M.CcUnmanaged x1, M.CcUnmanaged x2) => abiCallConv (x1, x2)
+            | (M.CcUnmanaged _,  _               ) => LESS
+            | (_,                M.CcUnmanaged _ ) => GREATER
+            | (M.CcClosure x1,   M.CcClosure x2  ) => ccClosure (x1, x2)
+            | (M.CcClosure _,    _               ) => LESS
+            | (_,                M.CcClosure _   ) => GREATER
+            | (M.CcThunk x1,     M.CcThunk x2    ) => ccThunk (x1, x2)
         end
 
     fun typKind (tk1, tk2) =
@@ -1919,6 +1946,7 @@ struct
     val name               : Mil.name t = Equality.fromCompare Compare.name
     val label              : Mil.label t = Equality.fromCompare Compare.label
     val effects            : Mil.effects t = Equality.fromCompare Compare.effects
+    val abiCallConv        : Mil.abiCallConv t = Equality.fromCompare Compare.abiCallConv
     val callConv           : 'a t -> 'a Mil.callConv t = 
      fn eqA => Equality.fromCompare (Compare.callConv (fn (a, b) => if eqA (a, b) then EQUAL else LESS))
     val typKind            : Mil.typKind t = Equality.fromCompare Compare.typKind
@@ -1956,6 +1984,30 @@ struct
     val global             : Mil.global t = Equality.fromCompare Compare.global
   end
 
+  structure AbiCallConv =
+  struct
+
+    type t = Mil.abiCallConv
+
+    val compare = Compare.abiCallConv
+    val eq      = Eq.abiCallConv
+
+    structure Dec =
+    struct
+
+      fun abiCdecl (cc : t) : unit option =
+          case cc
+           of M.AbiCdecl => SOME ()
+            | _          => NONE
+
+      fun abiStdcall (cc : t) : unit option =
+          case cc
+           of M.AbiStdcall => SOME ()
+            | _            => NONE
+
+    end
+  end
+
   structure CallConv =
   struct
 
@@ -1967,6 +2019,7 @@ struct
     fun fold (cc, a, f) = 
         case cc
          of M.CcCode => a
+          | M.CcUnmanaged _ => a
           | M.CcClosure {cls, fvs} =>
             let
               val a = f (cls, a)
@@ -1983,6 +2036,7 @@ struct
     fun mapAndFold (cc, a, f) = 
         case cc
          of M.CcCode => (M.CcCode, a)
+          | M.CcUnmanaged abi => (M.CcUnmanaged abi, a)
           | M.CcClosure {cls, fvs} =>
             let
               val (cls, a) = f (cls, a)
@@ -1999,6 +2053,7 @@ struct
     fun map (cc, f) =
         case cc
          of M.CcCode => M.CcCode
+          | M.CcUnmanaged abi => M.CcUnmanaged abi
           | M.CcClosure {cls, fvs} =>
             M.CcClosure {cls = f cls, fvs = Vector.map (fvs, f)}
           | M.CcThunk {thunk, fvs} =>
@@ -2007,6 +2062,7 @@ struct
     fun foreach (cc, f) =
         case cc
          of M.CcCode => ()
+          | M.CcUnmanaged _ => ()
           | M.CcClosure {cls, fvs} =>
             let
               val () = f cls
@@ -2026,6 +2082,11 @@ struct
        fn c => 
           (case c 
             of M.CcCode => SOME ()
+             | _ => NONE)
+      val ccUnmanaged = 
+       fn c => 
+          (case c 
+            of M.CcUnmanaged abi => SOME abi
              | _ => NONE)
       val ccClosure = 
        fn c => 

@@ -474,6 +474,7 @@ struct
         val res = 
             case conv 
              of M.CcCode => (conv, args, body)
+              | M.CcUnmanaged _ => (conv, args, body)
               | M.CcClosure {cls, fvs} => 
                 if lowerClosures then 
                   doClosureConv (state, env, cls, fvs, args, body)

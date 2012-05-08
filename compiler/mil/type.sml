@@ -948,6 +948,7 @@ struct
      fun callConv (config, si, cc) =
          case cc
           of M.CcCode => M.CcCode
+           | M.CcUnmanaged abi => M.CcUnmanaged abi
            | M.CcClosure {cls, fvs} =>
              M.CcClosure {cls = variable (config, si, cls),
                           fvs = variables (config, si, fvs)}

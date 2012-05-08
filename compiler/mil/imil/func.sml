@@ -504,6 +504,7 @@ struct
      fn c => 
         (case c
           of M.CcCode => []
+           | M.CcUnmanaged _ => []
            | M.CcClosure {cls, fvs} => cls::(Vector.toList fvs)
            | M.CcThunk {thunk, fvs} =>  thunk::(Vector.toList fvs))
 

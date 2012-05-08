@@ -376,6 +376,7 @@ struct
   fun callConv (state, env, cc) = 
       case cc
        of M.CcCode => (env, M.CcCode)
+        | M.CcUnmanaged _ => (env, cc)
         | M.CcClosure {cls, fvs} =>
           let
             val (env, cls) = bindVar (state, env, cls)

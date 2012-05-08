@@ -27,7 +27,7 @@ sig
 
   val templateFile : Config.t * string * Mil.symbolTableManager -> templateFile
 
-  val pass : (unit, Mil.t * string Identifier.VariableDict.t) Pass.t
+  val pass : (unit, Mil.t * string Identifier.VariableDict.t option) Pass.t
 
 end;
 
@@ -783,12 +783,27 @@ struct
       in p
       end
 
+  fun abiCallConvF (state : state, env : env) : M.abiCallConv P.t =
+      let
+        fun doIt s =
+            case s
+             of "cdecl" => P.succeed M.AbiCdecl
+              | "stdcall" => P.succeed M.AbiStdcall
+              | _ => P.fail
+        val p = P.bind identifierF doIt
+      in p
+      end
+
+  fun abiCallConv (state : state, env : env) : M.abiCallConv P.t =
+      abiCallConvF (state, env) || P.error "Expected ABI calling convention"
+
   fun callConvF (state : state, env : env, f : state * env -> 'a P.t) : 'a M.callConv P.t =
       let
         val doAux = parenSemiComma (P.$$ f (state, env), P.$$ f (state, env))
         fun doIt s =
             case s
              of "CcCode" => P.succeed M.CcCode
+              | "CcUnmanaged" => P.map (abiCallConv (state, env), M.CcUnmanaged)
               | "CcClosure" => P.bind doAux (fn (x, y) => P.succeed (M.CcClosure {cls = x, fvs = y}))
               | "CcThunk" => P.bind doAux (fn (x, y) => P.succeed (M.CcThunk {thunk = x, fvs = y}))
               | _ => P.fail
@@ -1819,14 +1834,14 @@ struct
       in p
       end
                      
-  fun readFile (() : unit, pd : PassData.t, basename : Path.t) : M.t * string VD.t =
+  fun readFile (() : unit, pd : PassData.t, basename : Path.t) : M.t * string VD.t option =
       let
         val config = PassData.getConfig pd
         val basename = Config.pathToHostString (config, basename)
         val infile = basename ^ ".mil"
         fun cleanup () = ()
         val p = Exn.finally (fn () => parseFile (config, infile), cleanup)
-      in (p, VD.empty)
+      in (p, NONE)
       end
 
   fun wrapIR { printer, stater } = { printer = fn ((x, _), c) => printer (x, c)

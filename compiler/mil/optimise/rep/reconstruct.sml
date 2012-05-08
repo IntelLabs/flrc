@@ -91,6 +91,7 @@ struct
              val cc = MU.CallConv.map (cargs, node)
              val cc = case cc
                        of M.CcCode => M.CcCode
+                        | M.CcUnmanaged _ => cc
                         | M.CcThunk {thunk, fvs} => 
                           M.CcThunk {thunk = M.TThunk (Vector.sub (ress, 0)),
                                      fvs = fvs}

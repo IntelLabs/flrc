@@ -4,6 +4,7 @@
 *.exp
 *.lib
 *.pdb
+*.suo
 root_map.txt
 
 # ignore emacs save files
@@ -19,6 +20,9 @@ root_map.txt
 *.c
 !runtime/*.c
 
+#ignore .hi (haskell interface) files
+*.hi
+
 # ignore the frontend build files
 build/vc60/frontend-old/Debug/
 build/vc60/frontend-old/frontend-old.plg
@@ -26,3 +30,5 @@ build/vc60/frontend-old/frontend-old.plg
 # ignore the regression log and tmp directory
 regressions.log
 tests/tmp
+
+runtime/hil.mil

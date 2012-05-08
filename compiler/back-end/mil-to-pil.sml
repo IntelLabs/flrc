@@ -1091,13 +1091,18 @@ struct
       let
         val rt = genReturnType (state, env, conv, rts)
         val ats = genTyps (state, env, ats)
-        val ats = 
+        fun abiToCc abi =
+            case abi
+             of M.AbiCdecl => "__cdecl"
+              | M.AbiStdcall => "__stdcall"
+        val (cc, ats) = 
             case conv
-             of M.CcCode => ats
+             of M.CcCode => ("", ats)
+              | M.CcUnmanaged abi => (abiToCc abi, ats)
               | M.CcClosure _ => notCoreMil (env, "genCodeType", "CcClosure")
-              | M.CcThunk {thunk, ...} => (genTyp (state, env, thunk))::ats
+              | M.CcThunk {thunk, ...} => ("", (genTyp (state, env, thunk))::ats)
       in
-        Pil.T.code (rt, ats)
+        Pil.T.codeCC (rt, cc, ats)
       end
   and genTyp (state, env, t) = 
       case t
@@ -2286,6 +2291,7 @@ struct
         val res = 
             case cc
              of M.CcCode => (decs, [], [])
+              | M.CcUnmanaged abi => Fail.unimplemented (passname, "doCallConv", "CcUnmanaged")
               | M.CcClosure _ =>
                 notCoreMil (env, "doCallConv", "CcClosure")
               | M.CcThunk {thunk, fvs} =>

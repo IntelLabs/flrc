@@ -147,6 +147,7 @@ struct
         val () =
             case cc
              of M.CcCode => ()
+              | M.CcUnmanaged _ => ()
               | M.CcClosure {cls, fvs} =>
                 let
                   val () = addVarDef (s, cls, VdFunParam (f, PiCls))
