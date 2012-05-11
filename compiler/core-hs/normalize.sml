@@ -222,7 +222,7 @@ struct
           (case QD.lookup (vdict, u)
             of SOME t => (exp, t)
              | NONE => if m = SOME CU.primMname 
-                         then let val ty = GP.getTy (cfg, v) in (saturateWrapper (dict, exp, ty), ty) end
+                         then let val ty = GP.getTy (cfg, v) in (saturate (dict, exp, ty), ty) end
                          else failMsg ("norm/Var", "variable " ^ v ^ " not found"))
         | CH.Dcon con => 
           (case QD.lookup (vdict, con)
