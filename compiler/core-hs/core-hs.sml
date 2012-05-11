@@ -51,7 +51,7 @@ structure CoreHs = struct
 
   type tBind = tvar * kind
 
-  datatype callconv = Prim | CCall | StdCall | Dynamic
+  datatype callconv = Prim | CCall | StdCall | Dynamic | Label
 
   datatype bind
       = Vb of vBind

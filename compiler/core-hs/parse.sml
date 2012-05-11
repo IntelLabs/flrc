@@ -99,7 +99,7 @@ struct
   val coreLabel =
       reservedH "label" >>
       P.stringLiteral   >>= (fn s =>
-      return (C.External ("", C.Prim, s, CHP.tAddrzh)))
+      return (C.External ("", C.Label, s, CHP.tAddrzh)))
 
   datatype CoercionTy = TransC | InstC | SymC | UnsafeC | LeftC | RightC | NthC
 
