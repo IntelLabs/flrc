@@ -246,7 +246,6 @@ struct
                     (saturate (dict, exp, ty), ty)
                   end
                  | NONE => failMsg ("norm/Dcon", "constructor " ^ CL.qNameToString con ^ " not found")))
-        (* FIXME: Dynamic extern needs different handling *)
         | CH.External (p, cc, _, ty) => 
           (case cc
             of CH.CCall   => (saturateWrapper (dict, exp, ty), ty) 
