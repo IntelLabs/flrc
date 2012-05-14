@@ -357,7 +357,7 @@ struct
   val primMname = mkPrimMname "Prim"
   val errMname  = mkBaseMname "Err"
   val mainPrefix = []
-  val boolMname = mkPrimMname "Types"
+  val typeMname = mkPrimMname "Types"
   val mainMname = M (mainPkg, mainPrefix, "Main")
   val mainVar = qual mainMname "main"
   val wrapperMainMname = M (mainPkg, mainPrefix, "ZCMain")
@@ -475,11 +475,14 @@ struct
   val tcAny : tcon qualified = pv "Any"
   val tAny  : ty             = Tcon tcAny
 
-  val tcBool : tcon qualified = (SOME CHU.boolMname, "Bool")
+  val tcBool : tcon qualified = (SOME CHU.typeMname, "Bool")
   val tBool  : ty             = Tcon tcBool
 
-  val dTrue  : dcon qualified = (SOME CHU.boolMname, "True")
-  val dFalse : dcon qualified = (SOME CHU.boolMname, "False")
+  val dTrue  : dcon qualified = (SOME CHU.typeMname, "True")
+  val dFalse : dcon qualified = (SOME CHU.typeMname, "False")
+
+  val tcInt : tcon qualified = (SOME CHU.typeMname, "Int")
+  val tInt  : ty             = Tcon tcInt
 
   val boolTcs : (tcon * kindOrCoercion) list = [(#2 tcBool, Kind Klifted)]
 
@@ -503,17 +506,64 @@ struct
 
   val opsState : (var * ty) list = [("realWorldzh", tRWS)]
 
-  val tcArrayzh            : tcon qualified = pvz "Array"
-  val tArrayzh             : ty -> ty       = fn t => Tapp (Tcon tcArrayzh, t)
-  val tcByteArrayzh        : tcon qualified = pvz "ByteArray"
-  val tByteArrayzh         : ty             = Tcon tcByteArrayzh
-  val ktByteArrayzh        : kind           = Kunlifted
-  val tcMutableArrayzh     : tcon qualified = pvz "MutableArray"
-  val tMutableArrayzh      : ty -> ty -> ty = fn s => fn a => Tapp (Tapp (Tcon tcMutableArrayzh, s), a)
-  val ktMutableArrayzh     : kind           = Karrow (Klifted, Karrow (Klifted, Kunlifted))
-  val tcMutableByteArrayzh : tcon qualified = pvz "MutableByteArray"
-  val tMutableByteArrayzh  : ty -> ty       = fn s => Tapp (Tcon tcMutableByteArrayzh, s)
-  val ktMutableByteArrayzh : kind           = Karrow (Klifted, Kunlifted)
+  val tcArrayzh                : tcon qualified = pvz "Array"
+  val tArrayzh                 : ty -> ty       = fn t => Tapp (Tcon tcArrayzh, t)
+  val tcByteArrayzh            : tcon qualified = pvz "ByteArray"
+  val tByteArrayzh             : ty             = Tcon tcByteArrayzh
+  val ktByteArrayzh            : kind           = Kunlifted
+  val tcImmutableArrayzh       : tcon qualified = pvz "ImmutableArray"
+  val tImmutableArrayzh        : ty -> ty       = fn a => Tapp (Tcon tcImmutableArrayzh, a)
+  val tcMutableArrayzh         : tcon qualified = pvz "MutableArray"
+  val tMutableArrayzh          : ty -> ty -> ty = fn s => fn a => Tapp (Tapp (Tcon tcMutableArrayzh, s), a)
+  val ktMutableArrayzh         : kind           = Karrow (Klifted, Karrow (Klifted, Kunlifted))
+  val tcMutableByteArrayzh     : tcon qualified = pvz "MutableByteArray"
+  val tMutableByteArrayzh      : ty -> ty       = fn s => Tapp (Tcon tcMutableByteArrayzh, s)
+  val ktMutableByteArrayzh     : kind           = Karrow (Klifted, Kunlifted)
+  val tcStrictImmutableArrayzh : tcon qualified = pvz "StrictImmutableArray"
+  val tStrictImmutableArrayzh  : ty -> ty       = fn t => Tapp (Tcon tcStrictImmutableArrayzh, t)
+
+  val tcUnboxedWordArrayzh     : tcon qualified = pvz "UnboxedWordArray"
+  val tUnboxedWordArrayzh      : ty             = Tcon tcUnboxedWordArrayzh
+  val ktUnboxedWord8Arrayzh    : kind           = Kunlifted
+  val tcUnboxedWord8Arrayzh    : tcon qualified = pvz "UnboxedWord8Array"
+  val tUnboxedWord8Arrayzh     : ty             = Tcon tcUnboxedWord8Arrayzh
+  val ktUnboxedWord16Arrayzh   : kind           = Kunlifted
+  val tcUnboxedWord16Arrayzh   : tcon qualified = pvz "UnboxedWord16Array"
+  val tUnboxedWord16Arrayzh    : ty             = Tcon tcUnboxedWord16Arrayzh
+  val ktUnboxedWord32Arrayzh   : kind           = Kunlifted
+  val tcUnboxedWord32Arrayzh   : tcon qualified = pvz "UnboxedWord32Array"
+  val tUnboxedWord32Arrayzh    : ty             = Tcon tcUnboxedWord32Arrayzh
+  val ktUnboxedWord64Arrayzh   : kind           = Kunlifted
+  val tcUnboxedWord64Arrayzh   : tcon qualified = pvz "UnboxedWord64Array"
+  val tUnboxedWord64Arrayzh    : ty             = Tcon tcUnboxedWord64Arrayzh
+  val ktUnboxedWord64Arrayzh   : kind           = Kunlifted
+  val tcUnboxedIntArrayzh      : tcon qualified = pvz "UnboxedIntArray"
+  val tUnboxedIntArrayzh       : ty             = Tcon tcUnboxedIntArrayzh
+  val ktUnboxedIntArrayzh      : kind           = Kunlifted
+  val tcUnboxedInt8Arrayzh     : tcon qualified = pvz "UnboxedInt8Array"
+  val tUnboxedInt8Arrayzh      : ty             = Tcon tcUnboxedInt8Arrayzh
+  val ktUnboxedInt8Arrayzh     : kind           = Kunlifted
+  val tcUnboxedInt16Arrayzh    : tcon qualified = pvz "UnboxedInt16Array"
+  val tUnboxedInt16Arrayzh     : ty             = Tcon tcUnboxedInt16Arrayzh
+  val ktUnboxedInt16Arrayzh    : kind           = Kunlifted
+  val tcUnboxedInt32Arrayzh    : tcon qualified = pvz "UnboxedInt32Array"
+  val tUnboxedInt32Arrayzh     : ty             = Tcon tcUnboxedInt32Arrayzh
+  val ktUnboxedInt32Arrayzh    : kind           = Kunlifted
+  val tcUnboxedInt64Arrayzh    : tcon qualified = pvz "UnboxedInt64Array"
+  val tUnboxedInt64Arrayzh     : ty             = Tcon tcUnboxedInt64Arrayzh
+  val ktUnboxedInt64Arrayzh    : kind           = Kunlifted
+  val tcUnboxedFloatArrayzh    : tcon qualified = pvz "UnboxedFloatArray"
+  val tUnboxedFloatArrayzh     : ty             = Tcon tcUnboxedFloatArrayzh
+  val ktUnboxedFloatArrayzh    : kind           = Kunlifted
+  val tcUnboxedDoubleArrayzh   : tcon qualified = pvz "UnboxedDoubleArray"
+  val tUnboxedDoubleArrayzh    : ty             = Tcon tcUnboxedDoubleArrayzh
+  val ktUnboxedDoubleArrayzh   : kind           = Kunlifted
+  val tcUnboxedCharArrayzh     : tcon qualified = pvz "UnboxedCharArray"
+  val tUnboxedCharArrayzh      : ty             = Tcon tcUnboxedCharArrayzh
+  val ktUnboxedCharArrayzh     : kind           = Kunlifted
+  val tcUnboxedAddrArrayzh     : tcon qualified = pvz "UnboxedAddrArray"
+  val tUnboxedAddrArrayzh      : ty             = Tcon tcUnboxedAddrArrayzh
+  val ktUnboxedAddrArrayzh     : kind           = Kunlifted
 
   val tcTVarzh             : tcon qualified = pvz "TVar"
   val tTVarzh              : ty -> ty -> ty = fn s => fn a => Tapp (Tapp (Tcon tcTVarzh, s), a)

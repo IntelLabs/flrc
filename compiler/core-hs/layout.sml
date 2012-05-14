@@ -34,6 +34,8 @@ struct
   structure U = Utils
   structure L = Layout
 
+  val useDecodedNames = true
+
   val tabSize = 2
 
   fun escape s =
@@ -57,9 +59,11 @@ struct
 
   val separate = L.sequence ("", "", " ") 
 
-  fun layoutPName (P n) = L.str n
+  fun layoutName n = L.str (if useDecodedNames then CU.zDecodeString n else n)
 
-  val hierModuleSep = CU.zEncodeString "."
+  fun layoutPName (P n) = layoutName n
+
+  val hierModuleSep = if useDecodedNames then "." else CU.zEncodeString "."
 
   fun layoutAnMName (M (pname, parents, name)) =
       let val parentLayout =
@@ -70,13 +74,13 @@ struct
         L.seq [ layoutPName pname
               , L.str ":"
               , parentLayout
-              , L.str name ]
+              , layoutName name ]
       end
 
   fun layoutMName NONE = L.empty
     | layoutMName (SOME m) = L.seq [layoutAnMName m, L.str "."]
 
-  fun layoutQName (m, v) = L.seq [layoutMName m, L.str v]
+  fun layoutQName (m, v) = L.seq [layoutMName m, layoutName v]
   fun qNameToString name = Layout.toString (layoutQName name)
 
   val layoutCC 

@@ -13,6 +13,8 @@ sig
   val PAny      : set  (* Any P level effect *)
   val ReadOnly  : set  (* New or Read *)
   val Heap      : set  (* Any heap ops *)
+  val Init      : set  (* InitGen/InitRead/InitWrite *)
+  val HeapInit  : set  (* Heap or Init *)
   val Control   : set  (* Any control, including Partial*) 
   val Any       : set  (* All effects *)
 
@@ -122,6 +124,8 @@ structure Effect :> EFFECT = struct
   val PAny     : set = fromList  [Partial, Io, HeapGen, HeapRead, HeapWrite, Throws, Returns, Fails]
   val ReadOnly : set = fromList [HeapGen, HeapRead, InitGen, InitRead]
   val Heap     : set = fromList [HeapGen, HeapRead, HeapWrite]
+  val Init     : set = fromList [InitGen, InitRead, InitWrite]
+  val HeapInit : set = union (Heap, Init)
   val Control  : set = fromList [Partial, Throws, Returns, Fails]
   val Any      : set = fromList effects
 

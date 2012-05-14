@@ -254,10 +254,11 @@ struct
         | CH.Lit (CH.Literal (lit, ty)) => (exp, ty)
         | CH.App (f, e) =>
           let 
-              (* val _ = print ("doExp " ^ Layout.toString (CL.layoutExp exp) ^ "\n") *)
+              (*val _ = print ("doExp " ^ Layout.toString (CL.layoutExp exp) ^ "\n")*)
               val (f, fty) = normExp (cfg, dict, f)
               val (e, ety) = normExp (cfg, dict, e)
-              (* val _ = print ("got f = " ^ Layout.toString (CL.layoutExp f) ^ "\n") *)
+              (*val _ = print ("got f   = " ^ Layout.toString (CL.layoutExp f) ^ "\n")*)
+              (*val _ = print ("    fty = " ^ Layout.toString (CL.layoutTy fty) ^ "\n")*)
               val rty = resultTy fty
             in
               case e 
@@ -310,7 +311,10 @@ struct
           end
        | CH.Appt (e, ty) => 
          let
+           (*val _ = print ("doExp " ^ Layout.toString (CL.layoutExp exp) ^ "\n")*)
            val (e, ety) = normExp (cfg, dict, e)
+           (*val _ = print ("got e   = " ^ Layout.toString (CL.layoutExp e) ^ "\n")*)
+           (*val _ = print ("    ety = " ^ Layout.toString (CL.layoutTy ety) ^ "\n")*)
            val ety = applyTy (ety, ty)
          in
            (tryBetaTy (e, ty), ety)
