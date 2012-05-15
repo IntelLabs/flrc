@@ -146,8 +146,8 @@ struct
     = let
         val { wrapper, ... } = dict
         val name = case e 
-                     of CH.Var u  => CL.qNameToString u
-                      | CH.Dcon c => CL.qNameToString c
+                     of CH.Var u  => CL.qNameToStringEncoded u
+                      | CH.Dcon c => CL.qNameToStringEncoded c
                       | CH.External (_, _, f, _) => f
                       | _ => failMsg ("saturateWrapper", "impossible")
         fun wrap () = 

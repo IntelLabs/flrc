@@ -3,6 +3,7 @@ signature CORE_HS_LAYOUT =
 sig
   val escape               : string -> string
   val qNameToString        : string CoreHs.qualified -> string
+  val qNameToStringEncoded : string CoreHs.qualified -> string
 
   val layoutQName          : string CoreHs.qualified -> Layout.t
   val layoutPName          : CoreHs.pName            -> Layout.t
@@ -59,29 +60,37 @@ struct
 
   val separate = L.sequence ("", "", " ") 
 
-  fun layoutName n = L.str (if useDecodedNames then CU.zDecodeString n else n)
+  fun layoutNameAux (d, n) = L.str (if d then CU.zDecodeString n else n)
+  fun layoutName n = layoutNameAux (useDecodedNames, n)
 
-  fun layoutPName (P n) = layoutName n
+  fun layoutPNameAux (d, P n) = layoutNameAux (d, n)
+  fun layoutPName p = layoutPNameAux (useDecodedNames, p)
 
-  val hierModuleSep = if useDecodedNames then "." else CU.zEncodeString "."
+  fun hierModuleSep d = if d then "." else CU.zEncodeString "."
 
-  fun layoutAnMName (M (pname, parents, name)) =
-      let val parentLayout =
+  fun layoutAnMNameAux (d, M (pname, parents, name)) =
+      let
+        val hms = hierModuleSep d
+        val parentLayout =
               case parents
                 of [] => L.empty
-                 | _  => L.seq (map (fn x => L.str (x ^ hierModuleSep)) parents)
+                 | _  => L.seq (map (fn x => L.str (x ^ hierModuleSep d)) parents)
       in
-        L.seq [ layoutPName pname
+        L.seq [ layoutPNameAux (d, pname)
               , L.str ":"
               , parentLayout
-              , layoutName name ]
+              , layoutNameAux (d, name) ]
       end
+  fun layoutAnMName n = layoutAnMNameAux (useDecodedNames, n)
 
-  fun layoutMName NONE = L.empty
-    | layoutMName (SOME m) = L.seq [layoutAnMName m, L.str "."]
+  fun layoutMNameAux (d, NONE)     = L.empty
+    | layoutMNameAux (d, (SOME m)) = L.seq [layoutAnMNameAux (d, m), L.str "."]
+  fun layoutMName m = layoutMNameAux (useDecodedNames, m)
 
-  fun layoutQName (m, v) = L.seq [layoutMName m, layoutName v]
+  fun layoutQNameAux (d, (m, v)) = L.seq [layoutMNameAux (d, m), layoutNameAux (d, v)]
+  fun layoutQName n = layoutQNameAux (useDecodedNames, n)
   fun qNameToString name = Layout.toString (layoutQName name)
+  fun qNameToStringEncoded name = Layout.toString (layoutQNameAux (false, name))
 
   val layoutCC 
     = fn Prim    => L.str "prim"
