@@ -2186,11 +2186,17 @@ struct
                 let
                   (* check if its a direct thunk eval *)
                   val { thunk, code } = <- (MU.Eval.Dec.eDirectThunk o #eval <! MU.InterProc.Dec.ipEval @@ callee)
+                  val iFunc = IFunc.getIFuncByName (imil, code)
+                  (* check if this is not a recursive eval *)
+                  val () = Try.require (not (IInstr.isRec (imil, i)))
+                  (* check that this is the only eval with the code pointer *)
+                  val () = Try.require (not (IFunc.getEscapes (imil, iFunc)))
+                  val () = Try.require (Vector.length (Use.getUses (imil, code)) <= 2)
                   (* check if thunk is not used anywhere else *)
                   val { inits, others, ... } = Use.splitUses (imil, thunk)
                   val () = Try.require (Vector.length inits <= 1)
                   val () = Try.require (Vector.length others = 1)
-                  val { code, fx, fvs, ... } = <@ getThunkInitFromVariable (imil, thunk)
+                  val { fx, fvs, ... } = <@ getThunkInitFromVariable (imil, thunk)
                   (* check if init and eval appears in the same basic block *) 
                   val () = 
                       let
@@ -2211,8 +2217,6 @@ struct
                         val check = fn (_, x) => case x of M.SVariable x => x <> thunk | _ => true
                       in Try.require (Vector.forall (fvs, check))
                       end
-                  val code = <- code
-                  val iFunc = IFunc.getIFuncByName (imil, code)
                   (* Check thunk argument is not used in iFunc *)
                   val { thunk = thunk', ... } = <- (MU.CallConv.Dec.ccThunk (IFunc.getCallConv (imil, iFunc)))
                   val () = Try.require (Vector.isEmpty (Use.getUses (imil, thunk')))
