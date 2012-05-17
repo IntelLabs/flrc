@@ -1,9 +1,10 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Intel FL to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (* For when things go wrong *)
 
-signature FAIL = sig
+signature FAIL =
+sig
     val assert : string * string * string * (unit -> bool) -> unit
                  (* struct, routine, failure msg, assert fn *)
     val fail : string * string * string -> 'a  (* struct, routine, msg *)
@@ -11,7 +12,8 @@ signature FAIL = sig
                         (* struct, routine, what *)
 end;
 
-structure Fail :> FAIL = struct
+structure Fail :> FAIL =
+struct
 
     fun fail (s, r, m) = Assert.fail (s ^ "." ^ r ^ ": " ^ m)
     fun assert (s, r, m, assert) =

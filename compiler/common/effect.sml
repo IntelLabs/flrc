@@ -1,7 +1,7 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Intel FL to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
-(* Effects for Core P language *)
+(* Effects *)
 
 signature EFFECT =
 sig
@@ -27,7 +27,6 @@ sig
   val Returns   : effect 
   val Fails     : effect
 
-  (* Non P-level effects *)
   val InitGen   : effect  (* allocates not fully initialised objects *)
   val InitRead  : effect  (* reads from fields not initialised at allocation *)
   val InitWrite : effect  (* initialises fields not at allocation *)

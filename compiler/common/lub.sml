@@ -1,45 +1,26 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Intel FL to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 signature LUB =
 sig
 
-  type 'a lubber = ('a * 'a)
-                   -> 'a option
-  val option : 'a lubber 
-               -> 'a option lubber
-  val vector : 'a lubber 
-               ->  'a Vector.t lubber
-  val pair   : ('a lubber * 'b lubber)
-               -> ('a * 'b) lubber
-  val triple : ('a lubber * 'b lubber * 'c lubber)
-               -> ('a * 'b * 'c) lubber
+  type 'a lubber = ('a * 'a) -> 'a option
+  val option : 'a lubber -> 'a option lubber
+  val vector : 'a lubber ->  'a Vector.t lubber
+  val pair   : ('a lubber * 'b lubber) -> ('a * 'b) lubber
+  val triple : ('a lubber * 'b lubber * 'c lubber) -> ('a * 'b * 'c) lubber
   (* (equal eq) (a, b) => SOME c iff eq (a, b) 
    * where c is one of a or b *)
-  val equal : ('a * 'a -> bool)
-              -> 'a lubber
+  val equal : ('a * 'a -> bool) -> 'a lubber
   (* (cmp f) = (equal (fn p => (cmp p) = EQUAL)) *)
-  val cmp : ('a * 'a -> order)
-              -> 'a lubber
+  val cmp : ('a * 'a -> order) -> 'a lubber
 
   val pairWise : 
-      ('dict * 'dict * (('key 
-                         * 'elt option 
-                         * 'elt option ) 
-                        -> 'elt) 
-       -> 'dict)
-      -> 'elt lubber
-      -> 'dict lubber
+      ('dict * 'dict * (('key * 'elt option * 'elt option ) -> 'elt) -> 'dict) -> 'elt lubber -> 'dict lubber
 
   (* No widening *)
   val pairWiseStrict : 
-      ('dict * 'dict * (('key 
-                         * 'elt option 
-                         * 'elt option) 
-                        -> 'elt) 
-       -> 'dict)
-      -> 'elt lubber
-      -> 'dict lubber
+      ('dict * 'dict * (('key * 'elt option * 'elt option) -> 'elt) -> 'dict) -> 'elt lubber -> 'dict lubber
 
 end
 

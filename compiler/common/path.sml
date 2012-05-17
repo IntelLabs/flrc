@@ -1,4 +1,4 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Intel FL to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (* Utilities for dealing with different os path syntax *)

@@ -1,4 +1,4 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Intel Haskell to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 signature HASKELL =

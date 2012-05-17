@@ -1,4 +1,4 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Intel FL to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (* The configuration of the compiler
@@ -6,7 +6,8 @@
  * and passed down into all parts of the compiler.
  *)
 
-signature CONFIG = sig
+signature CONFIG =
+sig
   datatype agcProg = AgcGcMf | AgcTgc | AgcCgc
   datatype gcStyle = GcsNone | GcsConservative | GcsAccurate
   type gcConfig = {registerVtables: bool,
@@ -38,7 +39,6 @@ signature CONFIG = sig
                      | ViAVX            (* AVX *)
                      | ViEMU            (* emulated *)
                      | ViSSE of int*int (* SSE x.y *)
-
   (* isa: The target ISA
    * instructions : explicitly enabled/disabled/emulated instructions 
    *  - overrides the isa setting
@@ -53,28 +53,29 @@ signature CONFIG = sig
                                                  emulated : string List.t, 
                                                  enabled  : string List.t}
                                 }
-  datatype t = C of {agc: agcProg,
-		     control_: string StringDict.t,
-		     core: Path.t,
-		     debugLev: verbosity,
-		     debug_: StringSet.t,
-		     feature_: StringSet.t,
+  datatype t = C of {agc : agcProg,
+		     control_ : string StringDict.t,
+		     core : Path.t,
+		     debugLev : verbosity,
+		     debug_ : StringSet.t,
+		     feature_ : StringSet.t,
 		     gc: {registerVtables: bool,
 			  reportGlobals: bool,
 			  reportRoots: bool,
 			  rootsInGlobals: bool,
 			  style: gcStyle,
 			  tagOnly: bool},
-		     ghcOpt: string list,
+		     ghcOpt : string list,
 		     home : Path.t,
                      host : os,
+                     iflcLibDirectory : Path.t,
+		     iflcOpt : int,
 		     keep: {cp: bool, hcr : bool, obj: bool, pil: bool},
 		     linkStr: string list,
 		     linkDirectories: string list,
 		     linkLibraries: string list,
 		     logLev: verbosity,
 		     output: outputKind,
-		     pOpt: int,
 		     parStyle: parStyle,
 		     passes: {enable: bool,
 			      showPost: bool,
@@ -84,7 +85,6 @@ signature CONFIG = sig
 		     pilcStr: string list,
 		     pilDebug: bool,
 		     pilOpt: int,
-                     pLibDirectory : Path.t,
 		     printResult: bool,
 		     report: StringSet.t,
                      runtime : runtimeConfig,
@@ -107,8 +107,11 @@ signature CONFIG = sig
 	      rootsInGlobals: bool,
 	      style: gcStyle,
 	      tagOnly: bool}
+  val ghcOpt: t -> string list
   val home : t -> Path.t
   val host : t -> os
+  val iflcLibDirectory : t -> Path.t
+  val iflcOpt: t -> int
   val keep: t * ({cp: bool, hcr : bool, obj: bool, pil: bool} -> 'a) -> 'a
   val keepCp: t -> bool
   val keepHcr : t -> bool
@@ -119,8 +122,6 @@ signature CONFIG = sig
   val linkLibraries: t -> string list
   val logLevel: t * 'a -> int
   val output: t -> outputKind
-  val pOpt: t -> int
-  val ghcOpt: t -> string list
   val parStyle: t -> parStyle
   val passEnabled: t * string -> bool
   val passGet: t * string
@@ -138,7 +139,6 @@ signature CONFIG = sig
   val pilDebug: t -> bool
   val pilOpt: t -> int
   val pilcStr: t -> string list
-  val pLibDirectory : t -> Path.t
   val printResult: t -> bool
   val reportEnabled: t * string -> bool
   val runtime : t -> runtimeConfig
@@ -200,9 +200,10 @@ signature CONFIG = sig
   end
 end
 
-structure Config :> CONFIG = struct
+structure Config :> CONFIG =
+struct
 
-    (* Static debug or production build of ppiler *)
+    (* Static debug or production build of iflc *)
     val debug : bool = true
 
     datatype outputKind = OkC | OkPillar
@@ -301,6 +302,8 @@ structure Config :> CONFIG = struct
          ghcOpt           : string list,
          home             : Path.t,
          host             : os,
+         iflcLibDirectory : Path.t,
+         iflcOpt          : int,
          keep             : {cp : bool, hcr : bool, pil : bool, obj : bool},
          linkStr          : string list,
          linkDirectories  : string list,
@@ -312,8 +315,6 @@ structure Config :> CONFIG = struct
          pilcStr          : string list,
          pilDebug         : bool,
          pilOpt           : int,
-         pLibDirectory    : Path.t,
-         pOpt             : int,
          printResult      : bool,
          report           : StringSet.t,
          runtime          : runtimeConfig,
@@ -334,9 +335,11 @@ structure Config :> CONFIG = struct
     fun agc c                         = get (c, #agc)
     fun core c                        = get (c, #core)
     fun gc c                          = get (c, #gc)
+    fun ghcOpt c                      = get (c, #ghcOpt)
     fun home c                        = get (c, #home)
     fun host c                        = get (c, #host)
-    fun ghcOpt c                      = get (c, #ghcOpt)
+    fun iflcLibDirectory c            = get (c, #iflcLibDirectory)
+    fun iflcOpt c                     = get (c, #iflcOpt)
     fun linkStr c                     = get (c, #linkStr)
     fun linkDirectories c             = get (c, #linkDirectories)
     fun linkLibraries c               = get (c, #linkLibraries)
@@ -345,8 +348,6 @@ structure Config :> CONFIG = struct
     fun pilcStr c                     = get (c, #pilcStr)
     fun pilDebug c                    = get (c, #pilDebug)
     fun pilOpt c                      = get (c, #pilOpt)
-    fun pLibDirectory c               = get (c, #pLibDirectory)
-    fun pOpt c                        = get (c, #pOpt)
     fun printResult c                 = get (c, #printResult)
     fun runtime c                     = get (c, #runtime)
     fun stop c                        = get (c, #stop)

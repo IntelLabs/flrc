@@ -1,4 +1,4 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Intel FL to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (* This file contains the top level driver for the compiler *)
@@ -159,7 +159,8 @@ struct
 
   fun printVersion () =
       let
-        val version = "Intel PPiler " ^ Version.iflcVersion ^ (if Config.debug then " (DEBUG)" else "")
+        val version =
+            "Intel Functional Language Compiler " ^ Version.iflcVersion ^ (if Config.debug then " (DEBUG)" else "")
         val () = Out.outputl (Out.standard, version)
         val () = List.foreach (langVersions, fn s => Out.outputl (Out.standard, s))
         val () = Out.outputl (Out.standard, "Build " ^ Version.build)
@@ -173,10 +174,20 @@ struct
       in ()
       end
 
-  fun parseCommandLine home =
-      let 
+  fun parseCommandLine () =
+      let
+        val initLibDir =
+            case Process.getEnv "IFLCLIB"
+             of SOME d => d
+              | _ => OS.Path.getParent (OS.Path.dir (CommandLine.name ()))
+        val initLibDir = Path.fromString (OS.Path.mkCanonical initLibDir)
+        val initHomeDir =
+            case Process.getEnv "IFLCHOME"
+             of SOME d => Path.fromString (OS.Path.mkCanonical d)
+              | _ => initLibDir
+
         val agc         = ref Config.AgcTgc
-        val core        = ref (Path.append (home, Path.fromString "runtime/core-ppiler"))
+        val core        = ref (Path.append (initHomeDir, Path.fromString "runtime/core-ppiler"))
         val expert      = ref false
         val futures     = ref Config.PNone
         val gcs         = ref NONE
@@ -186,6 +197,7 @@ struct
                                  | MLton.Platform.OS.Linux => Config.OsLinux
                                  | MLton.Platform.OS.MinGW => Config.OsMinGW
 			         | p => raise Fail ("Unsupported host: " ^ MLton.Platform.OS.toString p))
+        val libDir      = ref initLibDir
         val keepcp      = ref false
         val keephcr     = ref false
         val keeppil     = ref false
@@ -396,11 +408,7 @@ struct
 
         val pilDebug = ref false
         val pilOpt = ref 3
-        val pLibDirectory = 
-            ref (case Process.getEnv "PLIB"
-                  of SOME d => Path.fromString (OS.Path.mkCanonical d)
-                   | _ => raise Fail "$PLIB isn't set")
-        val pOpt = ref 3
+        val iflcOpt = ref 3
         val ghcOpt = ref []
         val pilcStr = ref []
         val linkStr = ref []
@@ -515,6 +523,18 @@ struct
                                  | "mingw"  => host := Config.OsMinGW
                                  | _ => usage ("invalid -host arg: " ^ s))),
 
+                   (Popt.Normal, "iflcLib", " directory", "use alternate iflc library",
+                    Popt.SpaceString (fn s => libDir := Path.fromString (OS.Path.mkCanonical s))),
+
+                   (Popt.Normal, "iflcO", " {0|1|2|3}",
+                    "set iflc optimization level",
+                    Popt.Int
+                      (fn i =>
+                          if i <= 3 then 
+                            (iflcOpt := i)
+                          else
+                            usage ("invalid -iflcO arg: " ^ (Int.toString i)))),
+
                    (Popt.Normal, "keep", " {cp|hcr|pil|obj}",
                     "keep generated files",
                     Popt.SpaceString
@@ -539,7 +559,7 @@ struct
                     Popt.Int
                       (fn i =>
                           if i <= 3 then 
-                            (pilOpt := i; pOpt := i)
+                            (pilOpt := i; iflcOpt := i)
                           else
                             usage ("invalid -O arg: " ^ (Int.toString i)))),
 
@@ -563,18 +583,6 @@ struct
                       (fn i =>
                           if i <= 3 then 
                             (pilOpt := i)
-                          else
-                            usage ("invalid -pilO arg: " ^ (Int.toString i)))),
-
-                   (Popt.Normal, "pLib", " directory", "use alternate p library",
-                    Popt.SpaceString (fn s => pLibDirectory := Path.fromString s)),
-
-                   (Popt.Normal, "pO", " {0|1|2|3}",
-                    "set p optimization level",
-                    Popt.Int
-                      (fn i =>
-                          if i <= 3 then 
-                            (pOpt := i)
                           else
                             usage ("invalid -pilO arg: " ^ (Int.toString i)))),
 
@@ -724,6 +732,11 @@ struct
       case parse (CommandLine.arguments ()) 
        of Result.Yes files =>
           let
+            val home =
+                case Process.getEnv "IFLCHOME"
+                 of SOME d => Path.fromString (OS.Path.mkCanonical d)
+                  | _ => !libDir
+
             val output = 
                 case !output
                  of NONE => 
@@ -816,6 +829,8 @@ struct
               gc               = gci,
               home             = home,
               host             = !host,
+              iflcLibDirectory = !libDir,
+              iflcOpt          = !iflcOpt,
               keep             = {cp = !keepcp, hcr = !keephcr, pil = !keeppil, obj = !keepo},
               linkStr          = List.rev (!linkStr),
               linkDirectories  = [],
@@ -827,8 +842,6 @@ struct
               pilcStr          = List.rev (!pilcStr),
               pilDebug         = !pilDebug,
               pilOpt           = !pilOpt,
-              pLibDirectory    = !pLibDirectory,
-              pOpt             = !pOpt,
               ghcOpt           = !ghcOpt,
               printResult      = !printResult,
               report           = !report,
@@ -850,13 +863,7 @@ struct
 
   fun main () =
       let
-        val home = 
-            (case Process.getEnv("PHOME")
-              of SOME d => OS.Path.mkCanonical d
-               | NONE   => OS.Path.mkAbsolute {path = OS.Path.currentArc,
-                                               relativeTo = OS.FileSys.getDir()})
-        val home' = Path.fromString home
-        val (config, files) = parseCommandLine home'
+        val (config, files) = parseCommandLine ()
         val () = if not (Config.silent config) then printVersion () else ()
       in
         List.foreach (files, fn fname => Compilation.compileWP (config, fname))

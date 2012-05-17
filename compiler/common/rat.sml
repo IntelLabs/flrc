@@ -1,9 +1,10 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Intel FL to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (* Rationals *)
 
-signature RAT = sig
+signature RAT =
+sig
     type t
     val rat : IntInf.t * IntInf.t -> t
     val toInts : t -> IntInf.t * IntInf.t
@@ -31,7 +32,8 @@ signature RAT = sig
     val quot : t * t -> t
 end;
 
-structure Rat :> RAT = struct
+structure Rat :> RAT =
+struct
     (* (c0,c1) represents the x such that c0+c1*x=0 *)
     (* invariants: c1>0, gcd(c0,c1)=1 *)
     type t = IntInf.t * IntInf.t

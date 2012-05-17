@@ -4,6 +4,7 @@
 local
         $(SML_LIB)/mlton/sources.mlb
         ../common/common.mlb
+        ../core-op/core-op.mlb
         ../mil/mil.mlb
         pil.sml
         runtime.sml

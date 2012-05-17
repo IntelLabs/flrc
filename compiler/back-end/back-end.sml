@@ -32,26 +32,26 @@ struct
   val runtimeDirectory = 
    fn config => Path.snoc (Config.home config, "runtime")
 
-  val pLibDirectory = 
-   fn config => Config.pLibDirectory config
+  val iflcLibDirectory = 
+   fn config => Config.iflcLibDirectory config
       
-  val pLibLibDirectory = 
-   fn config => Path.snoc (pLibDirectory config, "lib")
+  val iflcLibLibDirectory = 
+   fn config => Path.snoc (iflcLibDirectory config, "lib")
 
-  val pLibIncludeDirectory =
-   fn config => Path.snoc (pLibDirectory config, "include")
+  val iflcLibIncludeDirectory =
+   fn config => Path.snoc (iflcLibDirectory config, "include")
                 
-  val pLibBinDirectory = 
-   fn config => Path.snoc (pLibDirectory config, "bin")
+  val iflcLibBinDirectory = 
+   fn config => Path.snoc (iflcLibDirectory config, "bin")
 
-  val pLibLibrary = 
-   fn (config, file) => Path.snoc (pLibDirectory config, file)
+  val iflcLibLibrary = 
+   fn (config, file) => Path.snoc (iflcLibDirectory config, file)
 
-  val pLibInclude = 
-   fn (config, file) => Path.snoc (pLibIncludeDirectory config, file)
+  val iflcLibInclude = 
+   fn (config, file) => Path.snoc (iflcLibIncludeDirectory config, file)
 
-  val pLibExe = 
-   fn (config, exe) => Path.snoc (pLibBinDirectory config, exe)
+  val iflcLibExe = 
+   fn (config, exe) => Path.snoc (iflcLibBinDirectory config, exe)
 
   fun useFutures (config : Config.t) = 
        case Config.parStyle config
@@ -184,33 +184,33 @@ struct
       (case compiler 
         of CcGCC    => (Pass.run, Path.fromString "gcc")
          | CcICC    => (Pass.run, Path.fromString "icl")
-         | CcOpc    => (Pass.runWithSh, pLibExe (config, "pilicl"))
-         | CcIpc    => (Pass.runWithSh, pLibExe (config, "pilicl")))
+         | CcOpc    => (Pass.runWithSh, iflcLibExe (config, "pilicl"))
+         | CcIpc    => (Pass.runWithSh, iflcLibExe (config, "pilicl")))
       
   fun includes (config, compiler) = 
       let
         val mcrt = 
             if useFutures config then
-              [pLibInclude (config, "mcrt")]
+              [iflcLibInclude (config, "mcrt")]
             else []
         val gmp = 
             if noGMP config then
               []
             else 
-              [pLibInclude (config, "gmp")]
+              [iflcLibInclude (config, "gmp")]
         val files = 
             (case compiler
               of CcGCC => 
-                 [pLibInclude (config, "gc-bdw"), runtimeDirectory config, pLibInclude (config, "prt-pthreads")] 
+                 [iflcLibInclude (config, "gc-bdw"), runtimeDirectory config, iflcLibInclude (config, "prt-pthreads")] 
                  @ mcrt @ gmp
                | CcICC => 
-                 [pLibInclude (config, "gc-bdw"), runtimeDirectory config, pLibInclude (config, "prt-pthreads")] 
+                 [iflcLibInclude (config, "gc-bdw"), runtimeDirectory config, iflcLibInclude (config, "prt-pthreads")] 
                  @ mcrt @ gmp
                | CcOpc => 
-                 [runtimeDirectory config, pLibInclude (config, "prt"), pLibInclude (config, "pgc")] 
+                 [runtimeDirectory config, iflcLibInclude (config, "prt"), iflcLibInclude (config, "pgc")] 
                  @ mcrt @gmp
                | CcIpc => 
-                 [runtimeDirectory config, pLibInclude (config, "prt-pthreads"), pLibInclude (config, "pgc")]
+                 [runtimeDirectory config, iflcLibInclude (config, "prt-pthreads"), iflcLibInclude (config, "pgc")]
                  @gmp)
 
         val flags = List.map (files, fn s => "-I" ^ Config.pathToHostString (config, s))
@@ -358,13 +358,13 @@ struct
 
   fun libDirs (config : Config.t, linker : linker) : string list =
       let
-        val pLibDir = pLibLibDirectory config
+        val iflcLibDir = iflcLibLibDirectory config
         val libs = 
             case linker
-             of LdGCC    => [pLibDir] (*[Path.snoc (pLibDir, "gcc")]*)
-              | LdICC    => [pLibDir]
-              | LdOpc    => [pLibDir]
-              | LdIpc    => [pLibDir, Path.snoc (pLibDir, "vs2010")]
+             of LdGCC    => [iflcLibDir] (*[Path.snoc (iflcLibDir, "gcc")]*)
+              | LdICC    => [iflcLibDir]
+              | LdOpc    => [iflcLibDir]
+              | LdIpc    => [iflcLibDir, Path.snoc (iflcLibDir, "vs2010")]
         val libs = List.map (libs, fn l => Config.pathToHostString(config, l))
       in libs
       end
@@ -563,8 +563,8 @@ struct
       (case ld
         of LdGCC    => (Pass.run, Path.fromString "gcc")
          | LdICC    => (Pass.run, Path.fromString "icl")
-         | LdOpc    => (Pass.runWithSh, pLibExe (config, "pilink"))
-         | LdIpc    => (Pass.runWithSh, pLibExe (config, "pilink")))
+         | LdOpc    => (Pass.runWithSh, iflcLibExe (config, "pilink"))
+         | LdIpc    => (Pass.runWithSh, iflcLibExe (config, "pilink")))
       
   structure LdOptions =
   struct
@@ -753,10 +753,10 @@ struct
         val outFile = exeFile (config, ldTag, fname)
         val cfg = (config, ldTag)
         val ld = linker cfg
-        val pLibLibs = libDirs (config, ldTag)
-        val pLibOptions = List.map (pLibLibs, fn lib => LdOptions.libPath (cfg, lib))
+        val iflcLibLibs = libDirs (config, ldTag)
+        val iflcLibOptions = List.map (iflcLibLibs, fn lib => LdOptions.libPath (cfg, lib))
         val options = List.concat [LdOptions.link cfg,
-                                   pLibOptions,
+                                   iflcLibOptions,
                                    LdOptions.opt cfg, 
                                    LdOptions.defaultStack cfg,
                                    LdOptions.control cfg,

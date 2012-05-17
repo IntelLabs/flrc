@@ -1,4 +1,4 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Intel FL to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (* Talking to the user *)
@@ -37,7 +37,7 @@ struct
     type level = int
 
     fun error (env, s) =
-        Out.output (Out.error, "ppiler: error: " ^ s ^ "\n")
+        Out.output (Out.error, "iflc: error: " ^ s ^ "\n")
 
     fun say (cfg, s) = 
         let

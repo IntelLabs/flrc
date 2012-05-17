@@ -1,4 +1,4 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Intel FL to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 local
@@ -63,7 +63,7 @@ local
         end
         rename.sml
         effect.sml
-        prims.sml
+
 in
         signature CHAT
         signature DICT
@@ -130,7 +130,6 @@ in
         structure PassData
         structure Path
         structure PolyLabeledGraph
-        structure Prims
         structure Rat
         structure Rename
         structure Stats
@@ -142,4 +141,5 @@ in
         structure UnParser
         structure Utils
         structure Word32
+
 end

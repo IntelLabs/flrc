@@ -179,7 +179,7 @@ struct
   val dftControls =
       Vector.fromList [o0Control, o1Control, o2Control, o3Control]
 
-  fun dftControl c = Vector.sub (dftControls, Config.pOpt c)
+  fun dftControl c = Vector.sub (dftControls, Config.iflcOpt c)
 
   fun describePass (c, p) =
       L.seq [Char.layout c, L.str " => ", L.str (Pass.getName p), L.str ": ",

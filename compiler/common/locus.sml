@@ -1,4 +1,4 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Intel FL to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 signature LOCUS =
@@ -21,7 +21,7 @@ struct
 
   val dummyLineCol = LC {line = 0, col = 0}
 
-  val dummy = L {file = "in.sp", start = dummyLineCol, finish = dummyLineCol}
+  val dummy = L {file = "xxx", start = dummyLineCol, finish = dummyLineCol}
 
   fun toString (L {file, start = LC {line = sl, col = sc}, finish = LC {line = el, col = ec}}) =
       file ^ "(" ^

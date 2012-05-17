@@ -1,7 +1,8 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Intel FL to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
-signature RENAME = sig
+signature RENAME =
+sig
 
     type variable = Identifier.variable
     type t = variable Identifier.VariableDict.t
@@ -14,11 +15,13 @@ signature RENAME = sig
     val renameTo : t * variable * variable -> t
 
     (* If the variable is renamed, return the new variable,
-     * otherwise return the old. *)
+     * otherwise return the old.
+     *)
     val use      : t * variable -> variable
 
     (* If the variable is renamed, return the new variable,
-     * otherwise return NONE. *)
+     * otherwise return NONE.
+     *)
     val use'     : t * variable -> variable option
 
     (* Return if variable is renamed *)
@@ -40,8 +43,8 @@ signature RENAME = sig
     val compose      : t * t -> t
 
     val layout       : t -> Layout.t    
-end
 
+end
 
 structure Rename :> RENAME =
 struct
@@ -59,9 +62,7 @@ struct
     fun renameTo (map, x, y) =
         if (x = y) then map 
         else if renamed(map,x)  then
-            Fail.fail ("Rename", 
-                       "renameTo", 
-                       "saw repeated variable " ^ Identifier.variableString' x)
+            Fail.fail ("Rename", "renameTo", "saw repeated variable " ^ Identifier.variableString' x)
         else
             let
                 val map = VD.insert(map,x,y)

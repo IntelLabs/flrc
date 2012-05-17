@@ -1,11 +1,12 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Intel FL to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (* Utility stuff not in the MLton library *)
 
 (* This allows us to use the MLton extended Int type, while
  * checking that we are using 32 bit ints.  If 32 bit ints are
- * not required, just use Int.  We should revisit this.  *)
+ * not required, just use Int.  We should revisit this.
+ *)
 structure Int32 :> INTEGER where type t = Int32.int = Int
 structure Word32 = Word32
 structure Utils = struct
@@ -2072,8 +2073,9 @@ end;
 
 
 (* A lattice whose elements consists of optional values.
-* NONE and SOME are unrelated, SOMEs are related according to the
-* meet/join of their contents *)
+ * NONE and SOME are unrelated, SOMEs are related according to the
+ * meet/join of their contents
+ *)
 functor OptionLatticeFn(type element
                         val lub : element * element -> element option
                         )
@@ -2129,13 +2131,13 @@ struct
   val fill = 
    fn (b, a) => 
       (case !b
-        of SOME _ => Fail.fail ("utils.sml", "fill", "Already filled")
+        of SOME _ => Fail.fail ("BackPatch", "fill", "Already filled")
          | NONE => b := SOME a)
   val get = 
    fn b => 
       (case !b
         of SOME a => a
-         | NONE => Fail.fail ("utils.sml", "get", "Not yet filled"))
+         | NONE => Fail.fail ("BackPatch", "get", "Not yet filled"))
 
   type ('a, 'b) func = ('a -> 'b) t
 

@@ -1,4 +1,4 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Intel FL to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (* Graph implementations *)
@@ -272,8 +272,7 @@ struct
         fun nodeToNewNode (node) = 
             case IntDict.lookup (idToNewNodeDict, getNodeId node)
              of SOME n => n
-              | NONE => fail ("nodeToNewNode", 
-                              "Could not map node to new node")
+              | NONE => fail ("nodeToNewNode", "Could not map node to new node")
         (* Map nodes. *)
         fun mapEdge (E e) = 
             let
@@ -302,8 +301,7 @@ struct
         fun edgeToNewEdge (edge) = 
             case IntDict.lookup (idToNewEdgeDict, getEdgeId edge)
              of SOME n => n
-              | NONE => fail ("edgeToNewEdge", 
-                              "Could not map edge to new edge")
+              | NONE => fail ("edgeToNewEdge", "Could not map edge to new edge")
         val ref idGen = #idGen g
       in
         (G {nodes = ref newNodes, 

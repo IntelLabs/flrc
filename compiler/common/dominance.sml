@@ -1,8 +1,9 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Intel FL to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (*  Dominance module: Takes  a dominator  tree and  provides dominance
- * information. *)
+ * information.
+ *)
 
 signature DOMINANCE =
 sig

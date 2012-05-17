@@ -1,4 +1,4 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Intel FL to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (* Pass control file *)
@@ -520,8 +520,10 @@ struct
             (case MLton.Process.reap p 
               of Posix.Process.W_EXITED => ()
                | Posix.Process.W_EXITSTATUS s => Fail.fail ("pass", "run", "command exit status " ^ Word8.toString s)
-               | Posix.Process.W_SIGNALED s => Fail.fail ("pass", "run", "command signaled " ^ SysWord.toString (Posix.Signal.toWord s))
-               | Posix.Process.W_STOPPED s => Fail.fail ("pass", "run", "command stop signaled " ^ SysWord.toString (Posix.Signal.toWord s)))
+               | Posix.Process.W_SIGNALED s =>
+                 Fail.fail ("pass", "run", "command signaled " ^ SysWord.toString (Posix.Signal.toWord s))
+               | Posix.Process.W_STOPPED s =>
+                 Fail.fail ("pass", "run", "command stop signaled " ^ SysWord.toString (Posix.Signal.toWord s)))
       end
 
   fun run (config, logger, cmd, args) = 
