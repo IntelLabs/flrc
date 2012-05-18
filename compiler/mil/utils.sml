@@ -3214,7 +3214,7 @@ struct
        * they need to be assigned effects that prevent re-ordering 
        *)
       fun thunkInit {thunk, ...} =
-          if Option.isSome thunk then InitWriteS else InitGenS
+          if Option.isSome thunk then InitWriteS else genS
       fun thunkValue {thunk, ...} =
           if Option.isSome thunk then InitWriteS else T
       fun pFunctionInit {cls, ...} =
