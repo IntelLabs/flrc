@@ -8,6 +8,8 @@ sig
   val debugs : Config.Debug.debug list
   val features : Config.Feature.feature list
   val exts : (string * (unit, Mil.t * string Identifier.VariableDict.t option) Pass.processor) list
+  val keeps : StringSet.t
+  val stops : StringSet.t
   val langVersions : string list
 end;
 
@@ -88,7 +90,7 @@ struct
 
   val doGhcCore =
       doPass CoreHsParse.pass >>
-      stopAt Config.SpHsc >>
+      stopAt "hsc" >>
       doPass CoreNormalize.pass >> 
       doPass CoreToANormLazy.pass >> 
       doPass ANormLazyToStrict.pass >> 
@@ -106,6 +108,10 @@ struct
       [("hcr", doGhcCore),
        ("hs", doGhc "hs"),
        ("lhs", doGhc "lhs")]
+
+  val keeps = StringSet.fromList ["hcr"]
+
+  val stops = StringSet.fromList ["hsc"]
 
   val langVersion = "GHC 7.2.2"
 

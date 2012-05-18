@@ -14,6 +14,8 @@ functor Driver
    val debugs : Config.Debug.debug list
    val features : Config.Feature.feature list
    val exts : (string * (unit, Mil.t * string Identifier.VariableDict.t option) Pass.processor) list
+   val keeps : StringSet.t
+   val stops : StringSet.t
    val langVersions : string list)
   :> DRIVER =
 struct
@@ -26,6 +28,8 @@ struct
                          val indent = 0)
 
   structure L = Layout
+  structure SD = StringDict
+  structure SS = StringSet
 
   structure Passes =
   struct
@@ -48,7 +52,7 @@ struct
 
     val (controls, debugs, features, stats, passMap) =
         let
-          val x = (nonPassControls, nonPassDebugs, nonPassFeatures, [], StringDict.empty)
+          val x = (nonPassControls, nonPassDebugs, nonPassFeatures, [], SD.empty)
           val x = List.fold (topLevelPassesUU, x, Pass.addPassDriverInfo)
           val x = List.fold (topLevelPassesUM, x, Pass.addPassDriverInfo)
           val x = List.fold (topLevelPassesBB, x, Pass.addPassDriverInfo)
@@ -56,6 +60,9 @@ struct
           val x = addPasses x
         in x
         end
+
+    val keeps = List.fold (["pil", "obj"], keeps, SS.insert o Utils.flip2)
+    val stops = List.fold (["m", "pil", "obj", "exe"], stops, SS.insert o Utils.flip2)
 
   end (* Passes *)
 
@@ -81,14 +88,14 @@ struct
         doPass Link.pass
     val doPil =
         doPass PilCompile.pass >>
-        stopAt Config.SpO >>
+        stopAt "obj" >>
         doObj
     val doMil =
         first (doB MilCompile.pass) >>
-        stopAt Config.SpM >>
+        stopAt "m" >>
         doPass CoreHsLinkOption.pass >>>
         doPass Outputter.pass >>
-        stopAt Config.SpPil >>
+        stopAt "pil" >>
         doPil
     val doMilF =
         doPass MilParse.pass >>
@@ -187,7 +194,6 @@ struct
               | _ => initLibDir
 
         val agc         = ref Config.AgcTgc
-        val core        = ref (Path.append (initHomeDir, Path.fromString "runtime/core-ppiler"))
         val expert      = ref false
         val futures     = ref Config.PNone
         val gcs         = ref NONE
@@ -198,19 +204,16 @@ struct
                                  | MLton.Platform.OS.MinGW => Config.OsMinGW
 			         | p => raise Fail ("Unsupported host: " ^ MLton.Platform.OS.toString p))
         val libDir      = ref initLibDir
-        val keepcp      = ref false
-        val keephcr     = ref false
-        val keeppil     = ref false
-        val keepo       = ref false
+        val keeps       = Passes.keeps
+        val keep        = ref SS.empty
         val output      = ref NONE
-        val printResult = ref false
         val timeExe     = ref NONE
         val single      = ref NONE
         val sloppyFp    = ref false
         val stackMain   = ref NONE
         val stackWorker = ref NONE
-        val stop        = ref Config.SpExe
-        val thunks      = ref Config.TsTwoVersion
+        val stops       = Passes.stops
+        val stop        = ref "exe"
         val toolset     = ref Config.TsIpc
         val logLev      = ref Config.VSilent
         val warnLev     = ref Config.VSilent
@@ -220,17 +223,17 @@ struct
         val vInstrs     = ref {disabled = [], emulated = [], enabled = []}
         val vSizes      = ref {disabled = [], emulated = [], enabled = []}
 
-        val passes = StringDict.map (Passes.passMap, PassData.mk)
+        val passes = SD.map (Passes.passMap, PassData.mk)
         val passesString =
             let
               fun doOne (n, pd) =
                   "  " ^ n ^ ": " ^ PassData.getDescription pd ^ "\n"
-              val s = String.concat (List.map (StringDict.toList passes, doOne))
+              val s = String.concat (List.map (SD.toList passes, doOne))
             in s
             end
         fun invalidPass name = "invalid pass arg: " ^ name ^ "\ntry one of:\n" ^ passesString
         fun liftPassF (usage, name, f) =
-            case StringDict.lookup (passes, name)
+            case SD.lookup (passes, name)
              of SOME pd => f pd
               | NONE => usage (invalidPass name)
         fun setEnabled (usage, name, b) = 
@@ -276,7 +279,7 @@ struct
               | #"*" =>
                 let
                   fun doOne (_, pd) = PassData.setShowPost (pd, true)
-                  val () = StringDict.foreach (passes, doOne)
+                  val () = SD.foreach (passes, doOne)
                 in ()
                 end
               | _ => setShowPost (usage, s, true)
@@ -306,7 +309,7 @@ struct
               | #"*" =>
                 let
                   fun doOne (_, pd) = PassData.setStatPost (pd, true)
-                  val () = StringDict.foreach (passes, doOne)
+                  val () = SD.foreach (passes, doOne)
                 in ()
                 end
               | _ => setStatPost (usage, s, true)
@@ -395,13 +398,13 @@ struct
               else
                 usage ("bad control: " ^ c ^ "\n" ^ listControls ())
 
-        val report = ref StringSet.empty
+        val report = ref SS.empty
         fun addReport s = 
             let
-              val add = fn s => report := StringSet.insert (!report, s)
+              val add = fn s => report := SS.insert (!report, s)
             in
               if s = "*" then 
-                List.foreach (StringDict.toList passes, fn (s, _) => add s)
+                List.foreach (SD.toList passes, fn (s, _) => add s)
               else
                 add s
             end
@@ -438,20 +441,6 @@ struct
                     Popt.SpaceString2
                       (fn (s1, s2) => addControl (usage, s1, s2))),
                              
-                   (Popt.Normal, "core", " filename",
-                    "specify the path to core.p",
-                    Popt.SpaceString 
-                      (fn s => 
-                          let
-                            val s = 
-                                case OS.Path.splitBaseExt (OS.Path.mkCanonical s)
-                                 of {base, ext = SOME "p"}  => base
-                                  | {base, ext = SOME "sp"} => base
-                                  | _ => s
-                            val s = Path.fromString s
-                          in core := s
-                          end)),
-
                    (Popt.Normal, "D", "",
                     "generate debug info/checks",
                     Popt.trueRef pilDebug),
@@ -535,16 +524,18 @@ struct
                           else
                             usage ("invalid -iflcO arg: " ^ (Int.toString i)))),
 
-                   (Popt.Normal, "keep", " {cp|hcr|pil|obj}",
+                   (Popt.Normal, "keep",
+                    let
+                      val opts = SS.fold (keeps, "", fn (s, opts) => opts ^ s ^ "|")
+                      val opts = " {" ^ String.dropLast opts ^ "}"
+                    in opts
+                    end,
                     "keep generated files",
                     Popt.SpaceString
                       (fn s =>
-                          (case s of
-                             "cp"  => keepcp := true
-                           | "hcr" => keephcr := true
-                           | "pil" => keeppil := true
-                           | "obj" => keepo := true
-                           | _ => usage ("invalid -keep arg: " ^ s)))),
+                          if SS.member (keeps, s)
+                          then keep := SS.insert (!keep, s)
+                          else usage ("invalid -keep arg: " ^ s))),
 
                    (Popt.Normal, "link", " string",
                     "pass string to linker",
@@ -589,9 +580,6 @@ struct
                    (Popt.Normal, "print", " pass", "print specified pass",
                     Popt.SpaceString (fn s => doPrint (usage, s))),
 
-                   (Popt.Normal, "printResult", " {false|true}",
-                    "print the program's result", Popt.boolRef printResult),
-
                    (Popt.Expert, "st", " {false|true}",
                     "use the single threaded runtime",
                     Popt.Bool (fn b => single := SOME b)),
@@ -613,32 +601,18 @@ struct
                     "report pass stats: * for all passes",
                     Popt.SpaceString addReport),
 
-                   (Popt.Normal, "stop", " {cp|h|m|hsc|pil|obj|exe}",
+                   (Popt.Normal, "stop",
+                    let
+                      val opts = SS.fold (stops, "", fn (s, opts) => opts ^ s ^ "|")
+                      val opts = " {" ^ String.dropLast opts ^ "}"
+                    in opts
+                    end,
                     "specify where to stop in compilation",
                     Popt.SpaceString
                       (fn s =>
-                          stop :=
-                          (case s of
-                             "cp" => Config.SpCp
-                           | "h" => Config.SpH
-                           | "m" => Config.SpM
-                           | "hsc" => Config.SpHsc
-                           | "pil" => Config.SpPil
-                           | "obj" => Config.SpO
-                           | "exe" => Config.SpExe
-                           | _ => usage ("invalid -stop arg: " ^ s)))),
-
-                   (Popt.Normal, "thunks", " {either|direct|hybrid|two}",
-                    "specific thunking scheme to use",
-                    Popt.SpaceString
-                      (fn s =>
-                          thunks :=
-                          (case s of
-                             "either" => Config.TsEither
-                           | "direct" => Config.TsDirect
-                           | "hybrid" => Config.TsHybrid
-                           | "two" => Config.TsTwoVersion
-                           | _ => usage ("invalid -thunks arg: " ^ s)))),
+                          if SS.member (stops, s)
+                          then stop := s
+                          else usage ("invalid -stop arg: " ^ s))),
 
                    (Popt.Normal, "timeExecution", " string",
                     "time the program",
@@ -718,7 +692,8 @@ struct
             List.map (opts, mkOne)
           end
 
-      val mainUsage = "ppiler [option ...] [file.{p,cp,hs,lhs,hcr,mil,c,obj} ...]"
+      val extStr = String.dropLast (List.fold (Compilation.exts, "", fn ((ext, _), s) => s ^ "," ^ ext))
+      val mainUsage = "ppiler [option ...] [file.{" ^ extStr ^ "} ...]"
       val {usage, parse} =
           Popt.makeUsage {mainUsage = mainUsage,
                           makeOptions = makeOptions,
@@ -762,13 +737,13 @@ struct
                   | (Config.OkC, Config.TsGcc, _)            => usage "-futures not supported with GNU toolset"
                   | _                                        => ()
 
-            val () =
+(*            val () =
                 if !futures <> Config.PNone andalso
                    (!thunks = Config.TsDirect orelse !thunks = Config.TsEither) 
                 then
                   usage "Futures should not be used with the direct scheme"
                 else
-                  ()
+                  ()*)
             val () = 
                 case (!gcs, output)
                  of (SOME Config.GcsConservative, Config.OkPillar) => usage "Conservative GC not supported on Pillar"
@@ -776,7 +751,7 @@ struct
                   | _                                              => ()
 
             fun doOne (_, pd) = PassData.out pd
-            val passes = StringDict.map (passes, doOne)
+            val passes = SD.map (passes, doOne)
             val parStyle = !futures
             val gcs =
                 case !gcs
@@ -822,7 +797,6 @@ struct
             (Config.C {
               agc              = !agc,
               control_         = Config.Control.finalise controls,
-              core             = !core,
               debug_           = Config.Debug.finalise debugs,
               debugLev         = !debugLev,
               feature_         = Config.Feature.finalise features,
@@ -831,7 +805,7 @@ struct
               host             = !host,
               iflcLibDirectory = !libDir,
               iflcOpt          = !iflcOpt,
-              keep             = {cp = !keepcp, hcr = !keephcr, pil = !keeppil, obj = !keepo},
+              keep             = !keep,
               linkStr          = List.rev (!linkStr),
               linkDirectories  = [],
               linkLibraries    = [],
@@ -843,13 +817,11 @@ struct
               pilDebug         = !pilDebug,
               pilOpt           = !pilOpt,
               ghcOpt           = !ghcOpt,
-              printResult      = !printResult,
               report           = !report,
               runtime          = runtimei,
               sloppyFp         = !sloppyFp,
               stop             = !stop,
               targetWordSize   = !ws,
-              thunkScheme      = !thunks,
               timeExecution    = !timeExe,
               toolset          = !toolset,
               vectorConfig     = vectorConfig,

@@ -1061,7 +1061,7 @@ struct
         val basename = Config.pathToHostString (config, basename)
         val infile = basename ^ ".hcr"
         fun cleanup () = 
-            if Config.keepHcr config then ()
+            if Config.keep (config, "hcr") then ()
             else File.remove infile
         fun process () = 
             let

@@ -190,7 +190,7 @@ sig
   val doPassWrap : ('a, 'b) t * ('c -> 'a) * ('b -> 'd) -> ('c, 'd) processor
   val doSubPass : ('a, 'b) t -> ('a, 'b) processor
   exception Done
-  val stopAt : Config.stopPoint -> ('a, 'a) processor
+  val stopAt : string -> ('a, 'a) processor
   val >> : ('a, 'b) processor * ('b, 'c) processor -> ('a, 'c) processor
   val >>> : ('a, 'b * Config.t) processor * ('b, 'c) processor -> ('a, 'c) processor
   val first : ('a, 'b) processor -> ('a * 'c, 'b * 'c) processor
@@ -427,11 +427,7 @@ struct
 
   fun stopAt sp =
       let
-        fun f (pd, _, arg) =
-            if Config.stopLt (sp, Config.stop (PassData.getConfig pd)) then
-              arg
-            else
-              raise Done
+        fun f (pd, _, arg) = if sp = Config.stop (PassData.getConfig pd) then raise Done else arg
       in T f
       end
 

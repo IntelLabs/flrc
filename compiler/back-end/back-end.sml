@@ -554,7 +554,7 @@ struct
         val incs = includes cfg
         val args = [options, defs, [inFile], incs, CcOptions.obj (cfg, outFile), Config.pilcStr config]
         val args = List.concat args
-        val cleanup = fn () => if Config.keepPil config then ()
+        val cleanup = fn () => if Config.keep (config, "pil") then ()
                                else File.remove inFile
       in (cc, args, cleanup)
       end
@@ -775,7 +775,7 @@ struct
                                 extraPaths,
                                 extraLibs,
                                 Config.linkStr config]
-        val cleanup = fn () => if Config.keepObj config then ()
+        val cleanup = fn () => if Config.keep (config, "obj") then ()
                                else File.remove inFile
       in (ld, args, cleanup)
       end

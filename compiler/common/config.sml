@@ -27,8 +27,6 @@ sig
   type runtimeConfig = {stackWorker    : int option,
                         stackMain      : int option,
                         singleThreaded : bool}
-  datatype stopPoint = SpCp | SpH | SpM | SpPil | SpHsc | SpO | SpExe
-  datatype thunkScheme = TsEither | TsDirect | TsHybrid | TsTwoVersion
   datatype toolset = TsIpc (* Intel Pillar Compiler *)
                    | TsOpc (* Old Pillar Compiler *)
                    | TsGcc (* Gcc *)
@@ -55,7 +53,6 @@ sig
                                 }
   datatype t = C of {agc : agcProg,
 		     control_ : string StringDict.t,
-		     core : Path.t,
 		     debugLev : verbosity,
 		     debug_ : StringSet.t,
 		     feature_ : StringSet.t,
@@ -70,7 +67,7 @@ sig
                      host : os,
                      iflcLibDirectory : Path.t,
 		     iflcOpt : int,
-		     keep: {cp: bool, hcr : bool, obj: bool, pil: bool},
+		     keep: StringSet.t,
 		     linkStr: string list,
 		     linkDirectories: string list,
 		     linkLibraries: string list,
@@ -85,19 +82,16 @@ sig
 		     pilcStr: string list,
 		     pilDebug: bool,
 		     pilOpt: int,
-		     printResult: bool,
 		     report: StringSet.t,
                      runtime : runtimeConfig,
 		     sloppyFp: bool,
-		     stop: stopPoint,
+		     stop: string,
 		     targetWordSize: wordSize,
-		     thunkScheme: thunkScheme,
 		     timeExecution: string option,
 		     toolset: toolset,
                      vectorConfig : vectorConfig,
 		     warnLev: verbosity}
   val agc: t -> agcProg
-  val core: t -> Path.t
   val debug: bool
   val debugLevel: t * 'a -> int
   val gc: t
@@ -112,11 +106,7 @@ sig
   val host : t -> os
   val iflcLibDirectory : t -> Path.t
   val iflcOpt: t -> int
-  val keep: t * ({cp: bool, hcr : bool, obj: bool, pil: bool} -> 'a) -> 'a
-  val keepCp: t -> bool
-  val keepHcr : t -> bool
-  val keepObj: t -> bool
-  val keepPil: t -> bool
+  val keep: t * string -> bool
   val linkStr: t -> string list
   val linkDirectories: t -> string list
   val linkLibraries: t -> string list
@@ -139,16 +129,13 @@ sig
   val pilDebug: t -> bool
   val pilOpt: t -> int
   val pilcStr: t -> string list
-  val printResult: t -> bool
   val reportEnabled: t * string -> bool
   val runtime : t -> runtimeConfig
   val silent: t -> bool
   val sloppyFp: t -> bool
-  val stop: t -> stopPoint
-  val stopLt: stopPoint * stopPoint -> bool
+  val stop: t -> string
   val targetWordSize: t -> wordSize
   val targetWordSize': t -> IntArb.size
-  val thunkScheme: t -> thunkScheme
   val timeExecution: t -> string option
   val toolset: t -> toolset
   val verbose: t -> bool
@@ -213,13 +200,6 @@ struct
                      | TsIcc (* Intel C compiler *)
     datatype parStyle = PNone | PAll | PAuto | PPar
 
-    (* Thunk scheme: either means try direct and if it fails hybrid,
-     *               direct means use direct thunks and abort compilation
-     *                 if it fails,
-     *               hybrid means use the hybrid scheme
-     *)
-    datatype thunkScheme = TsEither | TsDirect | TsHybrid | TsTwoVersion
-
     datatype gcStyle = GcsNone | GcsConservative | GcsAccurate
 
     datatype os = OsCygwin | OsLinux | OsMinGW
@@ -269,31 +249,8 @@ struct
                           stackMain      : int option,
                           singleThreaded : bool}
 
-    datatype stopPoint = SpCp | SpH | SpM | SpPil | SpHsc | SpO | SpExe
-
-    fun stopLt (sp1, sp2) =
-        case (sp1, sp2)
-         of (SpCp,  SpCp ) => false
-          | (SpCp,  _    ) => true
-          | (SpH,   SpCp ) => false
-          | (SpH,   SpH  ) => false
-          | (SpH,   _    ) => true
-          | (SpHsc, SpHsc) => false
-          | (SpHsc,  _   ) => true
-          | (SpM,   SpCp ) => false
-          | (SpM,   SpH  ) => false
-          | (SpM,   SpM  ) => false
-          | (SpM,   _    ) => true
-          | (SpPil, SpExe) => true
-          | (SpPil, SpO  ) => true
-          | (SpPil, _    ) => false
-          | (SpO,   SpExe) => true
-          | (SpO,   _    ) => false
-          | (SpExe, _    ) => false
-
     datatype t = C of {
          agc              : agcProg,
-         core             : Path.t,
          control_         : string StringDict.t,
          debug_           : StringSet.t,
          debugLev         : verbosity,
@@ -304,7 +261,7 @@ struct
          host             : os,
          iflcLibDirectory : Path.t,
          iflcOpt          : int,
-         keep             : {cp : bool, hcr : bool, pil : bool, obj : bool},
+         keep             : StringSet.t,
          linkStr          : string list,
          linkDirectories  : string list,
          linkLibraries    : string list,
@@ -315,13 +272,11 @@ struct
          pilcStr          : string list,
          pilDebug         : bool,
          pilOpt           : int,
-         printResult      : bool,
          report           : StringSet.t,
          runtime          : runtimeConfig,
-         stop             : stopPoint,
+         stop             : string,
          sloppyFp         : bool,
          targetWordSize   : wordSize,
-         thunkScheme      : thunkScheme,
          timeExecution    : string option,
          toolset          : toolset,
          vectorConfig     : vectorConfig,
@@ -333,7 +288,6 @@ struct
     fun get (C config, p) = p config
 
     fun agc c                         = get (c, #agc)
-    fun core c                        = get (c, #core)
     fun gc c                          = get (c, #gc)
     fun ghcOpt c                      = get (c, #ghcOpt)
     fun home c                        = get (c, #home)
@@ -348,12 +302,10 @@ struct
     fun pilcStr c                     = get (c, #pilcStr)
     fun pilDebug c                    = get (c, #pilDebug)
     fun pilOpt c                      = get (c, #pilOpt)
-    fun printResult c                 = get (c, #printResult)
     fun runtime c                     = get (c, #runtime)
     fun stop c                        = get (c, #stop)
     fun sloppyFp c                    = get (c, #sloppyFp)
     fun targetWordSize c              = get (c, #targetWordSize)
-    fun thunkScheme c                 = get (c, #thunkScheme)
     fun timeExecution c               = get (c, #timeExecution)
     fun toolset c                     = get (c, #toolset)
     fun vectorConfig c                = get (c, #vectorConfig)
@@ -381,12 +333,7 @@ struct
           | VInfo => 1
           | VTop => 2
 
-    fun keep (c, p) = p (get (c, #keep))
-
-    fun keepCp c = keep (c, #cp)
-    fun keepHcr c = keep (c, #hcr)
-    fun keepPil c = keep (c, #pil)
-    fun keepObj c = keep (c, #obj)
+    fun keep (C c, s) = StringSet.member (#keep c, s)
 
    (* These are for communicating with the user.
     * Log levels:
