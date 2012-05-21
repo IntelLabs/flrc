@@ -273,6 +273,14 @@ struct
                    val tupField = M.TF {tupDesc = tupDesc, tup = tup, field = field}
                  in M.RhsTupleSet {tupField = tupField, ofVal = ofVal}
                  end
+               | M.RhsTupleCAS {tupField, cmpVal, newVal} => 
+                 let
+                   val M.TF {tupDesc = tupDescOld, tup, field} = tupField
+                   val tupDesc = buildTupleDescriptor (se, id)
+                   val () = checkTupleDescriptor (se, id, tupDesc, tupDescOld)
+                   val tupField = M.TF {tupDesc = tupDesc, tup = tup, field = field}
+                 in M.RhsTupleCAS {tupField = tupField, cmpVal = cmpVal, newVal = newVal}
+                 end
                | M.RhsTupleInited {mdDesc = mdDescOld, tup} => 
                  let
                    val mdDesc = buildMetaData (se, id)

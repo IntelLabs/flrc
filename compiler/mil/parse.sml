@@ -219,6 +219,10 @@ struct
             | M.RhsTupleSub tf => M.RhsTupleSub (tupleField (nm, tf))
             | M.RhsTupleSet {tupField, ofVal} =>
               M.RhsTupleSet {tupField = tupleField (nm, tupField), ofVal = operand (nm, ofVal)}
+            | M.RhsTupleCAS {tupField, cmpVal, newVal} =>
+              M.RhsTupleCAS {tupField = tupleField (nm, tupField),
+                             cmpVal = operand (nm, cmpVal),
+                             newVal = operand (nm, newVal)}
             | M.RhsTupleInited _ => r
             | M.RhsIdxGet {idx, ofVal} => M.RhsIdxGet {idx = idx, ofVal = operand (nm, ofVal)}
             | M.RhsCont _ => r
@@ -1279,7 +1283,11 @@ struct
             end
         fun doKw s =
             case s
-             of "ClosureGetFv" =>
+             of "CAS" =>
+                P.map (paren (tupleField (state, env) && keycharS #"," && operand (state, env) && keycharS #"," &&
+                              operand (state, env)),
+                       fn ((((tf, _), cv), _), nv) => M.RhsTupleCAS {tupField = tf, cmpVal = cv, newVal = nv})
+              | "ClosureGetFv" =>
                 P.map (pair (variable (state, env) && keycharSF #":" && parenSeq (fieldKind (state, env)), decimal),
                        fn (((v, _), fks), i) => M.RhsClosureGetFv {fvs = fks, cls = v, idx = i})
               | "ClosureInit" => closureInit NONE

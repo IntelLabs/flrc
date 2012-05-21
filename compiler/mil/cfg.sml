@@ -148,7 +148,7 @@ struct
                    of OE.OedBlock l =>
                       (case LD.lookup (nodes, l)
                         of SOME n => ignore (G.addEdge (graph, node, n, ()))
-                         | NONE => fail ("build", "Unbound label"))
+                         | NONE => fail ("build", "Unbound label " ^ I.labelString l))
                     | OE.OedExit =>
                       ignore (G.addEdge (graph, node, exit, ()))
               val () = Vector.foreach (es, addOne)

@@ -181,6 +181,9 @@ struct
     | RhsTupleSub      of tupleField
     | RhsTupleSet      of {tupField : tupleField, 
                            ofVal : operand}
+    | RhsTupleCAS      of {tupField : tupleField,        (* Only pointer sized fields allowed. *)
+                           cmpVal : operand,             (* Returns the field's old value.     *)
+                           newVal : operand}
     | RhsTupleInited   of {mdDesc : metaDataDescriptor, 
                            tup : variable}
     | RhsIdxGet        of {idx : variable, 

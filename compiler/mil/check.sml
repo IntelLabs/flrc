@@ -665,6 +665,17 @@ struct
                    val () = checkConsistentTyp (s, e, msg', ft, nvt)
                  in none
                  end
+               | M.RhsTupleCAS {tupField, cmpVal, newVal} =>
+                 let
+                   val ft = tupleField (s, e, msg, tupField)
+                   val cvt = operand (s, e, msg, cmpVal)
+                   fun msg' () = msg () ^ ": field / compare value type mismatch"
+                   val () = checkConsistentTyp (s, e, msg', ft, cvt)
+                   val nvt = operand (s, e, msg, newVal)
+                   fun msg' () = msg () ^ ": field / new value type mismatch"
+                   val () = checkConsistentTyp (s, e, msg', ft, nvt)
+                 in some ft
+                 end
                | M.RhsTupleInited {mdDesc, tup} =>
                  let
                    fun msg' () = msg () ^ ": tuple"

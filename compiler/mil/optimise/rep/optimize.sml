@@ -402,6 +402,15 @@ struct
                                 | M.RhsTupleSet r       => 
                                   if noTupleUnbox pd then ()
                                   else boxed (MU.TupleField.tup (#tupField r))
+                                | M.RhsTupleCAS r       => 
+                                  if noTupleUnbox pd then
+                                    ()
+                                  else
+                                    let
+                                      val () = boxed (MU.TupleField.tup (#tupField r))
+                                      val () = boxedV dests
+                                    in ()
+                                    end
                                 | M.RhsTupleInited _    => ()
                                 | M.RhsIdxGet _         => fixed ()
                                 | M.RhsCont _           => fixed ()
@@ -1051,6 +1060,7 @@ struct
                                 | M.RhsTuple r          => mark ()
                                 | M.RhsTupleSub _       => ()
                                 | M.RhsTupleSet _       => ()
+                                | M.RhsTupleCAS _       => ()
                                 | M.RhsTupleInited _    => ()
                                 | M.RhsIdxGet _         => mark ()
                                 | M.RhsCont _           => mark ()

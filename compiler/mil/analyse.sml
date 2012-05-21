@@ -169,6 +169,13 @@ functor MilAnalyseF (
             val () = analyseOperand (s, e, ofVal)
           in ()
           end
+        | M.RhsTupleCAS {tupField, cmpVal, newVal} =>
+          let
+            val () = analyseTupleField (s, e, tupField)
+            val () = analyseOperand (s, e, cmpVal)
+            val () = analyseOperand (s, e, newVal)
+          in ()
+          end
         | M.RhsTupleInited {mdDesc, tup} =>
           let
             val () = analyseVariable (s, e, tup)

@@ -1657,6 +1657,7 @@ struct
                              #inits, operands)
           val tf   = tupleField
           val ts   = C.rec2 (#tupField, tupleField, #ofVal, operand)
+          val tcas = C.rec3 (#tupField, tupleField, #cmpVal, operand, #newVal, operand)
           val ti   = C.rec2 (#mdDesc, metaDataDescriptor,
                              #tup, variable)
           val ig   = C.rec2 (#idx, variable, #ofVal, operand)
@@ -1704,6 +1705,9 @@ struct
             | (M.RhsTupleSet       x1, M.RhsTupleSet       x2) => ts (x1, x2)
             | (M.RhsTupleSet       _ , _                     ) => LESS
             | (_                     , M.RhsTupleSet       _ ) => GREATER
+            | (M.RhsTupleCAS       x1, M.RhsTupleCAS       x2) => tcas (x1, x2)
+            | (M.RhsTupleCAS       _ , _                     ) => LESS
+            | (_                     , M.RhsTupleCAS       _ ) => GREATER
             | (M.RhsTupleInited    x1, M.RhsTupleInited    x2) => ti (x1, x2)
             | (M.RhsTupleInited    _ , _                     ) => LESS
             | (_                     , M.RhsTupleInited    _ ) => GREATER
@@ -3145,6 +3149,7 @@ struct
           | M.RhsTuple _          => true
           | M.RhsTupleSub _       => true
           | M.RhsTupleSet _       => true
+          | M.RhsTupleCAS _       => true
           | M.RhsTupleInited _    => true
           | M.RhsIdxGet _         => true
           | M.RhsCont _           => true
@@ -3180,6 +3185,7 @@ struct
       val R = ReadOnly
       val writeS = fromList [HeapWrite, InitWrite]
       val readS  = fromList [HeapRead, InitRead]
+      val readWriteS = fromList [HeapRead, InitRead, HeapWrite, InitWrite]
       val genS   = fromList [HeapGen, InitGen]
       fun tuple {mdDesc, inits} =
           let
@@ -3227,6 +3233,7 @@ struct
           | M.RhsTuple x              => tuple x
           | M.RhsTupleSub x           => tupleSub x
           | M.RhsTupleSet x           => tupleSet x
+          | M.RhsTupleCAS x           => readWriteS
           | M.RhsTupleInited _        => InitWriteS
           | M.RhsIdxGet _             => InitReadS
           | M.RhsCont _               => T
@@ -3291,6 +3298,7 @@ struct
            | M.RhsTuple {mdDesc, ...}  => SOME (MetaDataDescriptor.pok mdDesc)
            | M.RhsTupleSub _           => NONE
            | M.RhsTupleSet _           => NONE
+           | M.RhsTupleCAS _           => NONE
            | M.RhsTupleInited _        => NONE
            | M.RhsIdxGet _             => NONE
            | M.RhsCont _               => NONE
@@ -3320,6 +3328,7 @@ struct
           | M.RhsTuple x                           => 1
           | M.RhsTupleSub _                        => 1
           | M.RhsTupleSet _                        => 0
+          | M.RhsTupleCAS _                        => 1
           | M.RhsTupleInited _                     => 0
           | M.RhsIdxGet _                          => 1
           | M.RhsCont _                            => 1
@@ -3357,6 +3366,8 @@ struct
        fn rhs => (case rhs of M.RhsTupleSub r => SOME r | _ => NONE)
       val rhsTupleSet = 
        fn rhs => (case rhs of M.RhsTupleSet r => SOME r | _ => NONE)
+      val rhsTupleCas = 
+       fn rhs => (case rhs of M.RhsTupleCAS r => SOME r | _ => NONE)
       val rhsTupleInited = 
        fn rhs => (case rhs of M.RhsTupleInited r => SOME r | _ => NONE)
       val rhsIdxGet = 

@@ -18,9 +18,10 @@ structure MilToPil :> MIL_TO_PIL =
 struct
 
   val passname = "Outputter"
+  val modname = "MilToPil"
 
-  val fail = fn (f, msg) => Fail.fail (passname, f, msg)
-  fun unimplemented (f, msg) = Fail.unimplemented (passname, f, msg)
+  val fail = fn (f, msg) => Fail.fail (modname, f, msg)
+  fun unimplemented (f, msg) = Fail.unimplemented (modname, f, msg)
 
   structure L = Layout
   structure I = Identifier
@@ -83,8 +84,7 @@ struct
                          val name = passname
                          val indent = 0)
 
-  fun notCoreMil (env, f, msg) =
-      fail (f, "not core Mil: " ^ msg)
+  fun notCoreMil (env, f, msg) = fail (f, "not core Mil: " ^ msg)
 
   (*** Vtable Info ***)
 
@@ -455,8 +455,7 @@ struct
           Vector.sub (fds, i)
         else
           (case fdo
-            of NONE => Fail.fail ("MilToPil.OM", "get",
-                                  "not enough fields")
+            of NONE => Fail.fail (modname ^ ".OM", "get", "not enough fields")
              | SOME fd => fd)
 
     (* Offset of field, accounting for padding *)
@@ -517,7 +516,7 @@ struct
 
     fun extraSize (state, env, M.TD {array, ...}) =
         case array
-         of NONE => Fail.fail ("MilToPil.OM", "extraSize", "no array portion")
+         of NONE => Fail.fail (modname ^ ".OM", "extraSize", "no array portion")
           | SOME fd => MU.FieldDescriptor.numBytes (getConfig env, fd)
 
     (* Highly runtime specific assumptions:
@@ -818,8 +817,7 @@ struct
                       let
                         val () =
                             if off mod ws <> 0 then
-                              Fail.unimplemented ("MilToPil.VT", "deriveVtInfo",
-                                                  "unaligned reference field")
+                              Fail.unimplemented (modname ^ ".VT", "deriveVtInfo", "unaligned reference field")
                             else
                               ()
                         val idx = off div ws
@@ -967,8 +965,7 @@ struct
                     val off = OM.thunkFvOffset (state, env, typ, fks, i)
                     val () =
                         if off mod ws <> 0 then
-                          Fail.unimplemented ("MilToPil.MD", "genMetaDataThunk",
-                                              "unaligned free variable")
+                          Fail.unimplemented (modname ^ ".MD", "genMetaDataThunk", "unaligned free variable")
                         else
                           ()
                     val idx = off div ws
@@ -982,8 +979,7 @@ struct
             val off = OM.thunkResultOffset (state, env, typ)
             val () =
                 if off mod ws <> 0 then
-                  Fail.unimplemented ("MilToPil.MD", "genMetaDataThunk",
-                                      "unaligned result")
+                  Fail.unimplemented (modname ^ ".MD", "genMetaDataThunk", "unaligned result")
                 else
                   ()
             val idx = off div ws
@@ -1107,9 +1103,9 @@ struct
       end
   and genTyp (state, env, t) = 
       case t
-       of M.TAny => Fail.fail ("MilToPil", "genTyp", "TAny")
-        | M.TAnyS _ => Fail.fail ("MilToPil", "genTyp", "TAnyS")
-        | M.TNonRefPtr =>  Pil.T.ptr Pil.T.void (* Fail.fail ("MilToPil", "genTyp", "TNonRefPtr") *)
+       of M.TAny => fail ("genTyp", "TAny")
+        | M.TAnyS _ => fail ("genTyp", "TAnyS")
+        | M.TNonRefPtr =>  Pil.T.ptr Pil.T.void (* fail ("genTyp", "TNonRefPtr") *)
         | M.TRef => Pil.T.named RT.T.object
         | M.TBits vs =>
           (case vs
@@ -1117,10 +1113,10 @@ struct
              | M.Vs16   => Pil.T.uint16
              | M.Vs32   => Pil.T.uint32
              | M.Vs64   => Pil.T.uint64
-             | M.Vs128  => Fail.fail ("MilToPil", "genTyp", "TBits128")
-             | M.Vs256  => Fail.fail ("MilToPil", "genTyp", "TBits256")
-             | M.Vs512  => Fail.fail ("MilToPil", "genTyp", "TBits512")
-             | M.Vs1024 => Fail.fail ("MilToPil", "genTyp", "TBits1024"))
+             | M.Vs128  => fail ("genTyp", "TBits128")
+             | M.Vs256  => fail ("genTyp", "TBits256")
+             | M.Vs512  => fail ("genTyp", "TBits512")
+             | M.Vs1024 => fail ("genTyp", "TBits1024"))
         | M.TNone => Pil.T.named RT.T.object
         | M.TNumeric t => RT.Prims.numericTyp (getConfig env, t)
         | M.TBoolean   => Pil.T.named RT.T.boolean
@@ -1131,7 +1127,7 @@ struct
             val t = RT.Prims.vectorTyp (getConfig env, vectorSize, fk)
           in t
           end
-        | M.TViMask et => Fail.fail ("MilToPil", "genTyp", "TViMask")
+        | M.TViMask et => fail ("genTyp", "TViMask")
         | M.TCode {cc, args, ress} =>
           Pil.T.ptr (genCodeType (state, env, (cc, args, ress)))
         | M.TTuple _ => Pil.T.named RT.T.pAny
@@ -1173,7 +1169,7 @@ struct
                   [pad (i, p), (RT.Tuple.fixedField i, t)]
               end
             else
-              Fail.fail ("MilToPil", "tupleUnboxedTyp", "meta-data/init mismatched lengths")
+              fail ("tupleUnboxedTyp", "meta-data/init mismatched lengths")
 
         val fts = (RT.Tuple.vtable, Pil.T.named RT.T.vtable)::List.concat (List.mapi (ts, doOne))
         val fts = 
@@ -1214,7 +1210,7 @@ struct
                in
                  (*
                  if iif < 0 then 
-                   Fail.fail ("MilToPil", "genConstant", "Can't produce integer constant" ^ (IntArb.stringOf i))
+                   fail ("genConstant", "Can't produce integer constant" ^ (IntArb.stringOf i))
                  else *)
                  Pil.E.intInf iif
                end)
@@ -1222,9 +1218,9 @@ struct
         | M.CFloat r => Pil.E.float r
         | M.CDouble r => Pil.E.double r
         (* FIXME: WL: add runtime routine *)
-        | M.CViMask _ => Fail.fail ("MilToPil", "genConstant", "CViMask")
+        | M.CViMask _ => fail ("genConstant", "CViMask")
 (*          (if VI.numMaskBytes (targetVectorSize env, typ) > 4 then 
-             Fail.fail ("MilTOPil", "genConstant", "Unspported mask size > 32")
+             fail ("genConstant", "Unspported mask size > 32")
            else  
              let
                fun shiftBool (b, w) =
@@ -1390,7 +1386,7 @@ struct
           let
             val () =
                 case mask 
-                 of SOME _ => Fail.fail ("MilToPil", "doTupleField", "FiVectorFixed: masking unimplimented")
+                 of SOME _ => fail ("doTupleField", "FiVectorFixed: masking unimplimented")
                   | NONE   => ()
             val off = OM.fieldOffset (state, env, tupDesc, index)
             val ssk = SskVectorFixed descriptor
@@ -1401,7 +1397,7 @@ struct
           let
             val () =
                 case mask 
-                 of SOME _ => Fail.fail ("MilToPil", "doTupleField", "FiVectorVariable: masking unimplimented")
+                 of SOME _ => fail ("doTupleField", "FiVectorVariable: masking unimplimented")
                   | NONE   => ()
             val off = OM.arrayOffset (state, env, tupDesc)
             val ext = genOperand (state, env, index)
@@ -1478,6 +1474,48 @@ struct
       in set
       end
 
+  fun genTupleCAS (state, env, dest, tf, cmpVal, newVal) =
+      let
+        val M.TF {tup, ...} = tf
+        val v = genVarE (state, env, tup)
+        val ft = MTT.operand (getConfig env, getSymbolInfo state, cmpVal)
+        val ft = Pil.E.hackTyp (Pil.T.ptr (genTyp (state, env, ft)))
+        val (off, ssk, M.FD {kind, ...}) = doTupleField (state, env, tf)
+        val off = Pil.E.int off
+        val es = MU.FieldKind.numBytes (getConfig env, kind)
+        val es = Pil.E.int es
+        val cv = genOperand (state, env, cmpVal)
+        val nv = genOperand (state, env, newVal)
+        val d = genVarE (state, env, dest)
+        fun doWB trg = writeBarrier (state, env, v, trg, nv, kind, false)
+        val scalar =
+         fn (field, args) =>
+            let
+              val trg = Pil.E.addrOf (Pil.E.call (Pil.E.namedConstant field, args))
+              val cas =
+                  case kind
+                   of M.FkRef => RT.Sync.casRef
+                    | M.FkBits M.Fs32 => RT.Sync.casUInt64
+                    | M.FkBits M.Fs64 => RT.Sync.casUInt32
+                    | _ => unimplemented ("genTupleCAS", "field kind " ^ MU.FieldKind.toString kind)
+              val a = Pil.E.assign (d, Pil.E.call (Pil.E.namedConstant cas, [trg, cv, nv]))
+              (* need a write barrier *)
+            in a
+            end
+        val vector = fn () => unimplemented ("genTupleCAS", "vector fields")
+        val config = getConfig env
+        val a =
+            case ssk
+             of SskScalarFixed                            => scalar (RT.Object.field, [v, off, ft])
+              | SskScalarVariable e                       => scalar (RT.Object.extra, [v, off, ft, es, e])
+              | SskVectorFixed et                         => vector ()
+              | SskVectorVariableStrided (et, i, e)       => vector ()
+              | SskVectorVariableIndexed (et, e)          => vector ()
+              | SskVectorVariableVectorStrided (et, i, e) => vector ()
+              | SskVectorVariableVectorIndexed (et, e)    => vector ()
+      in Pil.S.expr a
+      end
+
   val (instrumentAllocationSitesF, instrumentAllocationSites) =
       Config.Feature.mk ("Plsr:instrument-allocation-sites",
                          "gather allocation statistics per alloc site")
@@ -1521,7 +1559,7 @@ struct
       let
         val c = getConfig env
         val si = getSymbolInfo state
-        fun fail s = Fail.fail ("MilToPil", "genRhs", "ThunkInit: " ^ s)
+        val fail = fn s => fail ("genRhs", "ThunkInit: " ^ s)
         val (mk, thunk) =
             case (thunk, dest)
              of (NONE, NONE) => fail "expecting dest"
@@ -1578,7 +1616,7 @@ struct
 
   fun genThunkValue (state, env, dest, typ, thunk, opnd) =
       let
-        fun fail s = Fail.fail ("MilToPil", "genRhs", "ThunkValue: " ^ s)
+        val fail = fn s => fail ("genRhs", "ThunkValue: " ^ s)
         val value = genOperand (state, env, opnd)
         val s =
             case (thunk, dest)
@@ -1685,9 +1723,11 @@ struct
             bind (fn v => genTupleSub (state, env, v, tf))
           | M.RhsTupleSet {tupField, ofVal} => 
             assign (genTupleSet (state, env, tupField, ofVal))
+          | M.RhsTupleCAS {tupField, cmpVal, newVal} =>
+            bind (fn v => genTupleCAS (state, env, v, tupField, cmpVal, newVal))
           | M.RhsTupleInited {mdDesc, tup} =>
             let
-              val () = Fail.assert ("MilToPil",
+              val () = Fail.assert (modname,
                                     "genInstr",
                                     "TupleInited returns no value",
                                     (fn () => Vector.isEmpty dests))
@@ -1775,7 +1815,7 @@ struct
   fun doSsaMoves (state, env, cb, block, arguments) = 
       let
         val M.B {parameters, ...} = MU.CodeBody.block (cb, block)
-        val () = Fail.assert ("MilToPil", "doSsaMoves", "mismatch in phi args",
+        val () = Fail.assert (modname, "doSsaMoves", "mismatch in phi args",
                               (fn () => (Vector.length parameters = 
                                          Vector.length arguments)))
         val parametersl = Vector.toList parameters
@@ -1877,10 +1917,8 @@ struct
             end
         fun doNameArm (c, t) =
             case c
-             of M.CName n => 
-                (Pil.E.int (I.nameNumber n), genGoto (state, env, cb, src, t))
-              | _ =>
-                Fail.fail ("MilToPil", "genTransfer", "Mixed constants")
+             of M.CName n => (Pil.E.int (I.nameNumber n), genGoto (state, env, cb, src, t))
+              | _ => fail ("genTransfer", "Mixed constants")
         fun doGenArm (c, t) =
             (genConstant (state, env, c), genGoto (state, env, cb, src, t))
         fun doRefArm (c, t) =
@@ -1946,10 +1984,7 @@ struct
                           in
                             Pil.S.expr (Pil.E.assign (rv, c))
                           end
-                        | _ => 
-                          Fail.fail ("MilToPil",
-                                     "genCall",
-                                     "non-single return call")
+                        | _ => fail ("genCall", "non-single return call")
                   val block = genLabel (state, env, block)
                   val s = Pil.S.sequence [c, Pil.S.goto block]
                 in s
@@ -2011,7 +2046,7 @@ struct
                        val fastpath = Pil.S.expr (Pil.E.assign (rv, fastpath))
                      in (fastpath, slowpath, g)
                      end
-                   | _ => Fail.fail ("MilToPil", "genEval", "rets must be 1"))
+                   | _ => fail ("genEval", "rets must be 1"))
               | M.RTail {exits} =>
                 let
                   val rtyp = MU.Code.thunkTyp (getFunc env)
@@ -2101,7 +2136,7 @@ struct
                        end
                      | NONE => Pil.S.returnExpr opnd
                  end
-               | _ => Fail.fail ("MilToPil", "genTransfer", "multiple returns not supported"))
+               | _ => fail ("genTransfer", "multiple returns not supported"))
           | M.TCut {cont, args, cuts} =>
             let
               (* XXX NG: there is a bug in Pillar for arguments and no C implementation - for now punt and hope! *)
@@ -2292,7 +2327,7 @@ struct
         val res = 
             case cc
              of M.CcCode => (decs, [], [])
-              | M.CcUnmanaged abi => Fail.unimplemented (passname, "doCallConv", "CcUnmanaged")
+              | M.CcUnmanaged abi => unimplemented ("doCallConv", "CcUnmanaged")
               | M.CcClosure _ =>
                 notCoreMil (env, "doCallConv", "CcClosure")
               | M.CcThunk {thunk, fvs} =>
@@ -2457,11 +2492,9 @@ struct
 
   fun genStaticIntInf (state, env, i) = 
       let
-        val () = if assertSmallInts (getConfig env) then
-                   Fail.fail ("MilToPil", "genStaticIntInf", 
-                              "Failed small int assertion")
-                 else
-                   ()
+        val () = if assertSmallInts (getConfig env)
+                 then fail ("genStaticIntInf", "Failed small int assertion")
+                 else ()
       in
         if noGMP (getConfig env) then
           genStaticIntInfNative (state, env, i)

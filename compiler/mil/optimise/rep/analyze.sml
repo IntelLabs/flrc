@@ -703,7 +703,15 @@ struct
                | M.RhsPrim {prim, createThunks, typs, args} => doPrim (se, dests, prim, createThunks, typs, args)
                | M.RhsTuple {mdDesc, inits} => node () <-- tupleMk (se, id, mdDesc, inits)
                | M.RhsTupleSub tf => op --> (tupleOp (se, id, tf, node ()))
-               | M.RhsTupleSet {tupField, ofVal} => op <-- (tupleOp (se, id, tupField, operand (se, ofVal)))  
+               | M.RhsTupleSet {tupField, ofVal} => op <-- (tupleOp (se, id, tupField, operand (se, ofVal)))
+               | M.RhsTupleCAS {tupField, cmpVal, newVal} =>
+                 let
+                   val _ = operand (se, cmpVal)
+                   val nvn = operand (se, newVal)
+                   val () = nvn == node ()
+                   val () = op <-- (tupleOp (se, id, tupField, nvn))
+                 in ()
+                 end
                | M.RhsTupleInited {mdDesc, tup} => variable (se, tup) <-- tupleMk (se, id, mdDesc, Vector.new0 ())
                | M.RhsIdxGet {idx, ofVal} => node () <-- Build.base (MU.Uintp.t (getConfig se))
                | M.RhsCont l => 

@@ -611,6 +611,9 @@ struct
          | M.RhsTupleSub tf => layoutTupleField (env, tf)
          | M.RhsTupleSet {tupField, ofVal} =>
            L.mayAlign [L.seq [layoutTupleField (env, tupField), L.str " <-"], LU.indent (layoutOperand (env, ofVal))]
+         | M.RhsTupleCAS {tupField, cmpVal, newVal} =>
+           L.seq [L.str "CAS",
+                  L.tuple [layoutTupleField (env, tupField), layoutOperand (env, cmpVal), layoutOperand (env, newVal)]]
          | M.RhsTupleInited {mdDesc, tup} =>
            let
              val mdDesc = layoutMetaDataDescriptor (env, mdDesc)

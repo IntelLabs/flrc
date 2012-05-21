@@ -222,6 +222,13 @@ sig
     val zeroFV         : unit -> Pil.identifier
   end
 
+  structure Sync :
+  sig
+    val casUInt32 : Pil.identifier
+    val casUInt64 : Pil.identifier
+    val casRef    : Pil.identifier
+  end
+
   val exit      : Pil.identifier 
   val halt      : Pil.identifier
   val haltV     : Pil.identifier
@@ -746,6 +753,13 @@ struct
     fun tailCallDirect  fk = Pil.identifier ("pLsrThunkTailCallDirect"^ typ fk)
     fun vTable          fk = Pil.identifier ("pLsrThunkValVTable"     ^ typ fk)
     fun zeroFV          () = Pil.identifier ("pLsrThunkZeroFV"                )
+  end
+
+  structure Sync =
+  struct
+    val casUInt32 : Pil.identifier = Pil.identifier "pLsrSynchLockedCmpxchgUInt32"
+    val casUInt64 : Pil.identifier = Pil.identifier "pLsrSynchLockedCmpxchgUInt64"
+    val casRef    : Pil.identifier = Pil.identifier "pLsrSynchLockedCmpxchgRef"
   end
 
   val exit = Pil.identifier "pLsrExit"

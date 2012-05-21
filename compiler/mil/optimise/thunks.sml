@@ -285,6 +285,7 @@ struct
                                | M.RhsTuple r          => ()
                                | M.RhsTupleSub tf      => computation ()
                                | M.RhsTupleSet r       => computation ()
+                               | M.RhsTupleCAS r       => computation ()
                                | M.RhsTupleInited r    => computation ()
                                | M.RhsIdxGet _         => computation ()
                                | M.RhsCont _           => ()

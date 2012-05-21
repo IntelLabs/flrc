@@ -192,6 +192,7 @@ struct
                                | M.RhsTuple r          => tupleDeps ()
                                | M.RhsTupleSub tf      => data ()
                                | M.RhsTupleSet r       => tupleSetDeps (#tupField r)
+                               | M.RhsTupleCAS r       => (tupleSetDeps (#tupField r); data ())
                                | M.RhsTupleInited r    => tupleDeps ()
                                | M.RhsIdxGet _         => data ()
                                | M.RhsCont _           => ()
@@ -759,6 +760,17 @@ struct
                                                val {tupField, ofVal} = r
                                                val tupField = tupleField tupField
                                                val rhs = M.RhsTupleSet {tupField = tupField, ofVal = ofVal}
+                                             in replace rhs
+                                             end
+                  (* If both are dead, kill it.  Otherwise, if both are live, or if the result is dead but the field
+                   * is live, keep it. The case that the result is live but the field is dead is impossible since we
+                   * added a data edge ensuring that if the result is live, then everything else is live
+                   *)
+                  | M.RhsTupleCAS r       => if deadO (#newVal r) andalso deadV dests then kill () else
+                                             let
+                                               val {tupField, cmpVal = cv, newVal = nv} = r
+                                               val tupField = tupleField tupField
+                                               val rhs = M.RhsTupleCAS {tupField = tupField, cmpVal = cv, newVal = nv}
                                              in replace rhs
                                              end
                   | M.RhsTupleInited r    => keepIfLive (#tup r)

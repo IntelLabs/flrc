@@ -3503,6 +3503,15 @@ struct
         in tupleField
         end
 
+    val tupleCAS =
+        let
+          val tupleField = 
+              tupleField {dec = fn {tupField, cmpVal, newVal} => (tupField, (cmpVal, newVal)),
+                          con = fn (tupField, (cv, nv)) =>
+                                   M.RhsTupleCAS {tupField = tupField, cmpVal = cv, newVal = nv}}
+        in tupleField
+        end
+
     val tupleInited = fn (state, (i, dests, r)) => NONE
 
     val idxGet = 
@@ -3981,6 +3990,7 @@ struct
                 | M.RhsTuple r          => tuple (state, (i, dests, r))
                 | M.RhsTupleSub r       => tupleSub (state, (i, dests, r))
                 | M.RhsTupleSet r       => tupleSet (state, (i, dests, r))
+                | M.RhsTupleCAS r       => tupleCAS (state, (i, dests, r))
                 | M.RhsTupleInited r    => tupleInited (state, (i, dests, r))
                 | M.RhsIdxGet r         => idxGet (state, (i, dests, r))
                 | M.RhsCont r           => cont (state, (i, dests, r))

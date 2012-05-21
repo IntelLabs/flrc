@@ -160,6 +160,8 @@ struct
           | M.RhsTupleSub tf => M.RhsTupleSub (doTf tf)
           | M.RhsTupleSet {tupField, ofVal} =>
             M.RhsTupleSet {tupField = doTf tupField, ofVal = doOp ofVal}
+          | M.RhsTupleCAS {tupField, cmpVal, newVal} =>
+            M.RhsTupleCAS {tupField = doTf tupField, cmpVal = doOp cmpVal, newVal = doOp newVal}
           | M.RhsTupleInited {mdDesc, tup} =>
             M.RhsTupleInited {mdDesc = mdDesc, tup = doVar tup}
           | M.RhsIdxGet {idx, ofVal} =>
