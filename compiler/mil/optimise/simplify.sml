@@ -2726,7 +2726,7 @@ struct
                    fn objects => Vector.map (objects, fn opt => Option.map (opt, typeOfObject))
 
                   val consistent =
-                   fn t => isSome (MU.FieldKind.fromTyp' (config, t))
+                   fn t => isSome (MU.Typ.traceability (config, t))
 
                   val combineObject =
                       Try.lift 

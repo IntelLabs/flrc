@@ -2736,7 +2736,7 @@ struct
     fun fromTyp' (c, t) =
         (case t
           of M.TAny                       => NONE
-           | M.TAnyS vs                   => SOME (M.FkBits (vsToFs vs))
+           | M.TAnyS vs                   => NONE 
            | M.TNonRefPtr                 => SOME (M.FkBits (FieldSize.ptrSize c))
            | M.TRef                       => SOME M.FkRef
            | M.TBits vs                   => SOME (M.FkBits (vsToFs vs))
