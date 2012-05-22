@@ -633,7 +633,21 @@ struct
       in p
       end
 
-  val double = P.$$ unimplemented ("constant", "double")
+  val double : Real64.t P.t =
+      let
+        val hex = P.satisfy Char.isHexDigit
+        val p = hex && hex && hex && hex && hex && hex && hex && hex 
+                    && hex && hex && hex && hex && hex && hex && hex && hex
+        fun f (((((((((((((((c1, c2), c3), c4), c5), c6), c7), c8), c9), c10), c11), c12), c13), c14), c15), c16) =
+            let
+              val s = String.implode [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10, c11, c12, c13, c14, c15, c16]
+            in
+              Utils.wordToReal64 (Option.valOf (LargeWord.fromString s))
+            end
+        val p = P.map (p, f)
+        val p = syntax p || P.error "Expected double"
+      in p
+      end
 
   (*** State ***)
 

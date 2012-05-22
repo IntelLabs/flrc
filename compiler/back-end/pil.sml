@@ -312,7 +312,7 @@ struct
                   else
                     "NAN32"
                 | _ => 
-                  fixNeg (Real32.toString f)
+                  fixNeg (Real32.format (f, Real32.Format.exact))
         in (L.str s, 16)
         end
     fun double f = 
@@ -330,7 +330,7 @@ struct
                   else
                     "NAN64"
                 | _ => 
-                  fixNeg (Real64.toString f)
+                  fixNeg (Real64.format (f, Real64.Format.exact))
         in (L.str s, 16)
         end
 

@@ -272,12 +272,12 @@ struct
                    let
                      val lw = Utils.real32ToWord f
                      val s = LargeWord.toString lw
-                     val s = s ^ String.make (8 - String.length s, #"0")
+                     val s = String.make (8 - String.length s, #"0") ^ s
                      val l = L.str s
                    in l
                    end
                  else
-                   Real32.layout f
+                   L.str (Real32.format (f, Real64.Format.exact))
              val l = L.seq [L.str "F", L.paren f]
            in l
            end
@@ -285,9 +285,15 @@ struct
            let
              val d =
                  if showBinFpConsts env then
-                   Fail.unimplemented (modulename, "layoutConstant", "binary double")
+                   let
+                     val lw = Utils.real64ToWord d
+                     val s = LargeWord.toString lw
+                     val s = String.make (16 - String.length s, #"0") ^ s
+                     val l = L.str s
+                   in l
+                   end
                  else
-                   Real64.layout d
+                   L.str (Real64.format (d, Real64.Format.exact))
              val l = L.seq [L.str "D", L.paren d]
            in l
            end
