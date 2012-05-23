@@ -1001,7 +1001,7 @@ struct
                   else
                     VtmAlwaysImmutable
                 else
-                  VtmAlwaysMutable
+                  VtmCreatedMutable
             val vti = Vti {name = n, tag = M.PokCell, pinned = false, fixedSize = fs,
                            fixedRefs = frefs, alignment = 4, array = NONE,
                            mut = mut}
@@ -1593,7 +1593,7 @@ struct
               | (SOME v, NONE)   => 
                 let
                   val t = genVarE (state, env, v)
-                  val set = Pil.E.call (Pil.E.variable (RT.Thunk.setValue typ), [t, value])
+                  val set = Pil.E.call (Pil.E.variable (RT.Thunk.initValue typ), [t, value])
                   val s = Pil.S.expr set
                 in s
                 end
