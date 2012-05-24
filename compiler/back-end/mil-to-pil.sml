@@ -1133,7 +1133,7 @@ struct
         | M.TTuple _ => Pil.T.named RT.T.pAny
         | M.TCString => Pil.T.ptr Pil.T.char
         | M.TIdx => Pil.T.named RT.T.idx
-        | M.TContinuation _ => Pil.T.continuation
+        | M.TContinuation ts => Pil.T.continuation (Vector.toListMap (ts, fn t => genTyp (state, env, t)))
         | M.TThunk t =>
           let
             val fk = typToFieldKind (env, t)
@@ -1755,8 +1755,7 @@ struct
                     in Pil.S.contMake (v, cl, cv)
                     end
                   else
-                    Pil.S.expr (Pil.E.assign (genVarE (state, env, v),
-                                              Pil.E.null))
+                    Pil.S.expr (Pil.E.assign (genVarE (state, env, v), Pil.E.null))
             in bind doIt
             end
           | M.RhsObjectGetKind v =>
@@ -2139,10 +2138,10 @@ struct
                | _ => fail ("genTransfer", "multiple returns not supported"))
           | M.TCut {cont, args, cuts} =>
             let
-              (* XXX NG: there is a bug in Pillar for arguments and no C implementation - for now punt and hope! *)
-              val args = [] (*genOperands (state, env, args)*)
+              (* XXX NG: the C implementation is severely lacking *)
+              val args = genOperands (state, env, args)
               val cuts = genCutsTo (state, env, cuts)
-              val c = Pil.E.cast (Pil.T.continuation, genVarE (state, env, cont))
+              val c = genVarE (state, env, cont)
               val cut = Pil.S.contCutTo (getConfig env, c, args, cuts)
             in cut
             end
@@ -2180,19 +2179,21 @@ struct
   fun genCB (state, env, cb as (M.CB {entry, blocks, ...})) =
       let
         val () = clearLocals state
-        fun doBlock (bid, b) = (bid, genBlock (state, env, bid, b))
+        fun doBlock (bid, b) = (bid, b, genBlock (state, env, bid, b))
         val entry = Pil.S.goto (genLabel (state, env, entry))
         val config = getConfig env
         val blocks = List.map (MU.CodeBody.listRPO (config, cb), doBlock)
-        fun doOne ((bid, s), (decs, ss)) =
+        fun doOne ((bid, b, s), (decs, ss)) =
             case getCont (state, bid)
              of NONE => (decs, s::ss)
               | SOME cv =>
                 let
+                  val M.B {parameters, ...} = b
                   val cl = genLabel (state, env, bid)
                   val cv = genVar (state, env, cv)
                   val cdec = Pil.contDec cv
-                  val centry = Pil.S.contEntry (cl, cv)
+                  val ps = Vector.toListMap (parameters, fn v => genVar (state, env, v))
+                  val centry = Pil.S.contEntry (cl, cv, ps)
                 in
                   (cdec::decs, centry::s::ss)
                 end
@@ -2388,7 +2389,7 @@ struct
                   let
                     val cont = Pil.identifier "cutHandle"
                     val arg = Pil.identifier "cutCont"
-                    val ls = [(Pil.varDec (Pil.T.continuation, arg), NONE)]
+                    val ls = [(Pil.varDec (Pil.T.continuation [], arg), NONE)]
                     val conts = Pil.S.continuation (cont, [arg])
                     val rt = MU.Code.thunkTyp func
                     val typ = typToFieldKind (env, rt)

@@ -27,7 +27,7 @@ signature PIL = sig
     val bool : t
     val float : t
     val double : t
-    val continuation : t
+    val continuation : t list -> t
     val named : identifier -> t
     val ptr : t -> t
     val array : t -> t
@@ -91,7 +91,7 @@ signature PIL = sig
     val sequence : t list -> t
     val block : varDecInit list * t list -> t
     val contMake : E.t * identifier * identifier -> t
-    val contEntry : identifier * identifier -> t
+    val contEntry : identifier * identifier * identifier list -> t
     val contCutTo : Config.t * E.t * E.t list * identifier list -> t
     val noyield : t -> t
     val yield : t
@@ -169,7 +169,15 @@ struct
     val bool = (L.str "bool", "", sabs, sdec)
     val float = (L.str "float", "", sabs, sdec)
     val double = (L.str "double", "", sabs, sdec)
-    val continuation = (L.str "PilContinuation", "", sabs, sdec)
+
+    fun continuation ts =
+        let
+          val l =
+              if List.isEmpty ts
+              then L.str "PilContinuation0"
+              else L.mayAlign [L.str "PilContinuation", L.tuple (List.map (ts, abs))]
+        in (l, "", sabs, sdec)
+        end
 
     fun named i = (i, "", sabs, sdec)
 
@@ -534,24 +542,26 @@ struct
                 L.tuple [E.inPrec (e, 1), cl, cv],
                 L.str ";"]]
 
-    fun contEntry (cl, cv) =
-        [L.seq [L.str "pilContinuation", L.tuple [cl, cv], L.str ";"]]
+    fun contEntry (cl, cv, ps) =
+        if List.isEmpty ps then
+          [L.seq [L.str "pilContinuation0", L.tuple [cl, cv], L.str ";"]]
+        else
+          [L.seq [L.str "pilContinuation", L.tuple (cl::cv::ps), L.str ";"]]
 
     fun contCutTo (config, e, args, cuts) =
-        [if List.isEmpty cuts then 
-           if List.isEmpty args then
-             L.seq [L.str "pilCutTo0", L.paren (E.inPrec (e, 1)), L.str ";"]
-           else
-             if outputKind config = Config.OkC then
-               Fail.fail ("Pil", "contCutTo", "cut with arguments not supported on C")
-             else
-               L.seq [L.str "pilCutToA", L.tuple (List.map (e::args, fn e => E.inPrec (e, 1))), L.str ";"]
-         else
-           if List.isEmpty args then
-             L.seq [L.str "pilCutToC", L.tuple ((E.inPrec (e, 1)) :: cuts), L.str ";"]
-           else
-             Fail.fail ("Pil", "contCutTo", "one or more args and one or more cuts not supported")
-        ]
+        let
+          val cut =
+              if List.isEmpty args then
+                L.seq [L.str "pilCutTo0", L.paren (E.inPrec (e, 1))]
+              else
+                if outputKind config = Config.OkC then
+                  Fail.fail ("Pil", "contCutTo", "cut with arguments not supported on C")
+                else
+                  L.seq [L.str "pilCutToA", L.tuple (List.map (e::args, fn e => E.inPrec (e, 1)))]
+          val cuts = if List.isEmpty cuts then L.empty else L.seq [L.str " pilCutToC", L.tuple cuts]
+          val l = L.mayAlign [cut, LU.indent (L.seq [cuts, L.str ";"])]
+        in [l]
+        end
 
     fun noyield s =
         [L.mayAlign ([L.str "noyield {"] @
