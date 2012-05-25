@@ -1,124 +1,63 @@
 /* The Intel P to C/Pillar Compiler */
 /* COPYRIGHT_NOTICE_1 */
 
-/* -----------------------------------------------------------------------------
- *
- * (c) The GHC Team, 1995-2009
- *
- * The RTS stores some "global" values on behalf of libraries, so that
- * some libraries can ensure that certain top-level things are shared
- * even when multiple versions of the library are loaded.  e.g. see
- * Data.Typeable and GHC.Conc.
- *
- * If/when we switch to a dynamically-linked GHCi, this can all go
- * away, because there would be just one copy of each library.
- *
- * ---------------------------------------------------------------------------*/
-
-/*
-#include "PosixSource.h"
-#include "Rts.h"
-
-#include "Globals.h"
-#include "Stable.h"
-*/
-
 typedef enum {
-    GHCConcSignalSignalHandlerStore,
-    GHCConcWindowsPendingDelaysStore,
-    GHCConcWindowsIOManagerThreadStore,
-    GHCConcWindowsProddingStore,
-    SystemEventThreadEventManagerStore,
-    SystemEventThreadIOManagerThreadStore,
-    MaxStoreKey
-} StoreKey;
+    ISK_SystemEventThreadEventManager, ISK_SystemEventThreadIOManager, ISK_GHCConcWindowsPendingDelays,
+    ISK_GHCConcWindowsIOManagerThread, ISK_GHCConcWindowsProdding, ISK_GHCConcSignalSignalHandler, ISK_Num
+} IhrStoreKey;
 
-#ifdef THREADED_RTS
-Mutex globalStoreLock;
-#endif
+static void* ihrStore[ISK_Num] = {NULL, };
+static struct PrtMutex* ihrStoreLock;
 
-static StgStablePtr store[MaxStoreKey] = { 0, 0, 0, 0, 0, 0 };
-
-void
-initGlobalStore(void)
+void ihrGlobalInit()
 {
-    nat i;
-    for (i=0; i < MaxStoreKey; i++) {
-        store[i] = 0;
-    }
-#ifdef THREADED_RTS
-    initMutex(&globalStoreLock);
-#endif
+    /* XXX NG: PRT mutexes are implemented yet
+    ihrStoreLock = prtMutexCreate(NULL);
+    assert(ihrStoreLock);*/
 }
 
-void
-exitGlobalStore(void)
+void* getOrSetKey(IhrStoreKey k, void* p)
 {
-    nat i;
-#ifdef THREADED_RTS
-    closeMutex(&globalStoreLock);
-#endif
-    for (i=0; i < MaxStoreKey; i++) {
-        if (store[i] != 0) {
-            // FIXME: make freeStablePtr a C function
-            //freeStablePtr(store[i]);
-            store[i] = 0;
-        }
-    }
-}
-
-static StgStablePtr getOrSetKey(StoreKey key, StgStablePtr ptr)
-{
-    StgStablePtr ret = store[key];
-    if(ret==0) {
-#ifdef THREADED_RTS
-        ACQUIRE_LOCK(&globalStoreLock);
-        ret = store[key];
-        if(ret==0) {
-#endif
-            store[key] = ret = ptr;
-#ifdef THREADED_RTS
-        }
-        RELEASE_LOCK(&globalStoreLock);
-#endif
+    void* ret = ihrStore[k];
+    if (!ret) {
+        /* XXX NG: PRT mutexes are implemented yet
+           assert(!prtMutexLock(ihrStoreLock));*/
+        ret = ihrStore[k];
+        if (!ret) ihrStore[k] = ret = p;
+        /* XXX NG: PRT mutexes are implemented yet
+           assert(!prtMutexUnlock(ihrStoreLock));*/
     }
     return ret;
-}    
-
-StgStablePtr
-getOrSetGHCConcSignalSignalHandlerStore(StgStablePtr ptr)
-{
-    return getOrSetKey(GHCConcSignalSignalHandlerStore,ptr);
 }
 
-StgStablePtr
-getOrSetGHCConcWindowsPendingDelaysStore(StgStablePtr ptr)
+void* getOrSetSystemEventThreadEventManagerStore(void* p)
 {
-    return getOrSetKey(GHCConcWindowsPendingDelaysStore,ptr);
+    return getOrSetKey(ISK_SystemEventThreadEventManager, p);
 }
 
-StgStablePtr
-getOrSetGHCConcWindowsIOManagerThreadStore(StgStablePtr ptr)
+void* getOrSetSystemEventThreadIOManagerThreadStore(void* p)
 {
-    return getOrSetKey(GHCConcWindowsIOManagerThreadStore,ptr);
+    return getOrSetKey(ISK_SystemEventThreadIOManager, p);
 }
 
-StgStablePtr
-getOrSetGHCConcWindowsProddingStore(StgStablePtr ptr)
+void* getOrSetGHCConcWindowsPendingDelaysStore(void* p)
 {
-    return getOrSetKey(GHCConcWindowsProddingStore,ptr);
+    return getOrSetKey(ISK_GHCConcWindowsPendingDelays, p);
 }
 
-StgStablePtr
-getOrSetSystemEventThreadEventManagerStore(StgStablePtr ptr)
+void* getOrSetGHCConcWindowsIOManagerThreadStore(void* p)
 {
-    return getOrSetKey(SystemEventThreadEventManagerStore,ptr);
+    return getOrSetKey(ISK_GHCConcWindowsIOManagerThread, p);
 }
 
-StgStablePtr
-getOrSetSystemEventThreadIOManagerThreadStore(StgStablePtr ptr)
+void* getOrSetGHCConcWindowsProddingStore(void* p)
 {
-    return getOrSetKey(SystemEventThreadIOManagerThreadStore,ptr);
+    return getOrSetKey(ISK_GHCConcWindowsProdding, p);
+}
+
+void* getOrSetGHCConcSignalSignalHandlerStore(void* p)
+{
+    return getOrSetKey(ISK_GHCConcSignalSignalHandler, p);
 }
 
 void sysErrorBelch(char* s) {}
