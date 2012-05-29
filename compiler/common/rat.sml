@@ -21,6 +21,8 @@ sig
     val isInt : t -> bool
     val toInt : t -> int option
     val toIntInf : t -> IntInf.t option
+    val toReal32 : t -> Real32.t
+    val toReal64 : t -> Real64.t
     val zero : t
     val one : t
     val + : t * t -> t
@@ -160,4 +162,120 @@ struct
         in res
         end
 
+    (*
+    fun debug (s, v) = print (s ^ " " ^ v ^ "\n")
+    fun debugI (s, v) = debug (s, Int.toString v)
+    fun debugJ (s, v) = debug (s, IntInf.toString v)
+    *)
+
+    fun roundingMode (m : IntInf.t, h : int) : int = 
+        let
+          val c = IntInf.<< (IntInf.one, Word.fromInt h)
+          val r = IntInf.+ (m, IntInf.sub1 (IntInf.+ (c, c)))
+        in
+          case IntInf.compare (c, r) 
+            of LESS    => 2
+             | GREATER => 0
+             | EQUAL   => 1
+        end
+
+    fun isPowerOf2 (n : IntInf.t) : bool = n = IntInf.<< (IntInf.one, Word.fromInt (IntInf.log2 n))
+
+    fun toReal (encode, me : int, md : int, n : IntInf.t, d : IntInf.t) = 
+        let
+          fun encodeFloat (x, y) = if IntInf.isPositive n then encode (IntInf.~ x, y) else encode (x, y)
+          val n = IntInf.abs n
+          val ld = IntInf.log2 d
+          fun + (x, y) = Int.+ (x, y)
+          fun - (x, y) = Int.- (x, y)
+          fun > (x, y) = Int.> (x, y)
+          fun < (x, y) = Int.< (x, y)
+          fun >= (x, y) = Int.>= (x, y)
+          fun <= (x, y) = Int.<= (x, y)
+          fun << (x, y) = IntInf.<< (x, Word.fromInt y)
+          fun >> (x, y) = IntInf.~>> (x, Word.fromInt y)
+        in
+          if d = << (IntInf.one, ld)
+            then
+              let
+                val ln = IntInf.log2 n
+              in
+                if ln > (ld + me)
+                  then
+                    if ln < md
+                      then encodeFloat (<< (n, md - 1 - ln), ln + 1 - ld - md)
+                      else
+                        let 
+                          val n1 = >> (n, ln + 1 - md)
+                          val n2 = case roundingMode (n, ln - md)
+                                    of 0 => n1
+                                     | 2 => IntInf.+ (n1, 1)
+                                     | _ => if IntInf.isEven n1 then n1 else IntInf.+ (n1, 1)
+                        in
+                          encodeFloat (n2, ln - ld + 1 - md)
+                        end
+                  else
+                    let
+                      val ld' = ld + me - md
+                    in
+                      case Int.compare (ld', ln + 1)
+                        of GREATER => encodeFloat (IntInf.zero, 0)
+                         | EQUAL => if isPowerOf2 n then encodeFloat (IntInf.zero, 0) else encodeFloat (IntInf.one, me - md)
+                         | LESS =>
+                            if ld' <= 0 then encodeFloat (n, me - md - ld')
+                              else 
+                                let 
+                                  val n' = >> (n, ld')
+                                in
+                                  case roundingMode (n, ld' - 1)
+                                    of 0 => encodeFloat (n', me - md)
+                                     | 1 => if IntInf.isEven n'
+                                              then encodeFloat (n', me - md)
+                                              else encodeFloat (IntInf.+ (n', 1), me - md)
+                                     | _ => encodeFloat (IntInf.+ (n', 1), me - md)
+                                end
+                    end
+              end
+            else
+              let
+                val ln = IntInf.log2 n
+                val p0 = Int.max (me, ln - ld)
+                val (n', d') = case Int.compare (p0, md)
+                                 of LESS    => (<< (n, md - p0), d)
+                                  | EQUAL   => (n, d) 
+                                  | GREATER => (n, << (d, p0 - md))
+                fun scale (p, a, b) =
+                    if p < md - me then (p, a, b)
+                      else if IntInf.< (a, << (b, md - 1)) then (p - 1, << (a, 1), b)
+                        else if IntInf.<= (<< (b, md), a) then (p + 1, a, << (b, 1))
+                          else (p, a, b)
+                val (p', n'', d'') = scale (p0 - md, n', d')
+                val (q, r) = IntInf.quotRem (n'', d'')
+                val rdq = case IntInf.compare (<< (r, 1), d'')
+                            of LESS    => q
+                             | EQUAL   => if IntInf.isEven q then q else IntInf.+ (q, 1)
+                             | GREATER => IntInf.+ (q, 1)
+              in
+                encodeFloat (rdq, p')
+              end
+        end
+
+    val DBL_MIN_EXP = ~1021
+    val DBL_MAX_EXP = 1024
+    val DBL_MANT_DIG = 53
+    val FLT_MIN_EXP = ~125
+    val FLT_MAX_EXP = 128
+    val FLT_MANT_DIG = 24
+
+    fun toReal64 (n, d) = 
+        if n = 0 then Real64.zero
+          else if d = 0 then Real64./ (Real64.fromIntInf (IntInf.~ n), Real64.zero)
+            else toReal (fn (m, n) => Real64.* (Real64.fromIntInf m, Real64.pow (Real64.two, Real64.fromInt n)), 
+                         DBL_MIN_EXP, DBL_MANT_DIG, n, d)
+    fun toReal32 (n, d) = 
+        if n = 0 then Real32.zero
+          else if d = 0 then Real32./ (Real32.fromIntInf (IntInf.~ n), Real32.zero)
+            else toReal (fn (m, n) => Real32.* (Real32.fromIntInf m, Real32.pow (Real32.two, Real32.fromInt n)), 
+                         FLT_MIN_EXP, FLT_MANT_DIG, n, d)
+         
 end;
