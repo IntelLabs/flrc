@@ -120,3 +120,16 @@ getOrSetSystemEventThreadIOManagerThreadStore(StgStablePtr ptr)
 {
     return getOrSetKey(SystemEventThreadIOManagerThreadStore,ptr);
 }
+
+void sysErrorBelch(char* s) {}
+
+void blockUserSignals() {}
+
+void unblockUserSignals() {}
+
+void stopTimer() {} 
+
+void startTimer() {}
+
+void stackOverflow() {}
+
