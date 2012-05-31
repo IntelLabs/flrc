@@ -608,7 +608,6 @@ struct
         val prefix = List.map (prefix, CHU.zDecodeString)
         val name = CHU.zDecodeString name
         (* look for main package in current directory *)
-        val d = if d = "main" then "" else d
         val p = Path.fromString "."
         val p = List.fold (prefix, p, Utils.Function.flipIn Path.snoc)
         val p = Path.snoc (p, name)
@@ -987,7 +986,17 @@ struct
   fun readModule ((), pd, basename) =
       let
         val config = PassData.getConfig pd
-        
+        val odir = ref ""
+        val _ = List.map (Config.ghcOpt config, fn s => 
+                    if String.hasPrefix (s, { prefix = "-odir " }) 
+                      then odir := String.substring2 (s, { start = 6, finish = String.length s})
+                      else ())
+        val opath = if (!odir) = "" then Path.fromString "." else Path.fromString (!odir)
+        val () = print' ("odir = " ^ !odir ^ " opath = " ^ Config.pathToHostString (config, opath) ^ "\n")
+        val basename = Config.pathToHostString (config, basename)
+        val infile = if (!odir) = "" then basename ^ ".hcr" 
+                        else Config.pathToHostString (config, Path.snoc(opath, "Main.hcr"))
+         
         fun readOne (mname : C.anMName, defd : defDict, scanned : MS.t) =
             if MS.member (scanned, mname) 
               then (defd, scanned)
@@ -996,7 +1005,7 @@ struct
                   val (pname, path) = mNameToPath mname
                   val hcrRoot = 
                       case pname
-                        of "" => Path.fromString "."
+                        of "main" => opath
                          | _ => (case #dirs (#options (TMU.getGhcPkg (config, pname)))
                            of [p] => Path.fromString p
                             | ps => Fail.fail (passname, "readModule",
@@ -1007,7 +1016,7 @@ struct
                             (CoreHsLayout.layoutAnMName mname) ^ " scanned = " ^
                             Int.toString(MS.size scanned) ^ " path = " ^
                             Config.pathToHostString (config, path) ^ "\n")
-                  val f1 = Config.pathToHostString (config, path) ^ ".hcr"
+                  (* val f1 = Config.pathToHostString (config, path) ^ ".hcr" *)
                   val path = Path.append (hcrRoot, path)
                   val f2 = Config.pathToHostString (config, path) ^ ".hcr"
                   fun scan module = 
@@ -1021,10 +1030,11 @@ struct
                 in
                   if File.doesExist f2
                     then scan (parseFile (f2, config))
+                    (*
                     else if File.doesExist f1 
                       then scan (parseFile (f1, config))
-                      else Fail.fail (passname, "readModule", "file " ^ f2 ^ 
-                                      " or " ^ f1 ^ " are not found")
+                    *)
+                      else Fail.fail (passname, "readModule", "file " ^ f2 ^ " is not found")
                 end
 
         fun traceDef (name, def as (_, depends), state as (defd, traced, scanned)) =
@@ -1058,8 +1068,6 @@ struct
                   QS.fold (depends, (defd, traced, scanned), trace)
                 end
 
-        val basename = Config.pathToHostString (config, basename)
-        val infile = basename ^ ".hcr"
         fun cleanup () = 
             if Config.keep (config, "hcr") then ()
             else File.remove infile
