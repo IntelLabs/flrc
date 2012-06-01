@@ -282,7 +282,14 @@ struct
                   val () = SD.foreach (passes, doOne)
                 in ()
                 end
-              | _ => setShowPost (usage, s, true)
+              | _ => if (s = "all") then
+                       let
+                         fun doOne (_, pd) = PassData.setShowPost (pd, true)
+                         val () = SD.foreach (passes, doOne)
+                       in ()
+                       end
+                     else 
+                       setShowPost (usage, s, true)
 
         fun doStatIR (usage, s) =
             case String.sub (s, 0)
