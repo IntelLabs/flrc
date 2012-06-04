@@ -1,4 +1,4 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Intel FL to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (* A Representation of Pillar & C *)
@@ -125,6 +125,8 @@ end;
 structure Pil :> PIL =
 struct
 
+  val modname = "Pil"
+
   structure L = Layout
   structure LU = LayoutUtils
 
@@ -142,33 +144,59 @@ struct
   (* Types *)
   structure T = struct
 
-    type t = L.t * string * (L.t * string -> L.t) * (L.t * string * L.t -> L.t)
+    val modname = modname ^ ".T"
 
-    fun dec ((b, q, _, f), i) = f (b, q, i)
+    (* To deal with C's strange syntax for types, we do the following:
+     *   A type is represented as a qualifier, abstract type producer, and concrete type producer.
+     *   The abstract type producer produces a type without a direct-declarator, as in C's
+     *     "declaration-specifiers abstract-declarator".
+     *   The concrete type prodcuer takes a direct-declarator and produces a declaration, as in C's
+     *     "declaration-specifiers declarator".
+     *   The qualifier is to handle calling conventions, and maybe of use in other circumstances.
+     *     Specifically, for code types:
+     *       rt cc f(args)
+     *     But for pointers to code types:
+     *       rt (cc * f)(args)
+     *     So the pointer type needs to grab the qualifier from the code type, even though the latter is the source
+     *     of it.  This is achieved by passing the qualitifier to the type producers.
+     *   Invariant: the two functions either receive the qualifier they are packaged with or "" (when pointer types
+     *     take them).
+     *)
+    type qualifier = string
+    type t = qualifier * (qualifier -> L.t) * (qualifier * L.t -> L.t)
 
-    fun abs (b, q, f, _) = f (b, q)
+    (* dec makes a concrete type from a direct-declarator and a type *)
+    fun dec ((q, _, f), dd) = f (q, dd)
 
-    fun sdec (b, q, i) = L.seq [b, L.str " ", if q = "" then L.empty else L.str (q ^ " "), i]
+    (* abs makes an abstract type from a type *)
+    fun abs (q, f, _) = f q
 
-    fun sabs (b, q) = if q = "" then b else L.seq [b, L.str (" " ^ q)]
+    (* base takes the layout for a declaration-specifiers and produces a type *)
+    fun base l =
+        let
+          (* Note that q below should always be "" because of the invariant *)
+          fun abs q = l
+          fun dec (q, dd) = L.seq [l, L.str " ", dd]
+        in ("", abs, dec)
+        end
 
-    val void = (L.str "void", "", sabs, sdec)
-    val sint8 = (L.str "sint8", "", sabs, sdec)
-    val sint16 = (L.str "sint16", "", sabs, sdec)
-    val sint32 = (L.str "sint32", "", sabs, sdec)
-    val sint64 = (L.str "sint64", "", sabs, sdec)
-    val sint128 = (L.str "sint128", "", sabs, sdec)
-    val uint8 = (L.str "uint8", "", sabs, sdec)
-    val uint16 = (L.str "uint16", "", sabs, sdec)
-    val uint32 = (L.str "uint32", "", sabs, sdec)
-    val uint64 = (L.str "uint64", "", sabs, sdec)
-    val uint128 = (L.str "uint128", "", sabs, sdec)
-    val sintp = (L.str "sintp", "", sabs, sdec)
-    val uintp = (L.str "uintp", "", sabs, sdec)
-    val char = (L.str "char", "", sabs, sdec)
-    val bool = (L.str "bool", "", sabs, sdec)
-    val float = (L.str "float", "", sabs, sdec)
-    val double = (L.str "double", "", sabs, sdec)
+    val void = base (L.str "void")
+    val sint8 = base (L.str "sint8")
+    val sint16 = base (L.str "sint16")
+    val sint32 = base (L.str "sint32")
+    val sint64 = base (L.str "sint64")
+    val sint128 = base (L.str "sint128")
+    val uint8 = base (L.str "uint8")
+    val uint16 = base (L.str "uint16")
+    val uint32 = base (L.str "uint32")
+    val uint64 = base (L.str "uint64")
+    val uint128 = base (L.str "uint128")
+    val sintp = base (L.str "sintp")
+    val uintp = base (L.str "uintp")
+    val char = base (L.str "char")
+    val bool = base (L.str "bool")
+    val float = base (L.str "float")
+    val double = base (L.str "double")
 
     fun continuation ts =
         let
@@ -176,46 +204,52 @@ struct
               if List.isEmpty ts
               then L.str "PilContinuation0"
               else L.mayAlign [L.str "PilContinuation", L.tuple (List.map (ts, abs))]
-        in (l, "", sabs, sdec)
+        in base l
         end
 
-    fun named i = (i, "", sabs, sdec)
+    fun named i = base i
 
-    fun ptr (b, q, _, f2) =
+    fun ptr (q, _, f2) =
         let
-          fun f3 (b, q) = f2 (b, "", L.paren (L.seq [L.str q, L.str "*"]))
-          fun f4 (b, q, i) = f2 (b, "", L.paren (L.seq [L.str q, L.str "*", i]))
+          (* Note that by the invariant the qualifiers passed are "" *)
+          fun f3 _ = f2 ("", L.paren (L.seq [L.str q, L.str "*"]))
+          fun f4 (_, dd) = f2 ("", L.paren (L.seq [L.str q, L.str "*", dd]))
         in
-          (b, q, f3, f4)
+          ("", f3, f4)
         end
 
-    fun array (b, q, _, f2) =
+    fun array (q, _, f2) =
         let
-          fun f3 (b, q) = f2 (b, q, L.str "[]")
-          fun f4 (b, q, i) = f2 (b, q, L.seq [i, L.str "[]"])
+          val () = Fail.assert (modname, "array", "qualified element types not supported", fn () => q="")
+          (* Note that by the invariant the qualifiers passed are "" *)
+          fun f3 _ = f2 (q, L.str "[]")
+          fun f4 (_, dd) = f2 (q, L.seq [dd, L.str "[]"])
         in
-          (b, q, f3, f4)
+          ("", f3, f4)
         end
 
-    fun arrayConstant ((b, q, _, f2), n) =
+    fun arrayConstant ((q, _, f2), n) =
         let
-          fun f3 (b, q) = f2 (b, q, L.seq [L.str "[", Int.layout n, L.str "]"])
-          fun f4 (b, q, i) = f2 (b, q, L.seq [i, L.seq [L.str "[", Int.layout n, L.str "]"]])
+          val () = Fail.assert (modname, "arrayConstant", "qualified element types not supported", fn () => q="")
+          (* Note that by the invariant the qualifiers passed are "" *)
+          fun f3 _ = f2 (q, L.seq [L.str "[", Int.layout n, L.str "]"])
+          fun f4 (_, dd) = f2 (q, L.seq [dd, L.seq [L.str "[", Int.layout n, L.str "]"]])
         in
-          (b, q, f3, f4)
+          ("", f3, f4)
         end
 
-    fun codeA ((b, q, _, f2), cc, args) =
+    fun codeA ((q, _, f2), cc, args) =
         let
+          val () = Fail.assert (modname, "codeA", "qualified return types not supported", fn () => q="")
           val args =
               if List.isEmpty args then
                 L.str "(void)"
               else
                 L.tuple args
-          fun f3 (b, q') = Fail.fail ("Pil", "code", "C doesn't allow abstract unboxed code type")
-          fun f4 (b, q', i) = f2 (b, q, L.seq [i, args])
+          fun f3 q' = Fail.fail ("Pil", "code", "C doesn't allow abstract unboxed code type")
+          fun f4 (q', dd) = f2 (q, L.seq [if q'="" then L.empty else L.str (q' ^ " "), dd, args])
         in
-          (b, cc, f3, f4)
+          (cc, f3, f4)
         end
 
     fun codeCC (rt, cc, ats) = codeA (rt, cc, List.map (ats, abs))
@@ -228,12 +262,11 @@ struct
                            | SOME i => L.seq [L.str " ", i, L.str " "]
           fun doOne (f, t) = L.seq [dec (t, f), L.str ";"]
           val ls = List.map (fields, doOne)
-          val b =
+          val l =
               L.mayAlign [L.seq [L.str "struct", l1, L.str "{"],
                           LU.indent (L.mayAlign ls),
                           L.str "}"]
-        in
-          (b, "", sabs, sdec)
+        in base l
         end
 
   end
