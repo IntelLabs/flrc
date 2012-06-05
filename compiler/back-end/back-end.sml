@@ -80,6 +80,8 @@ struct
 
   val lightweightThunks = MilToPil.lightweightThunks
 
+  val interceptCuts = MilToPil.interceptCuts
+
   val noGMP = MilToPil.noGMP
 
   val (gmpUseMallocF, gmpUseMalloc) = 
@@ -261,7 +263,8 @@ struct
             if singleThreaded config then ["PLSR_SINGLE_THREADED"] else []
 
         val thunks = 
-            if lightweightThunks config then ["PLSR_LIGHTWEIGHT_THUNKS"] else []
+            (if lightweightThunks config then ["PLSR_LIGHTWEIGHT_THUNKS"] else []) @
+            (if interceptCuts config then ["PLSR_THUNK_INTERCEPT_CUTS"] else [])
 
         val instr =
             List.concat

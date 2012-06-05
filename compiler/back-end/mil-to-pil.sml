@@ -5,10 +5,11 @@
 
 signature MIL_TO_PIL =
 sig
-  val instrumentAllocationSites : Config.t -> bool
-  val backendYields : Config.t -> bool
-  val lightweightThunks : Config.t -> bool
   val assertSmallInts : Config.t -> bool
+  val backendYields : Config.t -> bool
+  val instrumentAllocationSites : Config.t -> bool
+  val interceptCuts : Config.t -> bool
+  val lightweightThunks : Config.t -> bool
   val noGMP : Config.t -> bool
   val features : Config.Feature.feature list
   val program : PassData.t * string * Mil.t -> Layout.t
@@ -64,7 +65,11 @@ struct
   fun rewriteThunks (env, conv) =
       case conv of M.CcThunk {thunk, ...} => SOME thunk | _ => NONE
 
-  fun interceptCuts env = parStyle env = Config.PAll
+  val (interceptCutsF, interceptCuts0) =
+      Config.Feature.mk ("Plsr:thunks-cut",
+                         "Overwrite thunks to re-cut when cut from")
+
+  fun interceptCuts c = interceptCuts0 c orelse (Config.parStyle c) = Config.PAll
 
   fun getGlobalDef (E {gdefs, ...}, v) = MU.Globals.get (gdefs, v)
 
@@ -528,12 +533,20 @@ struct
     fun thunkBaseElements (state, env) =
         let
           val count = 
-              (if lightweightThunks (getConfig env) then 2
-               else case parStyle env
-                     of Config.PNone => 3
-                      | Config.PAll  => 5
-                      | Config.PAuto => 5
-                      | Config.PPar  => 5)
+              if lightweightThunks (getConfig env) then 2
+              else
+                let
+                  val vt = 1
+                  val fb = 
+                      case parStyle env
+                       of Config.PNone => 2
+                        | Config.PAll  => 3
+                        | Config.PAuto => 3
+                        | Config.PPar  => 3
+                  val co = 
+                      if interceptCuts (getConfig env) then 1 else 0
+                in vt + fb + co
+                end
         in Vector.new (count, M.FkBits (MU.FieldSize.ptrSize (getConfig env)))
         end
  
@@ -2390,7 +2403,7 @@ struct
         val (ls2, b) =
             case rewriteThunks (env, cc)
              of SOME thunk =>
-                if interceptCuts env then
+                if interceptCuts (getConfig env) then
                   let
                     val cont = Pil.identifier "cutHandle"
                     val arg = Pil.identifier "cutCont"
@@ -2910,6 +2923,7 @@ struct
        instrumentFunctionsF,
        assertSmallIntsF,
        backendYieldsF,
+       interceptCutsF,
        lightweightThunksF,
        noGMPF,
        oldVarEncodingF]
