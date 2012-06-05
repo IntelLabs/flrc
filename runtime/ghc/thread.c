@@ -21,6 +21,7 @@ int rtsSupportsBoundThreads()
 
 /*** IO Manager Stuff ***/
 
+#if defined (__MINGW32__) || defined(WIN32)
 HANDLE getIOManagerEvent()
 {
     /* XXX NG: this is for a non-threaded runtime. */
@@ -37,3 +38,4 @@ void sendIOManagerEvent(uint32 e)
 {
     /* XXX NG: this is for a non-threaded runtime. */
 }
+#endif
