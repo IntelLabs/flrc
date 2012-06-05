@@ -150,15 +150,22 @@ struct
 
   fun isUpperName s = if String.isEmpty s then false else Char.isUpper (String.sub (s, 0))
 
+  fun isDCon s = isUpperName s orelse s = "z7eU" orelse s = "z7eUzh"
+
   (* special type constructor ~ is not an upperName! *)
-  val z7eU = P.symbol "z7eU" 
+  val z7eU = P.lexeme (
+      oneString "z7eU" >>= (fn x =>
+      optional (oneString "zh") >>= (fn y => 
+      case y of NONE => return x | SOME z => return (x ^ z))))
+
+  val zt = P.symbol "zt"
 
   val coreQualifiedCon =
       corePackageName       >>= (fn (C.P pkgId) =>
       ((oneChar #":"        >>
         coreHierModuleNames >>= (fn (modHierarchy, baseName) =>
         oneChar #"."        >>
-        upperName           >>= (fn conName =>
+        (upperName || z7eU) >>= (fn conName =>
         return (SOME (cacheM (cacheP pkgId, modHierarchy, baseName)), conName)))) ||
        (if isUpperName pkgId
           then return (NONE, pkgId)
@@ -171,25 +178,24 @@ struct
         of NONE =>  return (C.Tvar packageIdOrVarName)
          | SOME (modHierarchy, baseName) =>
              (oneChar #"."        >>
-              (upperName || z7eU) >>= (fn theId =>
+              (upperName || z7eU || zt) >>= (fn theId =>
               return (C.Tcon (SOME (cacheM (cacheP packageIdOrVarName, modHierarchy, baseName)), theId))))))
 
   val coreDconOrVar =
   corePackageName >>= (fn (C.P firstPart) =>
   optional (oneChar #":" >> coreHierModuleNames) >>= (fn maybeRest =>
   let
-    fun isUpper s = String.length s > 0 andalso Char.isUpper (String.sub (s, 0))
     val name = (NONE, firstPart)
   in
     case maybeRest
-      of NONE => return ((if isUpper firstPart then C.Dcon else C.Var) name)
+      of NONE => return ((if isDCon firstPart then C.Dcon else C.Var) name)
        | SOME (modHierarchy, baseName) =>
           (oneChar #"." >>
            (upperName || identifier) >>= (fn theId =>
            let
              val fullname = (SOME (cacheM (cacheP firstPart, modHierarchy, baseName)), theId)
            in
-             return ((if isUpper theId then C.Dcon else C.Var) fullname)
+             return ((if isDCon theId then C.Dcon else C.Var) fullname)
            end))
   end))
 
@@ -367,6 +373,7 @@ struct
 
   val callconv = 
       (P.symbol "prim" >> return C.Prim) || 
+      (P.symbol "capi" >> return C.CCall) || 
       (P.symbol "ccall" >> return C.CCall) || 
       (P.symbol "stdcall" >> return C.StdCall)
 
