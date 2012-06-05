@@ -423,8 +423,6 @@ functor MilDataFlowAnalysisF (
         val config = getConfig (#env env)
         val mp as Mil.P {symbolTable, ...} = m
         val si = I.SymbolInfo.SiTable symbolTable
-        val tl = MilLayout.layoutTransfer (config, si, transfer)
-        val () = LU.printLayout tl
 
         fun goTarget (E env, st, M.T {block, arguments}) =
             let

@@ -1272,20 +1272,6 @@ struct
                   end
                end         
 
-         val debugPrint : (M.label VD.t) -> unit = 
-           fn dict =>
-            let
-              val varMap = VD.toList dict
-              val varMap' = map (fn (v, l) => 
-                                    L.seq [L.str (I.variableString' v),
-                                           L.str " => ",
-                                           L.str (I.labelString l),
-                                           L.str "\n"]) varMap
-              val header = L.str "Binder locations:\n"
-            in (LU.printLayout header;
-                LU.printLayout (L.seq (varMap')))
-            end
-
          val LS {config, si, entry, loops, blocksNotInLoops,
                  allNodes, exits, preheaders, inductionVars,
                  tripCounts, ...} = ls             
@@ -1294,10 +1280,6 @@ struct
          (* for each loop tree, calculate the binding info *)
          val dict' = Vector.fold (loops, dict, appTree)
                      
-         val () = if Config.debug then
-                    debugPrint dict'
-                  else
-                    ()
        in
         LS {config = config, si = si, entry = entry, loops = loops,
             blocksNotInLoops = blocksNotInLoops, allNodes = allNodes,
