@@ -1,4 +1,4 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Intel FL to C/Pillar Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (* Convert Mil into C/Pillar *)
@@ -684,8 +684,11 @@ struct
   fun printVar (state, env, v)  = 
       LayoutUtils.printLayout (IM.layoutVariable (v, getStm state))
 
+  val (oldVarEncodingF, oldVarEncoding) =
+      Config.Feature.mk (modname ^ ":old-var-encoding", "use the old variable name encoding")
+
   local
-    (* P source identifiers can use characters not allowed in Pil,
+    (* Source identifiers can use characters not allowed in Pil,
      * this code translates them into something useable.
      *)
     val map = CharDict.fromList[
@@ -724,11 +727,13 @@ struct
 	case CharDict.lookup (map, c)
 	 of SOME s => s
 	  | NONE => String.fromChar c
+    fun oldEncoding s = String.translate (s, expand)
+    fun newEncoding s = ZCoding.encodeExceptUnderscore s
   in
   fun stringOfVar (state, env, v) = 
       let
 	val s = IM.variableString (getStm state, v)
-	val s = String.translate (s, expand)
+	val s = (if oldVarEncoding (getConfig env) then oldEncoding else newEncoding) s
       in s
       end
   end
@@ -2906,6 +2911,7 @@ struct
        assertSmallIntsF,
        backendYieldsF,
        lightweightThunksF,
-       noGMPF]
+       noGMPF,
+       oldVarEncodingF]
 
 end;

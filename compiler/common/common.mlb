@@ -50,6 +50,7 @@ local
         globals.sml
         chat.sml
         locus.sml
+        z-coding.sml
         identifier.sml
         local  
           local
@@ -141,5 +142,6 @@ in
         structure UnParser
         structure Utils
         structure Word32
+        structure ZCoding
 
 end
