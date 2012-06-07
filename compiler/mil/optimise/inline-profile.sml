@@ -1064,7 +1064,6 @@ struct
    *)
   fun policy (info: policyInfo, d: PD.t, imil: IMil.t) =
       let
-        val () = Chat.log1 (d, "Starting inline profile round "^ Int.toString (getRounds info))
         val () = incIterations (info)
         val lastInlined = getInlinedCS (info)
         val () = updateCallSitesInfo (d, info, imil)
