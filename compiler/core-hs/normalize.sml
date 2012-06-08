@@ -408,11 +408,11 @@ struct
   val helper = { printer = layout, stater = layout }
 
   val description = {name        = passname,
-                     description = "Normalize Haskell Core",
+                     description = "Normalization of GHC Core",
                      inIr        = helper,
                      outIr       = helper,
                      mustBeAfter = [],
-                     stats       = [(passname, "Normalize Haskell Core")]}
+                     stats       = []}
 
   val associates = {controls = [], debugs = [], features = [], subPasses = []}
 

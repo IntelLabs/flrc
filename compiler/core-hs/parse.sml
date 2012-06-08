@@ -11,9 +11,9 @@ end
 structure CoreHsParse :> CORE_HS_PARSE =
 struct
   val passname = "CoreHsParse"
-  val stats = [(passname, "Haskell Core Parser")]
+  fun failMsg (f, m) = Fail.fail (passname, f, m)
   val desc = {disableable = false,
-              describe = fn () => Layout.str "Parse Haskell Core files (.hcr)" }
+              describe = fn () => Layout.str "Parse GHC Core files (.hcr)" }
   structure CharParser = CharParserF (structure Parser = FileParser)
   structure Chat = ChatF (struct 
                             type env = Config.t
@@ -63,15 +63,13 @@ struct
   structure QD = DictF (struct type t = C.identifier C.qualified val compare = CHU.compareQName end)
   structure SD = StringDict
   structure TMU = HsToMilUtils
+  structure QTS = TopoSortF (struct structure Dict = QD structure Set = QS end)
 
   structure Debug =
   struct
     val (debugPassD, debugPass) = Config.Debug.mk (passname, "debug CoreHs parser")
-    fun debug   (config, s) = if Config.debug andalso debugPass config then print s else ()
-    fun verbose (config, s) = if Config.verbose config then print s else ()
+    fun debug   (config, s) = if Config.debug andalso debugPass config then print (s ^ "\n") else ()
   end
-
-  fun print' s = ()
 
   val sCache : string SD.t ref = ref SD.empty
   val pCache : C.pName SD.t ref = ref SD.empty
@@ -224,11 +222,9 @@ struct
 
   fun coreTbindGen' () =
       identifier                            >>= (fn tyVar =>
-      let val _ = print' ("got tyVar " ^ tyVar ^ "\n")
-      in
       optional (P.symbol "::" >> $ coreKind) >>= (fn kdecl =>
-      return (tyVar, UO.get (kdecl, C.Klifted)))
-      end)
+      return (tyVar, UO.get (kdecl, C.Klifted))))
+
   and coreTbindGen sep = optional sep >> $ coreTbindGen'
   and coreTbind () = coreTbindGen (return ()) || P.parens ($ coreTbind)
   and coreAtTbind () = P.symbol "@" >> $ coreTbind
@@ -243,7 +239,7 @@ struct
 
   (* NOTE: quick hack to type check new core syntax *)
   and coreAty () = coreTcon || (P.parens (optional (oneString "ghczmprim:GHCziPrim.sym" >>
-                                P.whiteSpace) >>= (fn _ => let val _ = print' ("in paren\n") in $ coreType end)) >>= return o ATy)
+                                P.whiteSpace) >>= (fn _ => $ coreType)) >>= return o ATy)
 
   and coreAtySaturated () = $ coreAty >>= (fn t =>
       case t
@@ -252,9 +248,6 @@ struct
 
   and coreBty () =
       $ coreAty                       >>= (fn hd =>
-      let val _ = case hd of ATy t => print' ("coreBty hd ATy = " ^ Layout.toString (CoreHsLayout.layoutTy t) ^ "\n")
-                           | _ => ()
-      in
       P.whiteSpace                    >>
       let
         fun fail err m n = error (err ^ " expects " ^ Int.toString m ^ " arguments, but got " ^ Int.toString n)
@@ -277,24 +270,16 @@ struct
            | RightCo k => moreTys >>= app1 k "right"
            | InstCo k  => moreTys >>= app2 k "inst"
            | NthCo k   => nthTy   >>= return o k
-      end
       end)
 
   and coreType () =
       $ coreForallTy ||
       ($ coreBty                                >>= (fn hd =>
-       let val _ = print' ("coreType hd = " ^ Layout.toString (CoreHsLayout.layoutTy hd) ^ "\n")
-       in
        zeroOrMore (P.symbol "->" >>= (fn s =>
-       let val _ = print' ("->\n")
-       in coreType ()
-       end)) >>= (fn rest =>
-       let val _ = print' ("coreType rest = " ^ Int.toString (List.length rest) ^ "\n")
-       in 
+       coreType ()))                            >>= (fn rest =>
        return (case rest
                  of [] => hd
-                  | _  => List.fold (hd::rest, (C.Tcon CHU.tcArrow), UF.flipIn C.Tapp)) 
-       end) end))
+                  | _  => List.fold (hd::rest, (C.Tcon CHU.tcArrow), UF.flipIn C.Tapp)))))
 
   and equalityKind () =
       $ coreBty      >>= (fn ty1 =>
@@ -345,12 +330,9 @@ struct
 
   fun aCoreVbind idP =
       idP           >>= (fn nm =>
-      let val _ = print' ("aCoreVbind got name\n")
-      in
       P.symbol "::" >>
       $ coreType    >>= (fn t =>
-      let val _ = print' ("aCoreVbind ty = " ^ Layout.toString (CoreHsLayout.layoutTy t) ^ "\n")
-      in return (nm, t) end) end)
+      return (nm, t)))
   val lambdaBind = aCoreVbind identifier
   val topVbind = aCoreVbind coreQualifiedName
   val coreVbind = P.parens (lambdaBind >>= return o C.Vb)
@@ -407,17 +389,11 @@ struct
   fun coreVdef () =
     (topVbind || (lambdaBind >>= (fn (v, ty) =>
                   return (CHU.unqual v, ty))))  >>= (fn (vdefLhs, vdefTy) =>
-    let val _ = print' ("parse def " ^ Layout.toString (CoreHsLayout.layoutQName vdefLhs) ^ " " ^ Layout.toString (CoreHsLayout.layoutTy vdefTy) ^ "\n")
-    in
     P.whiteSpace   >>
     P.symbol "="   >>
     P.whiteSpace   >>
     $ coreFullExp  >>= (fn vdefRhs =>
-    let val _ = print' ("got Rhs = " ^ Layout.toString (CoreHsLayout.layoutExp vdefRhs) ^ "\n") 
-    in
-    return (C.Vdef (vdefLhs, vdefTy, vdefRhs)) end)
-    end
-    )
+    return (C.Vdef (vdefLhs, vdefTy, vdefRhs))))
 
   and coreRecVdef () =
       reservedH "rec" >>
@@ -448,12 +424,9 @@ struct
   and coreLam () =
       P.symbol "\\"     >>
       coreLambdaBinds   >>= (fn binds =>
-      let val _ = print' ("got binds " ^ Layout.toString
-      (Layout.seq (List.map (binds, CoreHsLayout.layoutBind))) ^ "\n")
-      in
       P.symbol "->"     >>
       $ coreFullExp     >>= (fn body =>
-      return (List.foldr (binds, body, C.Lam))) end)
+      return (List.foldr (binds, body, C.Lam))))
 
   and coreLet () =
       reservedH "let" >>
@@ -466,30 +439,18 @@ struct
   and coreCase () =
       reservedH "case"    >>
       $ coreAtySaturated  >>= (fn ty =>
-      let val _ = print' ("got ty " ^ Layout.toString (CoreHsLayout.layoutTy ty) ^ "\n")
-      in
       $ coreAtomicExp     >>= (fn scrut =>
       reservedH "of"      >>
       P.parens lambdaBind   >>= (fn vBind =>
-      let val _ = print' ("got vbind " ^ Layout.toString (CoreHsLayout.layoutVBind vBind) ^ "\n")
-      in
       $ coreAlts          >>= (fn alts =>
-      return (C.Case (scrut, vBind, ty, alts)))
-      end))
-      end)
+      return (C.Case (scrut, vBind, ty, alts))))))
 
   and coreCast () =
       reservedH "cast"         >>
       P.whiteSpace             >>
       P.parens ($ coreFullExp) >>= (fn body =>
-      let val _ = print' ("got cast body\n")
-      in
       $ coreAtySaturated       >>= (fn ty =>
-      let val _ = print' ("got cast type\n")
-      in
-      return (C.Cast (body, ty))
-      end)
-      end)
+      return (C.Cast (body, ty))))
 
   and coreNote () =
       reservedH "note" >>
@@ -499,17 +460,11 @@ struct
 
   and conAlt () =
       coreQualifiedCon >>= (fn conName =>
-      let val _ = print' ("got conName " ^ Layout.toString (CoreHsLayout.layoutQName conName) ^ "\n")
-      in
       P.whiteSpace     >>
       $ caseVarBinds   >>= (fn (tBinds, vBinds) =>
-      let val _ = print' ("got caseVarBinds " ^ Int.toString (List.length tBinds) ^ " " ^ Int.toString (List.length vBinds) ^ "\n")
-      in
       P.symbol "->"    >>
       $ coreFullExp    >>= (fn rhs =>
-      return (C.Acon (conName, tBinds, vBinds, rhs)))
-      end)
-      end)
+      return (C.Acon (conName, tBinds, vBinds, rhs)))))
 
   and litAlt () =
       P.parens coreLiteral >>= (fn l =>
@@ -549,23 +504,11 @@ struct
   val coreDataDecl =
       P.reserved "data"  >>
       coreQualifiedCon   >>= (fn tyCon  =>
-      let val _ = print' ("got tdef " ^ Layout.toString (CoreHsLayout.layoutQName tyCon) ^ "\n")
-      in
       P.whiteSpace       >>
       coreTbinds         >>= (fn tBinds =>
-      let val _ = print' ("got tbinds " ^ Int.toString (List.length tBinds))
-      in
       P.symbol "="       >>
       P.braces coreCdefs >>= (fn cDefs  =>
-      let val _ = print' ("got cDefs " ^ Int.toString (List.length cDefs))
-      in 
-      return (C.Data (tyCon, tBinds, cDefs))
-      end
-      )
-      end
-      )
-      end
-      )
+      return (C.Data (tyCon, tBinds, cDefs)))))
 
   val coreNewtypeDecl =
       P.reserved "newtype" >>
@@ -586,10 +529,7 @@ struct
       P.whiteSpace              >>
       optionalWith [] coreTdefs >>= (fn tdefs =>
       $ coreVdefGroups          >>= (fn vdefGroups =>
-      let 
-         val _ = print' ("At End with tdefs " ^ Int.toString (length tdefs) ^ " and vdefs " ^ Int.toString(length vdefGroups) ^ "\n")
-      in
-      atEnd                     end >>
+      atEnd                     >>
       return (C.Module (mName, tdefs, vdefGroups))))))
 
   fun parseFile (f : string, config:Config.t) : C.t =
@@ -604,8 +544,8 @@ struct
       in
         case result
           of Success (_, prog) => prog
-           | Failure => Fail.fail (passname, f, "parse GHC Core file failed!")
-           | Error (pos, err) => Fail.fail (passname, f, "GHC Core parse error: " ^ err ^ " at " ^ Int.toString (#line pos) ^ ":" ^ Int.toString (#col pos))
+           | Failure => failMsg (f, "parse GHC Core file failed!")
+           | Error (pos, err) => failMsg (f, "GHC Core parse error: " ^ err ^ " at " ^ Int.toString (#line pos) ^ ":" ^ Int.toString (#col pos))
       end
 
   fun foldL (l, m, f) = List.foldr (l, ([], m), fn (x, (xs, m)) => 
@@ -953,43 +893,13 @@ struct
    *)
   fun linearize (defdict : (C.vDef * QS.t) QD.t) : C.vDefg list =
       let
-        fun lookup n = case QD.lookup (defdict, n) of SOME x => x | NONE => Fail.fail (passname, "linearize:lookup", "impossible!")
-        fun reach (deps, s') =
-            let
-              val deps = QS.keepAll (deps, fn x => QD.contains (defdict, x))
-              val s = QS.union (s', deps)
-              fun visit (n, s) = if QS.member (s', n) then s else reach (#2 (lookup n), s)
-            in
-              QS.fold (deps, s, visit)
-            end
-        fun group ([], _) = []
-          | group (x::(xs as (y::ys)), f) = if f (x, y) then case group (xs, f) of ys::xs => (x :: ys) :: xs | _ => Fail.fail (passname, "linearize:group", "impossible!")
-                                                        else ([x] :: group (xs, f))
-          | group (x::[], _) = [[x]]
-
-        val names = QD.domain defdict
-        (* transitive closure *)
-        val _ = print' (Layout.toString (Layout.seq (Layout.str "linearize defdict:\n" ::
-           List.map (QD.toList defdict, fn (n, (_, s)) => Layout.seq (CoreHsLayout.layoutQName n :: Layout.str " -> " ::
-           Layout.sequence ("","\n",",") (List.map (QS.toList s, CoreHsLayout.layoutQName)) :: [])))))
-
-        val clo = List.map (names, fn n => (n, reach (#2 (lookup n), QS.empty)))
-        val clo = List.insertionSort (clo, fn ((_, x), (_, y)) => QS.size x < QS.size y)
-        val clo = group (clo, fn ((_, x), (_, y)) => QS.size x = QS.size y)
-        val _ = print' (Layout.toString (Layout.seq (Layout.str "linearize:\n" ::
-           List.map (clo, fn x => Layout.sequence ("", "\n", ", ") 
-           (List.map (x, fn (n, deps) => Layout.seq [CoreHsLayout.layoutQName n, Layout.str "/", Int.layout (QS.size deps)]))))))
-
-        fun toDefg ns = 
-            let
-              val {no, yes} = List.partition (ns, fn (x as (n, deps)) => QS.member (deps, n))
-              val recs = case yes of [] => [] | _ => [C.Rec (List.map (yes, #1 o lookup o #1))]
-              val nonrecs = List.map (no, C.Nonrec o #1 o lookup o #1)
-            in
-              recs @ nonrecs 
-            end
+        val toDefg 
+          = fn [] => failMsg ("linearize", "impossible: topo-sorted component can not be empty") 
+             | [(n, (def, s))] => if QS.member (s, n) then C.Rec [def] else C.Nonrec def
+             | defs  => C.Rec (List.map (defs, #1 o #2))
+        val sorted = QTS.sort (QD.toList defdict, #2 o #2)
       in
-        List.concat (List.map (clo, toDefg))
+        List.map (sorted, toDefg)
       end
 
   val (noMainWrapperF, noMainWrapper) =
@@ -998,13 +908,39 @@ struct
   fun readModule ((), pd, basename) =
       let
         val config = PassData.getConfig pd
+        fun debug s = Debug.debug (config, s)
+        fun verbose s = Chat.log1 (config, s)
+        val stats = ref SD.empty        
+        fun lookupStat n = case SD.lookup (!stats, n) of SOME t => t | NONE => Time.zero
+        val time = 
+         fn name => 
+         fn f => 
+         fn a => 
+            let
+              val s = Time.now ()
+              val r = f a
+              val e = Time.now ()
+              val acc = lookupStat name
+              val () = stats := SD.insert (!stats, name, Time.+(acc, Time.-(e, s)))
+            in r
+            end
+        fun chatStats () = 
+            let
+              fun chat n = verbose ("  " ^ n ^ "\t" ^ Time.toString (lookupStat n) ^ "s")
+              val () = verbose "time spent in "
+              val () = chat "parsing"
+              val () = chat "scanning"
+              val () = chat "linearizing"
+            in
+              ()
+            end
         val odir = ref ""
         val _ = List.map (Config.ghcOpt config, fn s => 
                     if String.hasPrefix (s, { prefix = "-odir " }) 
                       then odir := String.substring2 (s, { start = 6, finish = String.length s})
                       else ())
         val opath = if (!odir) = "" then Path.fromString "." else Path.fromString (!odir)
-        val () = print' ("odir = " ^ !odir ^ " opath = " ^ Config.pathToHostString (config, opath) ^ "\n")
+        val () = debug ("odir = " ^ !odir ^ " opath = " ^ Config.pathToHostString (config, opath))
         val basename = Config.pathToHostString (config, basename)
         val infile = if (!odir) = "" then basename ^ ".hcr" 
                         else Config.pathToHostString (config, Path.snoc(opath, "Main.hcr"))
@@ -1020,33 +956,26 @@ struct
                         of "main" => opath
                          | _ => (case #dirs (#options (TMU.getGhcPkg (config, pname)))
                            of [p] => Path.fromString p
-                            | ps => Fail.fail (passname, "readModule",
+                            | ps => failMsg ("readModule",
                                              "invalid lib path returned by ghc-pkg " ^
                                              Layout.toString (List.layout String.layout ps)))
-                  val _ = print' ("hcrRoot = " ^ Config.pathToHostString (config, hcrRoot) ^ "\n")
-                  val _ = print' ("scan " ^ Layout.toString
-                            (CoreHsLayout.layoutAnMName mname) ^ " scanned = " ^
-                            Int.toString(MS.size scanned) ^ " path = " ^
-                            Config.pathToHostString (config, path) ^ "\n")
+                  val () = debug ("hcrRoot = " ^ Config.pathToHostString (config, hcrRoot))
                   (* val f1 = Config.pathToHostString (config, path) ^ ".hcr" *)
                   val path = Path.append (hcrRoot, path)
-                  val f2 = Config.pathToHostString (config, path) ^ ".hcr"
+                  val file = Config.pathToHostString (config, path) ^ ".hcr"
+                  val () = verbose ("parse " ^ Layout.toString (CoreHsLayout.layoutAnMName mname) ^ " from " ^ file)
                   fun scan module = 
                       let
-                        val defd' = scanModule module
+                        val defd' = time "scanning" scanModule module
                         val scanned = MS.insert (scanned, mname)
                         val defd  = QD.union (defd, defd', #2)
                       in
                         (defd, scanned)
                       end
                 in
-                  if File.doesExist f2
-                    then scan (parseFile (f2, config))
-                    (*
-                    else if File.doesExist f1 
-                      then scan (parseFile (f1, config))
-                    *)
-                      else Fail.fail (passname, "readModule", "file " ^ f2 ^ " is not found")
+                  if File.doesExist file
+                    then scan (time "parsing" parseFile (file, config))
+                    else failMsg ("readModule", "file " ^ file ^ " is not found")
                 end
 
         fun traceDef (name, def as (_, depends), state as (defd, traced, scanned)) =
@@ -1054,8 +983,8 @@ struct
               of SOME _ => state
                | NONE   => 
                 let
-                  val () = print' ("traceDef: " ^ Layout.toString (CoreHsLayout.layoutQName name) ^ " => " ^ QS.fold (depends,
-                                  "", fn (n, s) => Layout.toString (CoreHsLayout.layoutQName n) ^ " " ^ s) ^ "\n")
+                  val () = debug ("traceDef: " ^ Layout.toString (CoreHsLayout.layoutQName name) ^ " => " ^ 
+                             QS.fold (depends, "", fn (n, s) => Layout.toString (CoreHsLayout.layoutQName n) ^ " " ^ s))
                   val traced = QD.insert (traced, name, def)
                   fun trace (name as (SOME m, n), state as (defd, traced, scanned)) = 
                       if m = CHU.primMname then state
@@ -1072,43 +1001,29 @@ struct
                                     (* Some types have no type constructors so they are not in ExtCore *)
                                     if not (String.isEmpty n) andalso (Char.isUpper (String.sub (n, 0)))
                                       then state 
-                                      else Fail.fail (passname, "traceDef", Layout.toString (CoreHsLayout.layoutQName name) ^ " not found"))
+                                      else failMsg ("traceDef", Layout.toString (CoreHsLayout.layoutQName name) ^ " not found"))
                           end
                     | trace ((NONE,   _), state) = state
 
                 in
                   QS.fold (depends, (defd, traced, scanned), trace)
                 end
-                
-        val time = 
-         fn name => 
-         fn f => 
-         fn a => 
-            let
-              val () = Chat.log1 (config, "Doing "^name)
-              val s = Time.now ()
-              val r = f a
-              val e = Time.toString (Time.- (Time.now (), s))
-              val () = Chat.log1 (config, "Done with "^name^" in "^e^"s")
-            in r
-            end
             
-        fun finish (mname, defd, scanned, mainVar) = 
+        fun readAll (mname, defd, scanned, mainVar) = 
             case QD.lookup (defd, mainVar)
              of NONE => Fail.fail (passname, "readModule", "main program not found")
               | SOME def => 
                 let 
                   val (_, traced, _) = traceDef (mainVar, def, (defd, QD.empty, scanned)) 
-                  val _ = print' ("traced = " ^ Layout.toString (Layout.sequence ("{", "}", ",") (List.map(QD.domain traced, CoreHsLayout.layoutQName))) ^ "\n")
+                  val () = debug ("traced = " ^ Layout.toString (Layout.sequence ("{", "}", ",") 
+                                  (List.map (QD.domain traced, CoreHsLayout.layoutQName))))
                   val (tdefs, vdefs) = QD.fold (traced, ([], []), fn (_, (TDef d, _), (ts, vs)) => (d :: ts, vs)
                                                                    | (n, (VDef d, s), (ts, vs)) => (ts, (n, (d, s)) :: vs)
                                                                    | (_, _, s) => s)
                   val names = QS.keepAll (List.fold (vdefs, QS.empty, fn ((_, (_, p)), q) => QS.union (p, q)),
                                        fn (m, _) => m = SOME CHU.primMname)
-                  val _ = Debug.verbose (config, "GHC.Prims needed: " ^ 
-                                                 QS.fold (names, "", fn (n, s) => s ^ "\n    " ^ 
-                                                                                  Layout.toString (CoreHsLayout.layoutQName n)) ^ "\n")
-                          
+                  val () = debug ("GHC.Prims needed " ^ QS.fold (names, "", 
+                             fn (n, s) => s ^ "\n    " ^ Layout.toString (CoreHsLayout.layoutQName n)))
                   val vdefgs = time "linearizing" linearize (QD.fromList vdefs)
                 in
                   C.Module (mname, tdefs, vdefgs)
@@ -1124,7 +1039,8 @@ struct
               val defd = time "scanning" scanModule module 
               val scanned = MS.fromList [mname, CHU.primMname]
               val mainVar = if noMainWrapper config then CHU.mainVar else CHU.wrapperMainVar
-              val m = time "finalizing" finish (mname, defd, scanned, mainVar)
+              val m = readAll (mname, defd, scanned, mainVar)
+              val () = chatStats ()
             in m
             end
       in
@@ -1134,12 +1050,12 @@ struct
   fun layout (module, config) = CoreHsLayout.layoutModule module
 
   val description = {name        = passname,
-                     description = "Haskell Core parser",
+                     description = "Parser for GHC core",
                      inIr        = Pass.unitHelpers,
                      outIr       = { printer = layout,
                                      stater  = layout },
                      mustBeAfter = [],
-                     stats       = stats}
+                     stats       = []}
 
   val associates = {controls = [], debugs = [Debug.debugPassD], features = [noMainWrapperF], subPasses = []}
 
