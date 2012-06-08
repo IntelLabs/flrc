@@ -15,6 +15,12 @@ struct
   val desc = {disableable = false,
               describe = fn () => Layout.str "Parse Haskell Core files (.hcr)" }
   structure CharParser = CharParserF (structure Parser = FileParser)
+  structure Chat = ChatF (struct 
+                            type env = Config.t
+                            val extract = fn a => a
+                            val name = passname
+                            val indent = 2
+                          end)
   open CharParser
   infix 5 ||
   infixr 0 >>
@@ -592,7 +598,6 @@ struct
         val strm = TextIO.openIn f
         val instrm = TextIO.getInstream strm
         val instrm = InStreamWithPos.mk instrm
-        (*val () = print ("start parsing " ^ f ^ "\n")*)
         val result = parse (coreModule, instrm)
         val _ = clearCache ()
         val () = TextIO.closeIn strm
@@ -1074,36 +1079,53 @@ struct
                 in
                   QS.fold (depends, (defd, traced, scanned), trace)
                 end
-
+                
+        val time = 
+         fn name => 
+         fn f => 
+         fn a => 
+            let
+              val () = Chat.log1 (config, "Doing "^name)
+              val s = Time.now ()
+              val r = f a
+              val e = Time.toString (Time.- (Time.now (), s))
+              val () = Chat.log1 (config, "Done with "^name^" in "^e^"s")
+            in r
+            end
+            
+        fun finish (mname, defd, scanned, mainVar) = 
+            case QD.lookup (defd, mainVar)
+             of NONE => Fail.fail (passname, "readModule", "main program not found")
+              | SOME def => 
+                let 
+                  val (_, traced, _) = traceDef (mainVar, def, (defd, QD.empty, scanned)) 
+                  val _ = print' ("traced = " ^ Layout.toString (Layout.sequence ("{", "}", ",") (List.map(QD.domain traced, CoreHsLayout.layoutQName))) ^ "\n")
+                  val (tdefs, vdefs) = QD.fold (traced, ([], []), fn (_, (TDef d, _), (ts, vs)) => (d :: ts, vs)
+                                                                   | (n, (VDef d, s), (ts, vs)) => (ts, (n, (d, s)) :: vs)
+                                                                   | (_, _, s) => s)
+                  val names = QS.keepAll (List.fold (vdefs, QS.empty, fn ((_, (_, p)), q) => QS.union (p, q)),
+                                       fn (m, _) => m = SOME CHU.primMname)
+                  val _ = Debug.verbose (config, "GHC.Prims needed: " ^ 
+                                                 QS.fold (names, "", fn (n, s) => s ^ "\n    " ^ 
+                                                                                  Layout.toString (CoreHsLayout.layoutQName n)) ^ "\n")
+                          
+                  val vdefgs = time "linearizing" linearize (QD.fromList vdefs)
+                in
+                  C.Module (mname, tdefs, vdefgs)
+                end
+                
         fun cleanup () = 
             if Config.keep (config, "hcr") then ()
             else File.remove infile
+
         fun process () = 
             let
-              val module as (C.Module (mname, _, _)) = parseFile (infile, config)
-              val defd = scanModule module 
+              val module as (C.Module (mname, _, _)) = time "parsing" parseFile (infile, config)
+              val defd = time "scanning" scanModule module 
               val scanned = MS.fromList [mname, CHU.primMname]
               val mainVar = if noMainWrapper config then CHU.mainVar else CHU.wrapperMainVar
-            in
-              case QD.lookup (defd, mainVar)
-                of NONE => Fail.fail (passname, "readModule", "main program not found")
-                 | SOME def => 
-                   let 
-                     val (_, traced, _) = traceDef (mainVar, def, (defd, QD.empty, scanned)) 
-                     val _ = print' ("traced = " ^ Layout.toString (Layout.sequence ("{", "}", ",") (List.map(QD.domain traced, CoreHsLayout.layoutQName))) ^ "\n")
-                     val (tdefs, vdefs) = QD.fold (traced, ([], []), fn (_, (TDef d, _), (ts, vs)) => (d :: ts, vs)
-                                                                      | (n, (VDef d, s), (ts, vs)) => (ts, (n, (d, s)) :: vs)
-                                                                      | (_, _, s) => s)
-                     val names = QS.keepAll (List.fold (vdefs, QS.empty, fn ((_, (_, p)), q) => QS.union (p, q)),
-                                               fn (m, _) => m = SOME CHU.primMname)
-                     val _ = Debug.verbose (config, "GHC.Prims needed: " ^ 
-                                            QS.fold (names, "", fn (n, s) => s ^ "\n    " ^ 
-                                            Layout.toString (CoreHsLayout.layoutQName n)) ^ "\n")
-                      
-                     val vdefgs = linearize (QD.fromList vdefs)
-                   in
-                     C.Module (mname, tdefs, vdefgs)
-                   end
+              val m = time "finalizing" finish (mname, defd, scanned, mainVar)
+            in m
             end
       in
         Exn.finally (process, cleanup)
