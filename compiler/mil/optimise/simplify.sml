@@ -493,6 +493,21 @@ struct
                  in r
                  end)
 
+       val toInteger = 
+           Try.lift 
+             (fn c =>
+                 let
+                   val r = 
+                       (case c
+                         of CRat r       => Try.fail ()
+                          | CInteger i   => i
+                          | CIntegral ia => IntArb.toIntInf ia
+                          | CFloat  _    => Try.fail ()
+                          | CDouble _    => Try.fail ()
+                          | CBool   _    => Try.fail ())
+                 in r
+                 end)
+
        structure Dec = 
        struct
          val cRat      : t -> Rat.t option    = 
@@ -625,6 +640,55 @@ struct
                     -> reduction option =
            identity or transitivity or fold
      end (* structure NumConvert *)
+
+     structure NumCast = 
+     struct
+       val identity = 
+        fn(c, {to, from}, args, get) => 
+          Try.try 
+            (fn () => 
+                let
+                  val () = Try.require (PU.NumericTyp.eq (to, from))
+                  val arg = Try.V.singleton args
+                in RrBase arg
+                end)
+
+       val doConvert = 
+           Try.lift 
+             (fn (i, ntTo) => 
+                 let
+                   val c = 
+                       (case ntTo
+                         of P.NtRat => Try.fail ()
+                          | P.NtInteger ip => 
+                            (case ip
+                              of P.IpArbitrary => C.CInteger i
+                               | P.IpFixed typ =>
+                                 if IntArb.fits (typ, i)
+                                 then C.CIntegral (IntArb.fromIntInf (typ, i))
+                                 else Try.fail ()
+                                      (* NG: we could try to convert here, but need to be sure about semantics *))
+                          | P.NtFloat fp  => Try.fail ())
+                 in c
+                 end)
+
+       val fold = 
+           Try.lift
+             (fn(c, {to = ntTo, from = ntFrom}, args, get) => 
+                let
+                  val arg = Try.V.singleton args
+                  val arg = get arg
+                  val v = <@ Operation.Dec.oConstant arg
+                  val i = <@ Constant.toInteger v
+                  val i = <@ doConvert (i, ntTo)
+                in RrConstant i
+                end)
+
+       val reduce : Config.t * {to : P.numericTyp, from : P.numericTyp} 
+                    * Mil.operand Vector.t * (Mil.operand -> Operation.t) 
+                    -> reduction option =
+           identity or fold
+     end (* structure NumCast *)
 
      structure NumCompare =
      struct
@@ -856,6 +920,7 @@ struct
 	      | P.PFloatOp r1    => RrUnchanged
 	      | P.PNumCompare r1 => out NumCompare.reduce (c, r1, args, get)
 	      | P.PNumConvert r1 => out NumConvert.reduce (c, r1, args, get)
+	      | P.PNumCast r1    => out NumCast.reduce (c, r1, args, get)
 	      | P.PBitwise r1    => RrUnchanged
 	      | P.PBoolean r1    => out Boolean.reduce (c, r1, args, get)
               | P.PName r1       => RrUnchanged

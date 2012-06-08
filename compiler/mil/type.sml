@@ -735,6 +735,7 @@ struct
                    in t
                    end
 	         | MP.PNumConvert r1 => mk11 (M.TNumeric (#from r1), M.TNumeric (#to r1))
+	         | MP.PNumCast r1 => mk11 (M.TNumeric (#from r1), M.TNumeric (#to r1))
 	         | MP.PBitwise r1    => 
                    let
                      val t1 = M.TNumeric (MP.NtInteger (#typ r1))

@@ -54,11 +54,27 @@ struct
 
   datatype stringOp = SAllocate | SDeallocate | SGetLen | SGetChar | SSetChar | SEqual
 
+  (* Notes on NumConvert and NumCast:
+   *   NumConvert must only convert from values that are in the domain of the target type.
+   *   NumCast may be used to convert values not in the domain of the target type; semantics:
+   *     machine type to machine type: C cast to destination type
+   *     machine integer to arbitrary precision integer: identity (source always fits in result type)
+   *     arbitrary precision integer to machine integer:
+   *       take the bottom n-bits of the 2s-complement representation
+   *       that is, if m is the number of bits of the machine integer, pick a sufficiently large m >= n such that
+   *       the source integer fits in an m-bit 2s-complement representation, and take the bottom n bits of the m-bit
+   *       representation of the source integer in 2s-complement representation.
+   *     arbitrary precision integer to machine floating point:
+   *       round the integer into the target floating-point type; should probably be more precise.
+   *     otherwise: not supported, do not use.
+   *)
+
   datatype prim =
       PNumArith       of {typ : numericTyp, operator : arithOp}
     | PFloatOp        of {typ : floatPrecision, operator : floatOp}
     | PNumCompare     of {typ : numericTyp, operator : compareOp}
     | PNumConvert     of {to : numericTyp, from : numericTyp}
+    | PNumCast        of {to : numericTyp, from : numericTyp}
     | PBitwise        of {typ : intPrecision, operator : bitwiseOp}
     | PBoolean        of logicOp
     | PName           of nameOp

@@ -219,6 +219,7 @@ signature PRIMS_DEC =
       val pFloatOp    : t -> {typ : Mil.Prims.floatPrecision, operator : Mil.Prims.floatOp} option
       val pNumCompare : t -> {typ : Mil.Prims.numericTyp, operator : Mil.Prims.compareOp} option
       val pNumConvert : t -> {to : Mil.Prims.numericTyp, from : Mil.Prims.numericTyp} option
+      val pNumCast    : t -> {to : Mil.Prims.numericTyp, from : Mil.Prims.numericTyp} option
       val pBitwise    : t -> {typ : Mil.Prims.intPrecision, operator : Mil.Prims.bitwiseOp} option
       val pBoolean    : t -> Mil.Prims.logicOp option
       val pName       : t -> Mil.Prims.nameOp option
@@ -761,6 +762,7 @@ sig
       val pFloatOp    : t -> {typ : Mil.Prims.floatPrecision, operator : Mil.Prims.floatOp} option
       val pNumCompare : t -> {typ : Mil.Prims.numericTyp, operator : Mil.Prims.compareOp} option
       val pNumConvert : t -> {to : Mil.Prims.numericTyp, from : Mil.Prims.numericTyp} option
+      val pNumCast    : t -> {to : Mil.Prims.numericTyp, from : Mil.Prims.numericTyp} option
       val pBitwise    : t -> {typ : Mil.Prims.intPrecision, operator : Mil.Prims.bitwiseOp} option
       val pBoolean    : t -> Mil.Prims.logicOp option
       val pName       : t -> Mil.Prims.nameOp option
@@ -1348,13 +1350,22 @@ struct
               val r = doR (numericTyp &&- literal "To" &&& numericTyp)
             in unary (Mil.Prims.PNumConvert,  Dec.Prim.pNumConvert, r)
             end  
+        val pNumCast = 
+            let
+              val r2t = fn {from, to} => (from, to)
+              val t2r = fn (from ,to) => {to = to, from = from}
+              val doR = fn p => rec2 (t2r, r2t) p
+              val r = doR (numericTyp &&- literal "Cast" &&& numericTyp)
+            in unary (Mil.Prims.PNumCast,  Dec.Prim.pNumCast, r)
+            end  
         val pBitwise    = unary (Mil.Prims.PBitwise,  Dec.Prim.pBitwise,  doR (intPrecision &&& bitwiseOp))
         val pBoolean    = unary (Mil.Prims.PBoolean,  Dec.Prim.pBoolean,  logicOp)
         val pName       = unary (Mil.Prims.PName,     Dec.Prim.pName,     literal "Name" -&& nameOp)
         val pCString    = unary (Mil.Prims.PCString,  Dec.Prim.pCString,  literal "CString" -&& stringOp)
         val pPtrEq      = base  (Mil.Prims.PPtrEq,    Dec.Prim.pPtrEq,    "PtrEq")
         val res =
-            pNumArith || pFloatOp || pNumCompare || pNumConvert || pBitwise || pBoolean || pName || pCString || pPtrEq
+            pNumArith || pFloatOp || pNumCompare || pNumConvert || pNumCast || pBitwise || pBoolean || pName ||
+            pCString || pPtrEq
       in
         res
       end
@@ -1791,6 +1802,7 @@ struct
       val pFloatOp    = fn pr => (case pr of Prims.PFloatOp r => SOME r | _ => NONE)
       val pNumCompare = fn pr => (case pr of Prims.PNumCompare r => SOME r | _ => NONE)
       val pNumConvert = fn pr => (case pr of Prims.PNumConvert r => SOME r | _ => NONE)
+      val pNumCast    = fn pr => (case pr of Prims.PNumCast r => SOME r | _ => NONE)
       val pBitwise    = fn pr => (case pr of Prims.PBitwise r => SOME r | _ => NONE)
       val pBoolean    = fn pr => (case pr of Prims.PBoolean r => SOME r | _ => NONE)
       val pName       = fn pr => (case pr of Prims.PName r => SOME r | _ => NONE)
@@ -2118,11 +2130,12 @@ struct
                  | Prims.PFloatOp {typ, operator}    => IFO.shift (1, mkPair (floatPrecision, floatOp) (typ, operator))
                  | Prims.PNumCompare {typ, operator} => IFO.shift (2, mkPair (numericTyp, compareOp) (typ, operator))
                  | Prims.PNumConvert {to, from}      => IFO.shift (3, mkPair (numericTyp, numericTyp) (to, from))
-                 | Prims.PBitwise {typ, operator}    => IFO.shift (4, mkPair (intPrecision, bitwiseOp) (typ, operator))
-                 | Prims.PBoolean l                  => IFO.shift (5, logicOp l)
-                 | Prims.PName n                     => IFO.shift (6, nameOp n)
-                 | Prims.PCString s                  => IFO.shift (7, stringOp s)
-                 | Prims.PPtrEq                      => IFO.base 8)
+                 | Prims.PNumCast {to, from}         => IFO.shift (4, mkPair (numericTyp, numericTyp) (to, from))
+                 | Prims.PBitwise {typ, operator}    => IFO.shift (5, mkPair (intPrecision, bitwiseOp) (typ, operator))
+                 | Prims.PBoolean l                  => IFO.shift (6, logicOp l)
+                 | Prims.PName n                     => IFO.shift (7, nameOp n)
+                 | Prims.PCString s                  => IFO.shift (8, stringOp s)
+                 | Prims.PPtrEq                      => IFO.base 9)
         in inject
         end
 
@@ -2388,6 +2401,7 @@ struct
                      | Prims.PFloatOp {typ, operator}    => total
                      | Prims.PNumCompare {typ, operator} => total
                      | Prims.PNumConvert {to, from}      => total
+                     | Prims.PNumCast {to, from}         => total
                      | Prims.PBitwise {typ, operator}    => total
                      | Prims.PBoolean l                  => total
                      | Prims.PName n                     => total
@@ -2819,6 +2833,7 @@ struct
                | Prims.PFloatOp {typ, operator}    => floatOp operator
                | Prims.PNumCompare {typ, operator} => compareOp operator
                | Prims.PNumConvert {to, from}      => ArOther (1, 1)
+               | Prims.PNumCast {to, from}         => ArOther (1, 1)
                | Prims.PBitwise {typ, operator}    => bitwiseOp operator
                | Prims.PBoolean l                  => logicOp l
                | Prims.PName n                     => nameOp n
@@ -2955,6 +2970,7 @@ struct
            | Prims.PFloatOp {typ, operator}  => none
            | Prims.PNumCompare _             => none
            | Prims.PNumConvert _             => none
+           | Prims.PNumCast _                => none
            | Prims.PBitwise {typ, operator}  => bitwiseOp operator
            | Prims.PBoolean operator         => logicOp operator
            | Prims.PName operator            => none
