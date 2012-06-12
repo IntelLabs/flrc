@@ -1,9 +1,23 @@
-/* The Intel P to C/Pillar Compiler */
-/* COPYRIGHT_NOTICE_1 */
+/* -----------------------------------------------------------------------------
+ *
+ * (c) Lennart Augustsson
+ * (c) The GHC Team, 1998-2000
+ *
+ * Miscellaneous support for floating-point primitives
+ *
+ * ---------------------------------------------------------------------------*/
 
-/* The following double/float decoding code is taken from GHC */
+#include <math.h>
 #include <float.h>
-#define SIZEOF_DOUBLE 8
+
+#define IEEE_FLOATING_POINT 1
+
+/*
+ * Encoding and decoding Doubles.  Code based on the HBC code
+ * (lib/fltcode.c).
+ */
+
+#if IEEE_FLOATING_POINT
 #define MY_DMINEXP  ((DBL_MIN_EXP) - (DBL_MANT_DIG) - 1)
 /* DMINEXP is defined in values.h on Linux (for example) */
 #define DHIGHBIT 0x00100000
@@ -12,15 +26,122 @@
 #define MY_FMINEXP  ((FLT_MIN_EXP) - (FLT_MANT_DIG) - 1)
 #define FHIGHBIT 0x00800000
 #define FMSBIT   0x80000000
+#endif
+
+#if defined(WORDS_BIGENDIAN) || defined(FLOAT_WORDS_BIGENDIAN)
+#define L 1
+#define H 0
+#else
 #define L 0
 #define H 1
-static void
-__decodeDouble_2Int (sint32 *man_sign, uint32 *man_high, uint32 *man_low, sint32 *exp, double dbl)
+#endif
+
+#define __abs(a)		(( (a) >= 0 ) ? (a) : (-(a)))
+
+StgDouble
+__2Int_encodeDouble (I_ j_high, I_ j_low, I_ e)
+{
+  StgDouble r;
+  
+  /* assuming 32 bit ints */
+  ASSERT(sizeof(int          ) == 4            );
+
+  r = (StgDouble)((unsigned int)j_high);
+  r *= 4294967296.0; /* exp2f(32); */
+  r += (StgDouble)((unsigned int)j_low);
+  
+  /* Now raise to the exponent */
+  if ( r != 0.0 ) /* Lennart suggests this avoids a bug in MIPS's ldexp */
+    r = ldexp(r, e);
+  
+  /* sign is encoded in the size */
+  if (j_high < 0)
+    r = -r;
+  
+  return r;
+}
+
+/* Special version for words */
+StgDouble
+__word_encodeDouble (W_ j, I_ e)
+{
+  StgDouble r;
+  
+  r = (StgDouble)j;
+  
+  /* Now raise to the exponent */
+  if ( r != 0.0 ) /* Lennart suggests this avoids a bug in MIPS's ldexp */
+    r = ldexp(r, e);
+  
+  return r;
+}
+
+/* Special version for small Integers */
+StgDouble
+__int_encodeDouble (I_ j, I_ e)
+{
+  StgDouble r;
+  
+  r = (StgDouble)__abs(j);
+  
+  /* Now raise to the exponent */
+  if ( r != 0.0 ) /* Lennart suggests this avoids a bug in MIPS's ldexp */
+    r = ldexp(r, e);
+  
+  /* sign is encoded in the size */
+  if (j < 0)
+    r = -r;
+  
+  return r;
+}
+
+/* Special version for small Integers */
+StgFloat
+__int_encodeFloat (I_ j, I_ e)
+{
+  StgFloat r;
+  
+  r = (StgFloat)__abs(j);
+  
+  /* Now raise to the exponent */
+  if ( r != 0.0 ) /* Lennart suggests this avoids a bug in MIPS's ldexp */
+    r = ldexp(r, e);
+  
+  /* sign is encoded in the size */
+  if (j < 0)
+    r = -r;
+  
+  return r;
+}
+
+/* Special version for small positive Integers */
+StgFloat
+__word_encodeFloat (W_ j, I_ e)
+{
+  StgFloat r;
+  
+  r = (StgFloat)j;
+  
+  /* Now raise to the exponent */
+  if ( r != 0.0 ) /* Lennart suggests this avoids a bug in MIPS's ldexp */
+    r = ldexp(r, e);
+  
+  return r;
+}
+
+/* This only supports IEEE floating point */
+
+void
+__decodeDouble_2Int (I_ *man_sign, W_ *man_high, W_ *man_low, I_ *exp, StgDouble dbl)
 {
     /* Do some bit fiddling on IEEE */
     unsigned int low, high; 	     	/* assuming 32 bit ints */
     int sign, iexp;
     union { double d; unsigned int i[2]; } u;	/* assuming 32 bit ints, 64 bit double */
+
+    ASSERT(sizeof(unsigned int ) == 4            );
+    ASSERT(sizeof(dbl          ) == 8            );
+    ASSERT(sizeof(dbl          ) == SIZEOF_DOUBLE);
 
     u.d = dbl;	    /* grab chunks of the double */
     low = u.i[L];
@@ -48,19 +169,27 @@ __decodeDouble_2Int (sint32 *man_sign, uint32 *man_high, uint32 *man_low, sint32
 		iexp--;
 	    }
 	}
-        *exp = (sint32) iexp;
+        *exp = (I_) iexp;
 	*man_low = low;
 	*man_high = high;
 	*man_sign = (sign < 0) ? -1 : 1;
     }
 }
 
-static void
-__decodeFloat_Int (sint32 *man, sint32 *exp, float flt)
+/* Convenient union types for checking the layout of IEEE 754 types -
+   based on defs in GNU libc <ieee754.h>
+*/
+
+void
+__decodeFloat_Int (I_ *man, I_ *exp, StgFloat flt)
 {
     /* Do some bit fiddling on IEEE */
     int high, sign; 	    	    /* assuming 32 bit ints */
     union { float f; int i; } u;    /* assuming 32 bit float and int */
+
+    ASSERT(sizeof(int          ) == 4            );
+    ASSERT(sizeof(flt          ) == 4            );
+    ASSERT(sizeof(flt          ) == SIZEOF_FLOAT );
 
     u.f = flt;	    /* grab the float */
     high = u.i;
@@ -89,24 +218,3 @@ __decodeFloat_Int (sint32 *man, sint32 *exp, float flt)
     }
 }
 
-double __word_encodeDouble (uint32 j, sint32 e)
-{
-    double r;
-
-    r = (double)j;
-    /* Now raise to the exponent */
-    if ( r != 0.0 ) /* Lennart suggests this avoids a bug in MIPS's ldexp */
-        r = ldexp(r, e);
-    return r;
-}
-
-float __word_encodeFloat (uint32 j, sint32 e)
-{
-    float r;
-
-    r = (float)j;
-    /* Now raise to the exponent */
-    if ( r != 0.0 ) /* Lennart suggests this avoids a bug in MIPS's ldexp */
-        r = ldexpf(r, e);
-    return r;
-}

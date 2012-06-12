@@ -539,6 +539,10 @@ struct
      fn (config, {to, from}) =>
         (getNumericTypName (config, to)) ^ "From" ^ (getNumericTypName (config, from))
 
+    val getNumCastName = 
+     fn (config, {to, from}) =>
+        (getNumericTypName (config, from)) ^ "Cast" ^ (getNumericTypName (config, to))
+
     val getBitwiseName = 
      fn (config, {typ, operator}) =>
         (getIntPrecisionName (config, typ)) ^ (getBitwiseOpName (config, operator))
@@ -560,6 +564,7 @@ struct
            | P.PFloatOp r             => getFloatOpName(config, r)
            | P.PNumCompare r          => getNumCompareName(config, r) 
            | P.PNumConvert r          => getNumConvertName(config, r)
+           | P.PNumCast r             => getNumCastName(config, r)
            | P.PBitwise r             => getBitwiseName(config, r)
            | P.PBoolean r             => getBooleanName(config, r)
            | P.PName r                => getNameName(config, r)
