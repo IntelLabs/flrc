@@ -328,7 +328,8 @@ struct
         if i >= 0 then
           (Int.layout i, 16)
         else
-          word (Word.fromInt i)
+          (* need to avoid overflow when negating *)
+          (L.seq [L.str "-", IntInf.layout (IntInf.~ (IntInf.fromInt i))], 16)
 
     fun int32 i = 
         if i >= 0 then
