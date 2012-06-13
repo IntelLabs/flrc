@@ -28,15 +28,17 @@
 static void *saved_termios[3] = {NULL,NULL,NULL};
 
 void*
-__hscore_get_saved_termios(int fd)
+__hscore_get_saved_termios(I_ fd0)
 {
+  int fd = (int) fd0;
   return (0 <= fd && fd < (int)(sizeof(saved_termios) / sizeof(*saved_termios))) ?
     saved_termios[fd] : NULL;
 }
 
 void
-__hscore_set_saved_termios(int fd, void* ts)
+__hscore_set_saved_termios(I_ fd0, void* ts)
 {
+  int fd = (int) fd0;
   if (0 <= fd && fd < (int)(sizeof(saved_termios) / sizeof(*saved_termios))) {
     saved_termios[fd] = ts;
   }

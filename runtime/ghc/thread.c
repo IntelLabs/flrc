@@ -2,19 +2,19 @@
 /* COPYRIGHT_NOTICE_1 */
 
 /* place holders for now */
-int rts_getThreadId (uint32 tid)
+I_ rts_getThreadId (W_ tid)
 {
-    return (int)tid;
+    return (I_)tid;
 }
 
-int cmp_thread (uint32 tidA, uint32 tidB)
+I_ cmp_thread (W_ tidA, W_ tidB)
 {
     if (tidA > tidB) return 1;
     else if (tidA < tidB) return -1;
     else return 0;
 }
 
-int rtsSupportsBoundThreads()
+I_ rtsSupportsBoundThreads()
 {
     return 0;
 }
@@ -28,13 +28,13 @@ HANDLE getIOManagerEvent()
     return NULL;
 }
 
-uint32 readIOManagerEvent()
+W_ readIOManagerEvent()
 {
     /* XXX NG: this is for a non-threaded runtime. */
     return 0;
 }
 
-void sendIOManagerEvent(uint32 e)
+void sendIOManagerEvent(W_ e)
 {
     /* XXX NG: this is for a non-threaded runtime. */
 }
