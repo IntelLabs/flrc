@@ -92,6 +92,10 @@ struct
       Config.Feature.mk ("Plsr:gmp-use-pinning",
                          "use pinning for gmp integer wrappers")
 
+  val (gmpUsePCDeclF, gmpUsePCDecl) = 
+      Config.Feature.mk ("Plsr:gmp-use-pcdecl",
+                         "use pcdecl for gmp integer wrappers")
+
   val (instrumentAllocationF, instrumentAllocation) =
       Config.Feature.mk ("Plsr:instrument-allocation",
                          "gather allocation statistics")
@@ -325,10 +329,11 @@ struct
             (if gmpUseMalloc config then
                ["PLSR_GMP_USE_MALLOC"]
              else if gmpUsePinning config then
-               []
-             else case compiler 
-                   of CcIpc => ["PLSR_GMP_USE_PCDECL"]
-                    | _     => [])
+               ["PLSR_GMP_USE_PINNING"]
+             else if gmpUsePCDecl config then 
+               ["PLSR_GMP_USE_PCDECL"]
+             else
+               [])
 
         val backend = 
             (case compiler
@@ -837,6 +842,7 @@ struct
                                   gcWriteBarriersF, 
                                   gcAllBarriersF,
                                   gmpUseMallocF,
+                                  gmpUsePCDeclF,
                                   gmpUsePinningF,
                                   instrumentAllocationF,
                                   instrumentGCsF,
