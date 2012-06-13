@@ -467,7 +467,9 @@ struct
   val tDoublezh    : ty = Tcon (primId "Double#")
   val tIntegerzh   : ty = Tcon (primId "Integer#")
   val tThreadIdzh  : ty = Tcon (primId "ThreadId#")
+  val tLiftedzh    : ty = Tcon (primId "*")
 
+  val tcEqzh      : tcon qualified = pvz "z7eU"
   val tcWeakPtrzh : tcon qualified = pvz "Weak"
   val tWeakPtrzh  : ty -> ty       = fn t => Tapp (Tcon tcWeakPtrzh, t)
   val tcStablePtrzh : tcon qualified = pvz "StablePtr"
