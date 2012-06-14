@@ -9,6 +9,10 @@ sig
   datatype signed = Signed | Unsigned
   datatype typ = T of size * signed
   type t
+  val band : t * t -> t
+  val bnot : t -> t
+  val bor : t * t -> t
+  val bxor : t * t -> t
   val stringOfSize : size -> string
   val sizeFromString : string -> size option
   val stringOfSigned : signed -> string
@@ -278,6 +282,26 @@ struct
         truncResult (t1, IntInf.rem (i1, i2))
       else
         Fail.fail ("IntArb", "rem", "mismatched types")
+
+  fun bnot (X (t, i)) = X (t, IntInf.notb i)
+
+  fun band (X (t1, i1), X (t2, i2)) =
+      if equalTyps (t1, t2) then
+        X (t1, IntInf.andb (i1, i2))
+      else
+        Fail.fail ("IntArb", "band", "mismatched types")
+
+  fun bor (X (t1, i1), X (t2, i2)) =
+      if equalTyps (t1, t2) then
+        X (t1, IntInf.orb (i1, i2))
+      else
+        Fail.fail ("IntArb", "bor", "mismatched types")
+
+  fun bxor (X (t1, i1), X (t2, i2)) =
+      if equalTyps (t1, t2) then
+        X (t1, IntInf.xorb (i1, i2))
+      else
+        Fail.fail ("IntArb", "bxor", "mismatched types")
 
   structure Signed =
   struct

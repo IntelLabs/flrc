@@ -841,6 +841,57 @@ struct
 
      end (* structure NumArith *)
 
+     structure Bitwise =
+     struct
+
+       val doBitwise = 
+        fn (dec, con, band, bnot, bor, brotl, brotr, bshiftl, bshiftr, bxor) => 
+           Try.lift 
+             (fn (operator, args) =>
+                 let
+                   val args = Vector.map (args, <@ dec)
+                   val c = 
+                       case operator
+                        of P.BAnd    => con (<- band (Try.V.doubleton args))
+                         | P.BNot    => con (<- bnot (Try.V.singleton args))
+                         | P.BOr     => con (<- bor (Try.V.doubleton args))
+                         | P.BRotL   => con (<- brotl (Try.V.doubleton args))
+                         | P.BRotR   => con (<- brotr (Try.V.doubleton args))
+                         | P.BShiftL => con (<- bshiftl (Try.V.doubleton args))
+                         | P.BShiftR => con (<- bshiftr (Try.V.doubleton args))
+                         | P.BXor    => con (<- bxor (Try.V.doubleton args))
+                   val r = RrConstant c
+                 in r
+                 end)
+           
+       val fold = 
+           Try.lift
+           (fn(c, {typ, operator}, args, get) => 
+              let
+                val args = Vector.map (args, <@ O.Dec.oConstant o get)
+                val doIt = 
+                    (case typ
+                      of P.IpArbitrary  => 
+                         doBitwise (C.Dec.cInteger, C.CInteger,
+                                    SOME IntInf.andb, SOME IntInf.notb, SOME IntInf.orb, 
+                                    NONE, NONE, NONE, NONE, 
+                                    SOME IntInf.xorb)
+                       | P.IpFixed ia => 
+                         doBitwise (decIntegral ia, C.CIntegral,
+                                    SOME IntArb.band, SOME IntArb.bnot, SOME IntArb.bor, 
+                                    NONE, NONE, NONE, NONE, 
+                                    SOME IntArb.bxor))
+                val r = <@ doIt (operator, args)
+              in r
+              end)
+
+       val reduce : Config.t * {typ : P.intPrecision, operator : P.bitwiseOp} 
+                    * Mil.operand Vector.t * (Mil.operand -> Operation.t) 
+                    -> reduction option =
+           fold 
+
+     end (* structure Bitwise *)
+
      structure Boolean = 
      struct
 
@@ -917,14 +968,14 @@ struct
         fn (c, p, args, get) => 
            (case p
              of P.PNumArith r1   => out NumArith.reduce (c, r1, args, get)
-	      | P.PFloatOp r1    => RrUnchanged
-	      | P.PNumCompare r1 => out NumCompare.reduce (c, r1, args, get)
-	      | P.PNumConvert r1 => out NumConvert.reduce (c, r1, args, get)
-	      | P.PNumCast r1    => out NumCast.reduce (c, r1, args, get)
-	      | P.PBitwise r1    => RrUnchanged
-	      | P.PBoolean r1    => out Boolean.reduce (c, r1, args, get)
+              | P.PFloatOp r1    => RrUnchanged
+              | P.PNumCompare r1 => out NumCompare.reduce (c, r1, args, get)
+              | P.PNumConvert r1 => out NumConvert.reduce (c, r1, args, get)
+              | P.PNumCast r1    => out NumCast.reduce (c, r1, args, get)
+              | P.PBitwise r1    => out Bitwise.reduce (c, r1, args, get)
+              | P.PBoolean r1    => out Boolean.reduce (c, r1, args, get)
               | P.PName r1       => RrUnchanged
-	      | P.PCString r1    => RrUnchanged
+              | P.PCString r1    => RrUnchanged
               | P.PPtrEq         => out ptrEq (c, args, get))
 
 
@@ -4062,7 +4113,7 @@ struct
                 | M.RhsObjectGetKind r  => objectGetKind (state, (i, dests, r))
                 | M.RhsThunkMk r        => thunkMk (state, (i, dests, r))
                 | M.RhsThunkInit r      => thunkInit (state, (i, dests, r))
-	        | M.RhsThunkGetFv r     => thunkGetFv (state, (i, dests, r))
+                | M.RhsThunkGetFv r     => thunkGetFv (state, (i, dests, r))
                 | M.RhsThunkValue r     => thunkValue (state, (i, dests, r))
                 | M.RhsThunkGetValue r  => thunkGetValue (state, (i, dests, r))
                 | M.RhsThunkSpawn r     => thunkSpawn (state, (i, dests, r))
