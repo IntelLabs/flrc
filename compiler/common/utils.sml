@@ -3257,6 +3257,11 @@ sig
    * In all other cases, N is Bottom.  
    *)
   val decide : 'a t -> unit
+  (* If Bot is a safe approximation, then this faster decision procedure can be used.
+   * Bot is a safe approximation if it is always valid to use Bot as the value of a node.
+   * If this is not the case, then the full decision procedure should be used.
+   *)
+  val unsafeDecide : 'a t -> unit
   val info : 'a t -> 'a option 
   (* both (a, b) makes a Top iff it would otherwise be Top and b is Top *)
   val both : 'a t * 'a t -> unit
@@ -3290,7 +3295,63 @@ struct
    *    under the assumption that N is Bottom
    * In all other cases, N is Bottom.  
    *)
-  val rec decide : 'a t -> unit = 
+  val decide : 'a t -> unit = 
+   fn r => 
+      let
+        val rec unwind = 
+         fn trail => 
+            (case trail 
+              of [] => ()
+               | (r, n)::trail => (r := n;unwind trail))
+
+        val rec loop = 
+         fn (r as ref node) => 
+            case node
+             of DgTop _            => []
+              | DgBot _            => []
+              | DgDisj (a, (r1, r2)) => 
+                let
+                  val () = r := DgBot a
+                  val trail1 = loop r1
+                  val trail2 = loop r2
+                  val trail = 
+                      case (!r1, !r2)
+                       of (DgBot _, DgBot _) => (r, node)::trail1@trail2
+                        | (_      , _      ) => 
+                          let
+                            val () = unwind trail1
+                            val () = unwind trail2
+                            val () = r := DgTop a
+                          in []
+                          end
+                in trail
+                end
+              | DgConj (a, (r1, r2)) => 
+                let
+                  val () = r := DgBot a
+                  val trail1 = loop r1
+                  val trail2 = loop r2
+                  val trail = 
+                      case (!r1, !r2)
+                       of (DgTop _, DgTop _) => 
+                          let
+                            val () = unwind trail1
+                            val () = unwind trail2
+                            val () = r := DgTop a
+                          in []
+                          end
+                        | (_      , _      ) => (r, node)::trail1@trail2
+                in trail
+                end
+        val _ = loop r
+      in ()
+      end
+
+  (* If Bot is a safe approximation, then this faster decision procedure can be used.
+   * Bot is a safe approximation if it is always valid to use Bot as the value of a node.
+   * If this is not the case, then the full decision procedure should be used.
+   *)
+  val rec unsafeDecide : 'a t -> unit = 
    fn r => 
       case !r
        of DgTop _            => ()
