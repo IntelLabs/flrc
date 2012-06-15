@@ -34,6 +34,7 @@ signature PIL = sig
     val arrayConstant : t * int -> t
     val code : t * t list -> t
     val codeCC : t * string * t list -> t
+    val multiReturn : t list -> t
     val strct : identifier option * (identifier * t) list -> t
   end
   type varDec
@@ -58,6 +59,7 @@ signature PIL = sig
     val string : string -> t
     val cast : T.t * t -> t
     val addrOf : t -> t
+    val contentsOf : t -> t
     datatype compareOp = CoEq | CoNe | CoLt | CoLe | CoGt | CoGe
     val compare : T.t * t * compareOp * t -> t
     val equal : t * t -> t
@@ -67,6 +69,7 @@ signature PIL = sig
     val call : t * t list -> t
     val callAlsoCutsTo : Config.t * t * t list * identifier list -> t
     val assign : t * t -> t
+    val assignMulti : t List.t * t -> t
     val arrow : t * identifier -> t
     val sub : t * t -> t
     val strctInit : t list -> t
@@ -86,6 +89,7 @@ signature PIL = sig
     val switch : E.t * (E.t * t) list * t option -> t
     val return : t
     val returnExpr : E.t -> t
+    val returnMultiExpr : E.t List.t -> t
     val tailCall : Config.t * bool (*void?*) * E.t * E.t list -> t
     val call : E.t * E.t list -> t
     val sequence : t list -> t
@@ -256,6 +260,13 @@ struct
 
     fun code (rt, ats) = codeCC (rt, "", ats)
 
+    fun multiReturn rts = 
+        let
+          val rtsL = List.map (rts, abs)
+          val l = L.seq [LU.sequence ("@[", "]@", ",") rtsL]
+        in base l
+        end
+
     fun strct (n, fields) =
         let
           val l1 = case n of NONE => L.str " "
@@ -386,6 +397,8 @@ struct
 
     fun addrOf e = (L.seq [L.str "&", inPrec (e, 13)], 14)
 
+    fun contentsOf e = (L.seq [L.str "*", inPrec (e, 13)], 14)
+
     datatype compareOp = CoEq | CoNe | CoLt | CoLe | CoGt | CoGe
 
     fun compare (t, e1, co, e2) =
@@ -455,6 +468,16 @@ struct
         (L.mayAlign [L.seq [inPrec (e1, 14), L.str " ="],
                      LU.indent (inPrec (e2, 1))],
          1)
+
+    fun assignMulti (es, e2) =
+        let
+          val es = List.map (es, fn e => inPrec (e, 1))
+          val lhs = (LU.sequence ("@[", "]@", ",") es, 16)
+        in
+          (L.mayAlign [L.seq [inPrec (lhs, 14), L.str " ="],
+                       LU.indent (inPrec (e2, 1))],
+           1)
+        end
 
     fun arrow (e, i) = (L.seq [inPrec (e, 15), L.str "->", i], 15)
 
@@ -551,6 +574,12 @@ struct
     val return = [addSemi (L.str "return")]
 
     fun returnExpr e = [addSemi (L.seq [L.str "return ", E.layout e])]
+
+    fun returnMultiExpr es = 
+        let
+          val es = List.map (es, E.layout)
+        in [addSemi (L.seq [L.str "return ", LU.sequence ("@[", "]@", ",") es])]
+        end
 
     fun tailCall (config, v, e, es) =
         let

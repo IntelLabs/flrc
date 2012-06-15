@@ -8,6 +8,7 @@ sig
   type 'a t = 'a * 'a -> order
   val option  : 'a t -> 'a option t
   val vector  : 'a t -> 'a Vector.t t
+  val list    : 'a t -> 'a List.t t
   val pair    : 'a t * 'b t -> ('a * 'b) t
   val riap    : 'a t * 'b t -> ('a * 'b) t   (* Reverse lexicographic *)
   val triple  : 'a t * 'b t * 'c t -> ('a * 'b * 'c) t
@@ -49,6 +50,7 @@ sig
   type 'a t = 'a * 'a -> bool
   val option  : 'a t -> 'a option t
   val vector  : 'a t -> 'a Vector.t t
+  val list    : 'a t -> 'a List.t t
   val pair    : 'a t * 'b t -> ('a * 'b) t
   val riap    : 'a t * 'b t -> ('a * 'b) t   (* Reverse lexicographic *)
   val triple  : 'a t * 'b t * 'c t -> ('a * 'b * 'c) t
@@ -95,6 +97,8 @@ struct
         | (NONE,   NONE  ) => EQUAL
                           
   fun vector cmp (v1, v2) = Vector.compare (v1, v2, cmp)
+
+  fun list cmp (v1, v2) = List.compare (v1, v2, cmp)
 
   fun pair (cmp1, cmp2) ((a1, a2), (b1, b2)) = 
       case cmp1 (a1, b1)
@@ -316,6 +320,8 @@ struct
   fun option cmp (o1, o2) = Option.equals (o1, o2, cmp)
 
   fun vector cmp (v1, v2) = Vector.equals (v1, v2, cmp)
+
+  fun list cmp (v1, v2) = List.equals (v1, v2, cmp)
 
   fun pair (cmp1, cmp2) ((a1, a2), (b1, b2)) = 
       cmp1 (a1, b1) andalso cmp2 (a2, b2)

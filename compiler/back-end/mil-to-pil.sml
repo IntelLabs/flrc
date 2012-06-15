@@ -42,9 +42,10 @@ struct
 
   (*** The pass environment ***)
 
-  datatype env = E of {config: Config.t, gdefs : M.globals, func: M.code option, backEdges : LLS.t option}
+  datatype env = E of {config: Config.t, gdefs : M.globals, func: M.code option, 
+                       rvars : M.variable List.t option, backEdges : LLS.t option}
 
-  fun newEnv (config, gdefs) = E {config = config, func = NONE, gdefs = gdefs, backEdges = NONE}
+  fun newEnv (config, gdefs) = E {config = config, func = NONE, rvars = NONE, gdefs = gdefs, backEdges = NONE}
 
   fun getConfig (E {config, ...}) = config
 
@@ -74,11 +75,16 @@ struct
   fun getGlobalDef (E {gdefs, ...}, v) = MU.Globals.get (gdefs, v)
 
   fun getFunc (E {func, ...}) = Option.valOf func
+  fun getRVars (E {rvars, ...}) = rvars
 
   fun getBackEdges (E {backEdges, ...}) = Option.valOf backEdges
 
-  fun enterFunction (E {config, func, gdefs, backEdges}, f, be) =
-      E {config = config, func = SOME f, gdefs = gdefs, backEdges = SOME be}
+  fun enterFunction (E {config, func, rvars, gdefs, backEdges}, f, rvs, be) =
+      E {config = config, func = SOME f, rvars = rvs, gdefs = gdefs, backEdges = SOME be}
+
+  val (doMultiReturnF, doMultiReturn) =
+      Config.Feature.mk ("MilToPil:native-multi-return",
+                         "Use native multi return support")
 
   (*** Build structures ***)
 
@@ -1095,17 +1101,27 @@ struct
       case rewriteThunks (env, conv)
        of SOME _ => 
           (case Vector.length rts
-            of 1 => Pil.T.named (RT.Thunk.returnTyp (typToFieldKind (env, Vector.sub (rts, 0))))
+            of 1 => (Pil.T.named (RT.Thunk.returnTyp (typToFieldKind (env, Vector.sub (rts, 0)))), [])
              | _ => fail ("genReturnType", "Thunk code requires exactly 1 return type"))
         | NONE   => 
           (case Vector.length rts
-            of 0 => Pil.T.void
-             | 1 => genTyp (state, env, Vector.sub (rts,0))
-             | _ => fail ("genReturnType", "Single returns only"))
+            of 0 => (Pil.T.void, [])
+             | 1 => (genTyp (state, env, Vector.sub (rts,0)), [])
+             | n => 
+               let
+                 val rts = genTyps (state, env, rts)
+               in
+                 if doMultiReturn (getConfig env) then
+                   (Pil.T.multiReturn rts, [])
+                 else
+                   (Pil.T.void, List.map (rts, Pil.T.ptr))
+               end)
+
   and genCodeType (state, env, (conv, ats, rts)) =
       let
-        val rt = genReturnType (state, env, conv, rts)
+        val (rt, outts) = genReturnType (state, env, conv, rts)
         val ats = genTyps (state, env, ats)
+        val ats = ats @ outts
         fun abiToCc abi =
             case abi
              of M.AbiCdecl => "__cdecl"
@@ -1989,19 +2005,35 @@ struct
              of M.RNormal {rets, block, cuts, ...} =>
                 let
                   val cuts = genCutsTo (state, env, cuts)
-                  val c = Pil.E.callAlsoCutsTo (getConfig env, f, args, cuts)
+                  val () = Vector.foreach (rets, fn v => addLocal (state, v))
                   val c =
                       case Vector.length rets
-                       of 0 => Pil.S.expr c
+                       of 0 => Pil.E.callAlsoCutsTo (getConfig env, f, args, cuts)
                         | 1 =>
                           let
                             val rv = Vector.sub (rets, 0)
-                            val () = addLocal (state, rv)
                             val rv = genVarE (state, env, rv)
+                            val c = Pil.E.callAlsoCutsTo (getConfig env, f, args, cuts)
                           in
-                            Pil.S.expr (Pil.E.assign (rv, c))
+                            Pil.E.assign (rv, c)
                           end
-                        | _ => fail ("genCall", "non-single return call")
+                        | n => 
+                          let
+                            val rvs = Vector.toListMap (rets, fn v => genVarE (state, env, v))
+                          in
+                            if doMultiReturn (getConfig env) then
+                              let
+                                val c = Pil.E.callAlsoCutsTo (getConfig env, f, args, cuts)
+                              in Pil.E.assignMulti (rvs, c)
+                              end
+                            else
+                              let
+                                val xts = List.map (rvs, Pil.E.addrOf)
+                                val c = Pil.E.callAlsoCutsTo (getConfig env, f, args @ xts, cuts)
+                              in c
+                              end
+                          end
+                  val c = Pil.S.expr c
                   val block = genLabel (state, env, block)
                   val s = Pil.S.sequence [c, Pil.S.goto block]
                 in s
@@ -2023,12 +2055,19 @@ struct
                      in Pil.S.sequence [calls, rets]
                      end
                    | NONE =>
-                     let
-                       val M.F {rtyps, ...} = getFunc env
-                       val void = Vector.length rtyps = 0
-                     in
-                       Pil.S.tailCall (getConfig env, void, f, args)
-                     end)
+                     (case getRVars env
+                       of SOME rvars => 
+                          let
+                            val args = args @ (List.map (rvars, fn v => genVarE (state, env, v)))
+                          in Pil.S.tailCall (getConfig env, true, f, args)
+                          end
+                        | NONE => 
+                          let
+                            val M.F {rtyps, ...} = getFunc env
+                            val void = Vector.length rtyps = 0
+                          in
+                            Pil.S.tailCall (getConfig env, void, f, args)
+                          end))
       in s
       end
 
@@ -2153,7 +2192,27 @@ struct
                        end
                      | NONE => Pil.S.returnExpr opnd
                  end
-               | _ => fail ("genTransfer", "multiple returns not supported"))
+               | n => 
+                 let
+                   val opers = Vector.toListMap (os, fn oper => genOperand (state, env, oper))
+                 in 
+                   (case getRVars env
+                     of SOME rvars => 
+                        let
+                          val rvars = List.map (rvars, fn v => genVarE (state, env, v))
+                          val doOne = 
+                           fn (v, oper) => 
+                              Pil.S.expr (Pil.E.assign (Pil.E.contentsOf v, oper))
+                          val ss = Pil.S.sequence (List.map2 (rvars, opers, doOne))
+                          val r = Pil.S.return
+                        in Pil.S.sequence [ss, r]
+                        end
+                      | NONE => 
+                        if doMultiReturn (getConfig env) then
+                          Pil.S.returnMultiExpr opers
+                        else
+                          fail ("genTransfer", "Too many return values"))
+                 end)
           | M.TCut {cont, args, cuts} =>
             let
               (* XXX NG: the C implementation is severely lacking *)
@@ -2394,11 +2453,31 @@ struct
   fun genFunction (state, env, f, func) =
       let
         val M.F {fx, cc, args, rtyps, body, ...} = func
+        val outvs = 
+            if Vector.length rtyps <= 1 orelse doMultiReturn (getConfig env) then
+              NONE
+            else
+              let
+                val stm = getStm state
+                val vs = Vector.toListMap (rtyps, fn rt => MSTM.variableFresh (stm, "ret", rt, M.VkLocal))
+                val () = List.foreach (vs, fn v => addLocal (state, v))
+              in SOME vs
+              end
         val backEdges = findBackEdges (state, env, body)
-        val env = enterFunction (env, func, backEdges)
+        val env = enterFunction (env, func, outvs, backEdges)
         val (decs, ls1, ss) = doCallConv (state, env, func, cc, args)
         val tcc = MU.CallConv.map (cc, fn v => getVarTyp (state, v))
-        val rt = genReturnType (state, env, tcc, rtyps)
+        val (rt, outts) = genReturnType (state, env, tcc, rtyps)
+        val outDecs = 
+            (case outvs
+              of SOME vs =>
+                 let
+                   val doOne = 
+                    fn (v, t) => Pil.varDec (t, genVar (state, env, v))
+                 in List.map2 (vs, outts, doOne)
+                 end
+               | NONE    => [])
+        val decs = decs @ outDecs
         val (ls, b) = genCB (state, env, body)
         val (ls2, b) =
             case rewriteThunks (env, cc)
@@ -2918,7 +2997,8 @@ struct
       end
 
   val features =
-      [instrumentAllocationSitesF, 
+      [doMultiReturnF,
+       instrumentAllocationSitesF, 
        instrumentBlocksF, 
        instrumentFunctionsF,
        assertSmallIntsF,
