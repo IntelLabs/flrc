@@ -19,9 +19,9 @@ local
         anorm-strict-free-vars.sml
         anorm-strict-clone.sml
         anorm-strict-optimize.sml
+        to-lazy.sml
         ghc-prim.sml
         normalize.sml
-        to-lazy.sml
         to-strict.sml
         fvs.sml
         to-mil.sml

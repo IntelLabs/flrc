@@ -262,7 +262,7 @@ sig
     (* Stream remains open ended *)
     val evalThunk : state 
                     * env
-                    * Mil.variable (* dest *)
+                    * Mil.variable Vector.t (* dest *)
                     * Mil.fieldKind
                     * Mil.eval
                     * Mil.cuts
@@ -808,12 +808,11 @@ struct
            terminate (state, env, new (state, env), t)
          end
 
-     fun evalThunk (state, env, dest, t, e, cuts, fx) =
+     fun evalThunk (state, env, dests, t, e, cuts, fx) =
          let
            fun doIt (state, env, target) =
                let
                  val c = M.IpEval {typ = t, eval = e}
-                 val dests = Vector.new1 dest
                  val r = M.RNormal {rets = dests, block = target, cuts = cuts}
                  val t = M.TInterProc {callee = c, ret = r, fx = fx}
                in t
