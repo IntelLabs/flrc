@@ -84,6 +84,10 @@ struct
 
   val noGMP = MilToPil.noGMP
 
+  val (gmpUseGcMallocF, gmpUseGcMalloc) = 
+      Config.Feature.mk ("Plsr:gmp-use-gc-malloc",
+                         "use gc-malloc for gmp integer wrappers")
+
   val (gmpUseMallocF, gmpUseMalloc) = 
       Config.Feature.mk ("Plsr:gmp-use-malloc",
                          "use malloc for gmp integer wrappers")
@@ -332,6 +336,8 @@ struct
                ["PLSR_GMP_USE_PINNING"]
              else if gmpUsePCDecl config then 
                ["PLSR_GMP_USE_PCDECL"]
+             else if gmpUseGcMalloc config then 
+               ["PLSR_GMP_USE_GCMALLOC"]
              else
                [])
 
@@ -841,6 +847,7 @@ struct
                                   disableTailCallF,
                                   gcWriteBarriersF, 
                                   gcAllBarriersF,
+                                  gmpUseGcMallocF,
                                   gmpUseMallocF,
                                   gmpUsePCDeclF,
                                   gmpUsePinningF,
