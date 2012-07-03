@@ -542,11 +542,11 @@ struct
      *  followed by free variables.
      *)
 
-    (* Fieldkinds for the sequence of word sized fields *)
+    (* Fieldkinds for the vtable + sequence of word sized fields *)
     fun thunkBaseElements (state, env) =
         let
           val count = 
-              if lightweightThunks (getConfig env) then 2
+              if lightweightThunks (getConfig env) then 1
               else
                 let
                   val vt = 1
@@ -982,6 +982,8 @@ struct
     fun genMetaDataThunk (state, env, no, typ, fks, backpatch, value) =
         if vtTagOnly env then
           Pil.E.namedConstant (RT.Thunk.vTable typ)
+        else if value andalso not backpatch then
+          Pil.E.namedConstant (RT.Thunk.vTable typ)
         else
           let
             val fs = OM.thunkSize (state, env, typ, fks)
@@ -1015,7 +1017,11 @@ struct
                   ()
             val idx = off div ws
             val isRef = MU.FieldKind.isRef typ
-            val () = Array.update (frefs, idx, isRef)
+            (* Non value lightweight-thunks re-use the code slot for
+             * the result 
+             *)
+            val () = if lightweightThunks (getConfig env) then ()
+                     else Array.update (frefs, idx, isRef)
             val frefs = Array.toVector frefs
             val n =
                 case no
