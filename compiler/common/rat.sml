@@ -171,7 +171,7 @@ struct
     fun roundingMode (m : IntInf.t, h : int) : int = 
         let
           val c = IntInf.<< (IntInf.one, Word.fromInt h)
-          val r = IntInf.+ (m, IntInf.sub1 (IntInf.+ (c, c)))
+          val r = IntInf.andb (m, IntInf.sub1 (IntInf.+ (c, c)))
         in
           case IntInf.compare (c, r) 
             of LESS    => 2
@@ -244,11 +244,8 @@ struct
                                  of LESS    => (<< (n, md - p0), d)
                                   | EQUAL   => (n, d) 
                                   | GREATER => (n, << (d, p0 - md))
-                fun scale (p, a, b) =
-                    if p < md - me then (p, a, b)
-                      else if IntInf.< (a, << (b, md - 1)) then (p - 1, << (a, 1), b)
-                        else if IntInf.<= (<< (b, md), a) then (p + 1, a, << (b, 1))
-                          else (p, a, b)
+                fun scale (p, a, b) = if IntInf.<= (<< (b, md), a) then (p + 1, a, << (b, 1))
+                                        else (p, a, b)
                 val (p', n'', d'') = scale (p0 - md, n', d')
                 val (q, r) = IntInf.quotRem (n'', d'')
                 val rdq = case IntInf.compare (<< (r, 1), d'')
