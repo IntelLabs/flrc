@@ -40,6 +40,7 @@ signature PIL = sig
   type varDec
   val varDec : T.t * identifier -> varDec
   val contDec : identifier -> varDec
+  val yieldDec : varDec
   (* Expressions *)
   structure E : sig
     type t
@@ -288,6 +289,8 @@ struct
 
   fun contDec cv =
       L.seq [L.str "pilContinuationLocal", L.paren cv]
+
+  val yieldDec : varDec = L.str "pilYieldDec"
 
   (* Expressions *)
   structure E = struct

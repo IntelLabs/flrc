@@ -2478,6 +2478,7 @@ struct
                  end
                | NONE    => [])
         val decs = decs @ outDecs
+        val ls0 = if backendYields (getConfig env) then [] else [(Pil.yieldDec, NONE)]
         val (ls, b) = genCB (state, env, body)
         val (ls2, b) =
             case rewriteThunks (env, cc)
@@ -2502,7 +2503,7 @@ struct
                 else
                   ([], b) 
               | NONE => ([], b)
-        val ls = ls1 @ ls @ ls2
+        val ls = ls0 @ ls1 @ ls @ ls2
         val i =
             if instrumentFunctions (getConfig env)
             then [genPrintFunction (state, env, f)]
