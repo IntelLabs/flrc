@@ -311,7 +311,9 @@ struct
      | (Rec prs1  :: binds) => prs1 @ flattenBinds binds
      | []                   => []
 
-  val unitMname : anMName = mkPrimMname "Unit"
+  val tupleMname : anMName = mkPrimMname "Tuple"
+  val z0tc : tcon qualified = (SOME tupleMname, "Z0T")
+  val z0t : ty = Tcon z0tc
 
   (* substitute a type variable v in type vty with an actual type t *)
   fun substTy (v, vty, t)
