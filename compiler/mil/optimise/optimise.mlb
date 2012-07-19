@@ -26,6 +26,7 @@ local
         thunks.sml
         branch-remove.sml
         loop-invert.sml
+        iv-cse.sml
         vectorize.sml
 in
         structure MilContify
@@ -42,4 +43,5 @@ in
         structure MilInlineProfile   
         structure MilInlineSmall
         structure MilLoopInvert
+        structure MilIvCse
 end

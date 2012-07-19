@@ -797,6 +797,127 @@ struct
               in r
               end)
 
+       val decUnitT =
+        fn (typ, c) =>
+           Try.lift
+             (fn opnd =>
+                 case typ
+                  of P.NtRat =>
+                     let
+                       val c' = <@ C.Dec.cRat opnd
+                       val () = Try.require (Rat.equals (c, c'))
+                     in ()
+                     end
+                   | P.NtInteger (P.IpFixed ia) => 
+                     let
+                       val c' = <@ (decIntegral ia) opnd
+                       val () = Try.require (Rat.equals (c, Rat.fromIntInf (IntArb.toIntInf c')))
+                     in ()
+                     end
+                   | P.NtInteger P.IpArbitrary =>
+                     let
+                       val c' = <@ C.Dec.cInteger opnd
+                       val () = Try.require (Rat.equals (c, Rat.fromIntInf c'))
+                     in ()
+                     end
+                   | _ => Try.fail ())
+
+       val doUnitL =
+           Try.lift
+             (fn (_, {typ, operator}, args, get) =>
+                 (case operator
+                   of P.APlus =>
+                      let
+                        val (b1, b2) = Try.V.doubleton args
+                        val c1 = <@ O.Dec.oConstant (get b1)
+                        val () = <@ (decUnitT (typ, Rat.zero)) c1
+                      in RrBase b2
+                      end
+                    | P.APlusSat =>
+                      let
+                        val (b1, b2) = Try.V.doubleton args
+                        val c1 = <@ O.Dec.oConstant (get b1)
+                        val () = <@ (decUnitT (typ, Rat.zero)) c1
+                      in RrBase b2
+                      end
+                    | P.ATimes =>
+                      let
+                        val (b1, b2) = Try.V.doubleton args
+                        val c1 = <@ O.Dec.oConstant (get b1)
+                        val () = <@ (decUnitT (typ, Rat.one)) c1
+                      in RrBase b2
+                      end
+                    | P.ATimesSat =>
+                      let
+                        val (b1, b2) = Try.V.doubleton args
+                        val c1 = <@ O.Dec.oConstant (get b1)
+                        val () = <@ (decUnitT (typ, Rat.one)) c1
+                      in RrBase b2
+                      end
+                    | _ => Try.fail ()))
+
+       val doUnitR =
+           Try.lift
+             (fn (_, {typ, operator}, args, get) =>
+                 (case operator
+                   of P.APlus =>
+                      let
+                        val (b1, b2) = Try.V.doubleton args
+                        val c2 = <@ O.Dec.oConstant (get b2)
+                        val () = <@ (decUnitT (typ, Rat.zero)) c2
+                      in RrBase b1
+                      end
+                    | P.APlusSat =>
+                      let
+                        val (b1, b2) = Try.V.doubleton args
+                        val c2 = <@ O.Dec.oConstant (get b2)
+                        val () = <@ (decUnitT (typ, Rat.zero)) c2
+                      in RrBase b1
+                      end
+                    | P.AMinus =>
+                      let
+                        val (b1, b2) = Try.V.doubleton args
+                        val c2 = <@ O.Dec.oConstant (get b2)
+                        val () = <@ (decUnitT (typ, Rat.zero)) c2
+                      in RrBase b1
+                      end
+                    | P.AMinusSat =>
+                      let
+                        val (b1, b2) = Try.V.doubleton args
+                        val c2 = <@ O.Dec.oConstant (get b2)
+                        val () = <@ (decUnitT (typ, Rat.zero)) c2
+                      in RrBase b1
+                      end
+                    | P.ATimes =>
+                      let
+                        val (b1, b2) = Try.V.doubleton args
+                        val c2 = <@ O.Dec.oConstant (get b2)
+                        val () = <@ (decUnitT (typ, Rat.one)) c2
+                      in RrBase b1
+                      end
+                    | P.ATimesSat =>
+                      let
+                        val (b1, b2) = Try.V.doubleton args
+                        val c2 = <@ O.Dec.oConstant (get b2)
+                        val () = <@ (decUnitT (typ, Rat.one)) c2
+                      in RrBase b1
+                      end
+                    | P.ADivide =>
+                      let
+                        val (b1, b2) = Try.V.doubleton args
+                        val c2 = <@ O.Dec.oConstant (get b2)
+                        val () = <@ (decUnitT (typ, Rat.one)) c2
+                      in RrBase b1
+                      end
+                    | P.ADiv _ =>
+                      let
+                        val (b1, b2) = Try.V.doubleton args
+                        val c2 = <@ O.Dec.oConstant (get b2)
+                        val () = <@ (decUnitT (typ, Rat.one)) c2
+                      in RrBase b1
+                      end
+                    | _ => Try.fail ()))
+
        val doSimplify = 
            Try.lift 
              (fn (operator1, typ1, args1, get) =>
@@ -837,7 +958,7 @@ struct
        val reduce : Config.t * {typ : P.numericTyp, operator : P.arithOp} 
                     * Mil.operand Vector.t * (Mil.operand -> Operation.t) 
                     -> reduction option =
-           fold or simplify
+           fold or doUnitL or doUnitR or simplify
 
      end (* structure NumArith *)
 

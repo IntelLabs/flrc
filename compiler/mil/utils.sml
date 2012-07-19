@@ -926,6 +926,7 @@ sig
     val variableRelatedNoInfo : t * Mil.variable * string -> Mil.variable
     val variableHasInfo : t * Mil.variable -> bool
     val variableSetInfo : t * Mil.variable * VariableInfo.t -> unit
+    val variableSetTyp : t * Mil.variable * Typ.t -> unit
     val nameMake : t * string -> Mil.name
     val labelFresh : t -> Mil.label
     val finish : t -> SymbolTable.t
@@ -4327,6 +4328,9 @@ struct
 
     fun variableSetInfo (stm, v, info) =
         IM.variableSetInfo (stm, v, info)
+
+    fun variableSetTyp (stm, v, t) =
+        variableSetInfo (stm, v, M.VI {typ = t, kind = variableKind (stm, v)})
 
     fun nameMake (stm, s) = IM.nameMake (stm, s)
 

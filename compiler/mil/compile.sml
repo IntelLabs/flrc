@@ -33,6 +33,7 @@ struct
        (#"s", MilLowerPSums.pass      ),
        (#"T", MilThunkOptimize.pass   ),
        (#"t", MilLowerPTypes.pass     ),
+       (#"U", MilIvCse.pass           ),
        (#"V", MilCse.pass             ),
        (#"Y", MilLoopInvert.pass      ),
        (#"Z", MilVectorize.pass       )
@@ -169,7 +170,7 @@ struct
   val o0String = filter "fst"
   val o1String = filter "SfstS"
   val o2String = filter "[{S}VHIVHIBfst]S"
-  val o3String = filter "[{S} TREV CHIV FREV HDCYLV REV THIJKTV B FREV fst]S"
+  val o3String = filter "[{S} TREV CHIV FREV HDCUYLV REV THIJKTV B FREV fst]S"
 
   val o0Control = Option.valOf (parseControl o0String)
   val o1Control = Option.valOf (parseControl o1String)

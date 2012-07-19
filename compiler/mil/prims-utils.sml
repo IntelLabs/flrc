@@ -499,7 +499,7 @@ sig
     type t
 
     (* check c => NONE if well-formed options
-     * build c => SOME s if ill-formed options (s is error message)
+     * check c => SOME s if ill-formed options (s is error message)
      *)
     val check : Config.t -> string option
     val build : Config.t -> t 
