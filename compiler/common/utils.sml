@@ -1546,7 +1546,8 @@ end
 (* Fixed size imperative bit sets *)
 signature IMP_BIT_SET = sig
     type t
-    val new : Int.t -> t
+    val new : Int.t * bool -> t
+    val empty : Int.t -> t
     val copy : t -> t
     val fromList   : Int.t * Int.t list -> t
     val fromVector : Int.t * Int.t vector -> t
@@ -1584,7 +1585,10 @@ struct
   structure BA = BitArray
   type t = BA.array
 
-  val new : Int.t -> t =
+  val new : Int.t * bool -> t =
+    fn (i, b) => BA.array (i, b)
+
+  val empty : Int.t -> t =
     fn i => BA.array (i, false)
 
   val copy : t -> t = 
@@ -1607,7 +1611,7 @@ struct
   val fromVector : Int.t * Int.t vector -> t = 
    fn (i, elts) =>
       let
-        val s = new i
+        val s = empty i
         val () = insertVector (s, elts)
       in s
       end
@@ -1674,8 +1678,8 @@ struct
    fn (s, p) => 
       let
         val l = BA.length s
-        val yes = new l
-        val no = new l
+        val yes = empty l
+        val no = empty l
         val help = 
          fn i => 
             if p i then

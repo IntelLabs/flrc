@@ -17,10 +17,12 @@ struct
 
   structure M = Mil
   structure MU = MilUtils
+  structure MCFG = MilCfg
   structure MPU = MU.Prims.Utils
   structure PD = PassData
   structure L = Layout
   structure LU = LayoutUtils
+  structure ML = MilLayout
   structure VD = M.VD
   structure VS = M.VS
   structure I = Identifier
@@ -30,6 +32,7 @@ struct
   structure LD = Mil.LD
   structure MCC = MilCodeCopy
   structure MFV = MilFreeVars
+  structure MBV = MilBoundVars
 
   structure Chat = ChatF (struct 
                             type env = PD.t
@@ -66,7 +69,14 @@ struct
   val (showThunkValD, showThunkVal) = 
       mkLevelDebug ("show-thunk-val", "Show thunk val analysis", 0)
 
-  val debugs = [debugPassD, checkPhasesD, showThunkValD, showPhasesD, skipThunkValD] 
+  val (skipLocalStrictnessD, skipLocalStrictness) =
+      mkDebug ("skip-local-strictness", "Skip local strictness")
+
+  val (showLocalStrictnessD, showLocalStrictness) = 
+      mkLevelDebug ("show-local-strictness", "Show local strictness", 1)
+
+  val debugs = [debugPassD, showLocalStrictnessD, skipLocalStrictnessD, 
+                checkPhasesD, showThunkValD, showPhasesD, skipThunkValD] 
 
   val mkLogFeature = 
    fn (tag, description, level) => PD.mkLogFeature (passname, passname^":"^tag, description, level)
@@ -601,6 +611,146 @@ struct
 
   end (* structure ThunkVal *)
 
+  structure LocalStrictness = 
+  struct
+    datatype analysis = A of {cfg : MCFG.t,
+                              variables : VS.t}
+    val getCfg = fn (A {cfg, variables}) => cfg
+    val getVariables = fn (A {cfg, variables}) => variables
+    type node = MCFG.node
+    structure NodeDict = MCFG.NodeDict
+    structure Info = 
+    struct
+      type info = VS.t
+      type infoRef = VS.t ref
+      val refMk = fn s => ref s
+      val refGet = fn r => !r
+    end
+    val initial = fn (a, n) => MCFG.compareNode (n, MCFG.exit (getCfg a)) = EQUAL
+    val initialVal = fn a => getVariables a
+    val bottom = fn a => VS.empty
+    val components = fn a => List.rev (MCFG.scc (getCfg a))
+    val successors = fn (a, n) => MCFG.pred (getCfg a, n)
+    val composeGenKill =
+        fn ((gen0, kill0), (gen1, kill1)) => 
+           (VS.union (VS.difference (gen0, kill1), gen1),
+            VS.union (VS.difference (kill0, gen1), kill1))
+    val instructionsMakeGenKill =
+     fn (a, is) => (VS.empty, VS.empty)
+    val transferMakeGenKill = 
+     fn (a, t) => 
+        (case t
+          of M.TInterProc {callee = M.IpEval {eval, ...}, ...} => (VS.empty, VS.singleton (MU.Eval.thunk eval))
+           | _                                                 => (VS.empty, VS.empty))
+    val blockMakeGenKill = 
+     fn (a, M.B {parameters, instructions, transfer}) => 
+        composeGenKill (transferMakeGenKill (a, transfer), instructionsMakeGenKill (a, instructions))
+    val transfer = 
+     fn (a, n) => 
+        let
+          val update = 
+           fn (new, ior) => 
+              let
+                val changed = not (VS.isSubset (new, !ior))
+                val () = if changed then ior := VS.union (new, !ior) else ()
+              in changed
+              end
+          val t = 
+              case MCFG.nodeGetBlock (getCfg a, n)
+               of NONE   => update
+                | SOME b => 
+                  let
+                    val (gen, kill) = blockMakeGenKill (a, b)
+                  in
+                    fn (ii, ior) => 
+                       let
+                         val lv = L.str o I.variableString' 
+                         val variables = getVariables a
+(*                         val l = L.mayAlign [L.seq [L.str "In for block ", 
+                                                   L.str (I.labelString (valOf (MCFG.nodeGetLabel (getCfg a, n))))],
+                                             LU.indent (VS.layout (VS.difference (variables, ii), lv)),
+                                             L.seq [L.str "Out for block ", 
+                                                    L.str (I.labelString (valOf (MCFG.nodeGetLabel (getCfg a, n))))],
+                                             LU.indent (VS.layout (VS.difference (variables, !ior), lv))]
+                         val () = LU.printLayout l*)
+                         val new = VS.union (gen, VS.difference (ii, kill))
+                       in update (new, ior)
+                       end
+                  end
+        in t
+        end
+          
+    structure Analysis = DataFlowF(type analysis = analysis
+                                   type node = node
+                                   structure NodeDict = NodeDict
+                                   structure Info = Info
+                                   val initial = initial
+                                   val initialVal = initialVal
+                                   val bottom = bottom
+                                   val components = components
+                                   val successors = successors
+                                   val transfer = transfer
+                                  )
+
+    val analyzeCode = 
+     fn (config, si, M.F {body, ...}) =>
+        let
+          val variables = MFV.codeBody (config, body)
+          val variables = VS.union (variables, MBV.codeBody (config, body))
+          val cfg = MCFG.build (config, si, body)
+          val result = Analysis.analyze (A {cfg = cfg, variables = variables})
+          val M.CB {blocks, ...} = body
+          val getInfo = 
+           fn (l, b) => 
+              let
+                val node = MCFG.labelGetNode (cfg, l)
+                val {iInfo, oInfo} = result node
+              in VS.difference (variables, oInfo)
+              end
+          val results = LD.map (blocks, getInfo)
+        in results
+        end
+
+    val analyzeGlobals = 
+     fn (config, si, globals) => 
+        let
+          val analyzeGlobal = 
+           fn (v, g, d) => 
+              (case g
+                of M.GCode code => LD.union (analyzeCode (config, si, code), d, 
+                                             fn _ => fail ("analyzeGlobals", "dup label"))
+                 | _            => d)
+        in VD.fold (globals, LD.empty, analyzeGlobal)
+        end
+
+    val show = 
+     fn (pd, si, p, results) =>
+        if showLocalStrictness pd then
+          let
+            val config = PD.getConfig pd
+            val var = fn v => ML.layoutVariable (config, si, v)
+            val block =
+             fn l => VS.layout (valOf (LD.lookup (results, l)), var)
+            val helpers = {varBind = NONE, block = SOME block, edge = NONE, cb = NONE}
+            val l = ML.General.layout (config, helpers, p)
+            val () = LU.printLayout l
+          in ()
+          end
+        else
+          ()
+
+    val program = 
+     fn (pd, p as M.P {includes, externs, globals, symbolTable, entry}) =>
+        let
+          val config = PD.getConfig pd
+          val si = I.SymbolInfo.SiTable symbolTable
+          val results = analyzeGlobals (config, si, globals)
+          val () = show (pd, si, p, results)
+(*          val p = doProgram (pd, p, results)*)
+        in p
+        end
+  end
+
   val postPhase = 
    fn (pd, p) => 
       let
@@ -636,10 +786,16 @@ struct
                           fn (pd, p) => ThunkVal.program (pd, p),
                              "ThunkVal Optimization") (pd, p)
 
+  val strictness = fn (pd, p) => 
+                      doPhase (skipLocalStrictness, 
+                               fn (pd, p) => LocalStrictness.program (pd, p),
+                               "Local Strictness Optimization") (pd, p)
+
   val program = 
    fn (pd, p) =>
       let
         val p = thunkVal (pd, p)
+        val p = strictness (pd, p)
         val () = PD.report (pd, passname)
       in p
       end

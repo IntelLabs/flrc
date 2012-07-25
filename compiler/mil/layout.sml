@@ -234,7 +234,7 @@ struct
        in
          case cc
           of M.CcCode               => L.str "CcCode"
-           | M.CcUnmanaged abi      => L.seq [L.str "CcUnamanged ", layoutAbiCallConv (env, abi)]
+           | M.CcUnmanaged abi      => L.seq [L.str "CcUnmanaged ", layoutAbiCallConv (env, abi)]
            | M.CcClosure {cls, fvs} => ct ("CcClosure", cls, fvs)
            | M.CcThunk {thunk, fvs} => ct ("CcThunk", thunk, fvs)
        end
