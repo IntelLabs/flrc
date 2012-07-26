@@ -18,6 +18,7 @@ local
         anorm-strict-analyze.sml
         anorm-strict-free-vars.sml
         anorm-strict-clone.sml
+        anorm-strict-closure-convert.sml
         anorm-strict-optimize.sml
         to-lazy.sml
         ghc-prim.sml
@@ -33,6 +34,7 @@ in
         structure ANormPrim
         structure ANormLazy
         structure ANormStrict
+        structure ANormStrictClosureConvert
         structure ANormStrictLayout
         structure CoreHsLayout
         structure ANormPrimLayout
