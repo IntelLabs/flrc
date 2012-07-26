@@ -847,6 +847,18 @@ struct
                      val t = mk11 (t1, t2)
                    in t
                    end
+	         | MP.ViCast r1     => 
+                   let
+                     val {to, from} = r1
+                     val p = MP.PNumCast {to = #typ to, from = #typ from}
+                     val (t1, t2) = unUn (prim (c, p))
+                     val size1 = PU.VectorDescriptor.vectorSize (#descriptor from)
+                     val size2 = PU.VectorDescriptor.vectorSize (#descriptor to)
+                     val t1 = tVector (size1, t1)
+                     val t2 = tVector (size2, t2)
+                     val t = mk11 (t1, t2)
+                   in t
+                   end
 	         | MP.ViCompare r1     => 
                    let
                      val t1 = M.TNumeric (#typ r1)

@@ -255,6 +255,10 @@ signature PRIMS_DEC =
                           ->
                           {to :   {descriptor : Mil.Prims.vectorDescriptor, typ : Mil.Prims.numericTyp}, 
                            from : {descriptor : Mil.Prims.vectorDescriptor, typ : Mil.Prims.numericTyp}} option
+      val viCast        : t
+                          ->
+                          {to :   {descriptor : Mil.Prims.vectorDescriptor, typ : Mil.Prims.numericTyp}, 
+                           from : {descriptor : Mil.Prims.vectorDescriptor, typ : Mil.Prims.numericTyp}} option
       val viCompare     : t -> {descriptor : Mil.Prims.vectorDescriptor, 
                                 typ : Mil.Prims.numericTyp, 
                                 operator : Mil.Prims.compareOp} option
@@ -711,6 +715,7 @@ sig
     val compare : t Compare.t
     val eq      : t Eq.t
     val hash    : t Hash.t
+    val invert  : t -> t (* note that the arguments must flip as well *)
     structure Dec : 
     sig
       val cEq : t -> unit option
@@ -813,6 +818,10 @@ sig
     sig
       val viPointwise   : t -> {descriptor : Mil.Prims.vectorDescriptor, masked: bool, operator : Mil.Prims.prim} option
       val viConvert     : t
+                          ->
+                          {to :   {descriptor : Mil.Prims.vectorDescriptor, typ : Mil.Prims.numericTyp}, 
+                           from : {descriptor : Mil.Prims.vectorDescriptor, typ : Mil.Prims.numericTyp}} option
+      val viCast        : t
                           ->
                           {to :   {descriptor : Mil.Prims.vectorDescriptor, typ : Mil.Prims.numericTyp}, 
                            from : {descriptor : Mil.Prims.vectorDescriptor, typ : Mil.Prims.numericTyp}} option
@@ -1403,7 +1412,6 @@ struct
       let
         val angle : 'a u -> 'a u = fn p => literal "<" -&& p &&- literal ">"
         val square : 'a u -> 'a u = fn p => literal "[" -&& p &&- literal "]"
-
         val viPointwise   = 
             let
               val r2t = fn {descriptor, masked, operator} => ((masked, descriptor), operator)
@@ -1423,7 +1431,16 @@ struct
                               angle (numericTyp &&- literal "To" &&& numericTyp)
             in unary (Mil.Prims.ViConvert, Dec.Vector.viConvert, rec3 (t2r, r2t) p)
             end
-
+        val viCast        = 
+            let 
+              val r2t = 
+               fn {from = {descriptor = d1, typ = t1}, to = {descriptor = d2, typ = t2}} => ((d1, d2), (t1, t2))
+              val t2r = 
+               fn ((d1, d2), (t1, t2)) => {from = {descriptor = d1, typ = t1}, to = {descriptor = d2, typ = t2}}
+              val p = literal "Cast" -&& square vectorDescriptor &&& square vectorDescriptor &&& 
+                              angle (numericTyp &&- literal "To" &&& numericTyp)
+            in unary (Mil.Prims.ViCast, Dec.Vector.viCast, rec3 (t2r, r2t) p)
+            end
         val viCompare     = 
             let
               val r2t = fn {descriptor = d1, typ = t1, operator = op1} => (d1, (t1, op1))
@@ -1431,7 +1448,6 @@ struct
               val p = literal "Compare" -&& square vectorDescriptor &&& angle (numericTyp &&& compareOp)
             in unary (Mil.Prims.ViCompare, Dec.Vector.viCompare, rec2 (t2r, r2t) p)
             end
-
         val viReduction   = 
             let
               val r2t = fn {descriptor = d1, associativity = a1, operator = p1} => ((a1, d1), p1)
@@ -1461,6 +1477,7 @@ struct
 
         val res = viPointwise 
                     || viConvert 
+                    || viCast
                     || viCompare 
                     || viReduction 
                     || viData 
@@ -1835,6 +1852,7 @@ struct
       type t = Prims.vector
       val viPointwise   = fn ve => (case ve of Prims.ViPointwise r => SOME r | _ => NONE)
       val viConvert     = fn ve => (case ve of Prims.ViConvert r => SOME r | _ => NONE)
+      val viCast        = fn ve => (case ve of Prims.ViCast r => SOME r | _ => NONE)
       val viCompare     = fn ve => (case ve of Prims.ViCompare r => SOME r | _ => NONE)
       val viReduction   = fn ve => (case ve of Prims.ViReduction r => SOME r | _ => NONE)
       val viData        = fn ve => (case ve of Prims.ViData r => SOME r | _ => NONE)
@@ -2180,6 +2198,8 @@ struct
                    IFO.shift (0, mkTriple (vectorDescriptor, boolean, prim) (descriptor, masked, operator))
                  | Prims.ViConvert {to, from} => 
                    IFO.shift (1, mkPair (dtPair, dtPair) (to, from))
+                 | Prims.ViCast {to, from} => 
+                   IFO.shift (1, mkPair (dtPair, dtPair) (to, from))
                  | Prims.ViCompare {descriptor, typ, operator} => 
                    IFO.shift (2, mkTriple (vectorDescriptor, numericTyp, compareOp) (descriptor, typ, operator))
                  | Prims.ViReduction {descriptor, associativity, operator} =>
@@ -2418,6 +2438,7 @@ struct
                   (case v
                     of Prims.ViPointwise {descriptor, masked, operator}        => prim operator
                      | Prims.ViConvert {to, from}                              => total
+                     | Prims.ViCast {to, from}                                 => total
                      | Prims.ViCompare {descriptor, typ, operator}             => total
                      | Prims.ViReduction {descriptor, associativity, operator} => prim operator
                      | Prims.ViData {descriptor, operator}                     => total
@@ -2639,6 +2660,12 @@ struct
     val compare = Compare.compareOp
     val eq      = Eq.compareOp
     val hash    = Hash.compareOp
+    fun invert (c : t) : t =
+        case c
+         of Prims.CEq => Prims.CNe
+          | Prims.CNe => Prims.CEq
+          | Prims.CLt => Prims.CLe
+          | Prims.CLe => Prims.CLt
     structure Dec = Dec.CompareOp
   end (* structure CompareOp *)
 
@@ -2845,6 +2872,7 @@ struct
             (case v
               of Prims.ViPointwise {descriptor, masked, operator}        => prim operator
                | Prims.ViConvert {to, from}                              => ArOther (1, 1)
+               | Prims.ViCast {to, from}                                 => ArOther (1, 1)
                | Prims.ViCompare {descriptor, typ, operator}             => compareOp operator
                | Prims.ViReduction {descriptor, associativity, operator} => prim operator
                | Prims.ViData {descriptor, operator}                     => dataOp descriptor operator
@@ -2982,6 +3010,7 @@ struct
         (case v
           of Prims.ViPointwise {descriptor, masked, operator}        => prim (config, operator)
            | Prims.ViConvert _                                       => none
+           | Prims.ViCast _                                          => none
            | Prims.ViCompare _                                       => none
            | Prims.ViReduction {descriptor, associativity, operator} => none
            | Prims.ViData _                                          => none

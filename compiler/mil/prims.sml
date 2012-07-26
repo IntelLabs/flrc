@@ -98,6 +98,8 @@ struct
       ViPointwise   of {descriptor : vectorDescriptor, masked: bool, operator : prim}
     | ViConvert     of {to :   {descriptor : vectorDescriptor, typ : numericTyp}, 
                         from : {descriptor : vectorDescriptor, typ : numericTyp}}
+    | ViCast        of {to :   {descriptor : vectorDescriptor, typ : numericTyp}, 
+                        from : {descriptor : vectorDescriptor, typ : numericTyp}}
     | ViCompare     of {descriptor : vectorDescriptor, typ : numericTyp, operator : compareOp}
     (* Reduction across the vector with initial value.  Associativity is specified *)
     (* Only makes sense for binary operations, which isn't captured by the syntax. *)

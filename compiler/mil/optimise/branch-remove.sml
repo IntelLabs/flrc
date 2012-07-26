@@ -27,6 +27,8 @@ struct
   structure I   = Identifier
   structure MU  = MilUtils
   structure ML  = MilLayout
+  structure MP  = Mil.Prims
+  structure MPU = MU.Prims.Utils
 
   structure Chat = ChatF (struct 
                             type env = PD.t
@@ -47,13 +49,16 @@ struct
   val stats = Click.stats
 
   datatype const =
-           RCons of M.constant
-         | RSel  of M.constant
+      RCons of M.constant
+    | RSel  of M.constant
 
   (* EP (v, c, true)  => v = c
    * EP (v, c, false) => v <> c 
+   * EpCmp (nt, v1, c, v2) => v1 c (at type nt) v2
    *)
-  datatype edgePredicate = EP of M.variable * const * bool
+  datatype edgePredicate =
+      EP of M.variable * const * bool
+    | EpCmp of MP.numericTyp * MP.compareOp * M.variable * M.variable
 
   val getLabel = fn (imil, b) => #1 (IMil.IBlock.getLabel' (imil, b))
   val labelString = fn (imil, b) => ID.labelString(getLabel(imil, b))
@@ -74,14 +79,28 @@ struct
         | (_,   _)               => false
 
   val predicateCompare =
-   fn (EP x1, EP x2) =>
-      Compare.triple (Identifier.variableCompare, constCompare, Bool.compare) (x1, x2)
+   fn (ep1, ep2) =>
+      case (ep1, ep2)
+       of (EP x1, EP x2) =>
+          Compare.triple (Identifier.variableCompare, constCompare, Bool.compare) (x1, x2)
+        | (EP _, EpCmp _) => LESS
+        | (EpCmp _, EP _) => GREATER
+        | (EpCmp x1, EpCmp x2) =>
+          Compare.quad
+            (MPU.Compare.numericTyp, MPU.Compare.compareOp, Identifier.variableCompare, Identifier.variableCompare)
+            (x1, x2)
 
   val predicateEquals =
-   fn (EP x1, EP x2) =>
-      Equality.triple (Identifier.variableEqual, constEquals, Bool.equals) (x1, x2)
+   fn (ep1, ep2) =>
+      case (ep1, ep2)
+       of (EP x1, EP x2) =>
+          Equality.triple (Identifier.variableEqual, constEquals, Bool.equals) (x1, x2)
+        | (EP _, EpCmp _) => false
+        | (EpCmp _, EP _) => false
+        | (EpCmp x1, EpCmp x2) =>
+          Equality.quad (MPU.Eq.numericTyp, MPU.Eq.compareOp, Identifier.variableEqual, Identifier.variableEqual)
+                        (x1, x2)
 
-                              
   structure PS = SetF (struct 
                         type t = edgePredicate
                         val compare = predicateCompare
@@ -158,15 +177,27 @@ struct
         end
   
     val printPredicate =
-     fn (d, imil, EP (v, const, b)) =>
-        let
-          val () = prints (d, "(")
-          val () = printVariable (d, imil, v)
-          val () = if b then prints (d, " = ") else prints (d, " <> ")
-          val () = printConst (d, imil, const)
-          val () = prints (d, ")")
-        in ()
-        end
+     fn (d, imil, ep) =>
+        case ep
+         of EP (v, const, b) =>
+            let
+              val () = prints (d, "(")
+              val () = printVariable (d, imil, v)
+              val () = if b then prints (d, " = ") else prints (d, " <> ")
+              val () = printConst (d, imil, const)
+              val () = prints (d, ")")
+            in ()
+            end
+          | EpCmp (nt, cmp, v1, v2) =>
+            let
+              val () = prints (d, "(")
+              val () = printVariable (d, imil, v1)
+              val c = PD.getConfig d
+              val () = prints (d, " " ^ MPU.ToString.numericTyp (c, nt) ^ MPU.ToString.compareOp (c, cmp) ^ " ")
+              val () = printVariable (d, imil, v2)
+              val () = prints (d, ")")
+            in ()
+            end
 
     val printPredicateSet =
      fn (d, imil, s, ps) =>
@@ -278,6 +309,35 @@ struct
                         case select
                          of M.SeSum _    => RSel
                           | M.SeConstant => RCons
+                    val extra =
+                        Try.try
+                          (fn () =>
+                              let
+                                val i = Try.<@ IMil.Def.toIInstr (IMil.Def.get (imil, v))
+                                val r = Try.<@ IMil.IInstr.toRhs i
+                                val {prim, args, ...} = Try.<@ MU.Rhs.Dec.rhsPrim r
+                                val p = Try.<@ MPU.Dec.T.prim prim
+                                val {typ, operator} = Try.<@ MPU.Dec.Prim.pNumCompare p
+                                val (o1, o2) = Try.V.doubleton args
+                                val v1 = Try.<@ MU.Operand.Dec.sVariable o1
+                                val v2 = Try.<@ MU.Operand.Dec.sVariable o2
+                                val ept = EpCmp (typ, operator, v1, v2)
+                                val epf = EpCmp (typ, MPU.CompareOp.invert operator, v2, v1)
+                              in {t = ept, f = epf}
+                              end)
+                    val addOne =
+                     fn (ps, v, n, tf) =>
+                        let
+                          val ps = PS.insert (ps, EP (v, construct n, tf))
+                          val ps =
+                              case (extra, n, tf)
+                               of (SOME {t, f}, M.CBoolean true,  true ) => PS.insert (ps, t)
+                                | (SOME {t, f}, M.CBoolean true,  false) => PS.insert (ps, f)
+                                | (SOME {t, f}, M.CBoolean false, true ) => PS.insert (ps, f)
+                                | (SOME {t, f}, M.CBoolean false, false) => PS.insert (ps, t)
+                                | _                                      => ps
+                        in ps
+                        end
                     val doIt = 
                      fn ((n, t as M.T {block, ...}), (ps, found)) =>
                         (case (found, block = bl)
@@ -286,12 +346,10 @@ struct
                                val () = Chat.warn0 (d, "Multiple targets to same block!")
                              in Try.fail ()
                              end
-                           | (true, false)  => (ps,                                         found)
-                           | (false, true)  => (PS.insert (ps, EP (v, construct n, true)),  true)
-                           | (false, false) => (PS.insert (ps, EP (v, construct n, false)), false))
-
+                           | (true, false)  => (ps,                       found)
+                           | (false, true)  => (addOne (ps, v, n, true ), true )
+                           | (false, false) => (addOne (ps, v, n, false), false))
                     val (ps, found) = Vector.fold (cases, (PS.empty, false), doIt)
-
                     val ps = 
                         (case (found, default)
                           of (true,  NONE)                          => ps
@@ -321,10 +379,70 @@ struct
       in ps
       end
 
+  (* Compute the transitive closure of comparison predicats.
+   * That is, if (nt, op1, v1, v2) and (nt, op2, v2, v3) are in the set,
+   * add (nt, op1;op2, v1, v3) to the set until the set no longer changes.
+   *)
+
+  val transitiveClosure =
+   fn (d, ps) =>
+      let
+        val out = ref ps
+        val combineOne =
+         fn (ep1, ep2) =>
+            Try.try
+              (fn () =>
+                  let
+                    val (nt1, c1, v1, v2) = case ep1 of EP _ => Try.fail () | EpCmp x => x
+                    val (nt2, c2, v3, v4) = case ep2 of EP _ => Try.fail () | EpCmp x => x
+                    val () = Try.require (I.variableEqual (v2, v3) andalso MPU.Eq.numericTyp (nt1, nt2))
+                    val () = Try.require (not (predicateEquals (ep1, ep2)))
+                    val c =
+                        case (c1, c2)
+                         of (MP.CEq, MP.CEq) => MP.CEq
+                          | (MP.CEq, MP.CNe) => MP.CNe
+                          | (MP.CEq, MP.CLt) => MP.CLt
+                          | (MP.CEq, MP.CLe) => MP.CLe
+                          | (MP.CNe, MP.CEq) => MP.CNe
+                          | (MP.CNe, MP.CNe) => Try.fail ()
+                          | (MP.CNe, MP.CLt) => Try.fail ()
+                          | (MP.CNe, MP.CLe) => Try.fail ()
+                          | (MP.CLt, MP.CEq) => MP.CLt
+                          | (MP.CLt, MP.CNe) => Try.fail ()
+                          | (MP.CLt, MP.CLt) => MP.CLt
+                          | (MP.CLt, MP.CLe) => MP.CLt
+                          | (MP.CLe, MP.CEq) => MP.CLe
+                          | (MP.CLe, MP.CNe) => Try.fail ()
+                          | (MP.CLe, MP.CLt) => MP.CLt
+                          | (MP.CLe, MP.CLe) => MP.CLe
+                    val ep = EpCmp (nt1, c, v1, v4)
+                  in ep
+                  end)
+        val rec loop1 =
+         fn eps =>
+            case eps
+             of [] => ()
+              | ep::eps => loop2 (ep, eps, PS.toList (!out))
+        and loop2 =
+         fn (ep1, eps1, eps2) =>
+            case eps2
+             of [] => loop1 eps1
+              | ep2::eps2 =>
+                (case combineOne (ep1, ep2)
+                  of NONE => loop2 (ep1, eps1, eps2)
+                   | SOME ep =>
+                     if PS.member (!out, ep)
+                     then loop2 (ep1, eps1, eps2)
+                     else let val () = out := PS.insert (!out, ep) in loop2 (ep1, ep::eps1, eps2) end)
+        val () = loop1 (PS.toList ps)
+      in !out
+      end
+
   (* Given a dominator tree on an edge split CFG, propagate predicates down 
    * the tree. The root node starts with no predicates.  Each child 
    * gets its parents predicates plus any predicates that can be 
-   * inferred from its inedges.  *)
+   * inferred from its inedges, and the transitive closure of comparison predicates.
+   *)
   val propagatePredicates =
    fn (d, imil, tree) =>
       let
@@ -333,7 +451,7 @@ struct
          fn (a, child as Tree.T (b, _), aSet) =>
             let
               val edgePs = getEdgePredicates (d, imil, (a, b))
-              val ps = PS.union (aSet, edgePs)
+              val ps = transitiveClosure (d, PS.union (aSet, edgePs))
               val l = getLabel (imil, b)
               val () = gDict := LD.insert (!gDict, l, ps)
             in doTree (child, ps)
@@ -348,13 +466,37 @@ struct
   (* Given a set of true predicates ps and a predicate p guarding
    * an edge, check whether p could possibly ever be true given ps.  *)
   val impossiblePredicate : PD.t * PS.t * edgePredicate -> bool = 
-   fn (d, psset, EP (v1, c1, eq1)) =>
-      PS.exists (psset, fn EP (v2, c2, eq2) => 
-                           (case (v1 = v2, constEquals (c1, c2), eq1, eq2)
-                             of (true, false, true, true) => true  (* x =  c1, x =  c2, c1 <> c2*)
-                              | (true, true, false, true) => true  (* x <> c1, x =  c1 *)
-                              | (true, true, true, false) => true  (* x =  c1, x <> c1 *)
-                              | _                         => false))
+   fn (d, psset, ep1) =>
+      let
+        val chkOne =
+         fn ep2 =>
+            (case (ep1, ep2)
+              of (EP (v1, c1, eq1), EP (v2, c2, eq2)) =>
+                 (case (v1 = v2, constEquals (c1, c2), eq1, eq2)
+                   of (true, false, true, true) => true  (* x =  c1, x =  c2, c1 <> c2*)
+                    | (true, true, false, true) => true  (* x <> c1, x =  c1 *)
+                    | (true, true, true, false) => true  (* x =  c1, x <> c1 *)
+                    | _                         => false)
+               | (EP _, EpCmp _) => false
+               | (EpCmp _, EP _) => false
+               | (EpCmp (nt1, c1, v1, v2), EpCmp (nt2, c2, v3, v4)) => 
+                 MPU.Eq.numericTyp (nt1, nt2) andalso I.variableEqual (v1, v4) andalso 
+                 (case (c1, c2)
+                   of (MP.CEq, MP.CNe) => (I.variableEqual (v1, v3) andalso I.variableEqual (v2, v4)) orelse
+                                          (I.variableEqual (v1, v4) andalso I.variableEqual (v2, v3))
+                    | (MP.CEq, MP.CLt) => (I.variableEqual (v1, v3) andalso I.variableEqual (v2, v4)) orelse
+                                          (I.variableEqual (v1, v4) andalso I.variableEqual (v2, v3))
+                    | (MP.CNe, MP.CEq) => (I.variableEqual (v1, v3) andalso I.variableEqual (v2, v4)) orelse
+                                          (I.variableEqual (v1, v4) andalso I.variableEqual (v2, v3))
+                    | (MP.CLt, MP.CLt) => I.variableEqual (v1, v4) andalso I.variableEqual (v2, v3)
+                    | (MP.CLt, MP.CLe) => I.variableEqual (v1, v4) andalso I.variableEqual (v2, v3)
+                    | (MP.CLt, MP.CEq) => (I.variableEqual (v1, v3) andalso I.variableEqual (v2, v4)) orelse
+                                          (I.variableEqual (v1, v4) andalso I.variableEqual (v2, v3))
+                    | (MP.CLe, MP.CLt) => I.variableEqual (v1, v4) andalso I.variableEqual (v2, v3)
+                    | _                => false))
+      in
+        PS.exists (psset, chkOne)
+      end
 
 
   val impossibleEdge =
