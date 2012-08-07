@@ -68,6 +68,7 @@ struct
 
   val features = [statPhasesF] 
                  @ Optimization.features
+                 @ MilRepAnalyze.features
 
   val stats = []
               @ Optimization.stats
