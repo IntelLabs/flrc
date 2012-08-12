@@ -218,7 +218,7 @@ struct
         val logLev      = ref Config.VSilent
         val warnLev     = ref Config.VSilent
         val debugLev    = ref Config.VSilent
-        val ws          = ref Config.Ws32
+        val ws          = ref (if SysWord.wordSize = 32 then Config.Ws32 else Config.Ws64)
         val va          = ref Config.ViEMU
         val vInstrs     = ref {disabled = [], emulated = [], enabled = []}
         val vSizes      = ref {disabled = [], emulated = [], enabled = []}
