@@ -227,7 +227,7 @@ struct
     regs1   : Pil.S.t list ref,
     globals : Pil.E.t list ref,
     gRoots  : unit,
-    locals  : VS.t ref,
+    locals  : Pil.E.t option VD.t ref,
     conts   : I.variable LD.t ref
   }
 
@@ -259,7 +259,7 @@ struct
          regs1 = ref [],
          globals = ref [],
          gRoots = (),
-         locals = ref VS.empty,
+         locals = ref VD.empty,
          conts = ref LD.empty}
 
   fun getStats (S {stats, ...}) = stats
@@ -313,13 +313,20 @@ struct
 
   fun getGRoots (S {gRoots, ...}) = gRoots
 
-  fun getLocals (S {locals,...}) = VS.toList (!locals)
-  fun clearLocals (S {locals,...}) = locals := VS.empty
-  fun addLocal (S {locals,...}, x) = locals := VS.insert(!locals, x)
+  fun getLocals (S {locals,...}) = VD.toList (!locals)
+  fun clearLocals (S {locals,...}) = locals := VD.empty
+  fun addLocal (S {locals,...}, x) = locals := VD.insert(!locals, x, NONE)
+  fun addLocalWInit (S {locals,...}, x, eo) = locals := VD.insert(!locals, x, eo)
   fun addLocals (S {locals,...}, xs) = 
        let
          val s = !locals
-         val s = Vector.fold(xs, s, VS.insert o Utils.flip2)
+         val s = Vector.fold(xs, s, fn (x, s) => VD.insert (s, x, NONE))
+       in locals := s
+       end
+  fun addLocalsWInits (S {locals,...}, xs) = 
+       let
+         val s = !locals
+         val s = Vector.fold(xs, s, fn ((x, eo), s) => VD.insert (s, x, eo))
        in locals := s
        end
 
@@ -1217,8 +1224,12 @@ struct
   fun genVarDec (state, env, x) = 
       Pil.varDec (genTyp (state, env, getVarTyp (state, x)),
                   genVar (state, env, x))
-  and genVarsDec (state, env, xs) = 
+
+  fun genVarsDec (state, env, xs) = 
       List.map (xs, fn x => genVarDec (state, env, x))
+
+  fun genVarsDecInits (state, env, xs) = 
+      List.map (xs, fn (x, eo) => (genVarDec (state, env, x), eo))
 
   (*** Constants ***)
 
@@ -2005,13 +2016,13 @@ struct
              of M.RNormal {rets, block, cuts, ...} =>
                 let
                   val cuts = genCutsTo (state, env, cuts)
-                  val () = Vector.foreach (rets, fn v => addLocal (state, v))
                   val c =
                       case Vector.length rets
                        of 0 => Pil.E.callAlsoCutsTo (getConfig env, f, args, cuts)
                         | 1 =>
                           let
                             val rv = Vector.sub (rets, 0)
+                            val () = addLocal (state, rv)
                             val rv = genVarE (state, env, rv)
                             val c = Pil.E.callAlsoCutsTo (getConfig env, f, args, cuts)
                           in
@@ -2019,6 +2030,9 @@ struct
                           end
                         | n => 
                           let
+                            val init = 
+                             fn v => if MU.Typ.isRef (getVarTyp (state, v)) then SOME Pil.E.null else NONE
+                            val () = Vector.foreach (rets, fn v => addLocalWInit (state, v, init v))
                             val rvs = Vector.toListMap (rets, fn v => genVarE (state, env, v))
                           in
                             if doMultiReturn (getConfig env) then
@@ -2275,8 +2289,8 @@ struct
                   (cdec::decs, centry::s::ss)
                 end
         val (cdecs, blocks) = List.foldr (blocks, ([], []), doOne)
-        val decs = genVarsDec (state, env, getLocals state) @ cdecs
-        val decs = List.map (decs, fn vd => (vd, NONE))
+        val cdecs = List.map (cdecs, fn d => (d, NONE))
+        val decs = genVarsDecInits (state, env, getLocals state) @ cdecs
         val () = clearLocals(state)
       in
         (decs, entry::blocks)
