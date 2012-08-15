@@ -23,6 +23,7 @@ sig
     val rseCallBack        : Pil.identifier
     val reportRoots        : Pil.identifier
     val registerGlobals    : Pil.identifier
+    val registerGlobalRefs : Pil.identifier
     val writeBarrierRef    : Pil.identifier
     val writeBarrierRefOpt : Pil.identifier
     val vtableChange       : Pil.identifier
@@ -92,9 +93,6 @@ sig
     val checkOpt : IntInf.t -> unit
 
     val staticDef     : Pil.identifier
-    val staticRef     : Pil.identifier
-
-    val staticMk      : Pil.identifier
     val staticInit    : Pil.identifier
 
     val optFromSInt32 : Pil.identifier
@@ -302,6 +300,7 @@ struct
 
     val reportRoots        = Pil.identifier "pLsrPPilerReportRoots"
     val registerGlobals    = Pil.identifier "pLsrGcRegisterGlobals"
+    val registerGlobalRefs = Pil.identifier "pLsrGcRegisterGlobalRefs"
 
     val writeBarrierRef    = Pil.identifier "pLsrWriteBarrierRefBase"
     val writeBarrierRefOpt = Pil.identifier "pLsrWriteBarrierRefOptBase"
@@ -380,9 +379,6 @@ struct
           ()
 
     val staticDef     = Pil.identifier "pLsrRationalStaticUnboxedDef"
-    val staticRef     = Pil.identifier "pLsrRationalStaticRef"
-
-    val staticMk      = Pil.identifier "pLsrRationalStaticUnboxedMk"
     val staticInit    = Pil.identifier "pLsrRationalStaticInit"
 
     val optFromSInt32 = Pil.identifier "pLsrSmallRationalFromSInt32"

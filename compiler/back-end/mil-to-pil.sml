@@ -217,18 +217,19 @@ struct
    * labels are also continuations.
    *)
   datatype state = S of {
-    stats   : Stats.t,
-    stm     : M.symbolTableManager,
-    names   : I.variable ND.t ref,
-    vtables : I.variable VtiD.t ref,
-    xtrGlbs : Pil.D.t list ref,
-    typDecs : Pil.D.t list ref,
-    regs0   : Pil.S.t list ref,
-    regs1   : Pil.S.t list ref,
-    globals : Pil.E.t list ref,
-    gRoots  : unit,
-    locals  : Pil.E.t option VD.t ref,
-    conts   : I.variable LD.t ref
+    stats    : Stats.t,
+    stm      : M.symbolTableManager,
+    names    : I.variable ND.t ref,
+    vtables  : I.variable VtiD.t ref,
+    xtrGlbs  : Pil.D.t list ref,
+    typDecs  : Pil.D.t list ref,
+    regs0    : Pil.S.t list ref,
+    regs1    : Pil.S.t list ref,
+    globals  : Pil.E.t list ref,
+    globalrs : Pil.E.t list ref,
+    gRoots   : unit,
+    locals   : Pil.E.t option VD.t ref,
+    conts    : I.variable LD.t ref
   }
 
   fun newStats () =
@@ -258,6 +259,7 @@ struct
          regs0 = ref [],
          regs1 = ref [],
          globals = ref [],
+         globalrs = ref [],
          gRoots = (),
          locals = ref VD.empty,
          conts = ref LD.empty}
@@ -310,6 +312,9 @@ struct
 
   fun getGlobals (S {globals, ...}) = List.rev (!globals)
   fun addGlobal (S {globals, ...}, g) = globals := g::(!globals)
+
+  fun getGlobalRefs (S {globalrs, ...}) = List.rev (!globalrs)
+  fun addGlobalRef (S {globalrs, ...}, g) = globalrs := g::(!globalrs)
 
   fun getGRoots (S {gRoots, ...}) = gRoots
 
@@ -2616,7 +2621,7 @@ struct
         val iDef = Pil.D.macroCall (RT.Integer.staticUnboxed, [vi])
         val code = [iDef]
         val e = Pil.E.call (Pil.E.variable RT.Integer.staticRef, [vi])
-        val () = addGlobal (state, e)
+        val () = addGlobalRef (state, e)
       in (code, e)
       end
 
@@ -2735,16 +2740,9 @@ struct
                 end
               | M.GRat r =>
                 let
-                  val (num, den) = Rat.toInts r
                   val c = Pil.D.comment ("Rat: " ^ Rat.toString r)
                   val newv  = Pil.E.variable (unboxedVar (state, env, var))
-                  val code = 
-                      let
-                        val (code_n, num) = genStaticIntInf (state, env, ~num)
-                        val (code_d, den) = genStaticIntInf (state, env, den)
-                        val rDef = Pil.D.macroCall (RT.Rat.staticDef, [newv, num, den])
-                      in Pil.D.sequence (code_n@code_d@[rDef])
-                      end
+                  val code = Pil.D.macroCall (RT.Rat.staticDef, [newv])
                   val () = addGlobalReg newv
                   val d = mkGlobalDef (var, newv, "GRat")
                   val d = Pil.D.sequence [c,code,d]
@@ -2827,11 +2825,29 @@ struct
         val t = Pil.T.named RT.T.object
         val gs = List.map (gs, fn g => Pil.E.cast (t, g))
         val gsCount = List.length gs
+        val gs = gs @ [Pil.E.cast (t, Pil.E.null)]
         val init = Pil.E.strctInit gs
         val glbs = Pil.identifier "plsrGlobals"
         val t = Pil.T.array t
         val glbsdec = Pil.D.staticVariableExpr (Pil.varDec (t, glbs), init)
         val reg = Pil.E.call (Pil.E.namedConstant RT.GC.registerGlobals,
+                              [Pil.E.variable glbs,
+                               Pil.E.int gsCount])
+      in ([glbsdec], [Pil.S.expr reg])
+      end
+
+  fun genReportGlobalRefs (state, env) =
+      let
+        val gs = getGlobalRefs state
+        val t = Pil.T.named RT.T.object
+        val gs = List.map (gs, fn g => Pil.E.cast (t, Pil.E.addrOf g))
+        val gsCount = List.length gs
+        val gs = gs @ [Pil.E.cast (t, Pil.E.null)]
+        val init = Pil.E.strctInit gs
+        val glbs = Pil.identifier "plsrGlobalRefs"
+        val t = Pil.T.array t
+        val glbsdec = Pil.D.staticVariableExpr (Pil.varDec (t, glbs), init)
+        val reg = Pil.E.call (Pil.E.namedConstant RT.GC.registerGlobalRefs,
                               [Pil.E.variable glbs,
                                Pil.E.int gsCount])
       in ([glbsdec], [Pil.S.expr reg])
@@ -2897,7 +2913,6 @@ struct
                 in code
                 end
               | M.GRat r => 
-                if noGMP (getConfig env) then Pil.S.empty else
                 let
                   val dest = genVarE (state, env, v)
                   val (num, den) = Rat.toInts r
@@ -2929,13 +2944,15 @@ struct
             end
         val idxs = VD.fold (globals, [], initGlobals)
         (* Report globals *)
-        val (xtras, globals) = 
+        val (xtras1, globals) = 
             if gcGlobals env then genReportGlobals (state, env) else ([], [])
+        val (xtras2, globalRefs) = 
+            if gcGlobals env then genReportGlobalRefs (state, env) else ([], [])
         (* Run the program *)
         val run = Pil.S.expr (Pil.E.call (genVarE (state, env, entry), []))
-        val body = registrations0 @ globals @ registrations1 @ idxs @ [run]
+        val body = registrations0 @ globals @ globalRefs @ registrations1 @ idxs @ [run]
       in
-        Pil.D.sequence (xtras @
+        Pil.D.sequence (xtras1 @ xtras2 @
                         [Pil.D.function (Pil.T.void, RT.pmain, [], [], body)])
       end
 

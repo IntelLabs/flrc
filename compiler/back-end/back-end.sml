@@ -100,6 +100,14 @@ struct
       Config.Feature.mk ("Plsr:gmp-use-pcdecl",
                          "use pcdecl for gmp integer wrappers")
 
+  val (gmpUseForcedGcF, gmpUseForcedGc) = 
+      Config.Feature.mk ("Plsr:gmp-use-forced-gc",
+                         "use gc forcing gmp integer wrappers")
+
+  val (gmpUseGAllocateF, gmpUseGAllocate) = 
+      Config.Feature.mk ("Plsr:gmp-use-gallocate",
+                         "use guaranteed allocation gmp integers")
+
   val (instrumentAllocationF, instrumentAllocation) =
       Config.Feature.mk ("Plsr:instrument-allocation",
                          "gather allocation statistics")
@@ -342,8 +350,12 @@ struct
                ["PLSR_GMP_USE_PCDECL"]
              else if gmpUseGcMalloc config then 
                ["PLSR_GMP_USE_GCMALLOC"]
+             else if gmpUseForcedGc config then 
+               ["PLSR_GMP_USE_FORCE_GC"]
+             else if gmpUseGAllocate config then 
+               ["PLSR_GMP_USE_GALLOCATE"]
              else
-               [])
+               ["PLSR_GMP_USE_DEFAULT"])
 
         val backend = 
             (case compiler
@@ -855,6 +867,8 @@ struct
                                   disableTailCallF,
                                   gcWriteBarriersF, 
                                   gcAllBarriersF,
+                                  gmpUseForcedGcF,
+                                  gmpUseGAllocateF,
                                   gmpUseGcMallocF,
                                   gmpUseMallocF,
                                   gmpUsePCDeclF,
