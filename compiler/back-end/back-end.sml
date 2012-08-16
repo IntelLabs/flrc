@@ -343,7 +343,10 @@ struct
 
         val backend = 
             (case compiler
-              of CcGCC    => ["PPILER_BACKEND_GCC"]
+              of CcGCC    => ["PPILER_BACKEND_GCC"] @
+                (if Config.host config = Config.OsLinux
+                 then ["PLSR_LINUX", "LINUX"]
+                 else [])
                | CcICC    => ["PPILER_BACKEND_ICC"]
                | CcOpc    => ["PPILER_BACKEND_OPC"]
                | CcIpc    => ["PPILER_BACKEND_IPC"])
@@ -637,7 +640,8 @@ struct
 
     fun defaultStack (config, ld) = 
         (case ld
-          of LdGCC    => ["--stack="^(defaultStackStr (config, ld))]
+          of LdGCC    => if Config.host config = Config.OsLinux then [] (* TODO: find a Linux solution *)
+                         else ["--stack="^(defaultStackStr (config, ld))]
            | LdICC    => ["-stack:"^(defaultStackStr (config, ld))]
            | LdOpc    => ["-stack:"^(defaultStackStr (config, ld))]
            | LdIpc    => []
@@ -728,7 +732,7 @@ struct
               of LdOpc    => [ifDebug (config, "pillard.lib", "pillar.lib")] 
                | LdIpc    => [ifDebug (config, "pillard_pthread.lib", "pillar_pthread.lib")]
                | LdICC    => ["user32.lib"] 
-               | _        => [])
+               | LdGCC    => ["libm.a"])
         val mcrtLib = [ifDebug (config, "mcrtd.lib", "mcrt.lib")]
         val threads =
             (case (ldTag, useFutures config)
