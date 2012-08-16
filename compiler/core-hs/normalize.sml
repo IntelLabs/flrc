@@ -2,22 +2,22 @@
 (*
  * Translation from CoreHs.t to ANormLazy.t.
  *)
-signature CORE_NORMALIZE =
+signature CORE_HS_NORMALIZE =
 sig
   val pass : (CoreHs.t, CoreHs.t) Pass.t
 end
 
-structure CoreNormalize:> CORE_NORMALIZE =
+structure CoreHsNormalize:> CORE_HS_NORMALIZE =
 struct
   structure CH = CoreHs
   structure CU = CoreHsUtils
   structure CP = CoreHsPrims
   structure CL = CoreHsLayout
-  structure GP = GHCPrim
+  structure GP = GHCPrimOp
   structure QD = DictF (struct type t = CH.identifier CH.qualified val compare = CU.compareQName end)
   structure SD = StringDict
 
-  val passname = "CoreNormalize"
+  val passname = "CoreHsNormalize"
   fun failMsg (msg0, msg1) = Fail.fail (passname, msg0, msg1)
 
   (* 
@@ -222,7 +222,10 @@ struct
           (case QD.lookup (vdict, u)
             of SOME t => (exp, t)
              | NONE => if m = SOME CU.primMname 
-                         then let val ty = GP.getTy (cfg, v) in (saturate (dict, exp, ty), ty) end
+                         then 
+                           case GP.fromString v
+                             of SOME p => let val ty = GP.getType p in (saturate (dict, exp, ty), ty) end
+                              | NONE => failMsg ("norm/Var", "primitive " ^ v ^ " supported")
                          else failMsg ("norm/Var", "variable " ^ v ^ " not found"))
         | CH.Dcon con => 
           (case QD.lookup (vdict, con)

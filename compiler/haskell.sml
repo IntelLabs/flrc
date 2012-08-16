@@ -51,8 +51,8 @@ struct
 
   val topLevelPassesUU = [FrontEndHs.pass "hs"]
   val topLevelPassesUC = [CoreHsParse.pass]
-  val topLevelPassesCC = [CoreNormalize.pass]
-  val topLevelPassesCA = [CoreToANormLazy.pass]
+  val topLevelPassesCC = [CoreHsNormalize.pass]
+  val topLevelPassesCA = [CoreHsToANormLazy.pass]
   val topLevelPassesAS = [ANormLazyToStrict.pass]
   val topLevelPassesSS = [ANormStrictOptimize.pass]
   val topLevelPassesCL = [ANormStrictClosureConvert.pass]
@@ -91,8 +91,8 @@ struct
   val doGhcCore =
       doPass CoreHsParse.pass >>
       stopAt "hsc" >>
-      doPass CoreNormalize.pass >> 
-      doPass CoreToANormLazy.pass >> 
+      doPass CoreHsNormalize.pass >> 
+      doPass CoreHsToANormLazy.pass >> 
       doPass ANormLazyToStrict.pass >> 
       doPass ANormStrictOptimize.pass >> 
       doPass ANormStrictClosureConvert.pass >> 

@@ -1,0 +1,22 @@
+(* The Intel P to C/Pillar Compiler *)
+(* Copyright (C) Intel Corporation, October 2006 *)
+
+local
+        $(SML_LIB)/mlton/sources.mlb
+        ../common/common.mlb
+        ../core-hs/core-hs.mlb
+        anorm-strict.sml
+        anorm-strict-layout.sml
+        anorm-strict-utils.sml
+        anorm-strict-rewrite.sml
+        anorm-strict-analyze.sml
+        anorm-strict-free-vars.sml
+        anorm-strict-clone.sml
+        anorm-strict-closure-convert.sml
+        anorm-strict-optimize.sml
+in
+        structure ANormStrict
+        structure ANormStrictClosureConvert
+        structure ANormStrictLayout
+        structure ANormStrictOptimize
+end

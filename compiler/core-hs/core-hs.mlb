@@ -4,48 +4,20 @@
 local
         $(SML_LIB)/mlton/sources.mlb
         ../common/common.mlb
-        ../mil/mil.mlb
-        utils.sml
         core-hs.sml
         layout.sml
         parse.sml
-        anorm-prim.sml
-        anorm-lazy.sml
-        anorm-strict.sml
-        anorm-strict-layout.sml
-        anorm-strict-utils.sml
-        anorm-strict-rewrite.sml
-        anorm-strict-analyze.sml
-        anorm-strict-free-vars.sml
-        anorm-strict-clone.sml
-        anorm-strict-closure-convert.sml
-        anorm-strict-optimize.sml
-        to-lazy.sml
-        ghc-prim.sml
+        ghc-prim-type.sml
+        ghc-prim-op.sml
         normalize.sml
-        to-strict.sml
-        fvs.sml
-        to-mil.sml
-        link-option.sml
 in
-        structure HsToMilUtils
         structure CoreHs
-        structure CoreNormalize
-        structure ANormPrim
-        structure ANormLazy
-        structure ANormStrict
-        structure ANormStrictClosureConvert
-        structure ANormStrictLayout
+        structure CoreHsUtils
+        structure CoreHsPrims
+        structure CoreHsNormalize
         structure CoreHsLayout
-        structure ANormPrimLayout
-        structure ANormLazyLayout
-        structure ANormStrictLayout
         structure CoreHsParse
-        structure CoreToANormLazy
-        structure ANormLazyToStrict 
-        structure GHCPrim
-        structure ANormStrictFVS
-        structure ANormStrictOptimize
-        structure ANormStrictToMil
-        structure CoreHsLinkOption
+        structure GHCPrimType
+        structure GHCPrimTypeLayout
+        structure GHCPrimOp
 end

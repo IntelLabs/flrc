@@ -3,6 +3,10 @@
 
 signature CORE_HS_PARSE =
 sig
+  type options = { dirs : string list, libs : string list, opts : string list }
+  type ghcPkg = { depends : StringSet.t, options : options } 
+  type pkgMap = ghcPkg StringDict.t
+  val getGhcPkgAll : Config.t -> string * pkgMap -> pkgMap
   val pass : (unit, CoreHs.t) Pass.t
   val parseFile : string * Config.t -> CoreHs.t
   val noMainWrapper : Config.t -> bool
@@ -62,7 +66,6 @@ struct
   structure QS = SetF (struct type t = C.identifier C.qualified val compare = CHU.compareQName end)
   structure QD = DictF (struct type t = C.identifier C.qualified val compare = CHU.compareQName end)
   structure SD = StringDict
-  structure TMU = HsToMilUtils
   structure QTS = TopoSortF (struct structure Dict = QD structure Set = QS end)
 
   structure Debug =
@@ -548,6 +551,112 @@ struct
            | Error (pos, err) => failMsg (f, "GHC Core parse error: " ^ err ^ " at " ^ Int.toString (#line pos) ^ ":" ^ Int.toString (#col pos))
       end
 
+  fun idToName s = 
+      if String.hasPrefix (s, { prefix = "builtin_" }) 
+        then String.substring2 (s, { start = 8, finish = String.length s }) 
+        else case List.rev (String.split (s, #"-"))
+               of x :: xs => String.concatWith (List.rev xs, "-")
+                | _       => Fail.fail ("HsToMilUtils", "idToName", "cannot parse package ID: " ^ s)
+
+  type options = { dirs : string list, libs : string list, opts : string list }
+  type ghcPkg = { depends : SS.t, options : options } 
+  type pkgMap = ghcPkg SD.t
+
+  (* Cache for ghc-pkg information *)
+  val packages = ref SD.empty
+
+  val libdirs = "library-dirs"
+  val hslibs  = "hs-libraries"
+  val extralibs = "extra-libraries"
+  val ldopts  = "ld-options"
+
+  val fields = [ libdirs, hslibs, extralibs, ldopts ]
+
+  fun words s = List.keepAll (String.split (s, #" "), not o String.isEmpty)
+
+  fun cleanPath s = 
+      let 
+        val s = String.deleteSurroundingWhitespace s
+        val s = if String.length s >= 2 andalso
+                   String.sub(s, 0) = #"\"" andalso
+                   String.last s = #"\"" 
+                  then String.substituteAll (String.dropFirst (String.dropLast s), 
+                         { substring = "\\\\", replacement = "\\" })
+                  else s
+      in
+        s
+      end
+
+  fun runGhcPkg (cfg : Config.t, pkgName : string) : ghcPkg =
+      let
+        val prog = "ghc-pkg"
+        val args = ["field", pkgName, String.concatWith ("depends" :: fields, ",")]
+        val () = Chat.log1 (cfg, "run: " ^ String.concatWith (prog :: args, " "))
+        fun run (cmd, args) = Pass.runCmd (cmd, args, [], true)
+        val out = run (prog, args)
+        val ()  = Chat.log2 (cfg, "got:\n" ^ out)
+        fun split l = if String.length l = 0 orelse String.sub(l, 0) = #" " then NONE 
+                         else case String.split (l, #":") 
+                                of k::v::vs => SOME (k, String.concatWith (v::vs, ":"))
+                                |  _ => NONE
+        fun parseLine (l, (m, state)) = 
+            let 
+              fun stripCR s = String.dropTrailing (s, #"\r")
+              val l = stripCR l
+            in
+              case (split l, state)
+                of (SOME (k, v), SOME (kk, vv)) => (SD.insert (m, kk, vv), SOME (k, v))
+                |  (SOME (k, v), NONE)          => (m, SOME (k, v))
+                |  (NONE,        SOME (kk, vv)) => (m, SOME (kk, vv ^ l))
+                |  (NONE,        NONE)          => (m, NONE)
+            end
+        fun parse s = List.fold (String.split (s, #"\n"), (SD.empty, NONE), parseLine)
+        val m = case parse out
+                  of (m, SOME (kk, vv)) => SD.insert (m, kk, vv)
+                   | (m, NONE) => m
+        fun lookup' g (m, f) = 
+            case SD.lookup (m, f)
+              of SOME s => g s
+               | NONE   => []
+        val lookup = lookup' words
+        val dirs = lookup' (fn x => [cleanPath x]) (m, libdirs) 
+        val libs = lookup (m, hslibs) @ lookup (m, extralibs)
+        val opts = lookup (m, ldopts)
+        (* To stay clean, we skip the rts package! *)
+        fun insertName (i, ss) = let val name = idToName i in if name = "rts" then ss else SS.insert (ss, name) end
+        val depends = case SD.lookup (m, "depends")
+                        of SOME s => List.fold (words s, SS.empty, insertName)
+                         | NONE   => SS.empty
+        val depends = SS.keepAll (depends, fn p => not (String.hasPrefix (p, { prefix = "ghc-prim" })))
+        val pkg = { depends = depends, options = { dirs = dirs, libs = libs, opts = opts } }
+        val () = Chat.log2 (cfg, "dirs: " ^ Layout.toString (List.layout Layout.str dirs))
+        val () = Chat.log2 (cfg, "libs: " ^ Layout.toString (List.layout Layout.str libs))
+        val () = Chat.log2 (cfg, "opts: " ^ Layout.toString (List.layout Layout.str opts))
+      in
+        pkg
+      end
+
+  fun getGhcPkg (cfg, pkgName) = 
+      case SD.lookup (!packages, pkgName)
+        of SOME pkg => pkg
+         | NONE => 
+          let
+            val pkg = runGhcPkg (cfg, pkgName)
+            val _ = packages := SD.insert (!packages, pkgName, pkg)
+          in
+            pkg
+          end
+
+  fun getGhcPkgAll (cfg : Config.t) : string * pkgMap -> pkgMap =
+    fn (pkgName, pkgs) => 
+      let
+        val pkg as { depends, ... } = getGhcPkg (cfg, pkgName)
+        val pkgs = SD.insert (pkgs, pkgName, pkg)
+        val depends = SS.keepAll (depends, fn p => not (SD.contains (pkgs, p)))
+      in
+        if SS.isEmpty depends then pkgs else List.fold (SS.toList depends, pkgs, getGhcPkgAll cfg)
+      end
+
   fun foldL (l, m, f) = List.foldr (l, ([], m), fn (x, (xs, m)) => 
                           let val (x, m) = f (x, m) in (x :: xs, m) end)
 
@@ -954,7 +1063,7 @@ struct
                   val hcrRoot = 
                       case pname
                         of "main" => opath
-                         | _ => (case #dirs (#options (TMU.getGhcPkg (config, pname)))
+                         | _ => (case #dirs (#options (getGhcPkg (config, pname)))
                            of [p] => Path.fromString p
                             | ps => failMsg ("readModule",
                                              "invalid lib path returned by ghc-pkg " ^
