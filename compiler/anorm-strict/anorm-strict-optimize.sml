@@ -1772,7 +1772,7 @@ struct
            fn {strict, used, escapes, def} => 
               let
                 val strict = case strict of SOME s => s | NONE => false
-                val keep = (used andalso not strict) orelse escapes
+                val keep = used orelse escapes
                 val def = VarLat.get def
               in (strict, keep, def)
               end
@@ -2292,9 +2292,8 @@ struct
                        fn (con as (name, _), tys) => 
                           let
                             val tys = List.map (tys, doTy')
-                            val (std, ubx) = doConstructor (state, env, name, tys)
-                            val ubx = List.map (ubx, fn t => unboxTy (state, env, t))
-                          in (con, (std @ ubx))
+                            val (std, _) = doConstructor (state, env, name, tys)
+                          in (con, std)
                           end
                       val arms = List.map (arms, doArm)
                     in AS.Sum arms
@@ -2324,20 +2323,15 @@ struct
                 | AS.ExtApp (pname, cc, s, t, vs) => return (AS.ExtApp (pname, cc, s, doTy (state, env, t), vs))
                 | AS.ConApp (c as (name, _), vs) => 
                   let
-                    val (std, ubx) = doConstructor (state, env, name, vs)
-                    val () = List.foreach (ubx, fn _ => Click.strictField pd)
+                    val (std, _) = doConstructor (state, env, name, vs)
                     val () = 
                         let
                           val ol = List.length vs
-                          val nl = List.length std + List.length ubx 
-                        in if nl < ol then
-                             Int.for (0, ol - nl, fn _ => Click.deadField pd)
-                           else
-                             ()
+                          val nl = List.length std
+                        in Int.for (0, ol - nl, fn _ => Click.deadField pd)
                         end
-                    val (env, ubx, rbnds) = mkEvals (state, env, ubx)
-                    val e = AS.ConApp (c, std @ ubx)
-                  in (env, rbnds, e)
+                    val e = AS.ConApp (c, std)
+                  in (env, [], e)
                   end
                 | AS.App (f, vs) => 
                   (case getFnInfo (state, env, f)
@@ -2386,51 +2380,37 @@ struct
                   let
                     val env = addBindsToScope (state, env, binds)
                     val binds = List.map (binds, fn (v, t) => (v, doTy (state, env, t)))
-                    val (std, ubx) = doConstructor' (state, env, name, binds)
+                    val (std, _) = doConstructor' (state, env, name, binds)
                     val check =
                      fn defO => Option.map (defO, fn v => (v, varInScope (state, env, v)))
-                    val (std, bnds1) = 
+                    val (env, binds, rbnds1) = 
                         let
                           val doOne =
-                           fn (bind as (v, t), defO) =>
-                              (case check defO
-                                of SOME (vd, true) => 
-                                   let
-                                     val bind = (cloneVariable (state, env, v), t)
-                                     val bnd = AS.Vdef ([(v, t)], AS.Return [vd])
-                                   in (bind, SOME bnd)
-                                   end
-                                 | _ => (bind, NONE))
-                          val (std, bndsO) = List.unzip (List.map (std, doOne))
-                          val bnds = List.keepAllMap (bndsO, fn a => a) (* order doesn't matter *)
-                        in (std, bnds)
+                           fn ((bind as (v, t), defO), (env, binds, rbnds)) =>
+                              let
+                                val (binds, rbnds) = 
+                                    case check defO
+                                     of SOME (vd, true) => 
+                                        let
+                                          val bind = (cloneVariable (state, env, v), t)
+                                          val bnd = AS.Vdef ([(v, t)], AS.Return [vd])
+                                        in (bind::binds, bnd::rbnds)
+                                        end
+                                      | _ => (bind::binds, rbnds)
+                                val (env, rbnds) = 
+                                    if varStrict (state, env, v) then
+                                      (case mkEval (state, env, v)
+                                        of (env, _, SOME bnd) => (env, bnd::rbnds)
+                                        | (env, _, NONE)      => (env, rbnds))
+                                    else
+                                      (env, rbnds)
+                              in (env, binds, rbnds)
+                              end
+                          val (env, rbinds, rbnds) = List.fold (std, (env, [], []), doOne)
+                        in (env, List.rev rbinds, rbnds)
                         end
-                    val (ubx, bnds2, env) = 
-                        let
-                          val doOne =
-                           fn (((v, t), defO), (env, rbinds, rbnds)) =>
-                              (case check defO
-                                of SOME (vd, true) => 
-                                   let
-                                     val (env, vu, bndO) = mkEval (state, env, vd)
-                                     val bind = (cloneVariable (state, env, vu), variableTy (state, env, vu))
-                                     val env = setEvalForVariable (state, env, v, vu)
-                                     val rbinds = bind::rbinds
-                                     val rbnds = case bndO of SOME bnd => bnd::rbnds | NONE => rbnds
-                                   in (env, rbinds, rbnds)
-                                   end
-                                 | _ => 
-                                   let
-                                     val (env, (vu, tu)) = evalVariable (state, env, v)
-                                     val rbinds = (vu, tu)::rbinds
-                                   in (env, rbinds, rbnds)
-                                   end)
-                          val (env, rbinds, rbnds) = List.fold (ubx, (env, [], []), doOne)
-                          val binds = List.rev rbinds
-                        in (binds, rbnds, env)
-                        end
-                    val binds = std @ ubx
-                    val e = mkLet (bnds2 @ bnds1, doExp (state, env, e)) 
+                    val (env, rbnds2, e) = doExpFlatten (state, env, e)
+                    val e = mkLet (rbnds2 @ rbnds1, e) 
                   in AS.Acon (con, binds, e)
                   end
                 | AS.Alit (l, t, e) => 
