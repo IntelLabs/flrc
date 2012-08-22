@@ -2095,7 +2095,7 @@ struct
       let
         val thunk = MU.Eval.thunk e
         val thunk = genVarE (state, env, thunk)
-        val (fastpath, slowpath, g) =
+        val (castpath, fastpath, slowpath, g) =
             case ret
              of M.RNormal {rets, block, cuts} =>
                 (case Vector.length rets
@@ -2120,14 +2120,17 @@ struct
                        val slowpath = Pil.S.expr (Pil.E.assign (rv, slowpath))
                        val fastpath = genThunkGetValueE (state, env, fk, t, thunk)
                        val fastpath = Pil.S.expr (Pil.E.assign (rv, fastpath))
-                     in (fastpath, slowpath, g)
+                       val cast = Pil.E.namedConstant (RT.Thunk.castToObject fk)
+                       val castpath = Pil.E.call (cast, [thunk])
+                       val castpath = Pil.S.expr (Pil.E.assign (rv, castpath))
+                     in (castpath, fastpath, slowpath, g)
                      end
                    | _ => fail ("genEval", "rets must be 1"))
               | M.RTail {exits} =>
                 let
                   val rtyp = MU.Code.thunkTyp (getFunc env)
                   val t = genTyp (state, env, rtyp)
-                  val (fastpath, slowpath) = 
+                  val (castpath, fastpath, slowpath) = 
                       case rewriteThunks (env, cc)
                        of SOME tvar => 
                           let
@@ -2156,7 +2159,9 @@ struct
                                 in Pil.S.sequence [evals, rets]
                                 end
                             val fastpath = genThunkGetValueE (state, env, fk, t, thunk)
-                          in (cont fastpath, cont slowpath)
+                            val cast = Pil.E.namedConstant (RT.Thunk.castToObject fk)
+                            val castpath = Pil.E.call (cast, [thunk])
+                          in (cont castpath, cont fastpath, cont slowpath)
                           end
                         | NONE => 
                           let
@@ -2170,13 +2175,19 @@ struct
                             val slowpath = Pil.S.expr (Pil.E.call (slowf, slowargs))
                             val fastpath = genThunkGetValueE (state, env, fk, t, thunk)
                             val fastpath = Pil.S.returnExpr fastpath
-                          in (fastpath, slowpath)
+                            val cast = Pil.E.namedConstant (RT.Thunk.castToObject fk)
+                            val castpath = Pil.E.call (cast, [thunk])
+                            val castpath = Pil.S.returnExpr castpath
+                          in (castpath, fastpath, slowpath)
                           end
-                in (fastpath, slowpath, Pil.S.empty)
+                in (castpath, fastpath, slowpath, Pil.S.empty)
                 end
         val control =
             Pil.E.call (Pil.E.namedConstant (RT.Thunk.isEvaled fk), [thunk])
         val res = Pil.S.ifThenElse (control, fastpath, slowpath)
+        val control = 
+            Pil.E.call (Pil.E.namedConstant (RT.Thunk.isUnboxed fk), [thunk])
+        val res = Pil.S.ifThenElse (control, castpath, res)
       in Pil.S.sequence [res, g]
       end
 

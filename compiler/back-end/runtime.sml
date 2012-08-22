@@ -199,11 +199,13 @@ sig
     val unboxedTyp     : Mil.fieldKind -> Pil.identifier 
     val returnTyp      : Mil.fieldKind -> Pil.identifier
 
+    val castToObject   : Mil.fieldKind -> Pil.identifier 
     val staticValue    : Mil.fieldKind -> Pil.identifier 
     val new            : Mil.fieldKind -> Pil.identifier 
     val newValue       : Mil.fieldKind -> Pil.identifier 
     val init           : Mil.fieldKind -> Pil.identifier 
     val initValue      : Mil.fieldKind -> Pil.identifier 
+    val isUnboxed      : Mil.fieldKind -> Pil.identifier 
     val setValue       : Mil.fieldKind -> Pil.identifier 
     val spawn          : Mil.fieldKind -> Pil.identifier 
     val isEvaled       : Mil.fieldKind -> Pil.identifier 
@@ -745,6 +747,7 @@ struct
     fun blackHole       fk = Pil.identifier ("pLsrThunkBlackHole"     ^ typ fk)
     fun call            fk = Pil.identifier ("pLsrThunkCall"          ^ typ fk)
     fun callDirect      fk = Pil.identifier ("pLsrThunkCallDirect"    ^ typ fk)
+    fun castToObject    fk = Pil.identifier ("pLsrThunkCastToObject"  ^ typ fk)
     fun cut             fk = Pil.identifier ("pLsrThunkCut"           ^ typ fk)
     fun eval            fk = Pil.identifier ("pLsrThunkEval"          ^ typ fk)
     fun evalDirect      fk = Pil.identifier ("pLsrThunkEvalDirect"    ^ typ fk)
@@ -752,6 +755,7 @@ struct
     fun init            fk = Pil.identifier ("pLsrThunkSetInit"       ^ typ fk)
     fun initValue       fk = Pil.identifier ("pLsrThunkValueInit"     ^ typ fk)
     fun isEvaled        fk = Pil.identifier ("pLsrThunkIsEvaled"      ^ typ fk)
+    fun isUnboxed       fk = Pil.identifier ("pLsrThunkIsUnboxed"     ^ typ fk)
     fun new             fk = Pil.identifier ("pLsrThunkNew"           ^ typ fk)
     fun newValue        fk = Pil.identifier ("pLsrThunkNewValue"      ^ typ fk)
     fun resultOffset    fk = Pil.identifier ("pLsrThunkResultOffset"  ^ typ fk)

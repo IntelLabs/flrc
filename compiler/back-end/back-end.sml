@@ -116,6 +116,9 @@ struct
       Config.Feature.mk ("Plsr:change-vtables",
                          "do vtable changing for immutability etc.")
 
+   val (noThunkSubsumptionF, noThunkSubsumption) = 
+       Config.Feature.mk ("Plsr:no-thunk-subsumption", "don't use thunk/value subsumption")
+
   val (usePortableTaggedIntsF, usePortableTaggedInts) = 
       Config.Feature.mk ("Plsr:tagged-ints-portable",
                          "tagged ints don't assume two's complement")
@@ -272,7 +275,8 @@ struct
 
         val thunks = 
             (if lightweightThunks config then ["PLSR_LIGHTWEIGHT_THUNKS"] else []) @
-            (if interceptCuts config then ["PLSR_THUNK_INTERCEPT_CUTS"] else [])
+            (if interceptCuts config then ["PLSR_THUNK_INTERCEPT_CUTS"] else []) @
+            (if noThunkSubsumption config then ["PLSR_THUNK_NO_SUBSUMPTION"] else [])
 
         val instr =
             List.concat
@@ -859,6 +863,7 @@ struct
                                   instrumentGCsF,
                                   instrumentVtbAllocationF,
                                   noTaggedIntRecoverF,
+                                  noThunkSubsumptionF,
                                   vtableChangeF,
                                   usePortableTaggedIntsF],
                       subPasses = []}
