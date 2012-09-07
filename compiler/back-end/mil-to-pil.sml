@@ -2618,10 +2618,12 @@ struct
               val v = MSTM.variableFresh (stm, "integer_ubx", M.TPAny, M.VkLocal)
             in genVarE (state, env, v)
             end
-        val iDef = Pil.D.macroCall (RT.Integer.staticUnboxed, [vi])
+        val bits = if i = 0 then 0 else (IntInf.log2 (IntInf.abs i)) + 1
+        val bytes = Pil.E.int32 ((bits + 7) div 8)
+        val iDef = Pil.D.macroCall (RT.Integer.staticUnboxed, [vi, bytes])
         val code = [iDef]
         val e = Pil.E.call (Pil.E.variable RT.Integer.staticRef, [vi])
-        val () = addGlobalRef (state, e)
+        val () = addGlobal (state, e)
       in (code, e)
       end
 
