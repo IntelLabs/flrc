@@ -989,9 +989,9 @@ struct
         | M.CDirectClosure {cls, code} =>
           let
             val clst = variableUse (s, e, msg, cls)
-            val (ats, rts) = getClosureType (s, e, msg, clst)
+            val _ = getClosureType (s, e, msg, clst)
             val codet = variableUse (s, e, msg, code)
-            val _ = getCodeType (s, e, msg, codet)
+            val (ats, rts) = getCodeType (s, e, msg, codet)
           in (ats, rts)
           end
 

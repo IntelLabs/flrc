@@ -212,8 +212,11 @@ struct
              val etys = resultTys (1, ty)
              val e = valueExp (im, env, etys, e)
              val u  = variableFresh (im, "tslam", ty)
+             (* Even syntactic non-rec functions might be semantically recursive *)
+             val vd = AS.Vfun {name = u, ty = ty, escapes = true, recursive = true, 
+                               fvs = [], args = [(v, vty)], body = e}
            in 
-             AS.Let (AS.Nonrec (AS.Vfun (u, ty, [], [(v, vty)], e)), AS.Return [u])
+             AS.Let (AS.Nonrec vd, AS.Return [u])
            end
          | AL.Let (vdefg, e) =>
            let
@@ -236,7 +239,9 @@ struct
                          of AS.Thunk _ => 
                             (case e
                               of AS.Eval w => AS.Vdef ([(v, vty)], AS.Return [w])
-                               | _         => AS.Nonrec (AS.Vthk (v, vty, [], AS.Return [u])))
+                               | _         => AS.Nonrec (AS.Vthk {name = v, ty = vty, 
+                                                                  escapes = true, recursive = false, 
+                                                                  fvs = [], body = AS.Return [u]}))
                           | _ => AS.Vdef ([(v, vty)], AS.Return [u])
              val env = VD.insert (env, v, vty)
              val alts = List.map (alts, fn alt => valueAlt (im, env, tys, alt))
@@ -290,7 +295,9 @@ struct
                      val u = IM.variableClone (im, v)
                      val (u, uty) = variableSetInfo (im, u, valueTy ty)
                      val (v, vty) = variableSetInfo (im, v, thunkTy' uty)
-                     val lets = fn e => AS.Let (AS.Nonrec (AS.Vthk (v, vty, [], AS.Return [u])), lets e)
+                     val lets = fn e => AS.Let (AS.Nonrec (AS.Vthk {name = v, ty = vty, 
+                                                                    escapes = true, recursive = false, 
+                                                                    fvs = [], body = AS.Return [u]}), lets e)
                    in 
                      ((u, uty) :: ubs, (v, vty) :: vbs, lets)
                     end
@@ -319,7 +326,9 @@ struct
              val e = valueExp (im, env, [ety], e)
              val (f, ty)  = case ety
                              of AS.Prim _ => fail ("recVDef", "primitive value binding in let rec is not allowed")
-                              | _         => (fn (v, ty, e) => AS.Vthk (v, ty, [], e), thunkTy' ety)
+                              | _         => (fn (v, ty, e) => AS.Vthk {name = v, ty = ty, 
+                                                                        escapes = true, recursive = true, 
+                                                                        fvs = [], body = e}, thunkTy' ety)
              val _ = variableSetInfo (im, v, ty)
              val env = VD.insert(env, v, ty)
            in
@@ -350,7 +359,9 @@ struct
                       | _         => 
                         let
                           val tty = AS.Thunk vty
-                          val vd = AS.Nonrec (AS.Vthk (v, tty, [], e))
+                          (* Even syntactic non-rec thunks might be semantically recursive *)
+                          val vd = AS.Nonrec (AS.Vthk {name = v, ty = tty, escapes = true, recursive = true, 
+                                                       fvs = [], body = e})
                           val env = setInfo ((v, tty), env)
                         in (vd, env)
                         end)

@@ -4,7 +4,7 @@
  *)
 signature ANORM_STRICT_TO_MIL =
 sig
-  val pass : (ANormStrict.t, Mil.t * string Mil.VD.t option) Pass.t
+  val pass : (ANormStrict.t * (Identifier.VariableSet.t Identifier.VariableDict.t), Mil.t * string Mil.VD.t option) Pass.t
 end
 
 structure ANormStrictToMil :> ANORM_STRICT_TO_MIL =
@@ -72,65 +72,11 @@ struct
         of SOME v => v
          | NONE   => failMsg ("lookup1", "impossible: " ^ Layout.toString (IM.layoutVariable (w, im)) ^ " not found in env\n")
 
-  fun bindRhsClosure (state : TMU.state, lhs, code, fvs)
-    = let
-        val { im, cfg, globals, ... } = state
-      in
-        case TMU.variableKind (im, lhs)
-          of M.VkLocal  => 
-            let
-              val blk0 = MS.bindRhs (lhs, M.RhsClosureMk { fvs = Vector.map (fvs, #1) })
-              val blk1 = MS.doRhs (M.RhsClosureInit { cls = SOME lhs, code = code, fvs = fvs })
-            in
-              (blk0, blk1)
-            end
-           | M.VkGlobal =>
-            let
-              val () = if Vector.length fvs = 0 then () else failMsg ("bindRhsClosure", "fvs is not empty")
-              val _ = globals := VD.insert (!globals, lhs, M.GClosure { code = code, fvs = fvs})
-            in
-              (MS.empty, MS.empty)
-            end
-           | M.VkExtern => failMsg ("bindRhsClosure", "impossible")
-      end
-
-  fun bindRhsThunk (state, lhs, fvar, ftyp, args, params, res, etyp, blk, fx) = 
-      let
-        val { im, cfg, globals, prelude, effects, ... } = state
-      in
-        case TMU.variableKind (im, lhs)
-          of M.VkLocal => 
-            let
-              val tr   = M.TReturn (Vector.new1 (M.SVariable res))
-              val afun = TMU.mkThunkFunction (state, fvar, ftyp, params, etyp, blk, tr, fx)
-              val _ = effects := VD.insert (!effects, lhs, fx)
-              val typs = List.map (args, fn x => TMU.variableTyp (im, x))
-              val fks  = List.map (typs, fn t => FK.fromTyp (cfg, t))
-              val blk0 = MS.bindRhs (lhs, M.RhsThunkMk { typ = M.FkRef, fvs = Vector.fromList fks })
-              val blk1 = MS.doRhs (M.RhsThunkInit { typ = M.FkRef, thunk = SOME lhs, fx = Effect.Total, 
-                           code = SOME afun, fvs = Vector.fromList (List.zip (fks, map M.SVariable args)) })
-            in
-              (blk0, blk1)
-            end
-           | M.VkGlobal => 
-            let
-              (* global thunks are pure, so ignore fx *)
-              val () = if List.isEmpty args then () else failMsg ("bindRhsThunk", "args not empty")
-              val () = if List.isEmpty params then () else failMsg ("bindRhsThunk", "params not empty")
-              val name = IM.variableName (im, fvar)
-              val () = prelude := MS.seq (!prelude, blk)
-              (*
-              val () = print ("bindRhsThunk: " ^ L.toString (IM.layoutVariable (lhs, im)) ^ "\n")
-              val () = L.outputWidth (L.indent (L.align (
-                       List.map (MSF.blocks (im, cfg, #2 (MS.close (im, cfg, MS.seq (im, cfg, blk, MSU.return (im,
-                       cfg, Vector.new0 ())), Vector.new0 ()))),
-                                 fn b => ML.layoutBlock (cfg, IS.SiManager im, b))), 2), 78, Out.standard) *)
-              val () = globals := VD.insert (!globals, lhs, M.GThunkValue { typ = M.FkRef, ofVal = M.SVariable res })
-            in
-              (MS.empty, MS.empty)
-            end
-           | M.VkExtern => failMsg ("bindRhsThunk", "impossible")
-     end
+  fun codePtrForFunction (state, f) = 
+      case TMU.stateGetCodePtr (state, f)
+       of SOME cptr => cptr
+        | NONE      => failMsg ("codePtrForFunction", 
+                                "No code ptr for function" ^ Layout.toString (IM.layoutVariable (f, #im state)))
 
   (*
    * doExp translates an expression into MIL code blocks.
@@ -235,8 +181,9 @@ struct
               val fx = TMU.lookupEffect (effects, fvar, isStateful, isIO)
               (* val _ = print ("app " ^ IM.variableString (im, fvar) ^ " has * effect " ^ Layout.toString (Effect.layout fx) ^ "\n") *)
               val cuts = if Effect.contains (fx, Effect.Fails) then TMU.exitCut else TMU.noCut
+              val code = TMU.stateGetCodesForFunction (state, f)
             in
-              (MU.call (im, cfg, M.CClosure { cls = fvar, code = TMU.noCode},
+              (MU.call (im, cfg, M.CClosure { cls = fvar, code = code},
                         Vector.map (args, M.SVariable), cuts, fx, rvar),
                fx)
             end
@@ -298,7 +245,7 @@ struct
               (* Aggressive assumption: thunk evals are also pure and stateless! *)
               val fx = TMU.lookupEffect (effects, fvar, false, false)
             in
-              (TMU.kmThunk (im, cfg, rvar, fvar, fx), fx)
+              (TMU.kmThunk (state, rvar, fvar, fx), fx)
             end
           | Cast cast => 
             let
@@ -432,86 +379,176 @@ struct
   (*
    * Handle either recursive or non-recursive value definitions.
   *) 
-  and doVDef (state, recursive, env1) 
-    = let
-        val {im, cfg, globals, prelude, effects, ...} = state
-        val mkReturnVar = 
-         fn ty => TMU.localVariableFresh0 (im, ty)
-        val mkReturnVars = fn tys => Vector.map (tys, mkReturnVar)
+  and doVDef0 (state, recursiveB, env1, vd) = 
+      let
+        val {im, cfg, aliases, globals, prelude, effects, ...} = state
       in
-        fn Vthk (lhs, _, fvs, e) =>
+        case vd
+         of Vthk {name = lhs, ty = _, escapes, recursive, fvs, body = e} =>
             let 
-              (*
-              val _ = print (L.toString (L.seq ([L.str "doVthk lhs = ", IM.layoutVariable(lhs, im),
-                             L.str " fvs = "] @ List.map (fvs, fn v => IM.layoutVariable (v, im)))) ^ "\n") 
-              *)
-              val global = varIsGlobal (im, lhs)
-              val fvs = if recursive then List.remove (fvs, fn s => s = lhs) else fvs
-              val args = List.map (fvs, lookup1 (im, env1))
-              val typs = List.map (args, fn x => TMU.variableTyp (im, x))
-              val params = List.map (args, fn x => IM.variableClone (im, x)) 
+              val fvs = if recursiveB then List.remove (fvs, fn s => s = lhs) else fvs
+              val fvtyps = List.map (fvs, fn x => TMU.variableTyp (im, x))
               val ftyp = M.TThunk (M.TRef)
-              val fvar = TMU.localVariableFresh (im, IM.variableName (im, lhs), ftyp)
-              val env' = List.zip (fvs, params) @ env1
-              val env' = if recursive andalso not global then (lhs, fvar) :: env' else env'
               val etyp = TMU.variableTyp (im, lhs)
               val etyp'= case etyp of M.TThunk ty => ty 
                                     | _ => failMsg ("doVDef", "Bad type for thunk")
-              val res  = mkReturnVar etyp'
-              val (blk, fx) = doExp (state, env', Vector.new1 res, e)
-              val fx = if recursive then Effect.union (fx, Effect.PartialS) else fx
-            in
-              bindRhsThunk (state, lhs, fvar, ftyp, args, params, res, etyp', blk, fx)
+              val () = 
+                  case TMU.variableKind (im, lhs)
+                   of M.VkLocal => 
+                      let
+                        (* Associates cptr with lhs *)
+                        val cptr = TMU.mkThunkFunction0 (state, lhs, ftyp, Vector.fromList fvtyps, etyp')
+                        (* Associates cptr with each alias of lhs *)
+                        val () = case VD.lookup (aliases, lhs)
+                                  of SOME s => VS.foreach (s, fn v => TMU.stateAddCodePtr (state, v, cptr))
+                                   | NONE   => ()
+                      in ()
+                      end
+                    | _         => ()
+            in ()
+           end
+          | Vfun {name = lhs, ty = _, escapes, recursive, fvs, args, body = e} =>
+            let 
+              val ftyp   = M.TRef
+              val fvs = if recursiveB then List.remove (fvs, fn s => s = lhs) else fvs
+              val fvtyps = Vector.fromListMap (fvs, fn x => TMU.variableTyp (im, x))
+              val argtyps = Vector.fromListMap (args, fn (x, _) => TMU.variableTyp (im, x))
+              val etyp   = TMU.variableTyp (im, lhs)
+              val rtyps   = resultType etyp
+              (* Associates cptr with lhs *)
+              val cptr = TMU.mkClosureFunction0 (state, lhs, ftyp, fvtyps, argtyps, rtyps)
+              (* Associates cptr with each alias of lhs *)
+              val () = case VD.lookup (aliases, lhs)
+                        of SOME s => VS.foreach (s, fn v => TMU.stateAddCodePtr (state, v, cptr))
+                         | NONE   => ()
+            in ()
             end
-         | Vfun (lhs, _, fvs, bs, e) =>
+      end
+  (*
+   * Handle either recursive or non-recursive value definitions.
+  *) 
+  and doVDef1 (state, recursiveB, env1, vd) =
+      let
+        val {im, cfg, globals, prelude, effects, ...} = state
+      in
+        case vd
+         of Vthk {name = lhs, ty = _, escapes, recursive, fvs, body = e} =>
+            (case TMU.variableKind (im, lhs)
+              of M.VkLocal => 
+                 let
+                   val fvs0 = if recursiveB then List.remove (fvs, fn s => s = lhs) else fvs
+                   val fvs = List.map (fvs0, lookup1 (im, env1))
+                   val fvtyps = List.map (fvs, fn x => TMU.variableTyp (im, x))
+                   val fvsA = List.map (fvs, fn x => IM.variableClone (im, x)) 
+                   val ftyp = M.TThunk (M.TRef)
+                   (* Inner closure name *)
+                   val fvar = TMU.localVariableFresh (im, IM.variableName (im, lhs), ftyp)
+                   val cptr = codePtrForFunction (state, lhs)
+                   (* Associate the inner closure name with the code pointer*)
+                   val () = TMU.stateAddCodePtr (state, fvar, cptr)
+                   val env' = List.zip (fvs0, fvsA) @ env1
+                   val env' = if recursiveB then (lhs, fvar) :: env' else env'
+                   val etyp = TMU.variableTyp (im, lhs)
+                   val etyp'= case etyp of M.TThunk ty => ty 
+                                         | _ => failMsg ("doVDef", "Bad type for thunk")
+                   val res  = TMU.localVariableFresh0 (im, etyp')
+                   val (blk, fx) = doExp (state, env', Vector.new1 res, e)
+                   val fx = if recursiveB orelse recursive then Effect.union (fx, Effect.PartialS) else fx
+                   val tr   = M.TReturn (Vector.new1 (M.SVariable res))
+                   val () = TMU.mkThunkFunction1 (state, fvar, cptr, escapes, recursive, 
+                                                  Vector.fromList fvsA, etyp', blk, tr, fx)
+                   val _ = effects := VD.insert (!effects, lhs, fx)
+                   val fks = List.map (fvs, fn x => FK.fromTyp (cfg, TMU.variableTyp (im, x)))
+                   val blk0 = MS.bindRhs (lhs, M.RhsThunkMk { typ = M.FkRef, fvs = Vector.fromList fks })
+                   val blk1 = MS.doRhs 
+                                (M.RhsThunkInit 
+                                   { typ = M.FkRef, thunk = SOME lhs, fx = Effect.Total, 
+                                     code = SOME cptr, fvs = Vector.fromList (List.zip (fks, map M.SVariable fvs)) })
+                 in
+                   (blk0, blk1)
+                 end
+               | M.VkGlobal => 
+                 let
+                   val () = if List.isEmpty fvs then () else failMsg ("bindRhsThunk", "args not empty")
+                                                                     
+                   val etyp = TMU.variableTyp (im, lhs)
+                   val etyp'= case etyp of M.TThunk ty => ty 
+                                         | _ => failMsg ("doVDef", "Bad type for thunk")
+                   val res  = TMU.localVariableFresh0 (im, etyp')
+                   val (blk, fx) = doExp (state, env1, Vector.new1 res, e)
+
+                   val name = IM.variableName (im, lhs)
+                   val () = prelude := MS.seq (!prelude, blk)
+                   val () = globals := VD.insert (!globals, lhs, M.GThunkValue { typ = M.FkRef, ofVal = M.SVariable res })
+                 in
+                   (MS.empty, MS.empty)
+                 end
+               | M.VkExtern => failMsg ("bindRhsThunk", "impossible"))
+          | Vfun {name = lhs, ty = _, escapes, recursive, fvs, args = bs, body = e} =>
             let 
               val global = varIsGlobal (im, lhs)
               (* val _ = print ("doVfun lhs = " ^ lhs ^ " fvs = " ^ String.concat (map (fn x => x ^ " ") fvs) ^ "\n") *)
-              val fvs = if recursive then List.remove (fvs, fn s => s = lhs) else fvs
-              val fvs' = List.map (fvs, lookup1 (im, env1))
-              val fvsparams = List.map (fvs', fn x => IM.variableClone (im, x))     (* free variables *)
-              val argparams = List.map (bs, #1)                                    (* actual argument *)
-              val params = fvsparams @ argparams
+              val fvs0 = if recursiveB then List.remove (fvs, fn s => s = lhs) else fvs
+              val fvs = List.map (fvs0, lookup1 (im, env1))
+              val fvsA = List.map (fvs, fn x => IM.variableClone (im, x))     (* free variables *)
+              val argsA = List.map (bs, #1)                                    (* actual argument *)
               val ftyp   = M.TRef
               val fvar   = TMU.localVariableFresh (im, IM.variableName (im, lhs), ftyp)
-              val env'   = List.zip (fvs @ argparams, params) @ env1
-              val env'   = if recursive andalso not global then (lhs, fvar) :: env' else env'
+              val env'   = List.zip (fvs0, fvsA) @ List.zip (argsA, argsA) @ env1
+              val env'   = if recursiveB andalso not global then (lhs, fvar) :: env' else env'
               val etyp   = TMU.variableTyp (im, lhs)
               val rtyps   = resultType etyp
-              val res    = mkReturnVars rtyps
+              val res    = Vector.map(rtyps, fn ty => TMU.localVariableFresh0 (im, ty))
+              val cptr = codePtrForFunction (state, lhs)
+              (* Associates cptr with fvar *)
+              val () = TMU.stateAddCodePtr (state, fvar, cptr)
               val (blk, fx) = doExp (state, env', res, e)
-              (* 
-              val _ = print ("doExp " ^ IM.variableString (im, lhs) ^ " got effect: " ^ Layout.toString (Effect.layout fx) ^ "\n")
-              *)
-              val fx = if recursive then Effect.union (fx, Effect.PartialS) else fx
+              val fx = if recursiveB orelse recursive then Effect.union (fx, Effect.PartialS) else fx
               val tr = M.TReturn (Vector.map (res, M.SVariable))
-              val afun   = TMU.mkClosureFunction (state, fvar, ftyp, List.length fvs, params, rtyps, blk, tr, fx)
+              val () = TMU.mkClosureFunction1 (state, fvar, cptr, escapes, recursive, 
+                                               Vector.fromList fvsA, Vector.fromList argsA, rtyps, blk, tr, fx)
               val _ = effects := VD.insert (!effects, lhs, fx)
-              val fvs    = Vector.fromListMap (fvs', fn x => (FK.fromTyp (cfg, TMU.variableTyp (im, x)), M.SVariable x))
+              val fvs    = Vector.fromListMap (fvs, fn x => (FK.fromTyp (cfg, TMU.variableTyp (im, x)), M.SVariable x))
             in
-              (* closure definition may be recursive *)
-              bindRhsClosure (state, lhs, SOME afun, fvs)
+              case TMU.variableKind (im, lhs)
+               of M.VkLocal  => 
+                  let
+                    val blk0 = MS.bindRhs (lhs, M.RhsClosureMk { fvs = Vector.map (fvs, #1) })
+                    val blk1 = MS.doRhs (M.RhsClosureInit { cls = SOME lhs, code = SOME cptr, fvs = fvs })
+                  in
+                    (blk0, blk1)
+                  end
+                | M.VkGlobal =>
+                  let
+                    val () = if Vector.length fvs = 0 then () else failMsg ("bindRhsClosure", "fvs is not empty")
+                    val _ = globals := VD.insert (!globals, lhs, M.GClosure { code = SOME cptr, fvs = fvs})
+                  in
+                    (MS.empty, MS.empty)
+                  end
+                | M.VkExtern => failMsg ("bindRhsClosure", "impossible")
             end
-    end
-
+      end
+        
   and doVDefg (state, env) 
     = let
         val {im, cfg, globals, prelude, ...} = state
-        fun getDefVar def = case def of Vfun d => #1 d | Vthk d => #1 d 
+        fun getDefVar def = case def of Vfun {name, ...} => name | Vthk {name, ...} => name
         val ws = Config.targetWordSize cfg
       in
         fn Rec defs =>
           let
             val vars = List.map (defs, getDefVar)
             val env1 = List.zip (vars, vars) @ env
-            val (blk0, blk1) = List.unzip (List.map (defs, doVDef (state, true, env1)))
+            val () = List.foreach (defs, fn vd => doVDef0 (state, true, env1, vd))
+            val (blk0, blk1) = List.unzip (List.map (defs, fn vd => doVDef1 (state, true, env1, vd)))
           in
             (env1, MS.seqn (blk0 @ blk1), Effect.Total)
           end
         |  Nonrec def =>
           let 
             val var = getDefVar def
-            val (blk0, blk1) = doVDef (state, false, env) def
+            val () = doVDef0 (state, false, env, def)
+            val (blk0, blk1) = doVDef1 (state, false, env, def)
           in
             ((var, var) :: env, MS.seq (blk0, blk1), Effect.Total)
           end
@@ -718,7 +755,7 @@ struct
               val (blk0, _) = GP.externDo0 Effect.Any "ihrInit" (state, [])
               val tr = M.TReturn (Vector.new0 ())
               val blks = MS.seq (blk0, blks)
-              val main = TMU.mkCodeFunction (state, "main", [], [], Vector.new0 (), blks, tr, Effect.Any)
+              val main = TMU.mkMainFunction (state, "main", blks, tr, Effect.Any)
             in main
             end
         fun iterate (env, main, blks) = 
@@ -733,8 +770,12 @@ struct
               of M.TThunk ftyp => 
                 let
                   val fvar = TMU.localVariableFresh0 (im, ftyp)
-                  val blk1 = MU.eval (im, cfg, FK.fromTyp (cfg, ftyp), 
-                                      M.EThunk { thunk = main, code = TMU.noCode }, cuts, Effect.Total, fvar)
+                  val eval = 
+                      let
+                        val code = TMU.stateGetCodesForFunction (state, main)
+                      in M.EThunk { thunk = main, code = code }
+                      end
+                  val blk1 = MU.eval (im, cfg, FK.fromTyp (cfg, ftyp), eval, cuts, Effect.Total, fvar)
                   (* make a State# RealWorld# value *)
                   val worldC = GP.tagToConst (ws, 0)
                   val stateC = GP.tagToConst (ws, 0)
@@ -827,7 +868,7 @@ struct
         (includes, externs)
       end
 
-  fun compile ((Module (main, vdefgs), oldim), pd) =
+  fun compile (((Module (main, vdefgs), oldim), aliases), pd) =
       let
         val im = IM.fromExistingNoInfo oldim 
         val cfg = PassData.getConfig pd
@@ -853,7 +894,7 @@ struct
             end
         val _ = List.map (I.listVariables oldim, fn v => IM.variableSetInfo (im, v, convertInfo v))
         val (rvar, rval) = GP.initStableRoot (im, cfg)
-        val state = TMU.newState (im, cfg, VD.fromList [(rvar, rval)], 
+        val state = TMU.newState (im, cfg, aliases, VD.empty, VD.fromList [(rvar, rval)], 
                                   MS.empty, rvar, SD.empty,
                                   VD.empty, VD.empty, !stateful, !worlds)
         val ws = Config.targetWordSize cfg
@@ -892,8 +933,8 @@ struct
   val layoutOut = Utils.Function.flipIn ANormStrictLayout.layout
   val description = {name        = passname,
                      description = "Strict A-Normal Form to Mil",
-                     inIr        = { printer = layoutOut,
-                                     stater  = layoutOut},
+                     inIr        = { printer = fn ((p, fa), config) => ANormStrictLayout.layout (config, p),
+                                     stater  = fn _ => Layout.str "No stats yet"},
                      outIr       = wrapIR MilUtils2.irHelpers,
                      mustBeAfter = [],
                      stats       = []}

@@ -926,7 +926,7 @@ struct
                let
                  (* Eval *)
                  val se = TMU.localVariableFresh0 (im, set)
-                 val blk0 = TMU.kmThunk (im, cfg, Vector.new1 se, e, Effect.Control)
+                 val blk0 = TMU.kmThunk (state, Vector.new1 se, e, Effect.Control)
                  (* Initialise *)
                  val td = M.TD {fixed = Vector.new1 (indexFD cfg), array = SOME (immutableFD et cfg)}
                  val tf = M.TF {tupDesc = td, tup = a, field = M.FiVariable i}
@@ -1119,14 +1119,19 @@ struct
           val a' = IM.variableClone (im, a)
           val () = TMU.setVariableKind (im, a', M.VkLocal)
           val fv = TMU.localVariableFresh0 (im, fvt)
-          val eval = M.EThunk {thunk = f', code = TMU.noCode}
+          val eval = 
+              let
+                val code = TMU.stateGetCodesForFunction (state, f)
+              in M.EThunk {thunk = f', code = code}
+              end
           val blk0 = MU.eval (im, cfg, FK.fromTyp (cfg, fvt), eval, TMU.exitCut, fx, fv)
           val call = M.CClosure {cls = fv, code = TMU.noCode}
           val tr = M.TInterProc {callee = M.IpCall {call = call, args = Vector.new1 (M.SVariable a')}, 
                                  ret = M.RTail {exits = true}, fx = fx}
           val ccCode = M.CcThunk {thunk = self, fvs = Vector.new2 (f', a')}
           val ccType = M.CcThunk {thunk = selft, fvs = Vector.new2 (ft, at)}
-          val code = TMU.mkFunction (ccCode, ccType) (state, "atomicModifyMutVarEval_#", [], [], Vector.new1 pt, blk0, tr, fx)
+          val code = TMU.mkNamedFunction (state, "atomicModifyMutVarEval_#", ccCode, ccType, true, true, 
+                                          Vector.new0 (), Vector.new0 (), Vector.new1 pt, blk0, tr, fx)
           val fvs = Vector.new2 ((FK.fromTyp (cfg, ft), M.SVariable f), (FK.fromTyp (cfg, at), M.SVariable a))
           val rhs = M.RhsThunkInit {typ = FK.fromTyp (cfg, pt), thunk = NONE, fx = fx, code = SOME code, fvs = fvs}
           val blk = MS.bindRhs (r, rhs)
@@ -1144,7 +1149,11 @@ struct
           val p' = IM.variableClone (im, p)
           val () = TMU.setVariableKind (im, p', M.VkLocal)
           val pv = TMU.localVariableFresh0 (im, pt)
-          val eval = M.EThunk {thunk = p', code = TMU.noCode}
+          val eval = 
+              let
+                val code = TMU.stateGetCodesForFunction (state, p)
+              in M.EThunk {thunk = p', code = code}
+              end
           val blk0 = MU.eval (im, cfg, FK.fromTyp (cfg, pt), eval, TMU.exitCut, fx, pv)
           val prjthnk = TMU.localVariableFresh0 (im, selft)
           val fks = Vector.new2 (FK.fromTyp (cfg, t1), FK.fromTyp (cfg, t2))
@@ -1156,8 +1165,9 @@ struct
           val t = M.TInterProc {callee = M.IpEval {typ = fk, eval = eval}, ret = M.RTail {exits = true}, fx = fx}
           val ccCode = M.CcThunk {thunk = self, fvs = Vector.new1 p'}
           val ccType = M.CcThunk {thunk = selft, fvs = Vector.new1 ptt}
-          val f = TMU.mkFunction (ccCode, ccType)
-                                 (state, "atomicModifyMutVarPrj" ^ Int.toString i ^ "_#", [], [], Vector.new1 rt, blk, t, fx)
+          val f = TMU.mkNamedFunction 
+                    (state, "atomicModifyMutVarPrj" ^ Int.toString i ^ "_#", ccCode, ccType, true, true, 
+                     Vector.new0 (), Vector.new0 (), Vector.new1 rt, blk, t, fx)
           val fvs = Vector.new1 (FK.fromTyp (cfg, ptt), M.SVariable p)
           val rhs = M.RhsThunkInit {typ = FK.fromTyp (cfg, rt), thunk = NONE, fx = fx, code = SOME f, fvs = fvs}
           val blk = MS.bindRhs (r, rhs)
@@ -1259,7 +1269,11 @@ struct
                   let
                     val { im, cfg, effects, ... } = state
                     val clo = TMU.localVariableFresh0 (im, ctyp)
-                    val eval = M.EThunk { thunk = fvar, code = TMU.noCode }
+                    val eval = 
+                        let
+                          val code = TMU.stateGetCodesForFunction (state, fvar)
+                        in M.EThunk { thunk = fvar, code = code }
+                        end
                     val blk0 = MU.eval (im, cfg, FK.fromTyp (cfg, ftyp), eval, TMU.exitCut, Effect.Any, clo)
                     val fx = TMU.lookupEffect (effects, clo, true, true)
                     val blk1 = MU.call (im, cfg, M.CClosure { cls = clo, code = TMU.noCode },
@@ -1274,7 +1288,7 @@ struct
   fun wrapThread (state as {im, cfg, ...}, blk) =
       let
         val tr = M.TReturn (Vector.new0 ())
-        val f = TMU.mkCodeFunction (state, "threadMain_#", [], [], Vector.new0 (), blk, tr, Effect.Any)
+        val f = TMU.mkMainFunction (state, "threadMain_#", blk, tr, Effect.Any)
         fun twTyp () =
             let
               val tmt = M.TCode {cc = M.CcCode, args = Vector.new0 (), ress = Vector.new0 ()}
@@ -1393,14 +1407,22 @@ struct
                 val cuts = M.C {exits = true, targets = LS.singleton l1}
                 val cx = Effect.Control
                 val ax = Effect.Any
-                val eval = M.EThunk {thunk = fvar, code = TMU.noCode}
+                val eval = 
+                    let
+                      val code = TMU.stateGetCodesForFunction (state, fvar)
+                    in M.EThunk {thunk = fvar, code = code}
+                    end
                 val b3 = MU.eval (im, cfg, M.FkRef, eval, cuts, cx, fv)
                 val call = M.CClosure {cls = fv, code = TMU.noCode}
                 val b4 = MU.call (im, cfg, call, Vector.new1 svar, cuts, ax, sr1)
                 val b5 = setHandler (state, M.SVariable oeh)
                 val b7 = setHandler (state, M.SVariable oeh)
                 val hv = TMU.localVariableFresh0 (im, htyp)
-                val eval = M.EThunk {thunk = hvar, code = TMU.noCode}
+                val eval = 
+                    let
+                      val code = TMU.stateGetCodesForFunction (state, hvar)
+                    in M.EThunk {thunk = hvar, code = code}
+                    end
                 val b8 = MU.eval (im, cfg, M.FkRef, eval, TMU.exitCut, cx, hv)
                 val call = M.CClosure {cls = hv, code = TMU.noCode}
                 val h' = TMU.localVariableFresh0 (im, M.TRef)
@@ -1565,12 +1587,15 @@ struct
             val blk4 = MS.bindRhs (cmp2, rhsPrim (MP.Prim MP.PPtrEq) [(M.SVariable cv, et), (M.SVariable rv1, et)])
             val ut = M.TThunk et
             val self = TMU.localVariableFresh0 (im, ut)
-            val ccs = (M.CcThunk {thunk = self, fvs = Vector.new0 ()}, M.CcThunk {thunk = ut, fvs = Vector.new0 ()})
+            val ccCode = M.CcThunk {thunk = self, fvs = Vector.new0 ()}
+            val ccType = M.CcThunk {thunk = ut, fvs = Vector.new0 ()}
             val ul = IM.labelFresh im
             val gotoUl = M.TGoto (M.T {block = ul, arguments = Vector.new0 ()})
             val ublk = MS.prependTL (gotoUl, ul, Vector.new0 (), MS.empty)
             val tr = M.TGoto (M.T {block = ul, arguments = Vector.new0 ()})
-            val uf = SOME (TMU.mkFunction ccs (state, "undefined_#", [], [], Vector.new1 et, ublk, tr, Effect.PartialS))
+            val cptr = TMU.mkNamedFunction (state, "undefined_#", ccCode, ccType, true, true,
+                                            Vector.new0 (), Vector.new0 (), Vector.new1 et, ublk, tr, Effect.PartialS)
+            val uf = SOME cptr
             val rhs =
                 M.RhsThunkInit {typ = M.FkRef, thunk = NONE, fx = Effect.PartialS, code = uf, fvs = Vector.new0 ()}
             val blk6 = MS.bindRhs (undefined, rhs)
@@ -1780,7 +1805,7 @@ struct
                 val fk   = FK.fromTyp (cfg, vtyp)
                 val vvar = TMU.localVariableFresh0 (im, vtyp)
                 val wvar = TMU.localVariableFresh0 (im, tagTyp)
-                val blk0 = TMU.kmThunk (im, cfg, Vector.new1 vvar, tvar, TMU.lookupEffect (effects, tvar, false, false))
+                val blk0 = TMU.kmThunk (state, Vector.new1 vvar, tvar, TMU.lookupEffect (effects, tvar, false, false))
                 val blk1 = MS.bindRhs (wvar, M.RhsSumGetTag { typ = fk, sum = vvar })
                 val blk2 = MS.bindsRhs (rvar, convert (tagNumTyp, intNumTyp) [(M.SVariable wvar, tagTyp)])
               in
@@ -1954,7 +1979,7 @@ struct
             val fvar = TMU.localVariableFresh0 (im, M.TRef)
             val isNull = TMU.localVariableFresh0 (im, M.TBoolean)
             val thk = TMU.localVariableFresh0 (im, refTyp)
-            val blk0 = TMU.kmThunk (im, cfg, Vector.new1 fvar, finalizer, Effect.Heap)
+            val blk0 = TMU.kmThunk (state, Vector.new1 fvar, finalizer, Effect.Heap)
             (* the return type is IO () *)
             val blk1 = MS.bindRhs (isNull, rhsPrim (MP.Prim MP.PPtrEq) 
                         [(M.SVariable fvar, M.TRef), (null, M.TRef)])
@@ -2078,7 +2103,7 @@ struct
                                           , thunk = NONE
                                           , ofVal = M.SVariable uvar }, M.TThunk utyp)]))
             val tr = M.TReturn (Vector.new2 (M.SVariable vvar, M.SVariable wvar))
-            val afun = TMU.mkClosureFunction (state, fvar, M.TRef, 1, [pvar, qvar], 
+            val afun = TMU.mkClosureFunction (state, fvar, M.TRef, true, false, Vector.new1 pvar, Vector.new1 qvar, 
                                               Vector.new2 (styp, M.TThunk utyp), blk, tr, Effect.Any) 
             val fvs = Vector.new1 (FK.fromTyp (cfg, typ), arg)
             val blk0 = MS.bindRhs (gvar, M.RhsClosureInit { cls = NONE, code = SOME afun, fvs = fvs })
@@ -2101,7 +2126,7 @@ struct
              let
                val { im, cfg, ... } = state
                val vvar = TMU.localVariableFresh0 (im, vtyp)
-               val blk0 = TMU.kmThunk (im, cfg, Vector.new1 vvar, uvar, Effect.Control)
+               val blk0 = TMU.kmThunk (state, Vector.new1 vvar, uvar, Effect.Control)
                val blk1 = tupleSimple ((state, rvar), [(sval, styp), (arg, typ)])
              in
                MS.seq (blk0, blk1)

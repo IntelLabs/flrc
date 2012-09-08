@@ -3,7 +3,7 @@
 
 signature ANORM_STRICT_CLOSURE_CONVERT = 
 sig
-  val pass : (ANormStrict.t, ANormStrict.t) Pass.t
+  val pass : (ANormStrict.t, ANormStrict.t * (Identifier.VariableSet.t Identifier.VariableDict.t)) Pass.t
 end
 
 structure ANormStrictClosureConvert :> ANORM_STRICT_CLOSURE_CONVERT = 
@@ -81,7 +81,7 @@ struct
    (* instruction ids *)
    type iid = AS.var
 
-   type fvInfo = {frees : VS.t, extras : VS.t}
+   type fvInfo = {frees : VS.t, extras : VS.t, escapes : bool, recursive : bool}
         
    structure DG = DepGraph
 
@@ -616,13 +616,13 @@ struct
              end
          val () = 
              doIt (case vd 
-                    of AS.Vfun (v, t, fvs, args, body) => (v, args, true, body)
-                     | AS.Vthk (v, t, fvs, body)       => 
+                    of AS.Vfun {name, args, body, ...} => (name, args, true, body)
+                     | AS.Vthk {name, body, ...}       => 
                        let
                          val g = case body 
                                   of AS.Return v => true
                                    | _           => false
-                       in (v, [], g, body)
+                       in (name, [], g, body)
                        end)
        in ()
        end
@@ -715,8 +715,8 @@ struct
            val v = ASU.VDef.variableDefd vd
            val (v, kind) = 
                case vd
-                of AS.Vthk (v, _, _, _) => (v, CsStd (SOME v))
-                 | AS.Vfun (v, _, _, _, _) => (v, CsFlat (SOME v))
+                of AS.Vthk {name, ...} => (name, CsStd (SOME name))
+                 | AS.Vfun {name, ...} => (name, CsFlat (SOME name))
            val {functions as ref fi, ...} = state
            val info = FI {calls     = ref [],
                           frees     = ref VS.empty,
@@ -876,7 +876,7 @@ struct
                  val FI {calls, frees, available, kind, escapes, recursive} = info
                  val frees = VS.difference (VS.difference (!frees, globals), !available)
                  val extras = VS.difference (!available, globals)
-                 val info = {frees = frees, extras = extras}
+                 val info = {frees = frees, extras = extras, escapes = !escapes, recursive = !recursive}
                in info
                end
            val info = VD.map (State.getFunctions state, toInfo)
@@ -938,15 +938,17 @@ struct
     structure State = 
      struct
      
-     datatype t = S of {stm : AS.symbolTableManager}
+     datatype t = S of {stm : AS.symbolTableManager,
+                        funAliases : VS.t VD.t ref}
                        
      val mk : AS.symbolTableManager -> t = 
-      fn (stm) => S {stm = stm}
-                                                                          
-     val ((_, getStm)) =
-         FunctionalUpdate.mk1 (fn (S {stm}) => (stm),
-                               fn (stm) => S {stm = stm})
+      fn (stm) => S {stm = stm, funAliases = ref VD.empty}
 
+     val ((_, getStm),
+          (_, getFunAliases)) =
+         FunctionalUpdate.mk2 (fn (S {stm, funAliases}) => (stm, funAliases),
+                               fn (stm, funAliases) => S {stm = stm, funAliases = funAliases})
+                              
      end (* structure State *)
     structure  Env = 
      struct
@@ -976,6 +978,22 @@ struct
     type state = State.t
     type env = Env.t 
 
+    (* addFunAlias (state, env, v1, v2) means v2 is an alias for v1 *)
+    val addFunAlias : State.t * Env.t * AS.var * AS.var -> unit = 
+     fn (state, env, v1, v2) => 
+        let
+          val fa = State.getFunAliases state
+          val s = case VD.lookup (!fa, v1)
+                   of SOME s => s
+                    | NONE => VS.empty
+          val s = VS.insert (s, v2)
+          val () = fa := VD.insert (!fa, v1, s)
+        in ()
+        end
+
+    val addFunAliases : State.t * Env.t * AS.var List.t * AS.var List.t -> unit = 
+     fn (state, env, vs1, vs2) => List.foreach2 (vs1, vs2, fn (v1, v2) => addFunAlias (state, env, v1, v2))
+
     val variableTy : State.t * Env.t * AS.var -> AS.ty = 
      fn (state, env, v) => 
         let 
@@ -995,10 +1013,10 @@ struct
     val variableToString : State.t * Env.t * AS.var -> string = 
      fn (state, env, v) => IM.variableString (State.getStm state, v)
 
-    val getFunctionFvs' : state * env * AS.var -> {frees : VS.t, extras : VS.t} option = 
+    val getFunctionFvs' : state * env * AS.var -> fvInfo option = 
      fn (state, env, f) => VD.lookup (Env.getFvInfo env, f)
 
-    val getFunctionFvs : state * env * AS.var -> {frees : VS.t, extras : VS.t} = 
+    val getFunctionFvs : state * env * AS.var -> fvInfo = 
      fn (state, env, f) => 
         case getFunctionFvs' (state, env, f)
          of SOME r => r
@@ -1124,18 +1142,18 @@ struct
         let
           val () = 
               case vd
-               of AS.Vfun (v, t, fvs, binds, e) => 
+               of AS.Vfun {name, ty, ...} => 
                   let
-                    val {frees, extras} = getFunctionFvs (state, env, v)
+                    val {frees, extras, ...} = getFunctionFvs (state, env, name)
                     val extraTs = List.map (VS.toList extras, fn v => variableTy (state, env, v))
-                    val t = 
-                        case t
+                    val ty = 
+                        case ty
                          of AS.Arr (ts, rts) => AS.Arr (ts @ extraTs, rts)
                           | _                => fail ("doVDef0", "Vfun typ is not an arrow typ")
-                    val () = IM.variableSetInfo (State.getStm state, v, (t, AS.VkLocal))
+                    val () = IM.variableSetInfo (State.getStm state, name, (ty, AS.VkLocal))
                   in ()
                   end
-                | AS.Vthk (v, t, fvs, e) => ()
+                | AS.Vthk _ => ()
         in ()
         end
 
@@ -1145,24 +1163,31 @@ struct
         let
           val r = 
               case vd
-               of AS.Vfun (v, _, fvs, binds, e) => 
+               of AS.Vfun {name, ty, escapes = escapes0, recursive = recursive0, fvs, args, body} => 
                   let
-                    val {frees, extras} = getFunctionFvs (state, env, v)
+                    val {frees, extras, escapes, recursive} = getFunctionFvs (state, env, name)
                     val fvs = doVars (state, env, VS.toList frees)
-                    val extras = doVars (state, env, VS.toList extras)
+                    val extras0 = VS.toList extras
+                    val extras = doVars (state, env, extras0)
                     val (extras, env) = chooseNewVariables (state, env, extras)
-                    val e = doExp (state, env, e)
-                    val binds = binds @ varsToBinds (state, env, extras)
-                    val t = variableTy (state, env, v)
-                  in AS.Vfun (v, t, fvs, binds, e)
+                    val () = addFunAliases (state, env, extras0, extras)
+                    val body = doExp (state, env, body)
+                    val args = args @ varsToBinds (state, env, extras)
+                    val ty = variableTy (state, env, name)
+                    val escapes = escapes0 andalso escapes
+                    val recursive = recursive0 andalso recursive
+                  in AS.Vfun {name = name, ty = ty, escapes = escapes, recursive = recursive, 
+                              fvs = fvs, args = args, body = body}
                   end
-                | AS.Vthk (v, t, fvs, e) => 
+                | AS.Vthk {name, ty, escapes = escapes0, recursive = recursive0, fvs, body} => 
                   let
-                    val {frees, extras} = getFunctionFvs (state, env, v)
+                    val {frees, extras, escapes, recursive} = getFunctionFvs (state, env, name)
                     val fvs = VS.toList (VS.union (frees, extras))
                     val fvs = doVars (state, env, fvs)
-                    val e = doExp (state, env, e)
-                  in AS.Vthk (v, t, fvs, e)
+                    val body = doExp (state, env, body)
+                    val escapes = escapes0 andalso escapes
+                    val recursive = recursive0 andalso recursive
+                  in AS.Vthk {name = name, ty = ty, escapes = escapes, recursive = recursive, fvs = fvs, body = body}
                   end
         in r
         end
@@ -1202,7 +1227,7 @@ struct
         in ()
         end
 
-    val program : PD.t * VS.t * fvInfo VD.t * AS.t -> AS.t =
+    val program : PD.t * VS.t * fvInfo VD.t * AS.t -> AS.t * (VS.t VD.t) =
      fn (pd, globals, fvInfo, (m, st)) => 
         let
           val stm = IM.fromExistingAll st
@@ -1216,17 +1241,19 @@ struct
           val m = AS.Module (v, vdgs)
           val () = markGlobals (globals, stm)
           val st = IM.finish stm
-        in (m, st)
+          val p = (m, st)
+          val fa = !(State.getFunAliases state)
+        in (p, fa)
         end
 
   end (* structure Rewrite *)
 
-  val program : AS.t * PD.t -> AS.t = 
+  val program : AS.t * PD.t -> AS.t * (VS.t VD.t) = 
    fn (p as (m, im), pd) =>
       let
         val (globals, info) = run (pd, 1, "Analysis") Analyze.program (pd, p)
-        val p = run (pd, 1, "Rewriting") Rewrite.program (pd, globals, info, p)
-      in p
+        val (p, fa) = run (pd, 1, "Rewriting") Rewrite.program (pd, globals, info, p)
+      in (p, fa)
       end
 
   val stater = fn _ => Layout.str "No stats yet"
@@ -1235,13 +1262,13 @@ struct
                      description = "ANormStrict closure converter",
                      inIr        = { printer = Utils.Function.flipIn ASL.layout,
                                      stater  = stater },
-                     outIr       = { printer = Utils.Function.flipIn ASL.layout,
+                     outIr       = { printer = fn ((p, fa), config) => ASL.layout (config, p),
                                      stater  = stater },
                      mustBeAfter = [],
                      stats       = Click.stats}
 
   val associates = {controls = [], debugs = debugs, features = features, subPasses = []}
 
-  val pass = Pass.mkOptPass (description, associates, program)
+  val pass = Pass.mkCompulsoryPass (description, associates, program)
 
 end

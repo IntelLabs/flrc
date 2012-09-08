@@ -47,9 +47,9 @@ struct
 
   and vDef
       (* lambda must be bound to variable, where the first ty is type of var, not exp *)
-      = Vfun of var * ty * var list * vbinds * exp 
+      = Vfun of {name : var, ty : ty, escapes : bool, recursive : bool, fvs : var list, args : vbinds, body : exp}
       (* thunks must also be bound to variable *)
-      | Vthk of var * ty * var list * exp
+      | Vthk of {name : var, ty : ty, escapes : bool, recursive : bool, fvs : var list, body : exp}
 
   and vDefg 
       = Rec of vDef list

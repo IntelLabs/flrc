@@ -222,14 +222,20 @@ struct
 
   and rec vDef =
    fn (env, vd) => 
-      (case vd
-        of ANS.Vthk (v, t, fvs, e) =>
-             L.mayAlign [ L.seq [ variable (env, v), showBinder (env, t), L.str " = %thunk "
-                                , vBindsWithFVS (env, (fvs, [])) ], indent (exp (env, e)) ]
-      | ANS.Vfun (v, t, fvs, vbs, e) =>
-        L.mayAlign [ L.seq [ variable (env, v), showBinder (env, t), L.str " ="]
-                   , indent (L.mayAlign [ L.seq [ L.str "\\ ", vBindsWithFVS (env, (fvs, vbs)), L.str " -> "]
-                                        , exp (env, e)])])
+      let
+        val lesc = fn escapes => if escapes then L.str "^" else L.empty
+        val lrec = fn recursive => if recursive then L.str "*" else L.empty
+      in
+        case vd
+         of ANS.Vthk {name, ty, escapes, recursive, fvs, body} =>
+            L.mayAlign [ L.seq [ variable (env, name), lesc escapes, lrec recursive, 
+                                 showBinder (env, ty), L.str " = %thunk ", vBindsWithFVS (env, (fvs, [])) ], 
+                         indent (exp (env, body)) ]
+          | ANS.Vfun {name, ty, escapes, recursive, fvs, args, body} =>
+            L.mayAlign [ L.seq [ variable (env, name), lesc escapes, lrec recursive, showBinder (env, ty), L.str " ="]
+                       , indent (L.mayAlign [ L.seq [ L.str "\\ ", vBindsWithFVS (env, (fvs, args)), L.str " -> "]
+                                            , exp (env, body)])]
+      end
              
   and rec vDefg =
    fn (env, vdg) => 

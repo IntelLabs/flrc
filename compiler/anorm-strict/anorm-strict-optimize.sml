@@ -713,8 +713,8 @@ struct
   and rec vDefIsValue =
    fn (state, env, vd) => 
       (case vd
-        of AS.Vfun (v, t, fvs, binds, e) => true
-         | AS.Vthk (v, t, fvs, e)        => true)
+        of AS.Vfun _ => true
+         | AS.Vthk _ => true)
   and rec vDefgIsValue =
    fn (state, env, vdg) =>
       (case vdg
@@ -835,27 +835,27 @@ struct
         let
           val fx = 
               case vd
-               of AS.Vfun (v, t, fvs, binds, e) => 
+               of AS.Vfun {name, ty, escapes, recursive, fvs, args, body} => 
                   let
                     val () = 
                         let
-                          val () = addVars1 (state, env, binds)
-                          val env = enterBinding (state, env, v)
-                          val env = enterNewFunction (state, env, v)
-                          val fx = doExp (state, env, e)
-                          val () = setFnFx (state, env, v, fx)
+                          val () = addVars1 (state, env, args)
+                          val env = enterBinding (state, env, name)
+                          val env = enterNewFunction (state, env, name)
+                          val fx = doExp (state, env, body)
+                          val () = setFnFx (state, env, name, fx)
                         in ()
                         end
                   in ETotal
                   end
-                | AS.Vthk (v, t, fvs, e) => 
+                | AS.Vthk {name, ty, escapes, recursive, fvs, body} => 
                   let
                     val () = 
                         let
-                          val env = enterBinding (state, env, v)
-                          val env = enterNewFunction (state, env, v)
-                          val fx = doExp (state, env, e)
-                          val () = setFnFx (state, env, v, fx)
+                          val env = enterBinding (state, env, name)
+                          val env = enterNewFunction (state, env, name)
+                          val fx = doExp (state, env, body)
+                          val () = setFnFx (state, env, name, fx)
                         in ()
                         end
                   in ETotal
@@ -1229,31 +1229,35 @@ struct
         end
 
     and rec doVDef : state * env * bool * AS.vDef -> env * AS.vDefg List.t * AS.vDef List.t = 
-     fn (state, env, recursive, vd) => 
+     fn (state, env, recursiveB, vd) => 
         let
           val r = 
               case vd
-               of AS.Vfun (v, t, fvs, binds, e) => 
+               of AS.Vfun {name, ty, escapes, recursive, fvs, args, body} => 
                   let
-                    val e = 
+                    val body = 
                         let
                           val env = clearThunkDefs (state, env)
-                          val env = enterFunction (state, env, v)
-                          val tys = typeToReturnTypes (state, env, t)
-                          val e = doExp (state, env, e, tys)
-                        in e
+                          val env = enterFunction (state, env, name)
+                          val tys = typeToReturnTypes (state, env, ty)
+                          val body = doExp (state, env, body, tys)
+                        in body
                         end
-                    val size = getFnSize (state, env, v)
-                    val def = DFunc {i = size, r = recursive, 
-                                     vs = List.map (binds, #1), e = e}
-                    val env = addDef (state, env, v, def)
-                  in (env, [], [AS.Vfun (v, t, fvs, binds, e)])
+                    val size = getFnSize (state, env, name)
+                    val def = DFunc {i = size, r = recursiveB, 
+                                     vs = List.map (args, #1), e = body}
+                    val env = addDef (state, env, name, def)
+                    val recursive = 
+                        not (effectTotal (getFnFx (state,env, name))) andalso recursive
+                    val vd = AS.Vfun {name = name, ty = ty, escapes = escapes, recursive = recursive, 
+                                      fvs = fvs, args = args, body = body}
+                  in (env, [], [vd])
                   end
-                | AS.Vthk (v, t, fvs, e) => 
+                | AS.Vthk {name, ty, escapes, recursive, fvs, body} => 
                   let
                     val outerEnv = env
-                    val ty = unboxTy (state, env, t)
-                    val (innerEnv, rbnds, rvs) = doExpFlattenNamed (state, env, e, [ty])
+                    val uTy = unboxTy (state, env, ty)
+                    val (innerEnv, rbnds, rvs) = doExpFlattenNamed (state, env, body, [uTy])
                     val e = AS.Return rvs
                     val value = vDefgsAreValue (state, innerEnv, rbnds)  
                     val vDefGHoistable = 
@@ -1262,8 +1266,10 @@ struct
                           of AS.Rec _    => true
                            | AS.Nonrec _ => true
                            | AS.Vdef _   => false)
+                    val recursive = 
+                        not (effectTotal (getFnFx (state,env, name))) andalso recursive
                     val (env, rbnds, vds) = 
-                        if value andalso not recursive then 
+                        if value andalso not recursiveB then 
                           let
                             val env = innerEnv
                             val () = case rbnds
@@ -1274,8 +1280,11 @@ struct
                                   val default = 
                                    fn () => 
                                       let 
-                                        val vds = [AS.Vthk (v, t, fvs, e)]
-                                        val env = addThunkDef (state, env, v, true, e)
+                                        val vd = AS.Vthk {name = name, ty = ty, 
+                                                          escapes = escapes, recursive = recursive,
+                                                          fvs = fvs, body = e}
+                                        val vds = [vd]
+                                        val env = addThunkDef (state, env, name, true, e)
                                       in (vds, env)
                                       end
                                 in
@@ -1286,7 +1295,7 @@ struct
                                            let
                                              val () = Click.thunkReIntro (getPd (state, env))
                                              val vds = []
-                                             val env = replaceVar (state, env, v, v3)
+                                             val env = replaceVar (state, env, name, v3)
                                            in (vds, env)
                                            end
                                          | _ => default ())
@@ -1294,18 +1303,20 @@ struct
                                 end
                           in (env, rbnds, vds)
                           end
-                        else if value andalso recursive andalso List.forall (rbnds, vDefGHoistable) then
+                        else if value andalso recursiveB andalso List.forall (rbnds, vDefGHoistable) then
                           let
                             val env = innerEnv
                             val () = case rbnds
                                       of _::_ => Click.toThunkVal (getPd (state, env))
                                        | _    => ()
-                            val vds = (AS.Vthk (v, t, fvs, e)) :: valOf (vDefgsToVDefs rbnds)
+                            val vd = AS.Vthk {name = name, ty = ty, escapes = escapes, recursive = recursive,
+                                              fvs = fvs, body = e}
+                            val vds = vd :: valOf (vDefgsToVDefs rbnds)
                             (* Hoisting out of a recursive binding may change the recursive status
                              * of defs in the context 
                              *)
                             val env = outerEnv
-                            val env = addThunkDef (state, env, v, true, e)
+                            val env = addThunkDef (state, env, name, true, e)
                           in (env, [], vds)
                           end
                         else
@@ -1315,23 +1326,29 @@ struct
                              fn v2 => 
                                 let
                                   val () = Click.thunkEta (getPd (state, env))
-                                  val env = replaceVar (state, env, v, v2)
-                                  val vds = if recursive then 
-                                              let
-                                                val () = incVarUseCount (state, env, v2)
-                                              in
-                                                [AS.Vthk (v, t, fvs, e)]
-                                              end
-                                            else
-                                              []
+                                  val env = replaceVar (state, env, name, v2)
+                                  val vds = 
+                                      if recursiveB then 
+                                        let
+                                          val () = incVarUseCount (state, env, v2)
+                                          val vd = AS.Vthk {name = name, ty = ty, 
+                                                            escapes = escapes, recursive = recursive,
+                                                            fvs = fvs, body = e}
+                                        in [vd]
+                                        end
+                                      else
+                                        []
                                 in (env, vds)
                                 end
                             val doDefault = 
                              fn () => 
                                 let
                                   val env = outerEnv
-                                  val env = addThunkDef (state, env, v, false, e)
-                                  val vds = [AS.Vthk (v, t, fvs, e)]
+                                  val env = addThunkDef (state, env, name, false, e)
+                                  val vd = AS.Vthk {name = name, ty = ty, 
+                                                    escapes = escapes, recursive = recursive,
+                                                    fvs = fvs, body = e}
+                                  val vds = [vd]
                                 in (env, vds)
                                 end
                             val (env, vds) =
@@ -1420,11 +1437,12 @@ struct
            fn (vdgs, rbnds) => 
               (case vdgs
                 of []             => m
-                 | [AS.Nonrec (AS.Vfun (f, ty, [], binds, e)), 
-                    main as AS.Nonrec (AS.Vthk (t, tyt, [], AS.Return [f']))] => 
+                 | [AS.Nonrec (AS.Vfun {name = f, ty = ty, fvs = [], args = binds, body = e, ...}), 
+                    main as AS.Nonrec (AS.Vthk {name = t, ty = tyt, fvs = [], body = AS.Return [f'], ...})] => 
                    if f = f' andalso mainV = t then
                      let
-                       val mainF = AS.Nonrec (AS.Vfun (f, ty, [], binds, mkLet (rbnds, e)))
+                       val mainF = AS.Nonrec (AS.Vfun {name = f, ty = ty, escapes = true, recursive = false,
+                                                       fvs = [], args = binds, body = mkLet (rbnds, e)})
                        val vdgs = [mainF, main]
                      in AS.Module (mainV, vdgs)
                      end
@@ -1657,8 +1675,8 @@ struct
              end
         in 
           case vd
-           of AS.Vfun (v, t, frees, binds, e) => add (v, binds)
-            | AS.Vthk (v, t, frees, e)        => add (v, [])
+           of AS.Vfun {name, args, ...} => add (name, args)
+            | AS.Vthk {name, ...}       => add (name, [])
         end
 
     val updateFunction =
@@ -2086,17 +2104,17 @@ struct
              let
                val changed = 
                    case vd
-                    of AS.Vfun (v, t, fvs, binds, e) => 
+                    of AS.Vfun {name, ty, escapes, recursive, fvs, args, body} => 
                        let
-                         val strictness = doExp (state, env, e)
-                         val args = List.map (binds, #1)
-                         val changed = updateFunction (state, env, v, args, strictness)
+                         val strictness = doExp (state, env, body)
+                         val args = List.map (args, #1)
+                         val changed = updateFunction (state, env, name, args, strictness)
                        in changed
                        end
-                     | AS.Vthk (v, t, fvs, e) => 
+                     | AS.Vthk {name, ty, escapes, recursive, fvs, body} => 
                        let
-                         val strictness = doExp (state, env, e)
-                         val changed = updateFunction (state, env, v, [], strictness)
+                         val strictness = doExp (state, env, body)
+                         val changed = updateFunction (state, env, name, [], strictness)
                        in changed
                        end
              in changed
@@ -2432,29 +2450,29 @@ struct
         let
           val env = 
               case vd
-               of AS.Vfun (v, t, fvs, binds, e) => 
-                  (case getOptimizedCallingConvention (state, env, v)
+               of AS.Vfun {name, ty, escapes, recursive, fvs, args, body} => 
+                  (case getOptimizedCallingConvention (state, env, name)
                     of SOME fi =>  
                        let
-                         val vs = List.map (binds, #1)
+                         val vs = List.map (args, #1)
                          val {std, ubx, frees} = doFnInfo (state, env, fi, vs)
-                         val t = 
+                         val ty = 
                              let
                                (* Symboltable is already rewritten *)
                                val std = List.map (std, fn v => variableTy (state, env, v))
                                val ubx = List.map (ubx, fn v => unboxedTy (state, env, v))
                                val ts = std @ ubx 
-                               val t = 
-                                   case doTy (state, env, t)
+                               val ty = 
+                                   case doTy (state, env, ty)
                                     of AS.Arr (_, rt) => AS.Arr (ts, rt)
                                      | _              => fail ("doVDef", "Not a function type")
-                             in t
+                             in ty
                              end
-                         val (env, fNew) = mkFnVariable (state, env, v, t)
+                         val (env, fNew) = mkFnVariable (state, env, name, ty)
                        in env
                        end
                      | NONE => env)
-                | AS.Vthk (v, t, fvs, e) => env
+                | AS.Vthk _ => env
           val env = addVarToScope (state, env, ASU.VDef.variableDefd vd)
         in env
         end
@@ -2464,46 +2482,50 @@ struct
         let
           val r = 
               case vd
-               of AS.Vfun (v, t, fvs, binds, e) => 
+               of AS.Vfun {name, ty, escapes = escapes0, recursive = recursive0, 
+                           fvs, args, body} => 
                   let
-                    val t = doTy (state, env, t)
-                    val binds = List.map (binds, fn (v, t) => (v, doTy (state, env, t)))
+                    val ty = doTy (state, env, ty)
+                    val args = List.map (args, fn (v, t) => (v, doTy (state, env, t)))
                   in
-                    case getOptimizedCallingConvention (state, env, v)
+                    case getOptimizedCallingConvention (state, env, name)
                      of SOME fi =>  
                         let
                           val pd = getPd (state, env)
-                          val escapes = varEscapes (state, env, v) 
-                          val vs = List.map (binds, #1)
+                          val escapes = varEscapes (state, env, name) 
+                          val vs = List.map (args, #1)
                           val optF = 
                               let
                                 val {std, ubx, frees} = doFnInfo (state, env, fi, vs)
                                 val () = List.foreach (ubx, fn _ => Click.strictArg pd)
                                 val std = List.map (std, fn v => (v, variableTy (state, env, v)))
                                 val (env, ubx) = evalVariables (state, env, ubx)
-                                val binds = std @ ubx
-                                val e = 
+                                val args = std @ ubx
+                                val body = 
                                     if evalFrees pd then
                                       let
-                                        val fvs = ASFV.exp (PD.getConfig pd, e)
+                                        val fvs = ASFV.exp (PD.getConfig pd, body)
                                         val frees = VS.toList (VS.intersection (frees, fvs))
                                         val (env, frees, rbnds) = mkEvals (state, env, frees)
-                                        val e = doExp (state, env, e)
-                                      in mkLet (rbnds, e)
+                                        val body = doExp (state, env, body)
+                                      in mkLet (rbnds, body)
                                       end
                                     else
-                                      doExp (state, env, e)
-                                val fNew = valOf (getFnVariable (state, env, v))
+                                      doExp (state, env, body)
+                                val fNew = valOf (getFnVariable (state, env, name))
                                 val tNew = variableTy (state, env, fNew)
-                              in AS.Vfun (fNew, tNew, [], binds, e)
+                              in AS.Vfun {name = fNew, ty = tNew, 
+                                          escapes = escapes0 andalso escapes, recursive = recursive0, 
+                                          fvs = [], args = args, body = body}
                               end
                           val vds = 
                               if escapes then
                                 let
                                   val vs = cloneVariables (state, env, vs)
-                                  val e = doExp (state, env, AS.App (v, vs))
-                                  val binds = List.map2 (vs, binds, fn (v, (_, t)) => (v, t))
-                                  val escapeF = AS.Vfun (v, t, [], binds, e)
+                                  val body = doExp (state, env, AS.App (name, vs))
+                                  val args = List.map2 (vs, args, fn (v, (_, t)) => (v, t))
+                                  val escapeF = AS.Vfun {name = name, ty = ty, escapes = true, recursive = recursive0, 
+                                                         fvs = [], args = args, body = body}
                                 in [escapeF, optF]
                                 end
                               else
@@ -2512,15 +2534,17 @@ struct
                         end
                       | NONE => 
                         let
-                          val e = doExp (state, env, e)
-                        in (env, [], [AS.Vfun (v, t, [], binds, e)])
+                          val body = doExp (state, env, body)
+                          val vd = AS.Vfun {name = name, ty = ty, escapes = escapes0, recursive = recursive0,
+                                            fvs = [], args = args, body = body}
+                        in (env, [], [vd])
                         end
                   end
-                | AS.Vthk (v, t, fvs, e) => 
+                | AS.Vthk {name, ty, escapes, recursive = recursive0, fvs, body} =>
                   let
-                    val t = doTy (state, env, t)
+                    val ty = doTy (state, env, ty)
                   in
-                    case getFnInfo (state, env, v)
+                    case getFnInfo (state, env, name)
                      of SOME (ref fi) => 
                         let
                           val pd = getPd (state, env)
@@ -2529,16 +2553,16 @@ struct
                           val (env, rbnds, e) = 
                               if evalFrees pd then
                                 let
-                                  val fvs = ASFV.exp (PD.getConfig pd, e)
+                                  val fvs = ASFV.exp (PD.getConfig pd, body)
                                   val frees = VS.toList (VS.intersection (frees, fvs))
                                   val (env, frees, rbnds1) = mkEvals (state, env, frees)
-                                  val (env, rbnds2, e) = doExpFlatten (state, env, e)
+                                  val (env, rbnds2, e) = doExpFlatten (state, env, body)
                                 in (env, rbnds2 @ rbnds1, e)
                                 end
                               else 
-                                doExpFlatten (state, env, e)
-                          val (env, rbnds, e) = 
-                              if varStrict (state, env, v) andalso not recursive then 
+                                doExpFlatten (state, env, body)
+                          val (env, rbnds, body) = 
+                              if varStrict (state, env, name) andalso not recursive then 
                                 let
                                   val () = Click.toThunkVal pd
                                 in
@@ -2546,12 +2570,16 @@ struct
                                 end
                               else
                                 (outerEnv, [], mkLet (rbnds, e))
-                        in (env, rbnds, [AS.Vthk (v, t, [], e)])
+                          val vd = AS.Vthk {name = name, ty = ty, escapes = escapes, recursive = recursive0, 
+                                            fvs = fvs, body = body}
+                        in (env, rbnds, [vd])
                         end
                       | NONE => 
                         let
-                          val e = doExp (state, env, e)
-                        in (env, [], [AS.Vthk (v, t, [], e)])
+                          val body = doExp (state, env, body)
+                          val vd = AS.Vthk {name = name, ty = ty, escapes = escapes, recursive = recursive0, 
+                                            fvs = fvs, body = body}
+                        in (env, [], [vd])
                         end
                   end
         in r
@@ -2857,15 +2885,17 @@ struct
         let
           val r = 
               case vd
-               of AS.Vfun (v, t, fvs, binds, e) => 
+               of AS.Vfun {name, ty, escapes, recursive, fvs, args, body} => 
                   let
-                    val e = doExp (state, env, e)
-                  in AS.Vfun (v, t, fvs, binds, e)
+                    val body = doExp (state, env, body)
+                  in AS.Vfun {name = name, ty = ty, escapes = escapes, recursive = recursive, 
+                              fvs = fvs, args = args, body = body}
                   end
-                | AS.Vthk (v, t, fvs, e) => 
+                | AS.Vthk {name, ty, escapes, recursive, fvs, body} => 
                   let
-                    val e = doExp (state, env, e)
-                  in AS.Vthk (v, t, fvs, e)
+                    val body = doExp (state, env, body)
+                  in AS.Vthk {name = name, ty = ty, escapes = escapes, recursive = recursive, 
+                              fvs = fvs, body = body}
                   end
         in r
         end
@@ -2876,7 +2906,7 @@ struct
           val rec matchLambdas = 
            fn e => 
               (case e
-                of AS.Let (AS.Nonrec (AS.Vfun (v1, t, fvs, binds, e1)), AS.Return [v2]) =>
+                of AS.Let (AS.Nonrec (AS.Vfun {name = v1, ty = t, args = binds, body = e1, ...}), AS.Return [v2]) =>
                    if v1 = v2 then
                      let
                        val (lambdas, body) = matchLambdas e1
@@ -2900,7 +2930,7 @@ struct
               end
           val (env, vd) =
               case vd
-               of AS.Vfun (f, t, fvs, binds, e) => 
+               of AS.Vfun {name = f, ty = t, escapes, recursive, fvs, args = binds, body = e} => 
                   (case matchLambdas e
                     of ([], body) => (env, (NONE, vd))
                      | (ll, body)  => 
@@ -2924,13 +2954,23 @@ struct
                          val uncurryF = deriveLocalVariable (state, env, f, "uncurry", uncurryT)
                          val curryVDef = 
                              let
+                               (* The inner application may be (semantically) recursive, but all of the outer
+                                * functions are not. *)
                                val curryBody = AS.App (uncurryF, uncurryActuals)
-                               val mk = fn ((f, t, binds), e) => 
-                                           AS.Let (AS.Nonrec (AS.Vfun (f, t, [], binds, e)), AS.Return [f])
-                               val e = List.foldr (ll, curryBody, mk)
-                             in AS.Vfun (f, t, [], binds, e)
+                               val mk = fn ((f, t, binds), (e, recursive)) => 
+                                           let
+                                             val vd = AS.Vfun {name = f, ty = t, escapes = true, recursive = recursive,
+                                                               fvs = [], args = binds, body = e}
+                                           in
+                                             (AS.Let (AS.Nonrec vd, AS.Return [f]), false)
+                                           end
+                               val (e, recursive) = List.foldr (ll, (curryBody, recursive), mk)
+                             in AS.Vfun {name = f, ty = t, escapes = escapes, recursive = recursive,
+                                         fvs = [], args = binds, body = e}
                              end
-                         val uncurryVDef = AS.Vfun (uncurryF, uncurryT, [], uncurryFormals, body)
+                         val uncurryVDef = AS.Vfun {name = uncurryF, ty = uncurryT, 
+                                                    escapes = false, recursive = recursive, 
+                                                    fvs = [], args = uncurryFormals, body = body}
                          val d = DEta {remaining = List.length uncurryActuals, uncurry = uncurryF, args = []}
                          val env = addDef (state, env, f, d)
                          val () = addVar (state, env, f)
