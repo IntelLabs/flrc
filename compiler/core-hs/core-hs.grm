@@ -1,0 +1,246 @@
+(* The Intel P to C/Pillar Compiler *)
+(* Copyright (C) Intel Corporation, October 2006 *)
+
+(* Grammar of GHC Core for ML-Yacc *)
+
+structure CH = CoreHs
+structure CHU = CoreHsUtils
+structure CHP = CoreHsPrims
+structure TextIO = Pervasive.TextIO
+
+fun warn msg = TextIO.output (TextIO.stdOut, "Warning: " ^ msg ^ "\n");
+
+%%
+
+%eop EOF 
+
+(* %pos declares the type of positions for terminals.
+   Each symbol has an associated left and right position. *)
+
+%pos int
+
+%term 
+    EOF | CHAR of int | STRING of string | NUM of IntInf.t | 
+    LNAME of string | UNAME of string | 
+    Z7EU of string | ZT of string |
+    SEMI | AT | EQ | LB | RB | LP | RP |
+    SLASH | TO | DCOLON | COLON |
+    MODULE | DATA | NEWTYPE | REC | LET | IN |
+    CASE | OF | CAST | NOTE | EXTERNAL | 
+    DYNEXTERNAL | LABEL | DEFAULT | 
+    TRANS | SYM | UNSAFE | LEFT | RIGHT | INST | NTH |
+    FORALL | TIMES | HASH | QMARK | KEQ | DOT | BANG | MINUS | PERCENT
+
+%nonterm 
+    Start of CH.module option |
+    Module of CH.module |
+    Tdefs of CH.tDef list |
+    Tdef of CH.tDef |
+    Cdefs of CH.cDef list |
+    Cdef of CH.cDef |
+    Vdefgs of CH.vDefg list |
+    Vdefg of CH.vDefg |
+    Vdefs of CH.vDef list |
+    Vdef of CH.vDef |
+    AExp of CH.exp |
+    Exp of CH.exp |
+    FExp of CH.exp |
+    Callconv of CH.callconv |
+    Alts of CH.alt list |
+    Alt of CH.alt |
+    Binders of CH.bind list |
+    Binder of CH.bind |
+    ATBinds of CH.tBind list |
+    TBinds of CH.tBind list |
+    TBind of CH.tBind |
+    VBinds of CH.vBind list |
+    VBind of CH.vBind |
+    Lit of CH.lit |
+    Literal of CH.coreLit |
+    Sign of IntInf.t -> IntInf.t |
+    BAtys of (CH.ty * CH.strictness) list |
+    BAty of (CH.ty * CH.strictness) |
+    Atys of CH.ty list |
+    Aty of CH.ty |
+    Bty of CH.ty |
+    Fty of CH.ty |
+    Ty of CH.ty |
+    Akind of CH.kind |
+    Kind of CH.kind |
+    Mident of CH.anMName |
+    Tycon of CH.tcon |
+    Qtycon of CH.tcon CH.qualified |
+    Tyvar of CH.tvar |
+    Dcon of CH.dcon |
+    Qdcon of CH.dcon CH.qualified |
+    Var of CH.var |
+    Qvar of CH.var CH.qualified |
+    Pname of string |
+    Dnames of string list |
+    Dname of string |
+    Qualified of (string -> string CH.qualified) |
+    Lname of string 
+
+%name CoreHsYacc
+
+%noshift EOF
+%verbose
+%left UNAME LNAME 
+%%
+
+  Start : Module (SOME Module)
+        | (NONE)
+
+  Module : MODULE Mident Tdefs Vdefgs (CH.Module (Mident, Tdefs, Vdefgs))
+
+  Tdefs : Tdef SEMI Tdefs (Tdef :: Tdefs)
+        | ([])
+
+  Tdef : DATA Qtycon TBinds EQ LB Cdefs RB (CH.Data (Qtycon, TBinds, Cdefs))
+       | NEWTYPE Qtycon Qtycon TBinds EQ Ty (CH.Newtype (Qtycon1, Qtycon2, TBinds, Ty))
+
+  Cdefs : Cdef SEMI Cdefs (Cdef :: Cdefs)
+        | Cdef ([Cdef])
+        | ([])
+
+  Cdef : Qdcon ATBinds BAtys (CH.Constr (Qdcon, ATBinds, BAtys))
+
+  Vdefgs : Vdefg SEMI Vdefgs (Vdefg :: Vdefgs)
+         | ([])
+
+  Vdefg : REC LB Vdef Vdefs RB (CH.Rec (Vdef :: Vdefs))
+        | Vdef (CH.Nonrec Vdef)
+
+  Vdefs : SEMI Vdef Vdefs (Vdef :: Vdefs)
+        | ([])
+
+  Vdef : Qvar DCOLON Ty EQ Exp (CH.Vdef (Qvar, Ty, Exp))
+
+  AExp : Qvar (CH.Var Qvar)
+       | Qdcon (CH.Dcon Qdcon)
+       | Lit (CH.Lit Lit)
+       | LP Exp RP (Exp)
+
+  Exp : FExp (FExp)
+      | SLASH Binder Binders TO Exp (List.foldr (Binder :: Binders, Exp, fn (b, e) => CH.Lam (b, e)))
+      | LET Vdefg IN Exp (CH.Let (Vdefg, Exp))
+      | CASE Aty Exp OF VBind LB Alt Alts RB (CH.Case (Exp, VBind, Aty, Alt :: Alts))
+      | CAST AExp Aty (CH.Cast (AExp, Aty))
+      | NOTE STRING Exp (CH.Note (STRING, Exp))
+      | EXTERNAL Callconv STRING Aty (CH.External ("", Callconv, STRING, Aty))
+      | DYNEXTERNAL Callconv Aty (CH.External ("", CH.Dynamic, "", Aty))
+      | LABEL STRING (CH.External ("", CH.Label, STRING, CHP.tAddrzh))
+
+  Callconv : LNAME 
+    (if LNAME = "ccall" then CH.CCall
+     else if LNAME = "prim" then CH.Prim
+     else if LNAME = "stdcall" then CH.StdCall
+     else (warn ("unknown calling convention " ^ LNAME); CH.CCall))
+
+  FExp : FExp AExp (CH.App (FExp, AExp))
+       | FExp AT Aty (CH.Appt (FExp, Aty))
+       | AExp (AExp)
+
+  Alts : SEMI Alt Alts (Alt :: Alts)
+       | ([])
+
+  Alt : Qdcon ATBinds VBinds TO Exp (CH.Acon (Qdcon, ATBinds, VBinds, Exp))
+      | Lit TO Exp (CH.Alit (Lit, Exp))
+      | DEFAULT TO Exp (CH.Adefault Exp)
+
+  Binders : Binder Binders (Binder :: Binders)
+          | ([])
+
+  Binder : AT TBind (CH.Tb TBind)
+         | VBind (CH.Vb VBind)
+
+  ATBinds : AT TBind ATBinds (TBind :: ATBinds)
+          | ([])
+ 
+  TBinds : TBind TBinds (TBind :: TBinds)
+         | ([])
+
+  TBind : Tyvar ((Tyvar, CH.Klifted))
+        | LP Tyvar DCOLON Kind RP ((Tyvar, Kind))
+
+  VBinds : VBind VBinds (VBind :: VBinds)
+         | ([])
+
+  VBind : LP Var DCOLON Ty RP ((Var, Ty))
+
+  Lit : LP Literal DCOLON Ty RP (CH.Literal (Literal, Ty))
+
+  Literal : Sign NUM (CH.Lint (Sign NUM))
+          | Sign NUM PERCENT NUM (CH.Lrational (Rat.rat (Sign NUM1, NUM2)))
+          | CHAR (CH.Lchar CHAR)
+          | STRING (CH.Lstring STRING)
+   
+  Sign : MINUS (IntInf.~)
+       | (fn x => x)
+
+  BAtys : BAty BAtys (BAty :: BAtys)
+        | ([])
+
+  BAty : BANG Aty ((Aty, true))
+       | Aty ((Aty, false))
+
+  Aty : Tyvar (CH.Tvar Tyvar)
+      | Qtycon (CH.Tcon Qtycon)
+      | LP Ty RP (Ty)
+
+  Bty : Fty (Fty)
+      | TRANS Aty Aty (CH.TransCoercion (Aty1, Aty2))
+      | SYM Aty (CH.SymCoercion Aty)
+      | UNSAFE Aty Aty (CH.UnsafeCoercion (Aty1, Aty2))
+      | LEFT Aty (CH.LeftCoercion Aty)
+      | RIGHT Aty (CH.RightCoercion Aty)
+      | INST Aty Aty (CH.InstCoercion (Aty1, Aty2))
+      | NTH NUM Aty (CH.NthCoercion (IntInf.toInt NUM, Aty))
+
+  Fty : Fty Aty (CH.Tapp (Fty, Aty))
+      | Aty (Aty)
+
+  Ty : Bty (Bty)
+     | FORALL TBinds DOT Ty (List.foldr (TBinds, Ty, fn (tb, t) => CH.Tforall (tb, t)))
+     | Bty TO Ty (CHU.tArrow (Bty, Ty))
+
+  Akind : TIMES (CH.Klifted)
+        | HASH (CH.Kunlifted)
+        | QMARK (CH.Kopen)
+        | Bty KEQ Bty (CH.Keq (Bty, Bty))
+        | LP Kind RP (Kind)
+
+  Kind : Akind (Akind)
+       | Akind TO Akind (CH.Karrow (Akind, Akind))
+  
+  Mident : Pname COLON UNAME 
+    (let val (m, base) = CHU.splitModuleName UNAME
+     in (CH.M (CH.P Pname, m, base))
+     end)
+
+  Tycon : UNAME (UNAME)
+        | Z7EU (Z7EU)
+        | ZT (ZT)
+
+  Qtycon : Qualified Tycon (Qualified Tycon)
+
+  Tyvar : Lname (Lname)
+
+  Dcon : UNAME (UNAME)
+
+  Qdcon : Qualified Dcon (Qualified Dcon)
+
+  Var : Lname (Lname)
+
+  Qvar : Var ((NONE, Var))
+       | Qualified Var (Qualified Var)
+
+  Qualified : Mident DOT (fn x => (SOME Mident, x))
+
+  Pname : UNAME (UNAME)
+        | Lname (Lname)
+
+  Lname : LNAME (LNAME)
+        | Z7EU (Z7EU)
+        | ZT (ZT)
+
