@@ -2483,7 +2483,7 @@ struct
       | IndexInt8OffAddrzh => extern (xt ()) "pLsrPrimGHCIndexInt8OffAddrzh"
       | IndexWordOffAddrzh => extern (xt ()) "pLsrPrimGHCIndexUIntOffAddrzh"
       | IndexIntOffAddrzh => extern (xt ()) "pLsrPrimGHCIndexIntOffAddrzh"
-      | IndexWideCharOffAddrzh => extern (xt ()) "pLsrPrimGHCIndexUIntOffAddrzh"
+      | IndexWideCharOffAddrzh => extern (xt ()) "pLsrPrimGHCIndexUInt32OffAddrzh"
       | IndexStablePtrOffAddrzh => extern (xt ()) "pLsrPrimGHCIndexAddrOffAddrzh"
       | IndexDoubleOffAddrzh => extern (xt ()) "pLsrPrimGHCIndexDoubleOffAddrzh"
       | IndexFloatOffAddrzh => extern (xt ()) "pLsrPrimGHCIndexFloatOffAddrzh"
@@ -2499,7 +2499,7 @@ struct
       | ReadInt8OffAddrzh => externWithState (xr ()) ("pLsrPrimGHCIndexInt8OffAddrzh"   , intTyp)
       | ReadWordOffAddrzh => externWithState (xr ()) ("pLsrPrimGHCIndexUIntOffAddrzh"   , wordTyp)
       | ReadIntOffAddrzh => externWithState (xr ()) ("pLsrPrimGHCIndexIntOffAddrzh"    , intTyp)
-      | ReadWideCharOffAddrzh => externWithState (xr ()) ("pLsrPrimGHCIndexUIntOffAddrzh"   , charTyp)
+      | ReadWideCharOffAddrzh => externWithState (xr ()) ("pLsrPrimGHCIndexUInt32OffAddrzh"   , charTyp)
       | ReadStablePtrOffAddrzh => externWithState (xr ()) ("pLsrPrimGHCIndexAddrOffAddrzh"   , stablePtrTyp)
       | ReadDoubleOffAddrzh => externWithState (xr ()) ("pLsrPrimGHCIndexDoubleOffAddrzh" , doubleTyp)
       | ReadFloatOffAddrzh => externWithState (xr ()) ("pLsrPrimGHCIndexFloatOffAddrzh"  , floatTyp)
@@ -2515,7 +2515,7 @@ struct
       | WriteInt8OffAddrzh => externWithStateDo (xw ()) "pLsrPrimGHCWriteInt8OffAddrzh"
       | WriteWordOffAddrzh => externWithStateDo (xw ()) "pLsrPrimGHCWriteUIntOffAddrzh"
       | WriteIntOffAddrzh => externWithStateDo (xw ()) "pLsrPrimGHCWriteIntOffAddrzh"
-      | WriteWideCharOffAddrzh => externWithStateDo (xw ()) "pLsrPrimGHCWriteUIntOffAddrzh"
+      | WriteWideCharOffAddrzh => externWithStateDo (xw ()) "pLsrPrimGHCWriteUInt32OffAddrzh" 
       | WriteStablePtrOffAddrzh => externWithStateDo (xw ()) "pLsrPrimGHCWriteAddrOffAddrzh"
       | WriteDoubleOffAddrzh => externWithStateDo (xw ()) "pLsrPrimGHCWriteDoubleOffAddrzh"
       | WriteFloatOffAddrzh => externWithStateDo (xw ()) "pLsrPrimGHCWriteFloatOffAddrzh"
