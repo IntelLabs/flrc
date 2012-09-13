@@ -29,6 +29,8 @@ struct
 
   type state = { im         : Mil.symbolTableManager
                , cfg        : Config.t
+               , aliases    : VS.t VD.t
+               , codePtrs   : M.variable VD.t ref
                , globals    : M.globals ref
                , prelude    : MS.t ref
                , stableRoot : I.variable
@@ -38,16 +40,39 @@ struct
                , stateful   : VS.t
                , worlds     : VS.t
                }
-  
+
   val noCode  = { possible = VS.empty, exhaustive = false }
   val noCut = M.C { exits = false, targets = LS.empty }
   val exitCut = M.C { exits = true, targets = LS.empty }
+
+  val stateAddCodePtr = 
+   fn (state, fvar, cptr) => 
+      let
+        val { codePtrs, ...} = state
+        val () = codePtrs := VD.insert (!codePtrs, fvar, cptr)
+      in ()
+      end
+
+  val stateGetCodePtr = 
+   fn (state, fvar) => 
+      let
+        val { codePtrs, ...} = state
+      in VD.lookup (!codePtrs, fvar)
+      end
+
+  val stateGetCodesForFunction = 
+   fn (state, fvar) =>
+      (case stateGetCodePtr (state, fvar)
+        of SOME cptr => { possible = VS.singleton cptr, exhaustive = true}
+         | NONE      => noCode)
+
   fun targetCut target = M.C { exits = false, targets = LS.singleton target }
 
   fun localVariableFresh   (im, name, typ) = IM.variableFresh (im, name, M.VI { typ = typ, kind = M.VkLocal })
   fun localVariableFresh0  (im, typ)       = localVariableFresh (im, "", typ)
   fun globalVariableFresh  (im, name, typ) = IM.variableFresh (im, name, M.VI { typ = typ, kind = M.VkGlobal })
   fun globalVariableFresh0 (im, typ)       = globalVariableFresh (im, "", typ)
+  fun globalVariableRelated  (im, v, s, typ) = IM.variableRelated (im, v, s, M.VI { typ = typ, kind = M.VkGlobal })
   fun variableTyp (im, v) = let val M.VI { typ, ... } = IM.variableInfo (im, v) in typ end
   fun variableKind (im, v) = let val M.VI { kind, ... } = IM.variableInfo (im, v) in kind end
   fun setVariableKind (im, v, kind) = 
@@ -57,8 +82,8 @@ struct
         IM.variableSetInfo (im, v, M.VI { typ = typ, kind = kind }) 
       end
 
-  fun newState (im, cfg, globals, prelude, stableRoot, externs, packages, effects, stateful, worlds) : state = 
-      { im = im, cfg = cfg, globals = ref globals, prelude = ref prelude, 
+  fun newState (im, cfg, aliases, codePtrs, globals, prelude, stableRoot, externs, packages, effects, stateful, worlds) : state = 
+      { im = im, cfg = cfg, aliases = aliases, codePtrs = ref codePtrs, globals = ref globals, prelude = ref prelude, 
         stableRoot = stableRoot, externs = ref externs, 
         packages = ref packages, effects = ref effects, stateful = stateful, worlds = worlds }
 
@@ -86,58 +111,108 @@ struct
             end
       end
 
+  fun mkFunctionPtr (state : state, fvar : M.variable, 
+                     ccTyp : M.typ M.callConv, argtyps : M.typ Vector.t, rettyp : M.typ Vector.t) = 
+      let
+        val { im, ... } = state
+        val ftyp = M.TCode { cc = ccTyp, args = argtyps , ress = rettyp } 
+        val cptr = globalVariableRelated (im, fvar, "code", ftyp)
+        val () = stateAddCodePtr (state, fvar, cptr)
+      in cptr
+      end
   (*
    * construct a global function with some code blocks
    *)
-  fun mkFunction (cc, ccTyp) (state : state, name, args, argtyps, rettyp, blks, transfer, fx)
-    = let
+  fun mkFunction cc (state : state, cptr, escapes, recursive, args, rettyp, blks, transfer, fx) =
+      let
         val { im, cfg, globals, effects, ... } = state
         val entry = IM.labelFresh im 
         val blks = MS.finish (entry, Vector.new0 (), blks, transfer) (* close entry *)
         val code = M.GCode (M.F 
                  { fx        = fx
-                 , escapes   = true
-                 , recursive = true
+                 , escapes   = escapes
+                 , recursive = recursive
                  , cc        = cc
-                 , args      = Vector.fromList args
+                 , args      = args
                  , rtyps     = rettyp
                  , body      = M.CB
                              { entry  = entry
                              , blocks = MF.toBlocksD blks
                              }
                   })
-        val ftyp = M.TCode { cc = ccTyp, args = Vector.fromList argtyps , ress = rettyp } 
-        val fvar = globalVariableFresh (im, name, ftyp)
-        val _ = globals := VD.insert (!globals, fvar, code)
-        val _ = effects := VD.insert (!effects, fvar, fx)
-      in
-        fvar
+        val _ = globals := VD.insert (!globals, cptr, code)
+        val _ = effects := VD.insert (!effects, cptr, fx)
+      in ()
       end
 
-  val mkCodeFunction = mkFunction (M.CcCode, M.CcCode)
-
-  val mkThunkFunction 
-    = fn (state, fvar, ftyp, args, rettyp, blks, transfer, fx) =>
+  val mkNamedFunction =
+   fn (state, name, ccCode, ccType, escapes, recursive, args, argtyps, rettyps, blks, transfer, fx) =>
       let
         val { im, ... } = state
-        val name = IM.variableName (im, fvar)
-        val typs = List.map (args, fn x => variableTyp (im, x))
-        val ccCode = M.CcThunk { thunk = fvar, fvs = Vector.fromList args }
-        val ccType = M.CcThunk { thunk = ftyp, fvs = Vector.fromList typs }
-      in mkFunction (ccCode, ccType) (state, name, [], [], Vector.new1 rettyp, blks, transfer, fx)
+        val ftyp = M.TCode { cc = ccType, args = argtyps , ress = rettyps } 
+        val cptr = globalVariableFresh (im, name, ftyp)
+        val () = mkFunction ccCode (state, cptr, escapes, recursive, args, rettyps, blks, transfer, fx)
+      in cptr
       end
 
-  val mkClosureFunction
-    = fn (state, fvar, ftyp, n, args, rettyp, blks, transfer, fx) =>
+  val mkMainFunction = 
+   fn (state, name, blks, transfer, fx) => 
+      mkNamedFunction (state, name, M.CcCode, M.CcCode, true, false,
+                       Vector.new0 (), Vector.new0 (), Vector.new0 (), blks, transfer, fx)
+
+  val mkThunkFunction0 =
+   fn (state, fvar, ftyp, fvtyps, rettyp) =>
+      let
+        val ccType = M.CcThunk { thunk = ftyp, fvs = fvtyps }
+        val rettyp = Vector.new1 rettyp
+        val cptr = mkFunctionPtr (state, fvar, ccType, Vector.new0 (), rettyp)
+      in cptr
+      end
+
+  val mkThunkFunction1 =
+   fn (state, fvar, cptr, escapes, recursive, fvs, rettyp, blks, transfer, fx) =>
+      let
+        val ccCode = M.CcThunk { thunk = fvar, fvs = fvs }
+        val rettyp = Vector.new1 rettyp
+        val () = mkFunction ccCode (state, cptr, escapes, recursive, Vector.new0 (), rettyp, blks, transfer, fx)
+      in ()
+      end
+
+  val mkThunkFunction =
+   fn (state, fvar, ftyp, escapes, recursive, fvs, rettyp, blks, transfer, fx) =>
       let
         val { im, ... } = state
-        val name = IM.variableName (im, fvar)
-        val typs = List.map (args, fn x => variableTyp (im, x))
-        val (fvs, args) = List.splitAt (args, n)
-        val (fts, typs) = List.splitAt (typs, n)
-        val ccCode = M.CcClosure { cls = fvar, fvs = Vector.fromList fvs }
-        val ccType = M.CcClosure { cls = ftyp, fvs = Vector.fromList fts }
-      in mkFunction (ccCode, ccType) (state, name, args, typs, rettyp, blks, transfer, fx)
+        val fvtyps = Vector.map (fvs, fn x => variableTyp (im, x))
+        val cptr = mkThunkFunction0 (state, fvar, ftyp, fvtyps, rettyp)
+        val () = mkThunkFunction1 (state, fvar, cptr, escapes, recursive, fvs, rettyp, blks, transfer, fx)
+      in cptr
+      end
+
+  val mkClosureFunction0 = 
+   fn (state, fvar, ftyp, fvtyps, argtyps, rettyp) =>
+      let
+        val ccType = M.CcClosure { cls = ftyp, fvs = fvtyps }
+        val cptr = mkFunctionPtr (state, fvar, ccType, argtyps, rettyp)
+      in cptr
+      end
+
+  val mkClosureFunction1 = 
+   fn (state, fvar, cptr, escapes, recursive, fvs, args, rettyp, blks, transfer, fx) =>
+      let
+        val ccCode = M.CcClosure { cls = fvar, fvs = fvs }
+        val () = mkFunction ccCode (state, cptr, escapes, recursive, args, rettyp, blks, transfer, fx)
+      in () 
+      end
+
+  val mkClosureFunction =
+   fn (state, fvar, ftyp, escapes, recursive, fvs, args, rettyp, blks, transfer, fx) =>
+      let
+        val { im, ... } = state
+        val fvtyps = Vector.map (fvs, fn x => variableTyp (im, x))
+        val argtyps = Vector.map (args, fn x => variableTyp (im, x))
+        val cptr = mkClosureFunction0 (state, fvar, ftyp, fvtyps, argtyps, rettyp)
+        val () = mkClosureFunction1 (state, fvar, cptr, escapes, recursive, fvs, args, rettyp, blks, transfer, fx)
+      in cptr
       end
 
   (* Make a non-recursive thunk that evaluates (fvar args), ignores the result(s),
@@ -154,12 +229,13 @@ struct
         val gtyp = M.TThunk M.TRef
         val gvar = localVariableFresh0 (im, gtyp)
         val params = List.map (args, fn v => IM.variableClone (im, v))
-        val blk = MU.call (im, cfg, M.CClosure { cls = fvar', code = noCode },
+        val code = stateGetCodesForFunction (state, fvar)
+        val blk = MU.call (im, cfg, M.CClosure { cls = fvar', code = code },
                             Vector.fromListMap (params, M.SVariable), exitCut, fx, rVs)
         val transfer = M.TReturn (Vector.new1 (M.SConstant (M.CRef 0)))
         val params = fvar' :: params
         val args = fvar :: args
-        val afun = mkThunkFunction (state, gvar, gtyp, params, M.TRef, blk, transfer, fx)
+        val afun = mkThunkFunction (state, gvar, gtyp, true, false, Vector.fromList params, M.TRef, blk, transfer, fx)
         val typs = List.map (args, fn v => variableTyp (im, v))
         val fks = List.map (typs, fn t => FK.fromTyp (cfg, t))
       in
@@ -169,8 +245,9 @@ struct
       end
 
   (* generate code block that either forces a thunk into a value, or just skip *)
-  fun kmThunk (im, cfg, rvar, fvar, fx) 
-    = let
+  fun kmThunk (state, rvar, fvar, fx) =
+      let
+        val { im, cfg, ...} = state
         val ftyp = variableTyp (im, fvar)
       in
         case ftyp
@@ -178,7 +255,8 @@ struct
             let
               (* val _ = print ("kmThunk fvar = " ^ * Layout.toString(CF.layoutVariable(cf, fvar)) ^ " \n") *)
               val fk   = FK.fromTyp (cfg, ftyp)  
-              val eval = M.EThunk { thunk = fvar, code = noCode }
+              val code = stateGetCodesForFunction (state, fvar)
+              val eval = M.EThunk { thunk = fvar, code = code }
               val blk  = MU.eval (im, cfg, fk, eval, exitCut, fx, Vector.sub (rvar, 0))
             in blk
             end

@@ -28,9 +28,9 @@ struct
     val binder       : ANormStrict.vDef -> ANormStrict.var * ANormStrict.ty = 
      fn vd => 
         (case vd
-          of AS.Vfun (v, ty, _, _, _) => (v, ty)
-           | AS.Vthk (v, ty, _, _)    => (v, ty))
-
+          of AS.Vfun {name, ty, ...} => (name, ty)
+           | AS.Vthk {name, ty, ...} => (name, ty))
+          
     val binders      : ANormStrict.vDef List.t -> (ANormStrict.var * ANormStrict.ty) List.t = 
      fn vds => List.map (vds, binder)
 

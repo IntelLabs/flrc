@@ -1,4 +1,7 @@
 (* COPYRIGHT_NOTICE_1 *)
+(* 
+ * Definition of primitive types from GHC.Prim.
+ *)
 signature GHC_PRIM_TYPE = 
 sig
   datatype 'a primTy = Bool | Int | Int64 | Word | Word64 | Char | Addr | Double | 
@@ -194,7 +197,7 @@ struct
       |  MVar (a, b)            => L.seq [L.str "#mvar ", layoutTy a, layoutTy b]
       |  MutVar (a, b)          => L.seq [L.str "#mutvar ", layoutTy a, layoutTy b]
       |  ThreadId               => L.str "#threadId"
-      |  EqTy (a, b, c)         => L.seq [L.str "#eq", layoutTy a, layoutTy b, layoutTy c]
+      |  EqTy (a, b, c)         => L.seq [L.str "#eq ", layoutTy a, layoutTy b, layoutTy c]
       |  Tuple tys              => L.seq [L.str "#tuple ", L.sequence ("(", ")", ",") (List.map (tys, layoutTy))]
 
 end 

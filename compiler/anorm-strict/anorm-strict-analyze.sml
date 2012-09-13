@@ -127,17 +127,17 @@ struct
 
           val () = 
               case vd
-               of AS.Vfun (v, t, fvs, binds, e) => 
+               of AS.Vfun {name, ty, escapes, recursive, fvs, args, body} => 
                   let
                     val () = analyzeVariables (state, env, fvs)
-                    val env = analyzeBinders (state, env, binds)
-                    val e = analyzeExp (state, env, e)
+                    val env = analyzeBinders (state, env, args)
+                    val () = analyzeExp (state, env, body)
                   in ()
                   end
-                | AS.Vthk (v, t, fvs, e) => 
+                | AS.Vthk {name, ty, escapes, recursive, fvs, body} => 
                   let
                     val () = analyzeVariables (state, env, fvs)
-                    val () = analyzeExp (state, env, e)
+                    val () = analyzeExp (state, env, body)
                   in ()
                   end
         in ()

@@ -42,12 +42,12 @@ struct
   fun escape s =
       let
         fun enc c =
-          if c < 32 orelse c > 127 orelse c = 34 orelse c = 39 orelse c = 72
+          if c < 32 orelse c >= 127 orelse c = 34 orelse c = 39 orelse c = 72
             then
               let val hex = "0123456789abcdef"
                   val h1 = String.sub (hex, c div 16)
                   val h2 = String.sub (hex, c mod 16)
-              in implode [#"\\", #"x", h1, h2, #"\\", #"&"]
+              in implode [#"\\", #"x", h1, h2]
               end
             else String.fromChar (Char.chr c)
       in

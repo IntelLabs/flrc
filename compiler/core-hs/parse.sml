@@ -18,6 +18,13 @@ struct
   fun failMsg (f, m) = Fail.fail (passname, f, m)
   val desc = {disableable = false,
               describe = fn () => Layout.str "Parse GHC Core files (.hcr)" }
+
+  val (noMainWrapperF, noMainWrapper) =
+      Config.Feature.mk (passname ^ ":noMainWrapper", "do not generate the usual GHC main wrapper")
+
+  val (noYaccF, noYacc) =
+      Config.Feature.mk (passname ^ ":noYacc", "do not use parser generated from ML-Yacc")
+
   structure CharParser = CharParserF (structure Parser = FileParser)
   structure Chat = ChatF (struct 
                             type env = Config.t
@@ -535,13 +542,55 @@ struct
       atEnd                     >>
       return (C.Module (mName, tdefs, vdefGroups))))))
 
+  (* routines for ML-Yacc parser *)
+  structure CoreHsLrVals =
+    CoreHsYaccLrValsFun(structure Token = LrParser.Token)
+
+  structure CoreHsLex =
+    CoreHsLexFun(structure Tokens = CoreHsLrVals.Tokens)
+
+  structure CoreHsYacc =
+    Join(structure LrParser = LrParser
+	 structure ParserData = CoreHsLrVals.ParserData
+	 structure Lex = CoreHsLex)
+
+  fun yaccParse (filename, strm, strmWithPos) = 
+      let val strmRef = ref strm
+          val lexer = CoreHsYacc.makeLexer (fn _ => 
+                let 
+                  val s = TextIO.StreamIO.inputLine (!strmRef)
+                in case s 
+                     of SOME (s, strm) => (s before strmRef := strm)
+                      | NONE => ""
+                end)
+          fun invoke lexstream =
+              let fun print_error (s,i:int,_) =
+                      failMsg ("yaccParse:", filename ^ " line " ^ (Int.toString i) ^ ", " ^ s ^ "\n")
+               in CoreHsYacc.parse (15, lexstream, print_error, ())
+              end
+
+	  val dummyEOF = CoreHsLrVals.Tokens.EOF(0,0)
+	  fun loop lexer =
+	      let val (result,lexer) = invoke lexer
+		  val (nextToken,lexer) = CoreHsYacc.Stream.get lexer
+	          (* if CoreHsYacc.sameToken(nextToken,dummyEOF) *)
+              in
+	        case result
+	          of SOME r => Success (strmWithPos, r)
+	           | NONE   => Failure
+	      end
+       in loop lexer
+      end
+
   fun parseFile (f : string, config:Config.t) : C.t =
       let
         val _ = clearCache ()
         val strm = TextIO.openIn f
         val instrm = TextIO.getInstream strm
-        val instrm = InStreamWithPos.mk instrm
-        val result = parse (coreModule, instrm)
+        val instrmWithPos = InStreamWithPos.mk instrm
+        val result = if noYacc config  
+                       then parse (coreModule, instrmWithPos)
+                       else yaccParse (f, instrm, instrmWithPos)
         val _ = clearCache ()
         val () = TextIO.closeIn strm
       in
@@ -1011,9 +1060,6 @@ struct
         List.map (sorted, toDefg)
       end
 
-  val (noMainWrapperF, noMainWrapper) =
-      Config.Feature.mk (passname ^ ":noMainWrapper", "do not generate the usual GHC main wrapper")
-
   fun readModule ((), pd, basename) =
       let
         val config = PassData.getConfig pd
@@ -1166,7 +1212,7 @@ struct
                      mustBeAfter = [],
                      stats       = []}
 
-  val associates = {controls = [], debugs = [Debug.debugPassD], features = [noMainWrapperF], subPasses = []}
+  val associates = {controls = [], debugs = [Debug.debugPassD], features = [noYaccF, noMainWrapperF], subPasses = []}
 
   val pass = Pass.mkFilePass (description, associates, readModule)
 

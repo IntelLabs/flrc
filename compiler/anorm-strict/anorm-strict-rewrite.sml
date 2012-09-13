@@ -229,20 +229,22 @@ struct
           val doIt = 
            fn (state, env, vd) => 
               (case vd
-                of AS.Vfun (v, t, fvs, binds, e) => 
+                of AS.Vfun {name, ty, escapes, recursive, fvs, args, body} => 
                   let
-                    val t = doTy (state, env, t)
+                    val ty = doTy (state, env, ty)
                     val fvs = doVars (state, env, fvs)
-                    val (env, binds) = bindVars2 (state, env, binds)
-                    val e = doExp (state, env, e)
-                  in AS.Vfun (v, t, fvs, binds, e)
+                    val (env, args) = bindVars2 (state, env, args)
+                    val body = doExp (state, env, body)
+                  in AS.Vfun {name = name, ty = ty, escapes = escapes, recursive = recursive, 
+                              fvs = fvs, args = args, body = body}
                   end
-                | AS.Vthk (v, t, fvs, e) => 
+                | AS.Vthk {name, ty, escapes, recursive, fvs, body} => 
                   let
-                    val t = doTy (state, env, t)
+                    val ty = doTy (state, env, ty)
                     val fvs = doVars (state, env, fvs)
-                    val e = doExp (state, env, e)
-                  in AS.Vthk (v, t, fvs, e)
+                    val body = doExp (state, env, body)
+                  in AS.Vthk {name = name, ty = ty, escapes = escapes, recursive = recursive,
+                              fvs = fvs, body = body}
                   end)
         in callClientCode (clientVDef, doIt, state, env, vd)
         end
@@ -253,15 +255,19 @@ struct
           val bindVDef = 
            fn (vd, env) => 
               (case vd
-                of AS.Vfun (v, t, fvs, binds, e) => 
+                of AS.Vfun {name, ty, fvs, escapes, recursive, args, body} => 
                    let
-                     val (env, v) = bindVar (state, env, v)
-                   in (AS.Vfun (v, t, fvs, binds, e), env)
+                     val (env, name) = bindVar (state, env, name)
+                   in (AS.Vfun {name = name, ty = ty, escapes = escapes, recursive = recursive, 
+                                fvs = fvs, args = args, body = body}
+                      , env)
                    end
-                 | AS.Vthk (v, t, fvs, e)    => 
+                 | AS.Vthk {name, ty, escapes, recursive, fvs, body}    => 
                    let
-                     val (env, v) = bindVar (state, env, v)
-                   in (AS.Vthk (v, t, fvs, e), env)
+                     val (env, name) = bindVar (state, env, name)
+                   in (AS.Vthk {name = name, ty = ty, escapes = escapes, recursive = recursive, 
+                                fvs = fvs, body = body}
+                      , env)
                    end)
 
           val bindVDefs = 
