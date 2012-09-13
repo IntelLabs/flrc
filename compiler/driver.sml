@@ -319,7 +319,14 @@ struct
                   val () = SD.foreach (passes, doOne)
                 in ()
                 end
-              | _ => setStatPost (usage, s, true)
+              | _ => if s = "all" then 
+                       let
+                         fun doOne (_, pd) = PassData.setStatPost (pd, true)
+                         val () = SD.foreach (passes, doOne)
+                       in ()
+                       end
+                     else 
+                       setStatPost (usage, s, true)
                      
         fun doVectorArg (usage, r, s) =
             case String.sub (s, 0)
@@ -410,7 +417,7 @@ struct
             let
               val add = fn s => report := SS.insert (!report, s)
             in
-              if s = "*" then 
+              if s = "*" orelse s = "all" then 
                 List.foreach (SD.toList passes, fn (s, _) => add s)
               else
                 add s
