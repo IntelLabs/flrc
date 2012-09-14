@@ -1919,8 +1919,12 @@ struct
       end
 
   val (backendYieldsF, backendYields) =
-      Config.Feature.mk ("PPiler:use-backend-yields",
-                         "Rely on backend compiler for yields")
+      Config.Feature.mk ("IFLC:use-backend-yields",
+                         "Backend compiler inserts yields")
+
+  val (iflcYieldsF, iflcYields) =
+      Config.Feature.mk ("IFLC:use-iflc-yields",
+                         "IFLC inserts yields")
 
   val isBackEdge = 
    fn (state, env, e) => LLS.member (getBackEdges env, e)
@@ -1928,7 +1932,7 @@ struct
   fun genGoto (state, env, cb, src, M.T {block, arguments}) =
       let
         val pre = 
-            if not (backendYields (getConfig env)) andalso isBackEdge (state, env, (src, block)) then
+            if iflcYields (getConfig env) andalso isBackEdge (state, env, (src, block)) then
               Pil.S.yield
             else
               Pil.S.empty
@@ -2514,7 +2518,7 @@ struct
                  end
                | NONE    => [])
         val decs = decs @ outDecs
-        val ls0 = if backendYields (getConfig env) then [] else [(Pil.yieldDec, NONE)]
+        val ls0 = if iflcYields (getConfig env) then [(Pil.yieldDec, NONE)] else []
         val (ls, b) = genCB (state, env, body)
         val (ls2, b) =
             case rewriteThunks (env, cc)
@@ -3054,6 +3058,7 @@ struct
        instrumentFunctionsF,
        assertSmallIntsF,
        backendYieldsF,
+       iflcYieldsF,
        interceptCutsF,
        lightweightThunksF,
        noGMPF,
