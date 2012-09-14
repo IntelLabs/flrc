@@ -25,6 +25,7 @@ struct
   structure ML = MilLayout
   structure VD = M.VD
   structure VS = M.VS
+  structure LS = M.LS
   structure I = Identifier
   structure MSTM = MU.SymbolTableManager
   structure MS = MilStream
@@ -33,6 +34,7 @@ struct
   structure MCC = MilCodeCopy
   structure MFV = MilFreeVars
   structure MBV = MilBoundVars
+  structure FX = Effect
 
   structure Chat = ChatF (struct 
                             type env = PD.t
@@ -46,8 +48,10 @@ struct
     val stats = []
     val {stats, click = thunkVal} = PD.clicker {stats = stats, passname = passname,
                                                 name = "ThunkVal", desc = "ThunkVals created"}
+    val {stats, click = thunkDefInline} = PD.clicker {stats = stats, passname = passname,
+                                                      name = "ThunkDefInline", desc = "Thunks inlined at def site"}
   end (* structure Click *)
-
+    
   val mkDebug = 
    fn (tag, description) => PD.mkDebug (passname^":"^tag, description)
 
@@ -75,8 +79,15 @@ struct
   val (showLocalStrictnessD, showLocalStrictness) = 
       mkLevelDebug ("show-local-strictness", "Show local strictness", 1)
 
-  val debugs = [debugPassD, showLocalStrictnessD, skipLocalStrictnessD, 
-                checkPhasesD, showThunkValD, showPhasesD, skipThunkValD] 
+  val (skipThunkInlineD, skipThunkInline) =
+      mkDebug ("skip-thunk-inline", "Skip thunk inlining")
+
+  val (showThunkInlineD, showThunkInline) = 
+      mkLevelDebug ("show-thunk-inline", "Show thunk inline analysis", 1)
+
+  val debugs = [checkPhasesD, debugPassD, 
+                showLocalStrictnessD, showThunkInlineD, showThunkValD, showPhasesD, 
+                skipLocalStrictnessD, skipThunkInlineD, skipThunkValD] 
 
   val mkLogFeature = 
    fn (tag, description, level) => PD.mkLogFeature (passname, passname^":"^tag, description, level)
@@ -611,6 +622,552 @@ struct
 
   end (* structure ThunkVal *)
 
+  structure ThunkInline =
+  struct
+ 
+    structure Analyze = 
+    struct
+
+      datatype analysis = A of {pd : PD.t, variables : VS.t, cfg : MCFG.t}
+
+      val getVariables = fn (A {pd, cfg, variables}) => variables
+
+      val getCfg = fn (A {pd, cfg, variables}) => cfg
+
+      val getPd = fn (A {pd, cfg, variables}) => pd
+
+      val getConfig = PD.getConfig o getPd
+
+      type node = MCFG.node
+                    
+      structure NodeDict = MCFG.NodeDict
+
+      structure Info = 
+      struct
+        type info = {com : VS.t, fx : VS.t}
+
+        type infoRef = info ref
+
+        val refMk = fn s => ref s
+
+        val refGet = fn r => !r
+
+        val empty = {com = VS.empty, fx = VS.empty}
+
+        val isSubset = 
+         fn ({com = com1, fx = fx1}, {com = com2, fx = fx2}) => VS.isSubset (com1, com2) andalso
+                                                                VS.isSubset (fx1, fx2)
+
+        val intersection = 
+         fn ({com = com1, fx = fx1}, {com = com2, fx = fx2}) => {com = VS.intersection (com1, com2),
+                                                                 fx = VS.intersection (fx1, fx2)}
+
+        val union = 
+         fn ({com = com1, fx = fx1}, {com = com2, fx = fx2}) => {com = VS.union (com1, com2),
+                                                                 fx = VS.union (fx1, fx2)}
+
+        val difference = 
+         fn ({com = com1, fx = fx1}, {com = com2, fx = fx2}) => {com = VS.difference (com1, com2),
+                                                                 fx = VS.difference (fx1, fx2)}
+
+        val insertCommutative = 
+         fn ({com, fx}, f) => {com = VS.insert (com, f), fx = fx}
+
+        val insertFx = 
+         fn ({com, fx}, f) => {com = com, fx = VS.insert (fx, f)}
+
+        val clearFx = 
+         fn ({com, fx}) => {com = com, fx = VS.empty}
+      end
+        
+      val initial = fn (a, n) => MCFG.compareNode (n, MCFG.exit (getCfg a)) = EQUAL
+
+      val initialVal = fn a => Info.empty
+
+      val bottom = fn a => {com = getVariables a, fx = getVariables a}
+
+      val components = fn a => List.rev (MCFG.scc (getCfg a))
+
+      val successors = fn (a, n) => MCFG.pred (getCfg a, n)
+
+      val fxCommutesWithAll = FX.union (FX.HeapGenS, FX.InitGenS)
+      val fxCommutesWithPartial = FX.fromList [FX.Partial, FX.HeapGen, FX.HeapRead, FX.HeapWrite,
+                                               FX.InitGen, FX.InitRead, FX.InitWrite]
+
+      val buildBlockTransferFunction = 
+       fn (a, M.B {parameters, instructions, transfer}) => 
+          let
+            val config = getConfig a
+            val noChange = fn info => info
+            val clearFx = fn info => Info.clearFx info
+            val clearAll = fn into => Info.empty
+            val fxChooseFn = 
+             fn fx => if FX.subset (fx, fxCommutesWithAll) then noChange
+                      else if FX.subset (fx, fxCommutesWithPartial) then clearFx
+                      else clearAll
+            val iFx = Vector.fold (instructions, FX.Total, fn (i, s) => FX.union (s, MU.Instruction.fx (config, i)))
+            val iF = fxChooseFn iFx
+            val tF = 
+                (case transfer
+                  of M.TInterProc {callee = M.IpEval {eval, ...}, fx, ...} => 
+                     let
+                       val f0 = fxChooseFn fx
+                       val f1 = 
+                           if FX.subset (fx, FX.PartialS) then 
+                             fn info => Info.insertCommutative (info, MU.Eval.thunk eval)
+                           else
+                             fn info => Info.insertFx (info, MU.Eval.thunk eval)
+                     in f1 o f0
+                     end
+                   | _                                                     => 
+                     fxChooseFn (MU.Transfer.fx (config, transfer)))
+          in iF o tF
+          end
+
+      val transfer = 
+       fn (a, n) => 
+          let
+            val update = 
+             fn (new, ior) => 
+                let
+                  val changed = not (Info.isSubset (!ior, new))
+                  val () = if changed then ior := Info.intersection (new, !ior) else ()
+                in changed
+                end
+            val t = 
+                case MCFG.nodeGetBlock (getCfg a, n)
+                 of NONE   => update
+                  | SOME b => 
+                    let
+                      val f = buildBlockTransferFunction (a, b)
+                    in 
+                      fn (ii, ior) => update (f ii, ior)
+                    end
+          in t
+          end
+            
+      structure Analysis = DataFlowF(struct
+                                      type analysis = analysis
+                                      type node = node
+                                      structure NodeDict = NodeDict
+                                      structure Info = Info
+                                      val initial = initial
+                                      val initialVal = initialVal
+                                      val bottom = bottom
+                                      val components = components
+                                      val successors = successors
+                                      val transfer = transfer
+                                      end
+                                    )
+
+      val analyzeCode = 
+       fn (pd, si, M.F {body, ...}) =>
+          let
+            val config = PD.getConfig pd
+            val variables = MFV.codeBody (config, body)
+            val variables = VS.union (variables, MBV.codeBody (config, body))
+            val cfg = MCFG.build (config, si, body)
+            val result = Analysis.analyze (A {pd = pd, cfg = cfg, variables = variables})
+            val M.CB {blocks, ...} = body
+            val getInfo = 
+             fn (l, b) => 
+                let
+                  val node = MCFG.labelGetNode (cfg, l)
+                  val {iInfo, oInfo} = result node
+                  val {com, fx} = oInfo
+                in VS.union (com, fx)
+                end
+            val results = LD.map (blocks, getInfo)
+          in results
+          end
+
+      val analyzeGlobals = 
+       fn (pd, si, globals) => 
+          let
+            val analyzeGlobal = 
+             fn (v, g, d) => 
+                (case g
+                  of M.GCode code => LD.union (analyzeCode (pd, si, code), d, 
+                                               fn _ => fail ("analyzeGlobals", "dup label"))
+                   | _            => d)
+          in VD.fold (globals, LD.empty, analyzeGlobal)
+          end
+
+      (* This is really too coarse - it only treats an init as strict if
+       * the strictness reaches the top of the block.  *)
+      val summarize = 
+       fn (pd, si, globals, results) => 
+          let
+            val config = PD.getConfig pd
+            val doGlobal = 
+             fn (v, g, strictAtInit) => 
+                (case g
+                  of M.GCode (M.F {body, ...}) =>
+                     let
+                       val M.CB {blocks, ...} = body
+                       val getInfo = 
+                        fn (l, b, strictAtInit) => 
+                           let
+                             val strictAtBlock = valOf (LD.lookup (results, l))
+                             val dfdInBlock = MBV.block (config, l, b)
+                             val strictAtInit = VS.union (strictAtInit, VS.intersection (strictAtBlock, dfdInBlock))
+                           in strictAtInit
+                           end
+                       val strictAtInit = LD.fold (blocks, strictAtInit, getInfo)
+                     in strictAtInit
+                     end
+                   | _            => strictAtInit)
+          in VD.fold (globals, VS.empty, doGlobal)
+          end
+
+      val show = 
+       fn (pd, si, p, results, strictAtInit) =>
+          if showThunkInline pd then
+            let
+              val config = PD.getConfig pd
+              val var = fn v => L.seq[ML.layoutVariable (config, si, v),
+                                      if VS.member (strictAtInit, v) then L.str "!" else L.empty]
+              val block =
+               fn l => VS.layout (valOf (LD.lookup (results, l)), var)
+              val helpers = {varBind = NONE, block = SOME block, edge = NONE, cb = NONE}
+              val l = ML.General.layout (config, helpers, p)
+              val () = LU.printLayout l
+            in ()
+            end
+          else
+            ()
+
+      val program = 
+       fn (pd, p as M.P {includes, externs, globals, symbolTable, entry}) =>
+          let
+            val si = I.SymbolInfo.SiTable symbolTable
+            val results = analyzeGlobals (pd, si, globals)
+            val strictAtInit = summarize (pd, si, globals, results)
+            val () = show (pd, si, p, results, strictAtInit)
+          in strictAtInit
+          end
+
+    end (* structure Analyze *)
+
+    type codeInfo = {exits : bool, conts : LS.t, rtyps : M.typ Vector.t, fx : M.effects}
+
+    datatype state = S of {codeInfo : codeInfo VD.t ref,    (* Code information *)
+                           codeMap  : M.variable VD.t ref,  (* mapping from old cptrs to new cptrs *)
+                           stm      : M.symbolTableManager
+                          }
+
+    datatype env = E of {current : M.variable, pd : PD.t, strict : VS.t}
+
+    val ((_, stateGetCodeInfo),
+         (_, stateGetStm),
+         (_, stateGetCodeMap)) = 
+        let
+          val r2t = fn S {codeInfo, stm, codeMap} => (codeInfo, stm, codeMap)
+          val t2r = fn (codeInfo, stm, codeMap) => S {codeInfo = codeInfo, stm = stm, codeMap = codeMap}
+        in FunctionalUpdate.mk3 (r2t, t2r)
+        end
+
+    val mkState = fn stm => S {codeInfo = ref VD.empty, stm = stm, codeMap = ref VD.empty}
+
+    val ((envSetPd, envGetPd),
+         (envSetCurrent, envGetCurrent),
+         (envSetStrict, envGetStrict)
+        ) = 
+        let
+          val r2t = fn E {pd, current, strict} => (pd, current, strict)
+          val t2r = fn (pd, current, strict) => E {pd = pd, current = current, strict = strict}
+        in FunctionalUpdate.mk3 (r2t, t2r)
+        end
+
+    val mkEnv = fn (pd, current, strict) => E {current = current, pd = pd, strict = strict}
+
+    val envGetConfig = PD.getConfig o envGetPd
+
+    structure MSU = MilStreamUtilsF(struct
+                                     type state = state
+                                     type env = env
+                                     val getStm = stateGetStm
+                                     val getConfig = envGetConfig
+                                    end)
+
+    val getPd = 
+     fn (state, env) => envGetPd env
+
+    val getConfig = 
+     fn (state, env) => envGetConfig env
+
+    val getStm = 
+     fn (state, env) => stateGetStm state
+
+    val getSi = 
+     fn (state, env) => I.SymbolInfo.SiManager (getStm (state, env))
+
+    val cloneVariable = 
+     fn (state, env, v) => MSTM.variableClone (getStm (state, env), v)
+
+    val localVariableFresh = 
+     fn (state, env, s, t) => MSTM.variableFresh (getStm (state, env), s, t, M.VkLocal)
+
+    val localVariableRelated = 
+     fn (state, env, v, t) => MSTM.variableRelated (getStm (state, env), v, "stcl", t, M.VkLocal)
+
+    val globalVariableRelated = 
+     fn (state, env, v, t) => MSTM.variableRelated (getStm (state, env), v, "stcl", t, M.VkGlobal)
+
+    val variableTyp = 
+     fn (state, env, v) => MSTM.variableTyp (getStm (state, env), v)
+
+    val addStencilVariable = 
+     fn (state, env, f, fStencil) => 
+        let
+          val codeMapR = stateGetCodeMap state
+          val () = codeMapR := VD.insert (!codeMapR, f, fStencil)
+        in ()
+        end
+
+    val getStencilVariable = 
+     fn (state, env, f) => 
+        let
+          val codeMapR = stateGetCodeMap state
+        in case VD.lookup (!codeMapR, f)
+            of SOME i => i
+             | NONE   => fail ("getStencilVariable", "No stencil for code")
+        end
+
+    val hasStencil =
+     fn (state, env, f) => 
+        let
+          val codeMapR = stateGetCodeMap state
+        in isSome (VD.lookup (!codeMapR, f))
+        end
+        
+    val getCodeInfo = 
+     fn (state, env, f) =>
+        let
+          val codeInfoR = stateGetCodeInfo state
+        in case VD.lookup (!codeInfoR, f)
+            of SOME i => i
+             | NONE   => fail ("getCodeInfo", "Bad function pointer")
+        end
+
+    val setCodeInfo = 
+     fn (state, env, f, i) =>
+        let
+          val codeInfoR = stateGetCodeInfo state
+          val () = codeInfoR := VD.insert (!codeInfoR, f, i)
+        in ()
+        end
+
+    val getCurrentCodeInfo = 
+     fn (state, env) => getCodeInfo (state, env, envGetCurrent env)
+
+    (* The simple algorithm is as follows:
+     *   Identify the thunks which are strict at their init site.
+     *   Allocate new code pointers for each thunk code which was 
+     *     identified in step 1 and which is a valid candidate
+     *   Optimize the program
+     *   Make new code copies of each candidate
+     *   A valid candidate is a function which does not mention
+     *    the thunk "self" variable in its body.
+     *     
+     *)
+
+    val isCandidate =
+     fn (state, env, code) =>
+        (case code
+          of M.F {fx, escapes, recursive, cc = M.CcThunk {thunk, fvs}, args, rtyps, body} =>
+             not (VS.member(MFV.codeBody (getConfig (state, env), body), thunk))
+           | _ => false)
+
+    val stencil : state * env * M.variable * M.global -> (M.variable * M.global) List.t =
+     fn (state, env, f, g) => 
+        (case g
+          of M.GCode code => 
+             if isCandidate (state, env, code) then
+               let
+                 val clone = fn v => cloneVariable (state, env, v)
+                 val M.F {fx, escapes, recursive, cc, args, rtyps, body} = code
+                 val {thunk, fvs} = valOf (MU.CallConv.Dec.ccThunk cc)
+                 val argTs = Vector.map (fvs, fn v => variableTyp (state, env, v))
+                 val stencilT = M.TCode {cc = M.CcCode, args = argTs, ress = rtyps}
+                 val fStencil = globalVariableRelated (state, env, f, stencilT)
+                 val gStencil = 
+                     let
+                       val cc = M.CcCode
+                       val args = fvs
+                       val c = M.F {fx = fx, escapes = false, recursive = recursive, cc = cc,
+                                    args = args, rtyps = rtyps, body = body}
+                     in M.GCode c
+                     end
+                 val g = 
+                     let
+                       val fvs = Vector.map (fvs, clone)
+                       val cc = M.CcThunk {thunk = thunk, fvs = fvs}
+                       val body = 
+                           let
+                             val call = M.CCode {ptr = fStencil, code = {possible = VS.singleton fStencil, 
+                                                                         exhaustive = true}}
+                             val args = Vector.map (fvs, M.SVariable)
+                             val callee = M.IpCall {call = call, args = args}
+                             val ret = M.RTail {exits = FX.contains (fx, FX.Fails)}
+                             val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                             val entry = MSTM.labelFresh (getStm (state, env))
+                             val block = M.B {parameters = Vector.new0 (),
+                                              instructions = Vector.new0 (), 
+                                              transfer = t}
+                           in M.CB {entry = entry, blocks = LD.singleton (entry, block)}
+                           end
+                       val c = M.F {fx = fx, escapes = escapes, recursive = recursive, 
+                                    cc = cc, args = args, rtyps = rtyps, body = body}
+                     in M.GCode c
+                     end
+                 val () = addStencilVariable (state, env, f, fStencil)
+                 val ci as {exits, conts, rtyps, fx} = getCodeInfo (state, env, f)
+                 val () = setCodeInfo (state, env, f, {exits = exits, conts = LS.empty, rtyps = rtyps, fx = fx})
+                 val () = setCodeInfo (state, env, fStencil, ci)
+               in [(f, g), (fStencil, gStencil)]
+               end
+             else
+               [(f, g)]
+           | _ => [(f, g)])
+
+    val generateStencils = 
+     fn (state, env, globals) => 
+        let
+          val globals = VD.toList globals
+          val globals = List.concatMap (globals, fn (f, g) => stencil (state, env, f, g))
+          val globals = VD.fromList globals
+        in globals
+        end
+
+    val makeStrict = 
+     fn (state, env, dests, typ, thunk, code, fvs) => 
+        let
+          val (rets, call) = 
+              let
+                val fStencil = getStencilVariable (state, env, code)
+                val {exits = calleeExits, rtyps,     conts = _, fx} = getCodeInfo (state, env, fStencil)
+                val {exits = callerExits, rtyps = _, conts = callerTargets, fx = _} = getCurrentCodeInfo (state, env)
+                val call = M.CCode {ptr = fStencil, 
+                                    code = {possible = VS.singleton fStencil, 
+                                            exhaustive = true}}
+                val args = Vector.map (fvs, #2)
+                val rets = Vector.map (rtyps, fn t => localVariableFresh (state, env, "ret", t))
+                val exits = calleeExits andalso callerExits
+                val targets = if calleeExits then callerTargets else LS.empty
+                val cuts = M.C {exits = exits, targets = targets}
+                val s = MSU.call (state, env, call, args, cuts, fx, rets)
+                val () = Click.thunkDefInline (getPd (state, env))
+              in (rets, s)
+              end
+          val init = 
+              let
+                val rhs = M.RhsThunkValue {typ = typ, thunk = thunk, ofVal = M.SVariable (Vector.sub (rets, 0))}
+                val s = MS.bindsRhs (dests, rhs)
+              in s
+              end
+        in MS.seq (call, init)
+        end
+
+    val strictAtInit = 
+     fn (state, env, v) => VS.member (envGetStrict env, v)
+
+    val transformInstruction = 
+     fn (state, env, i as M.I {dests, rhs, ...}) => 
+        let
+          val ans = 
+              case rhs
+               of M.RhsThunkInit {typ, thunk, fx, code = SOME codeF, fvs} => 
+                  let
+                    val thunkVar = 
+                        case thunk 
+                         of SOME t => t
+                          | NONE   => Vector.sub (dests, 0)
+                  in if strictAtInit (state, env, thunkVar) 
+                        andalso hasStencil (state, env, codeF) 
+                        andalso not (#exits (getCodeInfo (state, env, codeF))) then
+                       SOME (makeStrict (state, env, dests, typ, thunk, codeF, fvs))
+                     else
+                       NONE
+                  end
+                | _ => NONE
+        in (env, ans)
+        end
+
+    val transformGlobal = 
+     fn (state, env, v, g) => 
+        let
+          val env = 
+              case g
+               of M.GCode _ => envSetCurrent (env, v)
+                | _         => env
+        in (env, NONE)
+        end
+
+    structure Transform = MilTransformF(struct
+                                         type state = state
+                                         type env = env
+                                         val config = envGetConfig
+                                         val indent = 2
+                                         val label = fn (state, env, _, _) => (env, NONE)
+                                         val instr = transformInstruction
+                                         val transfer = fn (state, env, _) => (env, NONE)
+                                         val global = transformGlobal
+                                       end)
+
+    val collectCodeInfo = 
+     fn (state, env, globals) => 
+        let
+          val doGlobal = 
+           fn (v, g) => 
+              (case g
+                of M.GCode code => 
+                   let
+                     val M.F {fx, escapes, recursive, cc, args, rtyps, body} = code
+                     val exits = FX.contains (fx, FX.Fails)
+                     val conts = MU.CodeBody.conts body
+                     val ci = {exits = exits, conts = conts, rtyps = rtyps, fx = fx}
+                   in setCodeInfo (state, env, v, ci)
+                   end
+                 | _ => ())
+        in VD.foreach (globals, doGlobal)
+        end
+
+    (*  We rewrite the program by 
+     *   1) Stenciling each candidate thunk code function.
+     *   2) Rewriting all of the code blocks to turn strict 
+     *      thunk inits into calls to the stenciled functions
+     *)
+    val rewrite = 
+     fn (pd, p, strictAtInit) => 
+        let
+          val M.P {includes, externs, globals, symbolTable, entry} = p
+          val stm = Identifier.Manager.fromExistingAll symbolTable
+          val state = mkState stm
+          val env = mkEnv (pd, entry, strictAtInit)
+          val () = collectCodeInfo (state, env, globals)
+          val globals = generateStencils (state, env, globals)
+          val globals = Transform.globals (state, env, Transform.OAny, globals)
+          val st = I.Manager.finish (getStm (state, env))
+          val p = M.P {includes = includes, 
+                       externs = externs, 
+                       globals = globals, 
+                       symbolTable = st, 
+                       entry = entry}
+        in p
+        end
+
+    val program = 
+     fn (pd, p) => 
+        let
+          val strictAtInit = Analyze.program (pd, p)
+(*          val () = show (state, env, p)  *)
+          val p = rewrite (pd, p, strictAtInit)
+        in p
+        end
+
+  end (* structure ThunkInline *)
+
   structure LocalStrictness = 
   struct
     datatype analysis = A of {cfg : MCFG.t,
@@ -637,6 +1194,7 @@ struct
             VS.union (VS.difference (kill0, gen1), kill1))
     val instructionsMakeGenKill =
      fn (a, is) => (VS.empty, VS.empty)
+
     val transferMakeGenKill = 
      fn (a, t) => 
         (case t
@@ -786,6 +1344,11 @@ struct
                           fn (pd, p) => ThunkVal.program (pd, p),
                              "ThunkVal Optimization") (pd, p)
 
+  val thunkInline = fn (pd, p) => 
+                       doPhase (skipThunkInline, 
+                                fn (pd, p) => ThunkInline.program (pd, p),
+                                "ThunkInline Optimization") (pd, p)
+
   val strictness = fn (pd, p) => 
                       doPhase (skipLocalStrictness, 
                                fn (pd, p) => LocalStrictness.program (pd, p),
@@ -796,6 +1359,7 @@ struct
       let
         val p = thunkVal (pd, p)
         val p = strictness (pd, p)
+        val p = thunkInline (pd, p)
         val () = PD.report (pd, passname)
       in p
       end

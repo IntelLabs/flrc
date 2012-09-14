@@ -790,6 +790,7 @@ sig
     val blocks : t -> Block.t Mil.LD.t
     val numBlocks : t -> int
     val labels : t -> Mil.LS.t
+    val conts : t -> Mil.LS.t
     val block : t * Mil.label -> Block.t
     val isCore : t -> bool
     val compare : t Compare.t
@@ -3989,6 +3990,23 @@ struct
 
     fun numBlocks cb = LD.size (blocks cb)
     fun labels cb = LS.fromList (LD.domain (blocks cb))
+
+    fun conts cb = 
+        let
+          val doInstruction = 
+           fn (i, ls) => 
+              (case Instruction.rhs i 
+                of M.RhsCont l => M.LS.insert (ls, l)
+                 | _           => ls)
+
+          val doBlock =
+           fn (M.B {instructions, ...}, ls) => Vector.fold (instructions, ls, doInstruction)
+
+          val doOne = 
+           fn (l, b, ls) => doBlock (b, ls)
+
+        in LD.fold (blocks cb, M.LS.empty, doOne)
+        end
 
     fun block (cb, l) =
         case LD.lookup (blocks cb, l)

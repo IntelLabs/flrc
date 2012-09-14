@@ -86,6 +86,7 @@
  * ptv   - Variables bound to terms in core SP
  * sset  - Set cond contents var (simplify.sml)
  * spn   - Variables for eta expanded spawns (hil-to-mil.sml)
+ * stcl  - Variables for thunk code stencils
  * tsapp - ToStrict app result
  * tsepp - ToStrict extern app result
  * tslam - ToStrict lambda
