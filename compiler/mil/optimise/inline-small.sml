@@ -20,6 +20,7 @@ struct
   structure MU = MilUtils
   structure WS = IMil.WorkSet
   structure MS = MilSimplify
+  structure VS = M.VS 
 
   structure Chat = ChatF(struct type env = PD.t
                          val extract = PD.getConfig
@@ -36,6 +37,36 @@ struct
   val (debugPassD, debugPass) =
       Config.Debug.mk (passname, "debug the Mil inline small pass")
 
+  (* Ensure that the function is not directly self recursive - that is, that it
+   * it does not contain a direct self call.  It may still contain an unknown call 
+   * that resolves dynamically to itself.  *)
+  val notSelfRecursive = 
+   fn (d, imil, f) => 
+      let
+        val fname = IFunc.getFName (imil, f)
+        val recursive = IMil.IFunc.getRecursive (imil, f)
+        val selfCall = 
+         fn u => 
+            Try.try
+              (fn () => 
+                  let
+                    val t = <@ IMil.Use.toTransfer u
+                    val {callee, ...} = <@ MU.Transfer.Dec.tInterProc t
+                    val {call, ...} = <@ MU.InterProc.Dec.ipCall callee
+                    val checkCodes = 
+                     fn code => VS.member (MU.Codes.possible code, fname)
+                    val () = 
+                        (case call
+                          of M.CCode {ptr, code}          => Try.require (ptr = fname orelse checkCodes code)
+                           | M.CDirectClosure {cls, code} => Try.require (code = fname)
+                           | M.CClosure {cls, code}       => Try.require (checkCodes code))
+                    val i = <@ IMil.Use.toIInstr u
+                    val () = Try.require (IMil.IInstr.getIFunc (imil, i) = f)
+                  in ()
+                  end)
+      in not (recursive andalso (Vector.exists (IMil.IFunc.getUses (imil, f), isSome o selfCall)))
+      end
+        
   val inlineOne = 
    fn (d, imil, f) =>
       let
@@ -65,7 +96,8 @@ struct
    fn (d, imil) => 
       let
         val funcs = IMil.Enumerate.T.funcs imil
-        val small = List.keepAll (funcs, fn f => IFunc.getSize (imil, f) < inlineSmallLimit)
+        val nonrec = List.keepAll (funcs, fn f => notSelfRecursive (d, imil, f))
+        val small = List.keepAll (nonrec, fn f => IFunc.getSize (imil, f) < inlineSmallLimit)
         val calls = List.concatMap (small, fn c => inlineOne (d, imil, c))
       in calls
       end

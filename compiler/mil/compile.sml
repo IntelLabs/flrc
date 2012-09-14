@@ -170,7 +170,7 @@ struct
   val o0String = filter "fst"
   val o1String = filter "SfstS"
   val o2String = filter "[{S}VHIVHIBfst]S"
-  val o3String = filter "[{S} TREV CHIV FREV HDCUYLV REV THIJKTV B FREV fst]S"
+  val o3String = filter "[{SH} TREV CIV FREV DCUYLV REV TIJKTV B FREV fst]S"
 
   val o0Control = Option.valOf (parseControl o0String)
   val o1Control = Option.valOf (parseControl o1String)
