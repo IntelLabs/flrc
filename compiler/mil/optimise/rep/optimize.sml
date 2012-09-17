@@ -37,6 +37,8 @@ struct
     val stats = []
     val {stats, click = constantProp} = PD.clicker {stats = stats, passname = passname, 
                                                     name = "ConstantProp", desc = "Constants globally propagated"}
+    val {stats, click = unboxSum} = PD.clicker {stats = stats, passname = passname, 
+                                                name = "UnboxSum", desc = "Sum values unboxed"}
     val {stats, click = unboxTuple} = PD.clicker {stats = stats, passname = passname, 
                                                   name = "UnboxTuple", desc = "Single element tuples unboxed"}
     val {stats, click = unboxThunk} = PD.clicker {stats = stats, passname = passname, 
@@ -73,6 +75,11 @@ struct
   val (noUnboxF, noUnbox) =
       mkFeature ("no-unbox", "disable global unboxing")
 
+  val (noSumUnboxF, noSumUnbox) =
+      mkFeature ("no-sum-unbox", "disable global sum unboxing")
+
+  val sumUnbox = not o noSumUnbox
+
   val (noTupleUnboxF, noTupleUnbox) =
       mkFeature ("no-tuple-unbox", "disable global tuple unboxing")
 
@@ -95,7 +102,7 @@ struct
   val (cfaAnnotateFullF, cfaAnnotateFull) =
       mkFeature ("cfa-annotate", "CFA adds full code annotations")
 
-  val features = [cfaAnnotateFullF, noConstantPropF, noTupleUnboxF, noThunkUnboxF, noUnboxF,
+  val features = [cfaAnnotateFullF, noConstantPropF, noSumUnboxF, noTupleUnboxF, noThunkUnboxF, noUnboxF,
                   noCFAF, noEscapeAnalysisF]
 
   val debugShow =
@@ -437,9 +444,16 @@ struct
                                 | M.RhsPSetCond r       => let val () = fixed () val () = boxedO (#ofVal r) in () end
                                 | M.RhsPSetQuery _      => fixed ()
                                 | M.RhsEnum _           => fixed ()
-                                | M.RhsSum _            => fixed ()
-                                | M.RhsSumProj _        => ()
-                                | M.RhsSumGetTag _      => ())
+                                | M.RhsSum r            => if noSumUnbox pd then
+                                                             fixed ()
+                                                           else if Vector.length (#ofVals r) < 1 then 
+                                                             boxedV dests
+                                                           else
+                                                             candidateV dests 
+                                | M.RhsSumProj r        => if noSumUnbox pd then ()
+                                                           else if #idx r = 0 then () 
+                                                           else boxed (#sum r)
+                                | M.RhsSumGetTag r      => boxed (#sum r))
 
                        in e
                        end
@@ -473,6 +487,9 @@ struct
                                 | M.GSimple (M.SVariable _) => ()
                                 | M.GErrorVal t             => ()
                                 | M.GThunkValue r           => if noThunkUnbox pd then fixed () else candidate v
+                                | M.GSum r                  => if noSumUnbox pd then fixed () 
+                                                               else if Vector.length (#ofVals r) > 0 then candidate v 
+                                                               else boxed v
                                 | M.GPSet s                 => let val () = fixed () val () = boxed (opToVar s) 
                                                                in () end
                                 | _                         => fixed ())
@@ -499,6 +516,40 @@ struct
                 val require = fn (b, s) => if b then () else fail s
                 val () = require (Vector.length inits > 0, "not enough elements")
                 val v2 = opToVar (Vector.sub (inits, 0))
+                val ec1 = ecForVar (s, e, v1)
+                val ec2 = ecForVar (s, e, v2)
+                val () = require (not (EC.equal (ec1, ec2)), "same ec")
+                val us1 = ecGetRawStatus (s, e, ec1)
+                val us2M = ecGetModifiedStatus (s, e, ec2)
+                val us2R = ecGetRawStatus (s, e, ec2)
+                val usM = joinUS (us1, us2M)
+                val () = require (not (usIsTop usM), "incompatible")
+                val status = joinUS (us1, us2R)
+                val cand = ecGetCand (s, e, ec2)
+                val _  = EC.join (ec1, ec2)
+                val () = EC.set (ec1, {status = status, cand = cand})
+                val () = unboxVar (s, e, v1)
+              in ()
+              end)
+
+    val tryToUnboxSum = 
+     fn (s, e, v1, ofVals) =>
+        Try.exec 
+          (fn () => 
+              let
+                val () = Try.require (sumUnbox (SE1.getPd e))
+                val () = Try.require (isCandidateVar (s, e, v1))
+                val leaveBoxed = fn () => let val () = removeCandidateVar (s, e, v1) in Try.fail () end
+                val because = 
+                 fn st => 
+                    let
+                      val f = fn () => L.seq [L.str "Can't unbox ", layoutVariable (s, e, v1), L.str ": ", L.str st]
+                    in debugShow (SE1.getPd e, f)
+                    end
+                val fail = fn s => let val () = because s in leaveBoxed () end
+                val require = fn (b, s) => if b then () else fail s
+                val () = require (Vector.length ofVals > 0, "not enough elements")
+                val v2 = opToVar (Vector.sub (ofVals, 0))
                 val ec1 = ecForVar (s, e, v1)
                 val ec2 = ecForVar (s, e, v2)
                 val () = require (not (EC.equal (ec1, ec2)), "same ec")
@@ -567,6 +618,7 @@ struct
                          val () = 
                              case rhs
                               of M.RhsTuple r      => tryToUnboxTuple (s, e, Vector.sub (dests, 0), #inits r)
+                               | M.RhsSum r        => tryToUnboxSum (s, e, Vector.sub (dests, 0), #ofVals r)
                                | M.RhsThunkValue r => 
                                  (case #thunk r
                                    of NONE   => tryToUnboxThunk (s, e, Vector.sub (dests, 0), #ofVal r)
@@ -583,6 +635,7 @@ struct
                          val () = 
                              case g
                               of M.GTuple r      => tryToUnboxTuple (s, e, v, #inits r)
+                               | M.GSum r        => tryToUnboxSum (s, e, v, #ofVals r)
                                | M.GThunkValue r => tryToUnboxThunk (s, e, v, #ofVal r)
                                | _          => ()
                        in e
@@ -601,6 +654,20 @@ struct
           val edge = (n2, n1)
           val () = MRS.addEdge (summary, edge)
           val () = Click.unboxTuple (SE1.getPd e)
+        in oper
+        end
+
+    val unboxSum = 
+     fn (s, e, v1, ofVals) => 
+        let
+          val summary = SE1.getSummary s
+          val oper = Vector.sub (ofVals, 0)
+          val v2 = opToVar oper
+          val n1 = nodeForVariable (s, e, v1)
+          val n2 = nodeForVariable (s, e, v2)
+          val edge = (n2, n1)
+          val () = MRS.addEdge (summary, edge)
+          val () = Click.unboxSum (SE1.getPd e)
         in oper
         end
 
@@ -637,6 +704,15 @@ struct
                                    if tupleUnbox pd andalso varIsUnboxed (s, e, Vector.sub (dests, 0)) then
                                      let
                                        val oper = unboxTuple (s, e, Vector.sub (dests, 0), #inits r)
+                                       val s = MS.instruction (M.I {dests = dests, n = n, rhs = M.RhsSimple oper})
+                                     in SOME s
+                                     end
+                                   else 
+                                     NONE
+                                 | M.RhsSum r => 
+                                   if sumUnbox pd andalso varIsUnboxed (s, e, Vector.sub (dests, 0)) then
+                                     let
+                                       val oper = unboxSum (s, e, Vector.sub (dests, 0), #ofVals r)
                                        val s = MS.instruction (M.I {dests = dests, n = n, rhs = M.RhsSimple oper})
                                      in SOME s
                                      end
@@ -681,6 +757,21 @@ struct
                                      let
                                        val n1 = MRS.variableNode (summary, thunk)
                                        val rhs = M.RhsSimple (M.SVariable thunk)
+                                       val v2 = Vector.sub (dests, 0)
+                                       val n2 = MRS.variableNode (summary, v2)
+                                       val edge = (n1, n2)
+                                       val () = MRS.addEdge (summary, edge)
+                                       val i = M.I {dests = dests, n = n, rhs = rhs}
+                                       val s = MS.instruction i
+                                     in SOME s
+                                     end
+                                   else
+                                     NONE
+                                 | M.RhsSumProj {typs, sum, tag, idx} => 
+                                   if sumUnbox pd andalso varIsUnboxed (s, e, sum) then 
+                                     let
+                                       val n1 = MRS.variableNode (summary, sum)
+                                       val rhs = M.RhsSimple (M.SVariable sum)
                                        val v2 = Vector.sub (dests, 0)
                                        val n2 = MRS.variableNode (summary, v2)
                                        val edge = (n1, n2)
@@ -746,6 +837,15 @@ struct
                                   if tupleUnbox pd andalso varIsUnboxed (s, e, v) then 
                                     let
                                       val oper = unboxTuple (s, e, v, #inits r)
+                                      val l = [(v, M.GSimple oper)]
+                                    in SOME l
+                                    end
+                                  else
+                                    NONE
+                                | M.GSum r => 
+                                  if sumUnbox pd andalso varIsUnboxed (s, e, v) then 
+                                    let
+                                      val oper = unboxSum (s, e, v, #ofVals r)
                                       val l = [(v, M.GSimple oper)]
                                     in SOME l
                                     end
@@ -864,7 +964,6 @@ struct
         else
           ()
 
-
     val replaceNodeDataWithoutShape = 
      fn (s, e, done, n) => 
         let
@@ -909,7 +1008,19 @@ struct
                 | _ => 
                   (case (thunkUnbox pd, MilRepObject.Shape.Dec.thunkVal shp)
                     of (true, SOME res) => replace res
-                     | _                => fallback ())
+                     | _ => (case (sumUnbox pd, MilRepObject.Shape.Dec.sum shp)
+                              of (true, SOME {tag, arms}) => 
+                                 if Vector.length arms = 1 then
+                                   let
+                                     val (t, arm) = Vector.sub (arms, 0)
+                                   in if Vector.length arm > 0 then 
+                                        replace (Vector.sub (arm, 0))
+                                      else
+                                        fallback ()
+                                   end
+                                 else
+                                   fallback ()
+                               | _                         => fallback ()))
         in done
         end
 

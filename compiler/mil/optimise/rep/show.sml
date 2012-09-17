@@ -67,7 +67,11 @@ struct
               in Rename.renameTo (rename, v, newv)
               end
             else
-              rename
+              let
+                val info = ST.variableInfo (symbolTable, v)
+                val () = STM.variableSetInfo (stm, v, info)
+              in rename
+              end
         val keepVar = 
          fn v => 
             let
