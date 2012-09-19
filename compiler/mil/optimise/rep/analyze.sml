@@ -368,8 +368,8 @@ struct
    fn (se, shape, alignment, variance) => mkShapedNode (se, Shape.fieldKind (getConfig se, shape), 
                                                         SOME alignment, SOME variance, shape)
 
-  val escapes = fn (se, node) => Node.markNodeEscaping node
-  val unknown = fn (se, node) => Node.markNodeUnknownDefs node
+  val escapes = fn (se, node, reason) => Node.markNodeEscaping (node, reason)
+  val unknown = fn (se, node, reason) => Node.markNodeUnknownDefs (node, reason)
 
   val typOfCode = 
    fn se => M.TBits (MU.ValueSize.ptrSize (getConfig se))
@@ -592,8 +592,8 @@ struct
                | (M.FiVariable oper, SOME node) => element == node
                | _ => 
                  let
-                   val () = escapes (se, tup)
-                   val () = unknown (se, element)
+                   val () = escapes (se, tup, "tupleOp")
+                   val () = unknown (se, element, "tupleOp")
                  in ()
                  end)
         val object = Build.tuple {pok = NONE, fields = nodes, array = array}
@@ -642,7 +642,7 @@ struct
    fn (se, dests, rt, createThunks, args) => 
       let
         val (op ==, op <==, op <--, op -->) = symbols se
-        val () = Vector.foreach (args, fn arg => escapes (se, operand (se, arg)))
+        val () = Vector.foreach (args, fn arg => escapes (se, operand (se, arg), "runtime"))
         val () = 
             let
               val doIt = 
@@ -651,7 +651,7 @@ struct
                    val node = variable  (se, v)
                    val shape = Build.unknown t
                    val () = node <-- shape
-                   val () = unknown (se, node)
+                   val () = unknown (se, node, "runtime")
                  in ()
                  end
               val rts = typOfPrimRuntimeResult (se, rt)
@@ -665,11 +665,11 @@ struct
       let
         val (op ==, op <==, op <--, op -->) = symbols se
         val args = operands (se, args)
-        val () = Vector.foreach (args, fn arg => escapes (se, arg))
+        val () = Vector.foreach (args, fn arg => escapes (se, arg, "vector"))
         val rts = typOfPrimViResult (se, vi, typs)
         val dests = variables (se, dests)
         val () = Vector.foreach2 (dests, rts, fn (n, rt) => n <-- Build.base rt)
-        val () = Vector.foreach (dests, fn n => unknown (se, n))
+        val () = Vector.foreach (dests, fn n => unknown (se, n, "vector"))
       in ()
       end
 
@@ -809,7 +809,7 @@ struct
                    val shape = Build.thunkValue {result = result,
                                                  code = newShallowTypedBottomNode (se, typOfCode se)}
                    val () = thunk --> shape
-                   val () = escapes (se, thunk)
+                   val () = escapes (se, thunk, "spawn")
                  in ()
                  end
                | M.RhsClosureMk {fvs} => 
@@ -1042,7 +1042,7 @@ struct
                | M.THalt opnd =>
                  let
                    val opnd = operand (se, opnd)
-                   val () = escapes (se, opnd)
+                   val () = escapes (se, opnd, "halt")
                  in ()
                  end)
       in ()
@@ -1264,10 +1264,10 @@ struct
         val () = Chat.log2 (pd, "Initializing")
         val se = Initialize.initialize (pd, st, p)
         val () = Chat.log2 (pd, "Analyzing")
-        fun doExtern v = unknown (se, variable (se, v))
+        fun doExtern v = unknown (se, variable (se, v), "extern:"^(stringFromVar (se, v)))
         val () = VS.foreach (MilUtils.Program.externVars p, doExtern)
         val () = globals (se, gs)
-        val () = escapes (se, variable (se, entry))
+        val () = escapes (se, variable (se, entry), "main")
         val () = Chat.log2 (pd, "Propagating")
         val () = propagate se
         val () = Chat.log2 (pd, "Summarizing")

@@ -49,6 +49,9 @@ struct
   val (showAnalysisD, showAnalysis) =
       mkLevelDebug ("show-analysis", "Show analysis results", 1)
 
+  val (showReasonsD, showReasons) =
+      mkLevelDebug ("show-reasons", "Show analysis escape/intrudes reasons", 1)
+
   val (annotateProgramD, annotateProgram) =
       mkDebug ("annotate", "Annotate program variables with class")
 
@@ -56,7 +59,7 @@ struct
       mkDebug ("skip-optimization", "Don't optimize")
 
 
-  val debugs = [annotateProgramD, checkPhasesD, showAnalysisD, showPhasesD, 
+  val debugs = [annotateProgramD, checkPhasesD, showAnalysisD, showPhasesD, showReasonsD,
                 skipOptimizationD] 
                @ Optimization.debugs
 
@@ -131,6 +134,11 @@ struct
           val () = 
               if showAnalysis pd then
                 MilRepShow.printAnalysis (pd, summary, p)
+              else
+                ()
+          val () = 
+              if showReasons pd then
+                MilRepShow.printReasons (pd, summary, p)
               else
                 ()
       in summary

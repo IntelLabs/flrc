@@ -5,6 +5,7 @@ signature MIL_REP_SHOW =
 sig
   val annotate : PassData.t * MilRepSummary.summary * Mil.t -> Mil.t 
   val printAnalysis : PassData.t * MilRepSummary.summary * Mil.t -> unit
+  val printReasons : PassData.t * MilRepSummary.summary * Mil.t -> unit
 end (* signature MIL_REP_SHOW *)
 
 structure MilRepShow :> MIL_REP_SHOW = 
@@ -103,6 +104,15 @@ struct
       let
         val l = MilRepSummary.layout (summary, Identifier.SymbolInfo.SiTable (MU.Program.symbolTable p))
         val l = L.align [L.str "ANALYSIS RESULTS",
+                         LU.indent l]
+      in LayoutUtils.printLayout l
+      end
+
+  val printReasons = 
+   fn (pd, summary, p) => 
+      let
+        val l = MilRepSummary.layoutReasons (summary, Identifier.SymbolInfo.SiTable (MU.Program.symbolTable p))
+        val l = L.align [L.str "ANALYSIS ESCAPE/INTRUDES REASONS",
                          LU.indent l]
       in LayoutUtils.printLayout l
       end

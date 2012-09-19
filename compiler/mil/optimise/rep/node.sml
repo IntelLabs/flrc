@@ -21,14 +21,16 @@ sig
                  * Mil.fieldVariance option 
                  * node MilRepObject.Shape.shape 
                  -> node
-  val markNodeEscaping : node -> unit
-  val markNodeUnknownDefs : node -> unit
+  val markNodeEscaping : node * string -> unit
+  val markNodeUnknownDefs : node * string -> unit
   val propagate : node -> unit 
 
   val id : node -> id
   val classId : node -> id
   val usesKnown : node -> bool
   val defsKnown : node -> bool
+  val usesUnknownReason : node -> string option
+  val defsUnknownReason : node -> string option
   val object : node -> node MilRepObject.Object.object
   val shape' : node -> node MilRepObject.Shape.shape option
   val shape : node -> node MilRepObject.Shape.shape
@@ -49,6 +51,7 @@ sig
   val setAlignment : node * Mil.valueSize option -> unit
   val setFieldVariance : node * Mil.fieldVariance option -> unit
   val layout : Config.t * Mil.symbolInfo * node * ((id -> Layout.t option) option) -> Layout.t
+  val layoutShort : Config.t * Mil.symbolInfo * node * ((id -> Layout.t option) option) -> Layout.t
 
   structure Unify :
   sig
@@ -89,9 +92,12 @@ struct
   type id = int
   type flowset = int
 
-  datatype backwardData = BD of {usesKnown : bool}
+  datatype backwardData = BD of {usesKnown : bool,
+                                 reason : string option
+                                }
 
   datatype forwardData = FD of {defsKnown : bool,
+                                reason : string option,
                                 object : node MilRepObject.Object.object,
                                 id : flowset} 
 
@@ -120,25 +126,27 @@ struct
       end
 
   val ((forwardDataSetDefsKnown, forwardDataGetDefsKnown),
+       (forwardDataSetReason, forwardDataGetReason),
        (forwardDataSetObject, forwardDataGetObject),
        (forwardDataSetId, forwardDataGetId)) = 
       let
         val r2t = 
-         fn (FD {defsKnown, object, id}) => (defsKnown, object, id)
+         fn (FD {defsKnown, reason, object, id}) => (defsKnown, reason, object, id)
         val t2r = 
-         fn (defsKnown, object, id) => FD {defsKnown = defsKnown, object = object, id = id}
+         fn (defsKnown, reason, object, id) => FD {defsKnown = defsKnown, reason = reason, object = object, id = id}
       in
-        FunctionalUpdate.mk3 (r2t, t2r)
+        FunctionalUpdate.mk4 (r2t, t2r)
       end
 
-  val ((backwardDataSetUsesKnown, backwardDataGetUsesKnown)) = 
+  val ((backwardDataSetUsesKnown, backwardDataGetUsesKnown),
+       (backwardDataSetReason, backwardDataGetReason)) = 
       let
         val r2t = 
-         fn (BD {usesKnown}) => usesKnown
+         fn (BD {usesKnown, reason}) => (usesKnown, reason)
         val t2r = 
-         fn usesKnown => BD {usesKnown = usesKnown}
+         fn (usesKnown, reason) => BD {usesKnown = usesKnown, reason = reason}
       in
-        FunctionalUpdate.mk1 (r2t, t2r)
+        FunctionalUpdate.mk2 (r2t, t2r)
       end
 
 
@@ -157,9 +165,11 @@ struct
       end
 
   val nodeGetDefsKnown = forwardDataGetDefsKnown o EC.get o nodeGetForward
+  val nodeGetDefsUnknownReason = forwardDataGetReason o EC.get o nodeGetForward
   val nodeGetObject = forwardDataGetObject o EC.get o nodeGetForward
   val nodeGetClassId = forwardDataGetId o EC.get o nodeGetForward
   val nodeGetUsesKnown = backwardDataGetUsesKnown o EC.get o nodeGetBackward
+  val nodeGetUsesUnknownReason = backwardDataGetReason o EC.get o nodeGetBackward
   val nodeGetFieldKind = nodeDataGetFk o (op !) o nodeGetNodeData
   val nodeGetShape = nodeDataGetShape o (op !) o nodeGetNodeData
   val nodeGetVariance = nodeDataGetVariance o (op !) o nodeGetNodeData
@@ -211,20 +221,20 @@ struct
   val mkBottom =
    fn (id, fk, alignment, variance, shape) => 
       N {id = id, 
-         forward = EC.new  (FD {defsKnown = true, object = Object.bottom (), id = id}),
-         backward = EC.new (BD {usesKnown = true}),
+         forward = EC.new  (FD {defsKnown = true, reason = NONE, object = Object.bottom (), id = id}),
+         backward = EC.new (BD {usesKnown = true, reason = NONE}),
          nodeData = ref (ND {fk = fk, shape = shape, alignment = alignment, variance = variance})}
 
   val mkShaped =
    fn (id, fk, alignment, variance, shape) => 
       N {id = id, 
-         forward = EC.new  (FD {defsKnown = true, object = Object.fromShape shape, id = id}),
-         backward = EC.new (BD {usesKnown = true}),
+         forward = EC.new  (FD {defsKnown = true, reason = NONE, object = Object.fromShape shape, id = id}),
+         backward = EC.new (BD {usesKnown = true, reason = NONE}),
          nodeData = ref (ND {fk = fk, alignment = alignment, shape = SOME shape, variance = variance})}
 
 
   val markNodeUnknownDefs = 
-   fn n => 
+   fn (n, reason) => 
       let
         val forward = nodeGetForward n
         val fd = EC.get forward
@@ -233,6 +243,7 @@ struct
             if defsKnown then
               let
                 val fd = forwardDataSetDefsKnown (fd, false)
+                val fd = forwardDataSetReason(fd, SOME reason)
                 val () = EC.set (forward, fd)
               in ()
               end
@@ -241,7 +252,7 @@ struct
       end
 
   val markNodeEscaping = 
-   fn n => 
+   fn (n, reason) => 
       let
         val backward = nodeGetBackward n
         val bd = EC.get backward
@@ -250,6 +261,7 @@ struct
             if usesKnown then
               let
                 val bd = backwardDataSetUsesKnown (bd, false)
+                val bd = backwardDataSetReason (bd, SOME reason)
                 val () = EC.set (backward, bd)
               in ()
               end
@@ -258,41 +270,45 @@ struct
       end
 
   val rec propagateUnknownDefs = 
-   fn n => 
+   fn (n, reason) => 
       if nodeGetDefsKnown n then
-        propagateUnknownDefs' n
+        propagateUnknownDefs' (n, reason)
       else 
         ()
 
   and rec propagateUnknownDefs' = 
-   fn n => 
+   fn (n, reason) => 
       let
-        val () = markNodeUnknownDefs n
+        val () = markNodeUnknownDefs (n, reason)
         val object = nodeGetObject n
-        val () = Object.foreachWithParity (object, propagateUnknownDefs, propagateEscaping)
+        val () = Object.foreachWithParity (object, 
+                                           fn n => propagateUnknownDefs (n, reason), 
+                                           fn n => propagateEscaping (n, reason))
         val () = 
             (case nodeGetVariance n
-              of SOME (Mil.FvReadWrite) => propagateEscaping n
+              of SOME (Mil.FvReadWrite) => propagateEscaping (n, reason)
                | _ => ())
       in ()
       end
 
   and rec propagateEscaping = 
-   fn n => 
+   fn (n, reason) => 
       if nodeGetUsesKnown n then
-        propagateEscaping' n
+        propagateEscaping' (n, reason)
       else
         ()
 
   and rec propagateEscaping' = 
-   fn n => 
+   fn (n, reason) => 
       let
-        val () = markNodeEscaping n
+        val () = markNodeEscaping (n, reason)
         val object = nodeGetObject n
-        val () = Object.foreachWithParity (object, propagateEscaping, propagateUnknownDefs)
+        val () = Object.foreachWithParity (object, 
+                                           fn n => propagateEscaping (n, reason), 
+                                           fn n => propagateUnknownDefs (n, reason))
         val () = 
             (case nodeGetVariance n
-              of SOME (Mil.FvReadWrite) => propagateUnknownDefs n
+              of SOME (Mil.FvReadWrite) => propagateUnknownDefs (n, reason)
                | _ => ())
 
       in ()
@@ -305,12 +321,12 @@ struct
             if nodeGetDefsKnown n then
               ()
             else
-              propagateUnknownDefs' n
+              propagateUnknownDefs' (n, Utils.Option.get (nodeGetDefsUnknownReason n, ""))
         val () = 
             if nodeGetUsesKnown n then 
               ()
             else
-              propagateEscaping' n
+              propagateEscaping' (n, Utils.Option.get (nodeGetUsesUnknownReason n, ""))
       in ()
       end
 
@@ -318,6 +334,8 @@ struct
   val classId = nodeGetClassId
   val usesKnown = nodeGetUsesKnown
   val defsKnown = nodeGetDefsKnown
+  val usesUnknownReason = nodeGetUsesUnknownReason
+  val defsUnknownReason = nodeGetDefsUnknownReason
   val object = nodeGetObject
 
   val shape' = nodeGetShape
@@ -373,8 +391,8 @@ struct
       in M.FD {kind = fk, alignment = alignment, var = var}
       end
 
-  val layout = 
-   fn (config, si, n, name) => 
+  val layout' = 
+   fn (config, si, n, name, long) => 
       let
         val name = 
          fn b => 
@@ -401,8 +419,8 @@ struct
                forward,
                backward,
                nodeData = ref (ND {fk, alignment, shape, variance})} = n
-        val FD {defsKnown, object, id=classId} = EC.get forward
-        val BD {usesKnown} = EC.get backward
+        val FD {defsKnown, object, reason = duReason, id=classId} = EC.get forward
+        val BD {usesKnown, reason = uuReason} = EC.get backward
         val fk = (case fk of NONE => L.empty
                            | SOME fk => L.str (" : " ^ (MU.FieldKind.toString fk)))
         val ag = (case alignment of NONE => L.empty
@@ -414,18 +432,32 @@ struct
                             L.str (if usesKnown then "!" else "^"),
                             name true (id, classId), fk, ag, var
                            ]
-        val shape = 
-            (case shape
-              of NONE => L.str "NONE"
-               | SOME shape => layoutShape shape)
-
-        val l = L.mayAlign [header,
-                            LU.indent (L.seq [L.str "shape = ", shape]),
-                            LU.indent (L.seq [L.str "class = ", Int.layout classId]),
-                            LU.indent (layoutObject object)
+        val l = 
+            if long then
+              let
+                val shape = 
+                    (case shape
+                      of NONE => L.str "NONE"
+                       | SOME shape => layoutShape shape)
+                      
+                val l = L.mayAlign [header,
+                                    LU.indent (L.seq [L.str "shape = ", shape]),
+                                    LU.indent (L.seq [L.str "class = ", Int.layout classId]),
+                                    LU.indent (layoutObject object)
                            ]
+              in l 
+              end
+            else
+              header
       in l
       end
+
+  val layoutShort = 
+   fn (config, si, n, name) => layout' (config, si, n, name, false)
+
+  val layout = 
+   fn (config, si, n, name) => layout' (config, si, n, name, true)
+
 
   structure Unify =
   struct
@@ -437,12 +469,17 @@ struct
      fn (config, forward1, forward2) =>
         if EC.equal (forward1, forward2) then [] else
         let
-          val FD {defsKnown = defsKnown1, object = object1, id = id1} = EC.get forward1
-          val FD {defsKnown = defsKnown2, object = object2, id = id2} = EC.get forward2
+          val FD {defsKnown = defsKnown1, reason = reason1, object = object1, id = id1} = EC.get forward1
+          val FD {defsKnown = defsKnown2, reason = reason2, object = object2, id = id2} = EC.get forward2
           val defsKnown = defsKnown1 andalso defsKnown2
+          val reason = 
+              (case (reason1, reason2)
+                of (NONE, _)          => reason2
+                 | (_, NONE)          => reason1
+                 | (SOME r1, SOME r2) => SOME (r1 ^ "&" ^ r2))
           val (object, edges) = Object.flowsTo (config, object1, object2)
           val id = flowSet (config, id1, id2)
-          val entry = FD {defsKnown = defsKnown, object = object, id = id}
+          val entry = FD {defsKnown = defsKnown, reason = reason, object = object, id = id}
           val _ = EC.joinWith (forward1, forward2, fn _ => entry)
         in edges
         end
@@ -451,10 +488,15 @@ struct
      fn (config, backward1, backward2) => 
         if EC.equal (backward1, backward2) then () else
         let
-          val BD {usesKnown = usesKnown1} = EC.get backward1
-          val BD {usesKnown = usesKnown2} = EC.get backward2
+          val BD {usesKnown = usesKnown1, reason = reason1} = EC.get backward1
+          val BD {usesKnown = usesKnown2, reason = reason2} = EC.get backward2
+          val reason = 
+              (case (reason1, reason2)
+                of (NONE, _)          => reason2
+                 | (_, NONE)          => reason1
+                 | (SOME r1, SOME r2) => SOME (r1 ^ "&" ^ r2))
           val usesKnown = usesKnown1 andalso usesKnown2
-          val entry = BD {usesKnown = usesKnown}
+          val entry = BD {usesKnown = usesKnown, reason = reason}
           val _ = EC.joinWith (backward1, backward2, fn _ => entry)
         in ()
         end

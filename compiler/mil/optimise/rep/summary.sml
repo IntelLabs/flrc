@@ -10,7 +10,8 @@ sig
                      nodes : MilRepNode.node list,
                      labelNodes : MilRepNode.node Mil.LD.t,
                      names : Mil.variable IntDict.t} -> summary
-                                                        
+                                                   
+  val layoutReasons : summary * Mil.symbolInfo -> Layout.t
   val layout : summary * Mil.symbolInfo -> Layout.t
 
   val iInfo' : summary * MilUtils.Id.t -> MilRepNode.node MilRepBase.iInfo option
@@ -289,6 +290,35 @@ struct
         val s = ES.insert(s, e)
         val () = edges := s
       in ()
+      end
+
+  val layoutReasons = 
+   fn (summary, si) => 
+      let
+        val config = getConfig summary
+        val names = getNames summary
+        val nameNode = 
+         fn id => 
+            Option.map (ID.lookup (names, id), fn v => MU.SymbolInfo.layoutVariable (si, v))
+        val layoutNode = fn n => 
+                            let
+                              val h = Node.layoutShort (config, si, n, SOME nameNode)
+                              val r1 = case Node.defsUnknownReason n
+                                        of SOME r => L.seq[L.str "Unknown defs because: ", L.str r]
+                                         | NONE   => L.empty
+                              val r2 = case Node.usesUnknownReason n
+                                        of SOME r => L.seq[L.str "Unknown uses because: ", L.str r]
+                                         | NONE   => L.empty
+                            in L.mayAlign [h, LU.indent r1, LU.indent r2]
+                            end
+        val varNodes = 
+            let
+              val nodes = getVarNodes summary
+              val l = VD.layout (nodes, fn (v, n) => layoutNode n)
+            in l
+            end
+      in L.align [L.str "VARIABLE NODES",
+                  LU.indent varNodes]
       end
 
   val layout = 
