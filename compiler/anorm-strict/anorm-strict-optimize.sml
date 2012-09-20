@@ -296,13 +296,13 @@ struct
         | NONE                       => EImplicit
 
   val newFnInfoForFn =
-   fn (state, env, f) => 
+   fn (state, env, f, fx) => 
       let
         val fns as ref d = stateGetFns state
       in
         case VD.lookup (d, f)
          of SOME _ => fail ("newFnInfoForFn", "duplicate function name")
-          | NONE   => fns := (VD.insert (d, f, ref (FI {size = 0, fx = EImplicit})))
+          | NONE   => fns := (VD.insert (d, f, ref (FI {size = 0, fx = fx})))
       end
 
   val addToFnSize =
@@ -457,7 +457,14 @@ struct
   val enterNewFunction = 
    fn (state, env, f) => 
       let
-        val () = newFnInfoForFn (state, env, f)
+        val () = newFnInfoForFn (state, env, f, EImplicit)
+      in pushCurFn (state, env, f)
+      end
+
+  val enterNewThunk = 
+   fn (state, env, f) => 
+      let
+        val () = newFnInfoForFn (state, env, f, EPartial)
       in pushCurFn (state, env, f)
       end
 
@@ -853,8 +860,10 @@ struct
                     val () = 
                         let
                           val env = enterBinding (state, env, name)
-                          val env = enterNewFunction (state, env, name)
-                          val fx = doExp (state, env, body)
+                          val env = enterNewThunk (state, env, name)
+                          val fx = case doExp (state, env, body)
+                                    of ETotal => ETotal
+                                     | _      => EPartial
                           val () = setFnFx (state, env, name, fx)
                         in ()
                         end
