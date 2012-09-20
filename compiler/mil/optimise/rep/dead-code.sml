@@ -1316,19 +1316,22 @@ struct
                     let
                       val s = MRO.Shape.filter (s, deadN)
                       val s = case MRO.Shape.Dec.sum s
-                               of SOME {tag, arms} => 
-                                  let
-                                    val fields = 
-                                        if Vector.length arms = 1 then
-                                          #2 (Vector.sub (arms, 0))
-                                        else
-                                          Vector.new0 ()
-                                    val () = Vector.foreach (fields, mkFieldNode)
-                                    val s = MRO.Shape.Build.tuple {pok = SOME M.PokTagged, 
-                                                                   fields = fields, 
-                                                                   array = NONE}
-                                  in s
-                                  end
+                               of SOME {tag, arms} =>
+                                  if liveN tag then
+                                    s
+                                  else
+                                    let
+                                      val fields = 
+                                          if Vector.length arms = 1 then
+                                            #2 (Vector.sub (arms, 0))
+                                          else
+                                            Vector.new0 ()
+                                      val () = Vector.foreach (fields, mkFieldNode)
+                                      val s = MRO.Shape.Build.tuple {pok = SOME M.PokTagged, 
+                                                                     fields = fields, 
+                                                                     array = NONE}
+                                    in s
+                                    end
                                 | NONE => s
                     in MRN.setShape (n, SOME s)
                     end

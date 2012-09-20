@@ -413,7 +413,7 @@ struct
          fn node => LU.angleBracket (name false (id node, classId node))
 
         val layoutShape = fn shape => MRO.Layout.shape (config, si, shallow, shape)
-        val layoutObject = fn object => MRO.Layout.object (config, si, shallow, object)
+        val layoutObject = fn object => L.str "object" (*MRO.Layout.object (config, si, shallow, object)*)
 
         val N {id, 
                forward,
