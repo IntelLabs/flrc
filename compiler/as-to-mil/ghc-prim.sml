@@ -2179,6 +2179,7 @@ struct
       | NegateIntegerzh => single |> (arith (integerNumTyp, MP.ANegate)) & xt
       | QuotIntegerzh => single |> (arith (integerNumTyp, MP.ADiv MP.DkT)) & xt
       | RemIntegerzh => single |> (arith (integerNumTyp, MP.AMod MP.DkT)) & xt
+      | QuotRemIntegerzh => single |> (arith (integerNumTyp, MP.ADivMod MP.DkT)) & xt
       | Integerzezezh => singleB |> (compare (integerNumTyp, MP.CEq)) & xt
       | Integerzszezh => singleB |> (compare (integerNumTyp, MP.CNe)) & xt
       | Integerzgzezh => singleB |> (compare (integerNumTyp, MP.CLe) o List.rev) & xt
@@ -2208,6 +2209,7 @@ struct
       | NegateIntzh => single |> (arith (intNumTyp, MP.ANegate)) & xt
       | QuotIntzh => single |> (arith (intNumTyp, MP.ADiv MP.DkT)) & xt
       | RemIntzh => single |> (arith (intNumTyp, MP.AMod MP.DkT)) & xt
+      | QuotRemIntzh => single |> (arith (intNumTyp, MP.ADivMod MP.DkT)) & xt
       | Zezezh => singleB |> (compare (intNumTyp, MP.CEq)) & xt
       | Zszezh => singleB |> (compare (intNumTyp, MP.CNe)) & xt
       | Zgzezh => singleB |> (compare (intNumTyp, MP.CLe) o List.rev) & xt
@@ -2230,6 +2232,7 @@ struct
       | TimesWordzh => single |> (arith (wordNumTyp, MP.ATimes)) & xt
       | QuotWordzh => single |> (arith (wordNumTyp, MP.ADiv MP.DkT)) & xt
       | RemWordzh => single |> (arith (wordNumTyp, MP.AMod MP.DkT)) & xt
+      | QuotRemWordzh => single |> (arith (wordNumTyp, MP.ADivMod MP.DkT)) & xt
       | Andzh => single |> (bitwise (wordPrec, MP.BAnd)) & xt
       | Orzh => single |> (bitwise (wordPrec, MP.BOr)) & xt
       | Xorzh => single |> (bitwise (wordPrec, MP.BXor)) & xt

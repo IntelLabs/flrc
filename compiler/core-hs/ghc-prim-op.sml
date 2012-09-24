@@ -22,6 +22,7 @@ struct
     | NegateIntegerzh
     | QuotIntegerzh
     | RemIntegerzh
+    | QuotRemIntegerzh
     | Integerzezezh
     | Integerzszezh
     | Integerzgzezh
@@ -52,6 +53,7 @@ struct
     | NegateIntzh
     | QuotIntzh
     | RemIntzh
+    | QuotRemIntzh
     | Zezezh
     | Zszezh
     | Zgzezh
@@ -75,6 +77,7 @@ struct
     | TimesWordzh
     | QuotWordzh
     | RemWordzh
+    | QuotRemWordzh
     | Andzh
     | Orzh
     | Xorzh
@@ -475,6 +478,7 @@ struct
       , ("negateIntegerzh", NegateIntegerzh)
       , ("quotIntegerzh", QuotIntegerzh)
       , ("remIntegerzh", RemIntegerzh)
+      , ("quotRemIntegerzh", QuotRemIntegerzh)
       , ("integerzezezh", Integerzezezh)
       , ("integerzszezh", Integerzszezh)
       , ("integerzgzezh", Integerzgzezh)
@@ -504,6 +508,7 @@ struct
       , ("negateIntzh", NegateIntzh)
       , ("quotIntzh", QuotIntzh)
       , ("remIntzh", RemIntzh)
+      , ("quotRemIntzh", QuotRemIntzh)
       , ("zezezh", Zezezh)
       , ("zszezh", Zszezh)
       , ("zgzezh", Zgzezh)
@@ -526,6 +531,7 @@ struct
       , ("timesWordzh", TimesWordzh)
       , ("quotWordzh", QuotWordzh)
       , ("remWordzh", RemWordzh)
+      , ("quotRemWordzh", QuotRemWordzh)
       , ("andzh", Andzh)
       , ("orzh", Orzh)
       , ("xorzh", Xorzh)
@@ -900,6 +906,7 @@ struct
       | NegateIntegerzh => "negateIntegerzh"
       | QuotIntegerzh => "quotIntegerzh"
       | RemIntegerzh => "remIntegerzh"
+      | QuotRemIntegerzh => "quotRemIntegerzh"
       | Integerzezezh => "integerzezezh"
       | Integerzszezh => "integerzszezh"
       | Integerzgzezh => "integerzgzezh"
@@ -929,6 +936,7 @@ struct
       | NegateIntzh => "negateIntzh"
       | QuotIntzh => "quotIntzh"
       | RemIntzh => "remIntzh"
+      | QuotRemIntzh => "quotRemIntzh"
       | Zezezh => "zezezh"
       | Zszezh => "zszezh"
       | Zgzezh => "zgzezh"
@@ -951,6 +959,7 @@ struct
       | TimesWordzh => "timesWordzh"
       | QuotWordzh => "quotWordzh"
       | RemWordzh => "remWordzh"
+      | QuotRemWordzh => "quotRemWordzh"
       | Andzh => "andzh"
       | Orzh => "orzh"
       | Xorzh => "xorzh"
@@ -1378,6 +1387,7 @@ struct
       | NegateIntegerzh => [j,j]
       | QuotIntegerzh => [j,j,j]
       | RemIntegerzh => [j,j,j]
+      | QuotRemIntegerzh => [j,j,z2h(j,j)]
       | Integerzezezh => [j,j,b]
       | Integerzszezh => [j,j,b]
       | Integerzgzezh => [j,j,b]
@@ -1407,6 +1417,7 @@ struct
       | NegateIntzh => [i,i]
       | QuotIntzh => [i,i,i]
       | RemIntzh => [i,i,i]
+      | QuotRemIntzh => [i,i,z2h(i,i)]
       | Zezezh => [i,i,b]
       | Zszezh => [i,i,b]
       | Zgzezh => [i,i,b]
@@ -1429,6 +1440,7 @@ struct
       | TimesWordzh => [w,w,w]
       | QuotWordzh => [w,w,w]
       | RemWordzh => [w,w,w]
+      | QuotRemWordzh => [w,w,z2h(w,w)]
       | Andzh => [w,w,w]
       | Orzh => [w,w,w]
       | Xorzh => [w,w,w]
