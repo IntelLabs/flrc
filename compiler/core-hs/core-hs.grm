@@ -47,6 +47,7 @@ fun warn msg = TextIO.output (TextIO.stdOut, "Warning: " ^ msg ^ "\n");
     FExp of CH.exp |
     Callconv of CH.callconv |
     Alts of CH.alt list |
+    Alts0 of CH.alt list |
     Alt of CH.alt |
     Binders of CH.bind list |
     Binder of CH.bind |
@@ -124,7 +125,7 @@ fun warn msg = TextIO.output (TextIO.stdOut, "Warning: " ^ msg ^ "\n");
   Exp : FExp (FExp)
       | SLASH Binder Binders TO Exp (List.foldr (Binder :: Binders, Exp, fn (b, e) => CH.Lam (b, e)))
       | LET Vdefg IN Exp (CH.Let (Vdefg, Exp))
-      | CASE Aty Exp OF VBind LB Alt Alts RB (CH.Case (Exp, VBind, Aty, Alt :: Alts))
+      | CASE Aty Exp OF VBind LB Alts RB (CH.Case (Exp, VBind, Aty, Alts))
       | CAST AExp Aty (CH.Cast (AExp, Aty))
       | NOTE STRING Exp (CH.Note (STRING, Exp))
       | EXTERNAL Callconv STRING Aty (CH.External ("", Callconv, STRING, Aty))
@@ -133,6 +134,7 @@ fun warn msg = TextIO.output (TextIO.stdOut, "Warning: " ^ msg ^ "\n");
 
   Callconv : LNAME 
     (if LNAME = "ccall" then CH.CCall
+     else if LNAME = "capi" then CH.CCall
      else if LNAME = "prim" then CH.Prim
      else if LNAME = "stdcall" then CH.StdCall
      else (warn ("unknown calling convention " ^ LNAME); CH.CCall))
@@ -141,7 +143,10 @@ fun warn msg = TextIO.output (TextIO.stdOut, "Warning: " ^ msg ^ "\n");
        | FExp AT Aty (CH.Appt (FExp, Aty))
        | AExp (AExp)
 
-  Alts : SEMI Alt Alts (Alt :: Alts)
+  Alts : Alt Alts0 (Alt :: Alts0)
+       | ([])
+
+  Alts0 : SEMI Alt Alts0 (Alt :: Alts0)
        | ([])
 
   Alt : Qdcon ATBinds VBinds TO Exp (CH.Acon (Qdcon, ATBinds, VBinds, Exp))

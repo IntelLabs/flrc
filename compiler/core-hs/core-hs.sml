@@ -86,7 +86,7 @@ structure CoreHs = struct
       | Appt of exp * ty
       | Lam of bind * exp
       | Let of vDefg * exp
-      | Case of exp * vBind * ty * alt list (* non-empty list *)
+      | Case of exp * vBind * ty * alt list 
       | Cast of exp * ty
       | Note of string * exp
       | External of string * callconv * string * ty

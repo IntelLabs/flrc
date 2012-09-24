@@ -33,10 +33,11 @@ struct
 
   type dict = { ndict : (AL.con * AL.strictness list) QD.t
               , tdict : ty QD.t
-              , vdict : AL.var  QD.t
+              , vdict : AL.var QD.t
+              , sdict : AL.exp QD.t (* direct substitution *)
               }
 
-  val emptyDict = { ndict = QD.empty, tdict = QD.empty, vdict = QD.empty }
+  val emptyDict = { ndict = QD.empty, tdict = QD.empty, vdict = QD.empty, sdict = QD.empty }
 
   (* dict lookup that fails when not found *)
   fun lookupMayFail (dict, v, msg)
@@ -158,13 +159,13 @@ struct
         doTy0 true QS.empty SD.empty
       end
 
-  fun makeVar (im, cfg, dict as { ndict, tdict, vdict }, v, vty)
+  fun makeVar (im, cfg, dict as { ndict, tdict, vdict, sdict }, v, vty)
     = let 
         val ty = doTy (im, cfg, dict) vty
         val u  = IM.variableFresh (im, CL.qNameToString v, ty)
         val vdict = QD.insert (vdict, v, u)
       in 
-        ({ ndict = ndict, tdict = tdict, vdict = vdict }, u, ty)
+        ({ ndict = ndict, tdict = tdict, vdict = vdict, sdict = sdict }, u, ty)
       end
 
   fun makeVars (im, cfg, dict, vbs)
@@ -178,6 +179,13 @@ struct
         val (vbs, dict) = List.foldr (vbs, ([], dict), mkVbs)
       in
         (dict, vbs)
+      end
+
+  fun addSubstitute (dict as { ndict, tdict, vdict, sdict }, v, e)
+    = let
+        val sdict = QD.insert (sdict, v, e)
+      in
+        { ndict = ndict, tdict = tdict, vdict = vdict, sdict = sdict }
       end
 
   fun isSaturated (im, cfg, dict as { ndict, vdict, ... }, e)
@@ -248,8 +256,11 @@ struct
           end
          | _ => AL.Cast (e, t1, t2)
 
-  fun doExp (im, cfg, dict as { vdict, ... }) 
-    = fn CH.Var v => AL.Var (lookupMayFail (vdict, v, "doExp"))
+  fun doExp (im, cfg, dict as { vdict, sdict, ... }) 
+    = fn CH.Var v => 
+        (case QD.lookup (sdict, v)
+          of SOME e => e
+           | _ => AL.Var (lookupMayFail (vdict, v, "doExp")))
        | CH.Lit (CH.Literal (lit, ty)) => AL.Lit (lit, doTy (im, cfg, dict) ty)
        | CH.Case (e, (v, vty), ty, alts) =>
         let
@@ -260,6 +271,7 @@ struct
             of (true, [CH.Acon (_, _, vbs, e')]) =>
               let
                 val (dict, vbs) = makeVars (im, cfg, dict, vbs)
+                val dict = addSubstitute (dict, (NONE, v), AL.Multi (List.map (vbs, #1))) 
                 val e' = doExp (im, cfg, dict) e'
               in
                 AL.Let (AL.Nonrec (AL.Vdef (AL.VbMulti vbs, e)), e')
@@ -355,7 +367,7 @@ struct
           (AL.Nonrec vdef, dict')
         end
 
-  fun doTDef im (typ, dict as { ndict, tdict, vdict })
+  fun doTDef im (typ, dict as { ndict, tdict, vdict, sdict })
     = (case typ
         of CH.Data (name, tbs, cdefs) => 
           let
@@ -370,13 +382,13 @@ struct
             val ndict = List.fold (tags, ndict, fn ((con, tag), ndict) => QD.insert (ndict, con, tag))
             val tdict = QD.insert (tdict, name, Sumtype (tbs, arms)) 
           in
-            { ndict = ndict, tdict = tdict, vdict = vdict }
+            { ndict = ndict, tdict = tdict, vdict = vdict, sdict = sdict }
           end
         | CH.Newtype (name, tcon, tbs, ty) => 
           let
             val tdict = QD.insert (tdict, name, Newtype (tbs, ty))
           in
-            { ndict = ndict, tdict = tdict, vdict = vdict }
+            { ndict = ndict, tdict = tdict, vdict = vdict, sdict = sdict }
           end)
 
   fun doModule (CH.Module (name, tdefs, vdefgs), pd)

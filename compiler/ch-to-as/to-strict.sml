@@ -246,7 +246,9 @@ struct
              val env = VD.insert (env, v, vty)
              val alts = List.map (alts, fn alt => valueAlt (im, env, tys, alt))
            in
-             AS.Let (udef, AS.Let (vdef, AS.Case (u, alts)))
+             case alts
+               of [] => AS.Let (udef, AS.Let (vdef, AS.Cast (AS.Bottom u)))
+                | _  => AS.Let (udef, AS.Let (vdef, AS.Case (u, alts)))
            end
          | AL.Lit (l, ty) => let val ty = valueTy ty in AS.Lit (l, ty) end
          | AL.Cast (e, vty, ty) => 
