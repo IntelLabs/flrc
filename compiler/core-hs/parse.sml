@@ -556,6 +556,7 @@ struct
 
   fun yaccParse (filename, strm, strmWithPos) = 
       let val strmRef = ref strm
+          val () = CoreHsLex.UserDeclarations.pos := 0
           val lexer = CoreHsYacc.makeLexer (fn _ => 
                 let 
                   val s = TextIO.StreamIO.inputLine (!strmRef)
