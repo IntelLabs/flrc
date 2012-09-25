@@ -72,3 +72,7 @@ void startTimer() {}
 
 void stackOverflow() {}
 
+int lockFile(int fd, uint64 dev, uint64 ino, int for_writing) { return 0; }
+
+int unlockFile(int fd) { return 0; }
+
