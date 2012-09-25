@@ -670,7 +670,7 @@ struct
                | NONE   => []
         val lookup = lookup' words
         val dirs = lookup' (fn x => [cleanPath x]) (m, libdirs) 
-        val libs = lookup (m, hslibs) @ lookup (m, extralibs)
+        val libs = List.map (lookup (m, hslibs), fn s => s ^ "_ihc") @ lookup (m, extralibs)
         val opts = lookup (m, ldopts)
         (* To stay clean, we skip the rts package! *)
         fun insertName (i, ss) = let val name = idToName i in if name = "rts" then ss else SS.insert (ss, name) end
