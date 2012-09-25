@@ -262,7 +262,7 @@ struct
           of SOME e => e
            | _ => AL.Var (lookupMayFail (vdict, v, "doExp")))
        | CH.Lit (CH.Literal (lit, ty)) => AL.Lit (lit, doTy (im, cfg, dict) ty)
-       | CH.Case (e, (v, vty), ty, alts) =>
+       | oe as CH.Case (e, (v, vty), ty, alts) =>
         let
           val ty = doTy (im, cfg, dict) ty
           val e = doExp (im, cfg, dict) e
@@ -276,7 +276,17 @@ struct
               in
                 AL.Let (AL.Nonrec (AL.Vdef (AL.VbMulti vbs, e)), e')
               end
-             | (true, _) => failMsg ("doExp", "Bad case on unboxed tuple")
+             | (true, []) =>
+               let
+                 val tys = case doTy (im, cfg, dict) vty
+                            of AL.Prim (GP.Tuple tys) => tys
+                             | _ => failMsg ("doExp/case", "expect primitive tuple type for " ^ v)
+                 val vs = List.map (tys, fn ty => IM.variableFresh (im, v, ty))
+                 val vbs = List.zip (vs, tys)
+               in
+                 AL.Let (AL.Nonrec (AL.Vdef (AL.VbMulti vbs, e)), AL.Multi vs)
+               end
+             | (true, _) => failMsg ("doExp", "Bad case on unboxed tuple: " ^ Layout.toString (CL.layoutExp oe))
              | _ => 
                let
                  val (dict, v, vty) = makeVar (im, cfg, dict, (NONE, v), vty)
