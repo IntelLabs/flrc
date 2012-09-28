@@ -4571,7 +4571,7 @@ struct
   val analyzeRecursive = 
    fn (d, imil) =>
       let
-        val MCG.Graph.G {unknown, graph} = IMil.T.callGraph imil
+        val MCG.Graph.G {unknown, known, graph} = IMil.T.callGraph imil
         val scc = PLG.scc graph
         val isSelfRecursive =
          fn n => List.contains (PLG.Node.succs n, n, PLG.Node.equal)

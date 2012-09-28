@@ -48,9 +48,10 @@ sig
     datatype node = NUnknown | NFun of Mil.variable
 
     datatype t = G of {
-      unknown : (node, unit) PolyLabeledGraph.node,
-      graph   : (node, unit) PolyLabeledGraph.t
-    }
+                 known   : (node, unit) PolyLabeledGraph.node Identifier.VariableDict.t,
+                 unknown : (node, unit) PolyLabeledGraph.node,
+                 graph   : (node, unit) PolyLabeledGraph.t
+               }
 
     (* Directed multi-graph.  Edges point from callers to callees *)
     val make : callGraph -> t
@@ -377,6 +378,7 @@ struct
 
     datatype t = G of {
       unknown : (node, unit) PLG.node,
+      known   : ((node, unit) PLG.node) VD.t,
       graph   : (node, unit) PLG.t
     }
 
@@ -409,12 +411,12 @@ struct
                 val es2 = List.concat (List.map (LD.toList calls, doCall))
               in es1 @ es2
               end
-          val (g, (unknown, _)) = PLG.new {nodes = nodes, init = (NONE, VD.empty), node = node, edges = edges}
-          val g = G {unknown = Option.valOf unknown, graph = g}
+          val (g, (unknown, known)) = PLG.new {nodes = nodes, init = (NONE, VD.empty), node = node, edges = edges}
+          val g = G {known = known, unknown = Option.valOf unknown, graph = g}
         in g
         end
 
-    fun layoutDot (c, si, G {unknown, graph}) =
+    fun layoutDot (c, si, G {unknown, known, graph}) =
         let
           fun nodeName n =
               case PLG.Node.getLabel n

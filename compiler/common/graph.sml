@@ -66,6 +66,7 @@ sig
   val scc          : ('a, 'b) t -> ('a, 'b) node list list
   val cc           : ('a, 'b) t -> ('a, 'b) node list list
   val dfsTree      : ('a, 'b) t * ('a, 'b) node -> ('a, 'b) node Tree.t
+  val revPostOrderDfs : ('a, 'b) t * ('a, 'b) node -> ('a, 'b) node List.t
   val postOrderDfs : ('a, 'b) t * ('a, 'b) node -> ('a, 'b) node List.t
   val domTree      : ('a, 'b) t * ('a, 'b) node -> ('a, 'b) node Tree.t
   val pdomTree     : ('a, 'b) t * ('a, 'b) node -> ('a, 'b) node Tree.t
@@ -467,25 +468,30 @@ struct
       in cc
       end
 
-
-  val postOrderDfs : ('a, 'b) t * ('a, 'b) node -> ('a, 'b) node List.t =
+  val revPostOrderDfs : ('a, 'b) t * ('a, 'b) node -> ('a, 'b) node List.t =
    fn (g, start) =>
       let
         val visited = ref IntDict.empty
         fun visitedNode n = IntDict.contains (!visited, getNodeId n)
         fun visit (n) = visited := IntDict.insert (!visited, getNodeId (n), ())
-        fun postOrderVisit (n) = 
+        fun rpoVisit n = 
             let
-              val () = visit (n)
+              val () = visit n
+              (* This has side effects.  For non-trees, this means that 
+               * reversing the outedges before visiting gives a wrong answer 
+               *)
+              val subTrees = List.map (Node.outEdges (n), visitSucc o Edge.to)
             in
-              List.concatMap (Node.outEdges (n), visitSucc o Edge.to) @ [n]
+              n :: List.concat (List.rev subTrees)
             end
-        and visitSucc (dst) = 
-            if (visitedNode (dst)) then nil
-            else postOrderVisit (dst)
+        and visitSucc dst = 
+            if visitedNode dst then nil else rpoVisit dst
       in
-        postOrderVisit (start)
+        rpoVisit start
       end
+
+  val postOrderDfs : ('a, 'b) t * ('a, 'b) node -> ('a, 'b) node List.t = 
+      fn (g, start) => List.rev (revPostOrderDfs (g, start))
 
   val layoutDot' = 
    fn (G g, {edgeOptions, nodeOptions, graphOptions, graphTitle}) =>

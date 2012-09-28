@@ -1314,7 +1314,7 @@ functor MilProfilerF (type env
           
       (* Return the nodelist sorted in reverse depth-first order. *)
       fun reversePostOrdering (SCG g : t, root : node) : node list = 
-          List.rev (Graph.postOrderDfs (#graph g, root))
+          Graph.revPostOrderDfs (#graph g, root)
 
       fun foreachEdge (SCG g, doIt) = 
           List.foreach (Graph.edges (#graph g), fn (e) => doIt (e))

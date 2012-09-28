@@ -4020,12 +4020,12 @@ struct
                 let
                   val msg = "Unreachable node " ^ I.labelString i ^ " in listRPO: appending"
                   val () = Chat.warn1 (config, msg)
-                  val acc = (i, block (cb, i))::acc
+                  val acc = acc @ [(i, block (cb, i))]
                 in acc
                 end
-          fun list (i, acc) = 
+          fun list i = 
               if (visited i) then
-                acc
+                []
               else
                 let
                   val () = finish i
@@ -4035,19 +4035,20 @@ struct
                       let
                         val msg = "Reference to non-existent block " ^ I.labelString i ^ " in listRPO: ignoring"
                         val () = Chat.warn1 (config, msg)
-                      in acc
+                      in []
                       end
                     | SOME b =>
                       let
                         val {blocks = ls, ...} = Block.successors b
-                        val res = LS.fold (ls, (i, b)::acc, list)
+                        val subs = List.map (LS.toList ls, list)
+                        val res = (i, b) :: List.concat (List.rev subs)
                       in res
                       end
                 end
-          val rbids = list (entry cb, [])
-          val rbids = LD.fold (blocks cb, rbids, checkFinished)
-          val lbs = List.rev rbids
-        in lbs
+
+          val bids = list (entry cb)
+          val bids = LD.fold (blocks cb, bids, checkFinished)
+        in bids
         end
 
     fun dfsTrees cb =

@@ -8,7 +8,7 @@ local
         ../imil/imil.mlb
         cse.sml
         contify.sml
-        
+        fx-analysis.sml
         cfg-simplify.sml
 (*        fun-known.sml *)
         simple-escape.sml
@@ -32,6 +32,7 @@ in
         structure MilContify
         structure MilCse
         structure MilDblDiamond
+        structure MilFxAnalysis
         structure MilLicm
         structure MilRemoveBranch
         structure MilRep
