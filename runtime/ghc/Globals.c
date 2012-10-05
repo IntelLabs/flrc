@@ -76,3 +76,4 @@ int lockFile(int fd, uint64 dev, uint64 ino, int for_writing) { return 0; }
 
 int unlockFile(int fd) { return 0; }
 
+uint64 getMonotonicNSec() { return pLsrEventsTimeStamp() * 100; }

@@ -138,6 +138,8 @@ struct
                               in
                                 case u 
                                   of AL.Prim (GP.EqTy _) => v
+                                   (* remove unboxed tuple when it is a function argument *)
+                                   | AL.Prim (GP.Tuple tys) => List.foldr (tys, v, AL.Arr)
                                    | _ => AL.Arr (u, v)
                               end
                          else let
@@ -301,14 +303,20 @@ struct
             | _ => failMsg ("valueExp", "expect normalized cast expression "))
        | CH.Lam (bind, e) =>
         (case bind 
-          of CH.Vb (v, vty) => 
+          of CH.Vb (vstr, vty) => 
               let 
-                val (dict, v, vty) = makeVar (im, cfg, dict, (NONE, v), vty)
-                val e = doExp (im, cfg, dict) e
+                val (dict, v, vty) = makeVar (im, cfg, dict, (NONE, vstr), vty)
               in
                 case vty (* we skip z7eUzh because it is a type variable *)
-                  of AL.Prim (GP.EqTy _) => e
-                   | _ => AL.Lam ((v, vty), e)
+                  of AL.Prim (GP.EqTy _) => doExp (im, cfg, dict) e
+                   | AL.Prim (GP.Tuple tys) => (* remove unboxed tuple when it's function argument *)
+                    let
+                      val vs = List.map (tys, fn ty => IM.variableFresh (im, vstr, ty))
+                      val dict = addSubstitute (dict, (NONE, vstr), AL.Multi vs)
+                    in
+                      List.foldr (List.zip (vs, tys), doExp (im, cfg, dict) e, AL.Lam)
+                    end
+                   | _ => AL.Lam ((v, vty), doExp (im, cfg, dict) e)
               end
            | CH.Tb (v, vkind) => doExp (im, cfg, dict) e)       (* ignore type bindings *)
        | CH.Let (vdefg, e) =>
@@ -327,6 +335,8 @@ struct
               of CH.App (f, e) =>
                (case doExp (im, cfg, dict) e
                  of AL.Var v => AL.App (doExp (im, cfg, dict) f, v)
+                  (* remove unboxed tuple when it is function argument *)
+                  | AL.Multi vs => List.fold (vs, doExp (im, cfg, dict) f, fn (v, f) => AL.App (f, v))
                   | _ => failMsg ("doExp", "expresion not in a-norm form " ^ Layout.toString (CL.layoutExp e)))
                | _ => failMsg ("doExp", "cannot handle " ^ Layout.toString (CL.layoutExp e))))
 
@@ -348,15 +358,22 @@ struct
        | CH.Alit (CH.Literal (lit, ty), e) => AL.Alit (lit, doTy (im, cfg, dict) ty, doExp (im, cfg, dict) e)
        | CH.Adefault e => AL.Adefault (doExp (im, cfg, dict) e)
 
-  and doVDefVar (im, cfg, dict) (CH.Vdef (v, vty, e)) = 
+  and doVDefVar (im, cfg, dict) (CH.Vdef (v as (_, vstr), vty, e)) = 
       case isUtupleTy vty
-       of SOME tys => failMsg ("doVDefVar", "Unboxed tuple bound to a variable")
+       of SOME tys => 
+         let
+           val vbs = List.map (tys, fn t => (vstr, t))
+           val (dict, vbs) = makeVars (im, cfg, dict, vbs)
+           val dict = addSubstitute (dict, v, AL.Multi (List.map (vbs, #1)))
+         in
+           ((AL.VbMulti vbs, e), dict)
+         end
         | NONE => 
-          let
-            val (dict, v, vty) = makeVar (im, cfg, dict, v, vty)
-          in
-            ((AL.VbSingle (v, vty), e), dict)
-          end
+         let
+           val (dict, v, vty) = makeVar (im, cfg, dict, v, vty)
+         in
+           ((AL.VbSingle (v, vty), e), dict)
+         end
 
   and doVDef (im, cfg, dict) (bind, e) = AL.Vdef (bind, doExp (im, cfg, dict) e)
 
