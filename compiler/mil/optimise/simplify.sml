@@ -202,6 +202,7 @@ struct
          ("ClosureGetFv",     "Closure fv projections reduced" ),
          ("ClosureInitCode",  "Closure code ptrs killed"       ),
          ("ConstParameter",   "Constant or dead args killed"   ),
+         ("NoReturn",         "No return functions"            ),
          ("PSetCond",         "SetCond ops reduced"            ),
          ("PSetGet",          "SetGet ops reduced"             ),
          ("PSetNewEta",       "SetNew ops eta reduced"         ),
@@ -290,6 +291,7 @@ struct
     val makeDirect = clicker "MakeDirect"
     val mergeBlocks = clicker "MergeBlocks"
     val nonRecursive = clicker "NonRecursive"
+    val noReturn = clicker "NoReturn"
     val objectGetKind = clicker "ObjectGetKind"
     val optInteger = clicker "OptInteger"
     val optRational = clicker "OptRational"
@@ -1883,7 +1885,116 @@ struct
         in try (Click.codeTrim, f)
         end
 
-    val reduce = thunkToThunkVal or thunkEta or constParameter or functionWrap or codeTrim
+    val noReturn =
+        let
+          val f = 
+           fn ((d, imil, ws), c) => 
+              let
+                val fname = IFunc.getFName (imil, c)
+                val transfers = IMil.Enumerate.IFunc.transfers (imil, c)
+                (* Bail out if this function has a normal return *)
+                val () = 
+                    let
+                      val rets = 
+                       fn t => (case <@ IInstr.toTransfer t
+                                 of M.TGoto _      => ()
+                                  | M.TCase _      => () 
+                                  | M.TInterProc r => 
+                                    (case #ret r
+                                      of M.RNormal _ => ()
+                                       | M.RTail _   => 
+                                         let
+                                           (* A tail call is evidence of a return unless it is a self tail call *)
+                                           val codes = MU.InterProc.codes (#callee r)
+                                           val () = Try.require (MU.Codes.exhaustive codes)
+                                           val possible = MU.Codes.possible codes
+                                           val () = Try.require (VS.size possible = 1)
+                                           val f = valOf (VS.getAny possible)
+                                           val () = Try.require (f = fname)
+                                         in ()
+                                         end)
+                                  | M.TReturn _    => Try.fail ()
+                                  | M.TCut _       => ()
+                                  | M.THalt _      => ())
+                      val () = List.foreach (transfers, rets)
+                    in ()
+                    end
+                (* Find all direct calls *)
+                val calls = 
+                    let
+                      val uses = Use.getUses (imil, fname)
+                      val check =
+                          Try.lift
+                            (fn use => 
+                                let
+                                  val ii = <@ Use.toIInstr use
+                                  val caller = IInstr.getIFunc (imil, ii)
+                                  val r as {callee, ret, fx} = <@ MU.Transfer.Dec.tInterProc <! IInstr.toTransfer @@ ii
+                                  (* Check that this use is definitely a call to fname *)
+                                  val () = 
+                                      (case callee
+                                        of M.IpCall {call, args} => 
+                                           (case call 
+                                             of M.CDirectClosure {cls, code} => Try.require (code = fname)
+                                              | M.CCode          {ptr, code} => Try.require (ptr = fname)
+                                              | M.CClosure {cls, code}       => Try.fail ())
+                                         | M.IpEval {typ, eval} => 
+                                           (case eval
+                                             of M.EThunk {thunk, code}       => Try.fail ()
+                                              | M.EDirectThunk {thunk, code} => Try.require (code = fname)))
+                                  (* Check that the call is not already rewritten *)
+                                  val () = 
+                                      (case ret
+                                        of M.RNormal {block, ...} => 
+                                           let
+                                             val b = IFunc.getBlockByLabel (imil, caller, block)
+                                             (* If the successor is empty and ends in a halt, don't rewrite again *)
+                                             val () = case IBlock.getTransfer' @@ (imil, b)
+                                                       of M.THalt _ => Try.require (not (IBlock.isEmpty (imil, b)))
+                                                        | _         => ()
+                                           in ()
+                                           end
+                                         | M.RTail _  => ())
+                                in (ii, r)
+                                end)
+                    in Vector.keepAllMap (uses, check)
+                    end
+                val () = Try.require (Vector.length calls > 0)
+                (* Change each direct call to go to a halt after returning *)
+                val callers = 
+                    let
+                      val doOne = 
+                       fn (ii, {callee, ret, fx}) =>  
+                          let
+                            val caller = IInstr.getIFunc (imil, ii)
+                            val l = Var.labelFresh imil
+                            val b = M.B {parameters = Vector.new0 (),
+                                         instructions = Vector.new0 (),
+                                         transfer = M.THalt (M.SConstant (MU.Sintp.zero (PD.getConfig d)))}
+                            val ib = IBlock.build (imil, caller, (l, b))
+                            val ret = 
+                                (case ret
+                                  of M.RNormal {rets, block, cuts} => M.RNormal {rets = rets, block = l, cuts = cuts}
+                                   | M.RTail {exits}               => 
+                                     let
+                                       val ts = IFunc.getRtyps (imil, c)
+                                       val vs = Vector.map (ts, fn t => Var.new (imil, "dead", t, M.VkLocal))
+                                       val cuts = M.C {exits = exits, targets = LS.empty}
+                                     in M.RNormal {rets = vs, block = l, cuts = cuts}
+                                     end)
+                            val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                            val () = IInstr.replaceTransfer (imil, ii, t)
+                          in I.ItemFunc caller
+                          end
+                      val callers = Vector.toListMap (calls, doOne)
+                    in callers
+                    end
+              in callers
+              end
+        in try (Click.noReturn, f)
+        end
+
+    val reduce = thunkToThunkVal or thunkEta or constParameter or functionWrap or codeTrim or noReturn
 
   end (* structure FuncR *)
 
