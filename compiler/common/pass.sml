@@ -191,6 +191,7 @@ sig
   val doSubPass : ('a, 'b) t -> ('a, 'b) processor
   exception Done
   val stopAt : string -> ('a, 'a) processor
+  val extractConfig : ('a, 'a * Config.t) processor 
   val >> : ('a, 'b) processor * ('b, 'c) processor -> ('a, 'c) processor
   val >>> : ('a, 'b * Config.t) processor * ('b, 'c) processor -> ('a, 'c) processor
   val first : ('a, 'b) processor -> ('a * 'c, 'b * 'c) processor
@@ -430,6 +431,8 @@ struct
         fun f (pd, _, arg) = if sp = Config.stop (PassData.getConfig pd) then raise Done else arg
       in T f
       end
+
+  val extractConfig = T (fn (pd, _, arg) => (arg, PassData.getConfig pd))
 
   fun >> (T f1, T f2) =
       let

@@ -13,7 +13,7 @@ functor Driver
    val controls : Config.Control.control list
    val debugs : Config.Debug.debug list
    val features : Config.Feature.feature list
-   val exts : (string * (unit, Mil.t * string Identifier.VariableDict.t option) Pass.processor) list
+   val exts : (string * (unit, Mil.t * Config.t) Pass.processor) list
    val keeps : StringSet.t
    val stops : StringSet.t
    val langVersions : string list)
@@ -91,9 +91,8 @@ struct
         stopAt "obj" >>
         doObj
     val doMil =
-        first (doB MilCompile.pass) >>
+        doB MilCompile.pass >>
         stopAt "m" >>
-        doPass CoreHsLinkOption.pass >>>
         doPass Outputter.pass >>
         stopAt "pil" >>
         doPil
@@ -107,7 +106,7 @@ struct
          ("pil", doPil),
          ("o", doObj),
          ("obj", doObj)] @
-        (List.map (exts, fn (ext, p) => (ext, p >> doMil)))
+        (List.map (exts, fn (ext, p) => (ext, p >>> doMil)))
 
     end
          

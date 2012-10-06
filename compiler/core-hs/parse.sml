@@ -4,10 +4,10 @@
 signature CORE_HS_PARSE =
 sig
   type options = { dirs : string list, libs : string list, opts : string list }
-  type ghcPkg = { depends : StringSet.t, options : options } 
+  type ghcPkg = { version : string, depends : StringSet.t, options : options } 
   type pkgMap = ghcPkg StringDict.t
   val getGhcPkgAll : Config.t -> string * pkgMap -> pkgMap
-  val pass : (unit, CoreHs.t) Pass.t
+  val pass : (unit, CoreHs.t * StringSet.t option) Pass.t
   val parseFile : string * Config.t -> CoreHs.t
   val noMainWrapper : Config.t -> bool
 end
@@ -609,18 +609,19 @@ struct
                 | _       => Fail.fail ("HsToMilUtils", "idToName", "cannot parse package ID: " ^ s)
 
   type options = { dirs : string list, libs : string list, opts : string list }
-  type ghcPkg = { depends : SS.t, options : options } 
+  type ghcPkg = { version : string, depends : SS.t, options : options } 
   type pkgMap = ghcPkg SD.t
 
-  (* Cache for ghc-pkg information *)
+  (* Cache for ghc-pkg information, persistent throughout *)
   val packages = ref SD.empty
 
+  val version = "version"
   val libdirs = "library-dirs"
   val hslibs  = "hs-libraries"
   val extralibs = "extra-libraries"
   val ldopts  = "ld-options"
 
-  val fields = [ libdirs, hslibs, extralibs, ldopts ]
+  val fields = [ version, libdirs, hslibs, extralibs, ldopts ]
 
   fun words s = List.keepAll (String.split (s, #" "), not o String.isEmpty)
 
@@ -677,8 +678,11 @@ struct
         val depends = case SD.lookup (m, "depends")
                         of SOME s => List.fold (words s, SS.empty, insertName)
                          | NONE   => SS.empty
+        val version = case SD.lookup (m, "version") 
+                        of SOME s => String.deleteSurroundingWhitespace s 
+                         | NONE   => ""
         val depends = SS.keepAll (depends, fn p => not (String.hasPrefix (p, { prefix = "ghc-prim" })))
-        val pkg = { depends = depends, options = { dirs = dirs, libs = libs, opts = opts } }
+        val pkg = { version = version, depends = depends, options = { dirs = dirs, libs = libs, opts = opts } }
         val () = Chat.log2 (cfg, "dirs: " ^ Layout.toString (List.layout Layout.str dirs))
         val () = Chat.log2 (cfg, "libs: " ^ Layout.toString (List.layout Layout.str libs))
         val () = Chat.log2 (cfg, "opts: " ^ Layout.toString (List.layout Layout.str opts))
@@ -1100,6 +1104,7 @@ struct
         val basename = Config.pathToHostString (config, basename)
         val infile = if (!odir) = "" then basename ^ ".hcr" 
                         else Config.pathToHostString (config, Path.snoc(opath, "Main.hcr"))
+        val pkgs = ref SS.empty
          
         fun readOne (mname : C.anMName, defd : defDict, scanned : MS.t) =
             if MS.member (scanned, mname) 
@@ -1107,6 +1112,7 @@ struct
               else
                 let
                   val (pname, path) = mNameToPath mname
+                  val () = pkgs := SS.insert (!pkgs, pname)
                   val hcrRoot = 
                       case pname
                         of "main" => opath
@@ -1197,7 +1203,7 @@ struct
               val mainVar = if noMainWrapper config then CHU.mainVar else CHU.wrapperMainVar
               val m = readAll (mname, defd, scanned, mainVar)
               val () = chatStats ()
-            in m
+            in (m, SOME (!pkgs))
             end
       in
         Exn.finally (process, cleanup)
@@ -1208,8 +1214,8 @@ struct
   val description = {name        = passname,
                      description = "Parser for GHC core",
                      inIr        = Pass.unitHelpers,
-                     outIr       = { printer = layout,
-                                     stater  = layout },
+                     outIr       = { printer = layout o #1,
+                                     stater  = layout o #1},
                      mustBeAfter = [],
                      stats       = []}
 

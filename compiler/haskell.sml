@@ -7,7 +7,7 @@ sig
   val controls : Config.Control.control list
   val debugs : Config.Debug.debug list
   val features : Config.Feature.feature list
-  val exts : (string * (unit, Mil.t * string Identifier.VariableDict.t option) Pass.processor) list
+  val exts : (string * (unit, Mil.t * Config.t) Pass.processor) list
   val keeps : StringSet.t
   val stops : StringSet.t
   val langVersions : string list
@@ -90,13 +90,14 @@ struct
 
   val doGhcCore =
       doPass CoreHsParse.pass >>
-      stopAt "hsc" >>
+      doPass CoreHsLinkOption.pass >>
+      stopAt "hsc" >> Pass.first (
       doPass CoreHsNormalize.pass >> 
       doPass CoreHsToANormLazy.pass >> 
       doPass ANormLazyToStrict.pass >> 
       doPass ANormStrictOptimize.pass >> 
       doPass ANormStrictClosureConvert.pass >> 
-      doPass ANormStrictToMil.pass
+      doPass ANormStrictToMil.pass)
 
   fun doGhc ext =
       doPass (FrontEndHs.pass ext) >>
@@ -106,7 +107,7 @@ struct
 
   val exts =
       [("hcr", doGhcCore),
-       ("hs", doGhc "hs"),
+       ("hs",  doGhc "hs"),
        ("lhs", doGhc "lhs")]
 
   val keeps = StringSet.fromList ["hcr"]

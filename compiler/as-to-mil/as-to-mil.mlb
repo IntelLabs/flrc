@@ -10,10 +10,8 @@ local
         utils.sml
         ghc-prim.sml
         to-mil.sml
-        link-option.sml
 in
         structure HsToMilUtils
         structure GHCPrim
         structure ANormStrictToMil 
-        structure CoreHsLinkOption
 end

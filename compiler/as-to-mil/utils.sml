@@ -35,7 +35,6 @@ struct
                , prelude    : MS.t ref
                , stableRoot : I.variable
                , externs    : (string * I.variable) SD.t ref
-               , packages   : string VD.t ref
                , effects    : Effect.set VD.t ref
                , stateful   : VS.t
                , worlds     : VS.t
@@ -82,15 +81,15 @@ struct
         IM.variableSetInfo (im, v, M.VI { typ = typ, kind = kind }) 
       end
 
-  fun newState (im, cfg, aliases, codePtrs, globals, prelude, stableRoot, externs, packages, effects, stateful, worlds) : state = 
+  fun newState (im, cfg, aliases, codePtrs, globals, prelude, stableRoot, externs, effects, stateful, worlds) : state = 
       { im = im, cfg = cfg, aliases = aliases, codePtrs = ref codePtrs, globals = ref globals, prelude = ref prelude, 
         stableRoot = stableRoot, externs = ref externs, 
-        packages = ref packages, effects = ref effects, stateful = stateful, worlds = worlds }
+        effects = ref effects, stateful = stateful, worlds = worlds }
 
   (* either lookup an existing extern variable, or make a new one *)
   fun externVariable (state : state, pname, str, mkTyp) = 
       let
-        val { im, externs, packages, ... } = state
+        val { im, externs, ... } = state
       in
         case SD.lookup (!externs, str)
           of SOME (_, fvar) => 
@@ -105,7 +104,6 @@ struct
               val typ  = mkTyp ()
               val fvar = IM.variableFresh (im, str, M.VI { typ = typ, kind = M.VkExtern })
               val () = externs := SD.insert (!externs, str, (pname, fvar))
-              val () = packages := VD.insert (!packages, fvar, pname)
             in
               (fvar, typ)
             end
@@ -265,21 +263,6 @@ struct
                                                      ^ " = eval "
                                                      ^ IM.variableString (im, fvar))
       end
-
-  fun stripLN s = String.dropTrailing (s, #"\n")
-  fun stripCR s = String.dropTrailing (s, #"\r")
-  val ghcLibRoot = ref NONE
-  fun getGhcLibRoot cfg = 
-      case !ghcLibRoot
-        of SOME d => d
-         | NONE => 
-          let
-            fun run (cmd, args) = Pass.runCmd (cmd, args, [], true)
-            val d = stripCR (stripLN (run ("ghc", ["--print-libdir"])))
-            val () = ghcLibRoot := SOME d
-          in
-            d
-          end
 
   fun lookupEffect (effects, v, isStateful, isIO) = 
       case VD.lookup (!effects, v) 

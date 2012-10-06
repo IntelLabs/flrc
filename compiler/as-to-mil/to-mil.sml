@@ -4,7 +4,7 @@
  *)
 signature ANORM_STRICT_TO_MIL =
 sig
-  val pass : (ANormStrict.t * (Identifier.VariableSet.t Identifier.VariableDict.t), Mil.t * string Mil.VD.t option) Pass.t
+  val pass : (ANormStrict.t * (Identifier.VariableSet.t Identifier.VariableDict.t), Mil.t) Pass.t
 end
 
 structure ANormStrictToMil :> ANORM_STRICT_TO_MIL =
@@ -895,8 +895,7 @@ struct
         val _ = List.map (I.listVariables oldim, fn v => IM.variableSetInfo (im, v, convertInfo v))
         val (rvar, rval) = GP.initStableRoot (im, cfg)
         val state = TMU.newState (im, cfg, aliases, VD.empty, VD.fromList [(rvar, rval)], 
-                                  MS.empty, rvar, SD.empty,
-                                  VD.empty, VD.empty, !stateful, !worlds)
+                                  MS.empty, rvar, SD.empty, VD.empty, !stateful, !worlds)
         val ws = Config.targetWordSize cfg
         val v1_typ = M.TCode { cc   = M.CcUnmanaged M.AbiCdecl
                              , args = Vector.new2 (M.TCString, GP.intTyp ws)
@@ -904,7 +903,6 @@ struct
         val v1_printf = IM.variableFresh (im, "printf", M.VI { typ = v1_typ, kind = M.VkExtern })
         val main = doGlobal (state, v1_printf) ([], main, MS.empty) vdefgs
         val () = globalizePrelude state
-        val { packages, ... } = state
         fun finish (v, t as M.VI { typ, kind }, externs) =
             (t, case kind of M.VkExtern => VS.insert (externs, v) | _ => externs)
         val (symtable, externs) = IM.finishMapFold (im, VS.empty, finish)
@@ -924,18 +922,15 @@ struct
                        , symbolTable = symtable
                        , entry       = main }
       in
-        (prog, SOME (!packages))
+        prog
       end
-
-  fun wrapIR { printer, stater } = { printer = fn ((x, _), c) => printer (x, c)
-                                   , stater  = fn ((x, _), c) => stater  (x, c) }
 
   val layoutOut = Utils.Function.flipIn ANormStrictLayout.layout
   val description = {name        = passname,
                      description = "Strict A-Normal Form to Mil",
                      inIr        = { printer = fn ((p, fa), config) => ANormStrictLayout.layout (config, p),
                                      stater  = fn _ => Layout.str "No stats yet"},
-                     outIr       = wrapIR MilUtils2.irHelpers,
+                     outIr       = MilUtils2.irHelpers,
                      mustBeAfter = [],
                      stats       = []}
 
