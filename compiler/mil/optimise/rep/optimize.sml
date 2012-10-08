@@ -1569,14 +1569,6 @@ struct
                                     val () = addCode cptr
                                   in ()
                                   end
-                                | M.RhsThunkValue {thunk, ...} => 
-                                  let
-                                    val addCodeV = 
-                                     fn v => FG.add (getFlowgraph s, MRS.variableNode (summary, v), Lat.unknownCodePtr)
-                                    val () = Option.foreach (thunk, addCodeV)
-                                    val () = Vector.foreach (dests, addCodeV)
-                                  in ()
-                                  end
                                 | M.RhsClosureInit {cls, code = SOME cptr, ...} => 
                                   let
                                     val () = Option.foreach (cls, addCodeV cptr)
@@ -1597,8 +1589,6 @@ struct
                              (case g
                                of M.GClosure {code = SOME cptr, ...} => 
                                   FG.add (getFlowgraph s, MRS.variableNode (summary, v), Lat.codePtr cptr)
-                                | M.GThunkValue _ => 
-                                  FG.add (getFlowgraph s, MRS.variableNode (summary, v), Lat.unknownCodePtr)
                                 | M.GCode _ => 
                                   FG.add (getFlowgraph s, MRS.variableNode (summary, v), Lat.codePtr v)
                                 | _         => ())

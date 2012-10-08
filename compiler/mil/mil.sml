@@ -262,6 +262,9 @@ struct
     | CClosure       of {cls : variable, code : codes}
     | CDirectClosure of {cls : variable, code : variable}
 
+  (* N.B. codes/code describe the code pointers that can reach here.  
+   * ThunkValues are still possible.
+   *)
   datatype eval =
       EThunk       of {thunk : variable, code : codes}
     | EDirectThunk of {thunk : variable, code : variable}

@@ -1172,7 +1172,7 @@ struct
                                              | M.EThunk {thunk, code = {possible, exhaustive}} => 
                                                let
                                                  val possible = VS.remove (possible, fname)
-                                                 val code = {possible = possible, exhaustive = false}
+                                                 val code = {possible = possible, exhaustive = exhaustive}
                                                  val eval = M.EThunk {thunk = thunk, code = code}
                                                in eval
                                                end)
