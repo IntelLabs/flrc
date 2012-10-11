@@ -1945,7 +1945,9 @@ struct
   fun genHalt (state, env, opnd) = 
       let
         val M.F {rtyps, ...} = getFunc env
-        val void = Vector.length rtyps = 0
+        val i = Vector.length rtyps
+        val void =  i = 0 orelse
+                    ((i > 1) andalso not (doMultiReturn (getConfig env)))
         val halt = if void then RT.haltV else RT.halt
       in Pil.S.call (Pil.E.namedConstant halt, [genOperand (state, env, opnd)])
       end
