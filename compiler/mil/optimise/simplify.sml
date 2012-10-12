@@ -1994,7 +1994,7 @@ struct
         in try (Click.noReturn, f)
         end
 
-    val reduce = thunkToThunkVal or thunkEta or constParameter or functionWrap or codeTrim or noReturn
+    val reduce = thunkToThunkVal or thunkEta or constParameter or functionWrap or codeTrim (*or noReturn*)
 
   end (* structure FuncR *)
 
