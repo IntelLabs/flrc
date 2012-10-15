@@ -74,6 +74,7 @@ hexchar = \'\\x{xdigit}+\';
 <INITIAL>"%left" => (Tokens.LEFT(!pos,!pos));
 <INITIAL>"%right" => (Tokens.RIGHT(!pos,!pos));
 <INITIAL>"%inst" => (Tokens.INST(!pos,!pos));
+<INITIAL>"%nth" => (Tokens.NTH(!pos,!pos));
 <INITIAL>"%forall" => (Tokens.FORALL(!pos,!pos));
 <INITIAL>";"      => (Tokens.SEMI(!pos,!pos));
 <INITIAL>"="      => (Tokens.EQ(!pos,!pos));
