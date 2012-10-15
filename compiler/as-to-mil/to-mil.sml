@@ -118,10 +118,18 @@ struct
               of CH.Prim => failMsg ("doExp/ExpApp", "external primitives is not supported")
               | CH.Label =>
               let
-                val ws = Config.targetWordSize cfg
-                (* Do not call TMU.externalVariable because we don't want to mix extern labels with code types *)
-                (* val (fvar, typ) = TMU.externVariable (state, pname, fstr, fn () => M.TNonRefPtr) *)
-                val fvar = IM.variableFresh (im, fstr, M.VI { typ = M.TNonRefPtr, kind = M.VkExtern })
+                (* 
+                 * Do not call TMU.externalVariable on functions included in
+                 * header files because we don't want to mix extern labels with
+                 * code types. But we have no way to figure out which are
+                 * included, so have to hard-code them.
+                 *)
+                val declaredSet = SS.fromList ["free", "n_capabilities"]
+                val (fvar, typ) = 
+                    if SS.member (declaredSet, fstr) then
+                      (IM.variableFresh (im, fstr, M.VI { typ = M.TNonRefPtr, kind = M.VkExtern }), M.TNonRefPtr)
+                    else
+                      TMU.externVariable (state, pname, fstr, fn () => M.TNonRefPtr) before print ("declare " ^ fstr ^ "\n")
               in
                 (MS.bindsRhs (rvar, M.RhsSimple (M.SVariable fvar)), Effect.Total)
               end
@@ -843,12 +851,9 @@ struct
            , "hs_int64ToWord64", "hs_wordToWord64", "hs_word64ToWord", "hs_word64ToInt64"])
       ]
 
-  fun filterDeclaredExterns (st, externs) =
+  fun filterDeclaredExterns (st, externs, declared) =
       let
-        (* filter out those with NonRefPtr type, i.e., externs with no declared type. *)
-        fun notTyped (M.VI { typ = M.TNonRefPtr, ... }) = true
-          | notTyped _ = false
-        val hidden = VS.keepAll (externs, fn v => notTyped (I.variableInfo (st, v)))
+        val hidden = VS.keepAll (externs, fn v => not (VS.member (declared, v)))
         val externs = VS.difference (externs, hidden)
         val nameMap = SD.fromList (List.map (VS.toList externs, fn v => (I.variableName (st, v), v)))
         fun declare (header, names) = 
@@ -913,7 +918,8 @@ struct
         val primExterns = SD.fold (!(#externs state), VS.empty,
                                    fn (n, (p, v), s) => if p = GP.pkgName then VS.insert (s, v) else s)
         val stdio = M.IF { name = "stdio" , kind = M.IkC , externs = VS.singleton v1_printf }
-        val (includes, externs) = filterDeclaredExterns (symtable, externs)
+        val declared = VS.fromList (List.map ((SD.range (!(#externs state))), #2))
+        val (includes, externs) = filterDeclaredExterns (symtable, externs, declared)
         val prim = M.IF { name = GP.pkgName, kind = M.IkTarget, externs = primExterns }
         val externs = M.EG { kind = M.IkC, externs = VS.difference (externs, primExterns) }
         val prog = M.P { includes    = Vector.fromList (prim :: includes)
