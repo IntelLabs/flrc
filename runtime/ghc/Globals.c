@@ -9,6 +9,9 @@ typedef enum {
 static void* ihrStore[ISK_Num] = {NULL, };
 static struct PrtMutex* ihrStoreLock;
 
+/* hard code n_capabilities to 1 for now */
+unsigned int n_capabilities = 1;
+
 void ihrGlobalInit()
 {
     /* XXX NG: PRT mutexes are implemented yet
