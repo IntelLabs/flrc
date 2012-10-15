@@ -141,7 +141,7 @@ struct
         fun go n (c :: cs) =
             if Char.isHexDigit c then
               go (16 * n + Char.toHexDigit c) cs
-            else if c = #"U" then
+            else if c = #"U" andalso n >= 0 andalso n < 256 then
               chr n :: decode cs
             else
               fail ()

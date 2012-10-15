@@ -35,7 +35,7 @@ struct
   structure U = Utils
   structure L = Layout
 
-  val useDecodedNames = true
+  val useDecodedNames = false
 
   val tabSize = 2
 
