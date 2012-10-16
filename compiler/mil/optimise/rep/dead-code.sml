@@ -930,9 +930,13 @@ struct
                        let
                          val eval = 
                              case eval
-                              of M.EThunk {thunk, code}       => M.EThunk {thunk = thunk, code = doCodes code}
-                               | M.EDirectThunk {thunk, code} => if live code then eval
-                                                                 else M.EThunk {thunk = thunk, code = MU.Codes.none}
+                              of M.EThunk {thunk, value, code}       => M.EThunk {thunk = thunk, 
+                                                                                  value = value, 
+                                                                                  code = doCodes code}
+                               | M.EDirectThunk {thunk, value, code} => if live code then eval
+                                                                        else M.EThunk {thunk = thunk, 
+                                                                                       value = value, 
+                                                                                       code = MU.Codes.none}
 
                          val callee = M.IpEval {typ = typ, eval = eval}
                          val (s, ip) = 

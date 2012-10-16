@@ -293,13 +293,13 @@ functor MilAnalyseF (
 
   fun analyseEval (s, e, eval) =
       case eval
-       of M.EThunk {thunk, code} => 
+       of M.EThunk {thunk, value, code} => 
           let
             val () = analyseVariable (s, e, thunk)
             val () = analyseCodes (s, e, code)
           in ()
           end
-        | M.EDirectThunk {thunk, code} =>
+        | M.EDirectThunk {thunk, value, code} =>
           let
             val () = analyseVariable (s, e, thunk)
             val () = analyseVariable (s, e, code)

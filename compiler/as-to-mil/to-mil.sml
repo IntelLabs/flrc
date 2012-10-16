@@ -781,7 +781,7 @@ struct
                   val eval = 
                       let
                         val code = TMU.stateGetCodesForFunction (state, main)
-                      in M.EThunk { thunk = main, code = code }
+                      in M.EThunk { thunk = main, value = not (MilUtils.Codes.exhaustive code), code = code }
                       end
                   val blk1 = MU.eval (im, cfg, FK.fromTyp (cfg, ftyp), eval, cuts, Effect.Total, fvar)
                   (* make a State# RealWorld# value *)

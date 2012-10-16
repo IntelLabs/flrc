@@ -221,6 +221,7 @@ struct
          ("TGoto",            "Gotos eliminated"               ),
          ("ThunkEta",         "Thunks eta reduced"             ),
          ("ThunkEvalBeta",    "ThunkEvals beta reduced"        ),
+         ("ThunkEvalToGetVal","ThunkEvals made get vals"       ),
          ("ThunkGetFv",       "Thunk fv projections reduced"   ),
          ("ThunkGetValue",    "ThunkGetValue ops reduced"      ),
          ("ThunkInitCode",    "Thunk code ptrs killed"         ), 
@@ -315,6 +316,7 @@ struct
     val tGoto = clicker "TGoto"
     val thunkEta = clicker "ThunkEta"
     val thunkEvalBeta = clicker "ThunkEvalBeta"
+    val thunkEvalToGetVal = clicker "ThunkEvalToGetVal"
     val thunkGetFv = clicker "ThunkGetFv"
     val thunkGetValue = clicker "ThunkGetValue"
     val thunkInitCode = clicker "ThunkInitCode"
@@ -1158,22 +1160,22 @@ struct
                                       val {typ, eval} = <@ MU.InterProc.Dec.ipEval callee
                                       val eval =
                                           (case eval
-                                            of M.EDirectThunk {thunk, code} => 
+                                            of M.EDirectThunk {thunk, value, code} => 
                                                let
                                                  val () = Try.require (fname = code)
                                                  val eval = 
                                                      (case action
                                                        of Globalize (gv, oper, iGlobal) => 
-                                                          M.EThunk {thunk = gv, code = MU.Codes.none}
+                                                          M.EThunk {thunk = gv, value = true, code = MU.Codes.none}
                                                         | Reduce i => 
-                                                          M.EThunk {thunk = thunk, code = MU.Codes.none})
+                                                          M.EThunk {thunk = thunk, value = true, code = MU.Codes.none})
                                                in eval
                                                end
-                                             | M.EThunk {thunk, code = {possible, exhaustive}} => 
+                                             | M.EThunk {thunk, value, code = {possible, exhaustive}} => 
                                                let
                                                  val possible = VS.remove (possible, fname)
                                                  val code = {possible = possible, exhaustive = exhaustive}
-                                                 val eval = M.EThunk {thunk = thunk, code = code}
+                                                 val eval = M.EThunk {thunk = thunk, value = true, code = code}
                                                in eval
                                                end)
                                       val callee = M.IpEval {typ = typ, eval = eval}
@@ -1242,7 +1244,7 @@ struct
                  * Find the index of this free variable. Also return the code pointer
                  * of the eval if it was a direct eval.
                  *)
-                val (idx, innerCode) = 
+                val (idx, innerCode, innerValue) = 
                     let
                       val t = 
                           case transfers
@@ -1256,6 +1258,7 @@ struct
                       val _ = <@ MU.Return.Dec.rTail ret
                       val eval = #eval <! MU.InterProc.Dec.ipEval @@ callee
                       val innerCode = MU.Eval.codes eval
+                      val innerValue = MU.Eval.value eval
                       (* in case we're post-lowering, ensure that we have code pointers *)
                       val () = VS.foreach (#possible innerCode, 
                                         fn cptr => ignore (<@ IFunc.getIFuncByName' (imil, cptr)))
@@ -1264,7 +1267,7 @@ struct
                       val () = Try.require (evalThunk <> thunk)
                      (* The evaled thunk must be one of the free variables - find its index *)
                       val idx = <@ Vector.index (fvs, fn v => v = evalThunk)
-                    in (idx, innerCode)
+                    in (idx, innerCode, innerValue)
                     end
 
                 val changed = ref false
@@ -1339,18 +1342,20 @@ struct
                              *)
                             val eval = 
                                 case eval
-                                 of M.EDirectThunk {thunk, code} => 
+                                 of M.EDirectThunk {thunk, value, code} => 
                                     let
                                       val () = Try.require (fname = code)
-                                      val eval = M.EThunk {thunk = thunk, code = innerCode}
+                                      val eval = M.EThunk {thunk = thunk, 
+                                                           value = value orelse innerValue, 
+                                                           code = innerCode}
                                     in eval
                                     end
-                                  | M.EThunk {thunk, code = {possible, exhaustive}} => 
+                                  | M.EThunk {thunk, value, code = {possible, exhaustive}} => 
                                     let
                                       val possible = VS.remove (possible, fname)
                                       val code = {possible = possible, exhaustive = exhaustive}
                                       val code = MU.Codes.union (code, innerCode)
-                                    in M.EThunk {thunk = thunk, code = code}
+                                    in M.EThunk {thunk = thunk, value = value orelse innerValue, code = code}
                                     end
                             val callee = M.IpEval {typ = typ, eval = eval}
                             val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
@@ -1527,10 +1532,10 @@ struct
                                           else NONE)
                                    | M.IpEval {typ, eval} => 
                                      (case eval
-                                       of M.EThunk {thunk, code} => 
+                                       of M.EThunk {thunk, value, code} => 
                                           if VS.member (#possible code, fname) then Try.fail ()
                                           else NONE
-                                        | M.EDirectThunk {thunk, code} => 
+                                        | M.EDirectThunk {thunk, value, code} => 
                                           (if code = fname then ok else NONE)))
                           in r
                           end
@@ -1862,8 +1867,9 @@ struct
                              let
                                val eval = 
                                    case eval
-                                    of M.EThunk {thunk, code}       => M.EThunk {thunk = thunk, code = filterCode code}
-                                     | M.EDirectThunk {thunk, code} => eval
+                                    of M.EThunk {thunk, value, code}       => 
+                                       M.EThunk {thunk = thunk, value = value, code = filterCode code}
+                                     | M.EDirectThunk {thunk, value, code} => eval
                              in M.IpEval {typ = typ, eval = eval}
                              end
                       val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
@@ -1911,6 +1917,9 @@ struct
                                            val () = Try.require (VS.size possible = 1)
                                            val f = valOf (VS.getAny possible)
                                            val () = Try.require (f = fname)
+                                           val () = case #callee r
+                                                     of M.IpEval {typ, eval} => Try.require (not (MU.Eval.value eval))
+                                                      | _                    => ()
                                          in ()
                                          end)
                                   | M.TReturn _    => Try.fail ()
@@ -1940,8 +1949,8 @@ struct
                                               | M.CClosure {cls, code}       => Try.fail ())
                                          | M.IpEval {typ, eval} => 
                                            (case eval
-                                             of M.EThunk {thunk, code}       => Try.fail ()
-                                              | M.EDirectThunk {thunk, code} => Try.require (code = fname)))
+                                             of M.EThunk {thunk, value, code}       => Try.fail ()
+                                              | M.EDirectThunk {thunk, value, code} => Try.require (code = fname)))
                                   (* Check that the call is not already rewritten *)
                                   val () = 
                                       (case ret
@@ -1994,7 +2003,7 @@ struct
         in try (Click.noReturn, f)
         end
 
-    val reduce = thunkToThunkVal or thunkEta or constParameter or functionWrap or codeTrim (*or noReturn*)
+    val reduce = thunkToThunkVal or thunkEta or constParameter or functionWrap or codeTrim or noReturn
 
   end (* structure FuncR *)
 
@@ -2533,7 +2542,8 @@ struct
              fn ((d, imil, ws), (i, {callee, ret, fx})) =>
                 let
                   (* check if its a direct thunk eval *)
-                  val { thunk, code } = <- (MU.Eval.Dec.eDirectThunk o #eval <! MU.InterProc.Dec.ipEval @@ callee)
+                  val { thunk, value, code } = 
+                      <- (MU.Eval.Dec.eDirectThunk o #eval <! MU.InterProc.Dec.ipEval @@ callee)
                   val iFunc = IFunc.getIFuncByName (imil, code)
                   (* check if this is not a recursive eval *)
                   val () = Try.require (not (IInstr.isRec (imil, i)))
@@ -2625,6 +2635,37 @@ struct
           in try (Click.thunkValueBeta, f)
           end
 
+      val thunkEvalToGetVal = 
+          let
+            val f = 
+             fn ((d, imil, ws), (i, {callee, ret, fx})) =>
+                let
+                  val {eval, typ} = <@ MU.InterProc.Dec.ipEval callee
+                  val {thunk, value, code} = <@ MU.Eval.Dec.eThunk eval 
+                  val () = Try.require value
+                  val () = Try.require (MU.Codes.exhaustive code)
+                  val () = Try.require (VS.isEmpty (MU.Codes.possible code))
+                  val (vs, t) = 
+                      case ret
+                       of M.RNormal {rets, block, cuts} => 
+                          (rets, M.TGoto (M.T {block = block, 
+                                               arguments = Vector.map (rets, M.SVariable)}))
+                       | M.RTail _ => 
+                         let
+                           val c = IInstr.getIFunc (imil, i)
+                           val rtyps = IFunc.getRtyps (imil, c)
+                           val vs = Vector.map (rtyps, fn t => Var.new (imil, "ret", t, M.VkLocal))
+                           val args = Vector.map (vs, M.SVariable)
+                         in (vs, M.TReturn args)
+                         end
+                  val getVal = MU.Instruction.new' (vs, M.RhsThunkGetValue {typ = typ, thunk = thunk})
+                  val () = IInstr.replaceTransfer (imil, i, t)
+                  val gi = IInstr.insertBefore (imil, getVal, i)
+                in [I.ItemInstr i, I.ItemInstr gi]
+                end
+          in try (Click.thunkEvalToGetVal, f)
+          end
+
       val makeDirectCall = 
           Try.lift 
             (fn ((d, imil, ws), call) => 
@@ -2646,16 +2687,16 @@ struct
           Try.lift 
             (fn ((d, imil, ws), eval) => 
                 let
-                  val {thunk, code = {exhaustive, possible}} = <@ MU.Eval.Dec.eThunk eval
-                  val code = 
+                  val {thunk, value, code = {exhaustive, possible}} = <@ MU.Eval.Dec.eThunk eval
+                  val (value, code) = 
                       (case (exhaustive, VS.toList possible)
-                        of (true, [code]) => code
+                        of (true, [code]) => (value, code)
                          | _ => 
                            let
                              val f = <@ #code <! getThunkInitFromVariable @@ (imil, thunk)
-                           in f
+                           in (false, f)
                            end)
-                  val eval = M.EDirectThunk {thunk = thunk, code = code}
+                  val eval = M.EDirectThunk {thunk = thunk, value = value, code = code}
                 in eval
                 end)
 
@@ -2741,6 +2782,7 @@ struct
       val reduce = callInline
                      or thunkEvalBeta
                      or thunkValueBeta
+                     or thunkEvalToGetVal
                      or makeDirect 
                      or pruneCuts
                      or pruneFx

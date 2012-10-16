@@ -813,9 +813,11 @@ struct
 
    fun layoutEval (env, e) = 
        case e
-        of M.EThunk {thunk, code} => addCodes (env, L.seq [L.str "Eval", LU.paren (layoutVariable (env, thunk))], code)
-         | M.EDirectThunk {thunk, code} =>
-           L.seq [L.str "EvalDir", LU.parenSeq [layoutVariable (env, thunk), layoutVariable (env, code)]]
+        of M.EThunk {thunk, value, code} => addCodes (env, L.seq [L.str "Eval", if value then L.str "?" else L.str "!",
+                                                                  LU.paren (layoutVariable (env, thunk))], code)
+         | M.EDirectThunk {thunk, value, code} =>
+           L.seq [L.str "EvalDir", if value then L.str "?" else L.str "!",
+                  LU.parenSeq [layoutVariable (env, thunk), layoutVariable (env, code)]]
 
    fun layoutInterProc (env, ip) =
        case ip

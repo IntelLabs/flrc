@@ -1430,17 +1430,18 @@ struct
        *)
       datatype ('a, 's) set = Empty | Singleton of 'a | Set of 's | Any of 's
 
-      datatype t = L of (M.label, LS.t) set * (M.variable, VS.t) set
+      (* Continuations, thunk value, code pointers *)
+      datatype t = L of (M.label, LS.t) set * bool * (M.variable, VS.t) set
 
-      val bot = L (Empty, Empty)
+      val bot = L (Empty, false, Empty)
 
-      val escaping = L (Any LS.empty, Any VS.empty)
+      val escaping = L (Any LS.empty, true, Any VS.empty)
 
-      val label = fn l => L (Singleton l, Empty)
+      val label = fn l => L (Singleton l, false, Empty)
 
-      val codePtr = fn v => L (Empty, Singleton v)
+      val codePtr = fn v => L (Empty, false, Singleton v)
 
-      val unknownCodePtr = L (Empty, Any VS.empty)
+      val thunkVal = L (Empty, true, Empty)
 
       val toSet = 
        fn (s, empty, singleton) => 
@@ -1451,14 +1452,17 @@ struct
              | Any s       => {possible = s,           exhaustive = false})
 
       val toCodes = 
-       fn (L (_, s)) => toSet (s, VS.empty, VS.singleton)
+       fn (L (_, _, s)) => toSet (s, VS.empty, VS.singleton)
+
+      val toValue = 
+       fn (L (_, b, s)) => b
 
       (* By invariant, Set s => s not empty *)
       val empty =
-       fn (L (ls, vs)) => 
-          (case (ls, vs)
-            of (Empty, Empty) => true
-             | _              => false)
+       fn (L (ls, b, vs)) => 
+          (case (ls, b, vs)
+            of (Empty, false, Empty) => true
+             | _                     => false)
 
       val join' = 
        fn (s1, s2, precise, e, s, u) => 
@@ -1476,8 +1480,9 @@ struct
      (* if precise is false, then we keep track only of singleton sets *)
       val join = 
        fn precise => 
-       fn (L (ls1, vs1), L (ls2, vs2)) => L (join' (ls1, ls2, precise, LS.empty, LS.singleton, LS.union),
-                                             join' (vs1, vs2, precise, VS.empty, VS.singleton, VS.union))
+       fn (L (ls1, b1, vs1), L (ls2, b2, vs2)) => L (join' (ls1, ls2, precise, LS.empty, LS.singleton, LS.union),
+                                                     b1 orelse b2,
+                                                     join' (vs1, vs2, precise, VS.empty, VS.singleton, VS.union))
       val equal' = 
        fn (s1, s2, se) => 
         (case (s1, s2)
@@ -1488,15 +1493,17 @@ struct
            | _                          => false)
 
       val equal = 
-       fn (L (ls1, vs1), L (ls2, vs2)) => equal' (ls1, ls2, LS.equal) andalso
-                                          equal' (vs1, vs2, VS.equal)
+       fn (L (ls1, b1, vs1), L (ls2, b2, vs2)) => equal' (ls1, ls2, LS.equal) andalso
+                                                  (b1 = b2) andalso
+                                                  equal' (vs1, vs2, VS.equal)
 
       val layout' = 
        fn ((s, b), sl, el) => Layout.seq [sl (s, el), if b then Layout.str "!" else Layout.str "^"]
 
       val layout = 
-       fn (config, si, L (ls, vs)) => 
+       fn (config, si, L (ls, b, vs)) => 
           let
+            val bl = if b then L.str ", value, " else L.str ", noval, "
             val ls = 
                 let
                   val {possible, exhaustive} = toSet (ls, LS.empty, LS.singleton)
@@ -1510,6 +1517,7 @@ struct
             val lbl = fn l => MilLayout.layoutLabel (config, si, l)
             val var = fn v => MilLayout.layoutVariable (config, si, v)
             val l = Layout.mayAlign [layout' (ls, LS.layout, lbl), 
+                                     bl,
                                      layout' (vs, VS.layout, var)]
           in l
           end
@@ -1560,6 +1568,7 @@ struct
                          val addCodeV = 
                           fn f => fn v => FG.add (getFlowgraph s, MRS.variableNode (summary, v), Lat.codePtr f)
                          val addCode = fn f => Vector.foreach (dests, addCodeV f)
+                         val addThunkVal = fn v => FG.add (getFlowgraph s, MRS.variableNode (summary, v), Lat.thunkVal)
                          val () = 
                              (case rhs
                                of M.RhsCont l => addLabel l
@@ -1567,6 +1576,12 @@ struct
                                   let
                                     val () = Option.foreach (thunk, addCodeV cptr)
                                     val () = addCode cptr
+                                  in ()
+                                  end
+                                | M.RhsThunkValue {typ, thunk, ofVal} => 
+                                  let
+                                    val () = Option.foreach (thunk, addThunkVal)
+                                    val () = Vector.foreach (dests, addThunkVal)
                                   in ()
                                   end
                                 | M.RhsClosureInit {cls, code = SOME cptr, ...} => 
@@ -1591,6 +1606,8 @@ struct
                                   FG.add (getFlowgraph s, MRS.variableNode (summary, v), Lat.codePtr cptr)
                                 | M.GCode _ => 
                                   FG.add (getFlowgraph s, MRS.variableNode (summary, v), Lat.codePtr v)
+                                | M.GThunkValue _ => 
+                                  FG.add (getFlowgraph s, MRS.variableNode (summary, v), Lat.thunkVal)
                                 | _         => ())
                        in e
                        end
@@ -1679,6 +1696,23 @@ struct
                                 val newCodes = filterCode (newCodes, argC, retC, isThunk)
                               in newCodes
                               end
+                          val mkValue = 
+                           fn (v, oldValue, oldExhaustive) => 
+                              let
+                                val set = FG.query (flowgraph, MRS.variableNode (summary, v))
+                                val newValue = Lat.toValue set
+                                val newExhaustive = MU.Codes.exhaustive (Lat.toCodes set)
+                                val value = 
+                                    if oldExhaustive andalso newExhaustive then 
+                                      oldValue andalso newValue
+                                    else if oldExhaustive then
+                                      oldValue
+                                    else if newExhaustive then
+                                      newValue
+                                    else
+                                      oldValue orelse newValue
+                              in value
+                              end
                           val getCallee =
                            fn {possible, exhaustive} => 
                               if exhaustive andalso VS.size possible = 1 then
@@ -1693,45 +1727,59 @@ struct
                                  | M.RNormal {rets, ...} => Vector.length rets)
                           val r =  
                               (case t
-                                of M.TInterProc {callee = M.IpCall {call = M.CClosure {cls, code}, args}, ret, fx} => 
-                                   let
-                                     val code = mkCodes (cls, code, Vector.length args, getReturnCount ret, false)
-                                     val call = 
-                                         (case getCallee code
-                                           of SOME cptr => 
-                                              let
-                                                val () = Click.mkDirect (getPd env)
-                                              in M.CDirectClosure {cls = cls, code = cptr}
-                                              end
-                                            | NONE => M.CClosure {cls = cls, code = code})
-                                     val callee = M.IpCall {call = call, args = args}
-                                     val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
-                                   in  MRC.StopWith (env, (lo, t))
-                                   end
-                                 | M.TInterProc {callee = M.IpCall {call = M.CCode {ptr, code}, args}, ret, fx} => 
-                                   let
-                                     val code = mkCodes (ptr, code, Vector.length args, getReturnCount ret, false)
-                                     val call = M.CCode {ptr = ptr, code = code}
-                                     val callee = M.IpCall {call = call, args = args}
-                                     val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
-                                   in  MRC.StopWith (env, (lo, t))
-                                   end
-                                 | M.TInterProc {callee = M.IpEval {eval = M.EThunk {thunk, code}, typ}, ret, fx} => 
-                                   let
-                                     val code = mkCodes (thunk, code, 0, getReturnCount ret, true)
-                                     val eval = 
-                                         (case getCallee code
-                                           of SOME cptr => 
-                                              let
-                                                val () = Click.mkDirect (getPd env)
-                                              in M.EDirectThunk {thunk = thunk, code = cptr}
-                                              end
-                                            | NONE => M.EThunk {thunk = thunk, code = code})
-                                     val callee = M.IpEval {eval = eval, typ = typ}
-                                     val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
-                                   in  MRC.StopWith (env, (lo, t))
-                                   end
-                                 | _ => MRC.Stop)
+                                of M.TInterProc {callee, ret, fx} => 
+                                   (case callee
+                                     of M.IpCall {call = M.CClosure {cls, code}, args} => 
+                                        let
+                                          val code = mkCodes (cls, code, Vector.length args, getReturnCount ret, false)
+                                          val call = 
+                                              (case getCallee code
+                                                of SOME cptr => 
+                                                   let
+                                                     val () = Click.mkDirect (getPd env)
+                                                   in M.CDirectClosure {cls = cls, code = cptr}
+                                                   end
+                                                 | NONE => M.CClosure {cls = cls, code = code})
+                                          val callee = M.IpCall {call = call, args = args}
+                                          val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                                        in  MRC.StopWith (env, (lo, t))
+                                        end
+                                      | M.IpCall {call = M.CCode {ptr, code}, args} => 
+                                        let
+                                          val code = mkCodes (ptr, code, Vector.length args, getReturnCount ret, false)
+                                          val call = M.CCode {ptr = ptr, code = code}
+                                          val callee = M.IpCall {call = call, args = args}
+                                          val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                                        in  MRC.StopWith (env, (lo, t))
+                                        end
+                                      | M.IpCall {call = M.CDirectClosure _, args} => MRC.Stop
+                                      | M.IpEval {eval = M.EThunk {thunk, value, code}, typ} => 
+                                        let
+                                          val oldCode = code
+                                          val value = mkValue (thunk, value, MU.Codes.exhaustive oldCode)
+                                          val code = mkCodes (thunk, code, 0, getReturnCount ret, true)
+                                          val value = mkValue (thunk, value, MU.Codes.exhaustive oldCode)
+                                          val eval = 
+                                              (case getCallee code
+                                                of SOME cptr => 
+                                                   let
+                                                     val () = Click.mkDirect (getPd env)
+                                                   in M.EDirectThunk {thunk = thunk, value = value, code = cptr}
+                                                   end
+                                                 | NONE => M.EThunk {thunk = thunk, value = value, code = code})
+                                          val callee = M.IpEval {eval = eval, typ = typ}
+                                          val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                                        in  MRC.StopWith (env, (lo, t))
+                                        end
+                                      | M.IpEval {eval = M.EDirectThunk {thunk, value, code}, typ} => 
+                                        let
+                                          val value = mkValue (thunk, value, true)
+                                          val eval = M.EDirectThunk {thunk = thunk, value = value, code = code}
+                                          val callee = M.IpEval {eval = eval, typ = typ}
+                                          val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                                        in  MRC.StopWith (env, (lo, t))
+                                        end)
+                                 | _=>  MRC.Stop)
                         in r
                         end
                     val block       = (fn _ => MRC.Continue)
@@ -1849,9 +1897,9 @@ struct
                                                                             add (cls, VS.singleton code)))
                                     | M.IpEval {eval, ...} => 
                                       (case eval
-                                        of M.EThunk {thunk, code}       => add (thunk, #possible code)
-                                         | M.EDirectThunk {thunk, code} =>  (add (code, VS.singleton code);
-                                                                             add (thunk, VS.singleton code))))
+                                        of M.EThunk {thunk, value, code}       => add (thunk, #possible code)
+                                         | M.EDirectThunk {thunk, value, code} =>  (add (code, VS.singleton code);
+                                                                                    add (thunk, VS.singleton code))))
                                | _ => ())
                       in e
                       end

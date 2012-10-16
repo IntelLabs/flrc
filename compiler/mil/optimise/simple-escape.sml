@@ -68,7 +68,7 @@ struct
          fn eval => 
             case eval
              of M.EThunk _                   => false
-              | M.EDirectThunk {thunk, code} => isThisClosure (M.SVariable thunk)
+              | M.EDirectThunk {thunk, value, code} => isThisClosure (M.SVariable thunk)
 
         val doTransfer = 
          fn t => 

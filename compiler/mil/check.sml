@@ -1020,7 +1020,7 @@ struct
 
   fun eval (s, e, msg, evl) =
       case evl
-       of M.EThunk {thunk, code} =>
+       of M.EThunk {thunk, value, code} =>
           let
             val tt = variableUse (s, e, msg, thunk)
             val t = getThunkType (s, e, msg, tt)
@@ -1029,7 +1029,7 @@ struct
             val () = codes (s, e, msg, code, ats, rts)
           in t
           end
-        | M.EDirectThunk {thunk, code} =>
+        | M.EDirectThunk {thunk, value, code} =>
           let
             val tt = variableUse (s, e, msg, thunk)
             val t = getThunkType (s, e, msg, tt)

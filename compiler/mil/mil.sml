@@ -262,12 +262,17 @@ struct
     | CClosure       of {cls : variable, code : codes}
     | CDirectClosure of {cls : variable, code : variable}
 
-  (* N.B. codes/code describe the code pointers that can reach here.  
-   * ThunkValues are still possible.
+  (* The codes/code describe the set of code pointers that can possibly 
+   * reach here, or produce a value which reaches here.  
+   * Value is only guaranteed to be correct if the codes are exhaustive.
+   * Value indicates whether or not a value reaching this point could have
+   * been created by a thunkvalue instruction.  
+   * If value is false, then everything which reaches here is either unevaluated
+   * or is a thunk value produced by running one of the code pointers in code.
    *)
   datatype eval =
-      EThunk       of {thunk : variable, code : codes}
-    | EDirectThunk of {thunk : variable, code : variable}
+      EThunk       of {thunk : variable, value : bool, code : codes}
+    | EDirectThunk of {thunk : variable, value : bool, code : variable}
 
   datatype interProc =
       IpCall of {call : call, args : operand Vector.t}

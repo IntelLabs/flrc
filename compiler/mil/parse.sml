@@ -1432,15 +1432,20 @@ struct
   fun call (state : state, env : env) : M.call P.t = P.bind identifierF (fn s => callA (state, env, s))
 
   fun evalA (state : state, env : env, s : string) : M.eval P.t =
-      case s
-       of "Eval" =>
-          P.map (paren (variable (state, env)) && codesD (state, env, MU.Codes.all),
-                 fn (v, cs) => M.EThunk {thunk = v, code = cs})
-        | "EvalDir" =>
-          P.map (pair (variable (state, env), variable (state, env)),
-                 fn (v1, v2) => M.EDirectThunk {thunk = v1, code = v2})
-        | _ => P.error "Expected eval"
-
+      let
+        val pv = 
+            (P.map (keycharSF #"!", fn _ => false)) || (P.map (keycharSF #"?", fn _ => true))
+      in
+        case s
+         of "Eval" =>
+            P.map (pv && paren (variable (state, env)) && codesD (state, env, MU.Codes.all),
+                   fn ((vl, v), cs) => M.EThunk {thunk = v, value = vl, code = cs})
+          | "EvalDir" =>
+            P.map (pv && pair (variable (state, env), variable (state, env)),
+                   fn (vl, (v1, v2)) => M.EDirectThunk {thunk = v1, value = vl, code = v2})
+          | _ => P.error "Expected eval"
+      end
+                         
   fun eval (state : state, env : env) : M.eval P.t = P.bind identifierF (fn s => evalA (state, env, s))
 
   fun interProcA (state : state, env : env, s : string) : M.interProc P.t =

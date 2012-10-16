@@ -1122,7 +1122,7 @@ struct
           val eval = 
               let
                 val code = TMU.stateGetCodesForFunction (state, f)
-              in M.EThunk {thunk = f', code = code}
+              in M.EThunk {thunk = f', value = not (MilUtils.Codes.exhaustive code), code = code}
               end
           val blk0 = MU.eval (im, cfg, FK.fromTyp (cfg, fvt), eval, TMU.exitCut, fx, fv)
           val call = M.CClosure {cls = fv, code = TMU.noCode}
@@ -1152,7 +1152,7 @@ struct
           val eval = 
               let
                 val code = TMU.stateGetCodesForFunction (state, p)
-              in M.EThunk {thunk = p', code = code}
+              in M.EThunk {thunk = p', value = not (MilUtils.Codes.exhaustive code), code = code}
               end
           val blk0 = MU.eval (im, cfg, FK.fromTyp (cfg, pt), eval, TMU.exitCut, fx, pv)
           val prjthnk = TMU.localVariableFresh0 (im, selft)
@@ -1160,7 +1160,7 @@ struct
           val rhs = M.RhsSumProj {typs = fks, sum = pv, tag = defaultTag ws, idx = i}
           val blk1 = MS.bindRhs (prjthnk, rhs)
           val blk = MS.seqn [blk0, blk1]
-          val eval = M.EThunk {thunk = prjthnk, code = TMU.noCode}
+          val eval = M.EThunk {thunk = prjthnk, value = true, code = TMU.noCode}
           val fk = FK.fromTyp (cfg, rt)
           val t = M.TInterProc {callee = M.IpEval {typ = fk, eval = eval}, ret = M.RTail {exits = true}, fx = fx}
           val ccCode = M.CcThunk {thunk = self, fvs = Vector.new1 p'}
@@ -1272,7 +1272,7 @@ struct
                     val eval = 
                         let
                           val code = TMU.stateGetCodesForFunction (state, fvar)
-                        in M.EThunk { thunk = fvar, code = code }
+                        in M.EThunk { thunk = fvar, value = not (MilUtils.Codes.exhaustive code), code = code }
                         end
                     val blk0 = MU.eval (im, cfg, FK.fromTyp (cfg, ftyp), eval, TMU.exitCut, Effect.Any, clo)
                     val fx = TMU.lookupEffect (effects, clo, true, true)
@@ -1410,7 +1410,7 @@ struct
                 val eval = 
                     let
                       val code = TMU.stateGetCodesForFunction (state, fvar)
-                    in M.EThunk {thunk = fvar, code = code}
+                    in M.EThunk {thunk = fvar, value = not (MilUtils.Codes.exhaustive code), code = code}
                     end
                 val b3 = MU.eval (im, cfg, M.FkRef, eval, cuts, cx, fv)
                 val call = M.CClosure {cls = fv, code = TMU.noCode}
@@ -1421,7 +1421,7 @@ struct
                 val eval = 
                     let
                       val code = TMU.stateGetCodesForFunction (state, hvar)
-                    in M.EThunk {thunk = hvar, code = code}
+                    in M.EThunk {thunk = hvar, value = not (MilUtils.Codes.exhaustive code), code = code}
                     end
                 val b8 = MU.eval (im, cfg, M.FkRef, eval, TMU.exitCut, cx, hv)
                 val call = M.CClosure {cls = hv, code = TMU.noCode}

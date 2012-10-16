@@ -661,12 +661,13 @@ sig
     val compare : t Compare.t
     val eq : t * t -> bool
     val thunk : t -> Mil.variable 
+    val value : t -> bool
     val codes : t -> Mil.codes
     structure Dict : DICT where type key = t
     structure Dec : 
     sig
-      val eThunk : t -> {thunk : Mil.variable, code : Mil.codes} option
-      val eDirectThunk : t -> {thunk : Mil.variable, code : Mil.variable} option
+      val eThunk : t -> {thunk : Mil.variable, value : bool, code : Mil.codes} option
+      val eDirectThunk : t -> {thunk : Mil.variable, value : bool, code : Mil.variable} option
     end (* structure Dec *)
   end
 
@@ -1812,8 +1813,8 @@ struct
     end
 
     local
-      val thunk = C.rec2 (#thunk, variable, #code, codes)
-      val dthunk = C.rec2 (#thunk, variable, #code, variable)
+      val thunk = C.rec3 (#thunk, variable, #value, Bool.compare, #code, codes)
+      val dthunk = C.rec3 (#thunk, variable, #value, Bool.compare, #code, variable)
     in
     fun eval (arg1, arg2) = 
         case (arg1, arg2)
@@ -3567,11 +3568,17 @@ struct
           of M.EThunk {thunk, ...} => thunk
            | M.EDirectThunk {thunk, ...} => thunk)
 
+    val value = 
+     fn eval => 
+        (case eval
+          of M.EThunk {value, ...} => value
+           | M.EDirectThunk {value, ...} => value)
+
     val codes = 
      fn eval => 
         (case eval
-          of M.EThunk {thunk, code} => code
-           | M.EDirectThunk {thunk, code} => {possible = VS.singleton code, exhaustive = true})
+          of M.EThunk {thunk, value, code} => code
+           | M.EDirectThunk {thunk, value, code} => {possible = VS.singleton code, exhaustive = true})
 
     structure O = struct type t = t val compare = compare end
     structure Dict = DictF(O)

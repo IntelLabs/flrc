@@ -470,6 +470,43 @@ struct
           in s
           end
 
+      val doTransfer = 
+       fn (state, env, t) => 
+          (case t
+            of M.TGoto _       => t
+             | M.TCase _       => t
+             | M.TInterProc r  => 
+               let
+                 val callee = 
+                     case #callee r
+                      of M.IpEval {eval, typ} => 
+                         let
+                           val isVal = fn v => codePtrIsValuable (state, env, v)
+                           val eval =
+                               case eval 
+                                of M.EThunk {thunk, value, code = {exhaustive, possible}} => 
+                                   if VS.exists (possible, isVal) then
+                                     let
+                                       val possible = VS.keepAll (possible, not o isVal)
+                                       val code = {exhaustive = exhaustive, possible = possible}
+                                     in M.EThunk {thunk = thunk, value = true, code = code}
+                                     end
+                                   else
+                                     eval
+                                 | M.EDirectThunk {thunk, value, code} => 
+                                   if codePtrIsValuable (state, env, code) then
+                                     M.EThunk {thunk = thunk, value = true, code = MU.Codes.none}
+                                   else
+                                     eval
+                         in M.IpEval {eval = eval, typ = typ}
+                         end
+                       | callee => callee
+               in M.TInterProc {callee = callee, ret = #ret r, fx = #fx r}
+               end
+             | M.TReturn opers => t
+             | M.TCut _        => t
+             | M.THalt _       => t)
+
       val rec inlineValuable = 
        fn (state, env, dests, typ, thunkO, ptr, fvsA) =>
           let
@@ -554,6 +591,7 @@ struct
           let
             val M.B {parameters, instructions, transfer} = b
             val s = doInstructions (state, env, instructions)
+            val transfer = doTransfer (state, env, transfer)
           in MS.finish (l, parameters, s, transfer)
           end
 

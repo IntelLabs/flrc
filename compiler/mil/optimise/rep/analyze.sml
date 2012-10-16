@@ -983,7 +983,7 @@ struct
                    val () = addThunkDescriptor (se, MU.Id.T l, typ, Vector.new0 ())
                    val () = 
                        (case eval
-                         of M.EThunk {thunk, code} => 
+                         of M.EThunk {thunk, value, code} => 
                             let
                               val filter = if MU.Codes.exhaustive code then
                                              SOME (MU.Codes.possible code)
@@ -996,7 +996,7 @@ struct
                               val () = variable (se, thunk) --> shape
                             in ()
                             end
-                          | M.EDirectThunk {thunk, code} => 
+                          | M.EDirectThunk {thunk, value, code} => 
                             let
                               val () = directCall (code, Vector.new0 ())
                               val shape = Build.thunkValue {result = Vector.sub (rets, 0),

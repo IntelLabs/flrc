@@ -265,11 +265,13 @@ struct
 
   fun eval (state, env, eval) = 
       case eval
-       of M.EThunk {thunk, code} =>
+       of M.EThunk {thunk, value, code} =>
           M.EThunk {thunk = variable (state, env, thunk),
+                    value = value,
                     code = codes (state, env, code)}
-        | M.EDirectThunk {thunk, code} =>
+        | M.EDirectThunk {thunk, value, code} =>
           M.EDirectThunk {thunk = variable (state, env, thunk),
+                          value = value,
                           code = variable (state, env, code)}
 
   fun interProc (state, env, ip) =

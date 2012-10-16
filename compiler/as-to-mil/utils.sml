@@ -254,7 +254,9 @@ struct
               (* val _ = print ("kmThunk fvar = " ^ * Layout.toString(CF.layoutVariable(cf, fvar)) ^ " \n") *)
               val fk   = FK.fromTyp (cfg, ftyp)  
               val code = stateGetCodesForFunction (state, fvar)
-              val eval = M.EThunk { thunk = fvar, code = code }
+              val eval = M.EThunk { thunk = fvar, 
+                                    value = not (MilUtils.Codes.exhaustive code), 
+                                    code = code }
               val blk  = MU.eval (im, cfg, fk, eval, exitCut, fx, Vector.sub (rvar, 0))
             in blk
             end
