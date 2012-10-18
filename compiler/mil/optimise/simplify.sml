@@ -1166,7 +1166,9 @@ struct
                                                  val eval = 
                                                      (case action
                                                        of Globalize (gv, oper, iGlobal) => 
-                                                          M.EThunk {thunk = gv, value = true, code = MU.Codes.none}
+                                                          M.EThunk {thunk = if value then thunk else gv, 
+                                                                    value = true, 
+                                                                    code = MU.Codes.none}
                                                         | Reduce i => 
                                                           M.EThunk {thunk = thunk, value = true, code = MU.Codes.none})
                                                in eval
@@ -1175,6 +1177,15 @@ struct
                                                let
                                                  val possible = VS.remove (possible, fname)
                                                  val code = {possible = possible, exhaustive = exhaustive}
+                                                 val thunk = 
+                                                     case action 
+                                                      of Globalize (gv, _, _) => 
+                                                         if VS.isEmpty possible 
+                                                            andalso exhaustive 
+                                                            andalso (not value)
+                                                         then gv
+                                                         else thunk
+                                                       | _ => thunk
                                                  val eval = M.EThunk {thunk = thunk, value = true, code = code}
                                                in eval
                                                end)
