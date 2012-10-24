@@ -463,6 +463,7 @@ struct
     | TagToEnumzh
      (* Misc *)
      (* XXX: traceCcszh and traceEventzh *)
+    | TraceEventzh
 
   val strTable = StringDict.fromList
       [ ("gtCharzh", GtCharzh)
@@ -888,6 +889,7 @@ struct
       , ("seqzh", Seqzh)
       , ("dataToTagzh", DataToTagzh)
       , ("tagToEnumzh", TagToEnumzh)
+      , ("traceEventzh", TraceEventzh)
       ]
 
   val fromString : string -> primOp option = fn v => StringDict.lookup (strTable, v)
@@ -1316,6 +1318,7 @@ struct
       | Seqzh => "seqzh"
       | DataToTagzh => "dataToTagzh"
       | TagToEnumzh => "tagToEnumzh"
+      | TraceEventzh => "traceEventzh"
 
   local
     structure CH = CoreHs
@@ -1797,6 +1800,7 @@ struct
       | Seqzh => [da,s,ts da]
       | DataToTagzh => [da,i]
       | TagToEnumzh => [i,da]
+      | TraceEventzh => [a, s, s]
 
     fun mkTy tys =
       let

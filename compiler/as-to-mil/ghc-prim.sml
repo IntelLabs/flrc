@@ -2578,6 +2578,7 @@ struct
       | Seqzh => forceEval & xf
       | DataToTagzh => dataToTag & (fn _ => Effect.Control)
       | TagToEnumzh => tagToEnum & xr
+      | TraceEventzh => withStateDoNothing & xt
   end
 
   fun primOp (state, v, rvar, argstyps) =
