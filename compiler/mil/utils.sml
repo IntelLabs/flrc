@@ -782,6 +782,12 @@ sig
     val successors : t -> {blocks : Identifier.LabelSet.t, exits : bool}
     val cuts : t -> Cuts.t
     val getBoolSuccessors : Mil.block -> (Mil.label * Mil.label) option
+    structure Map :
+    sig
+      val parameters : t * (Mil.variable Vector.t -> Mil.variable Vector.t) -> t
+      val instructions : t * (Mil.instruction -> Mil.instruction) -> t
+      val transfers : t * (Mil.transfer -> Mil.transfer) -> t
+    end
   end
 
   structure CodeBody :
@@ -799,6 +805,13 @@ sig
     val listAny : t -> (Mil.label * Block.t) list
     val listRPO : Config.t * t -> (Mil.label * Block.t) list
     val dfsTrees : t -> (Mil.label * Block.t) Tree.t Vector.t
+    structure Map :
+    sig
+      val blocks : t * (Mil.block -> Mil.block) -> t
+      val parameters : t * (Mil.variable Vector.t -> Mil.variable Vector.t) -> t
+      val instructions : t * (Mil.instruction -> Mil.instruction) -> t
+      val transfers : t * (Mil.transfer -> Mil.transfer) -> t
+    end
   end
 
   structure Code :
@@ -834,6 +847,14 @@ sig
     val isCore : t -> bool
     val compare : t Compare.t
     val eq : t * t -> bool
+    structure Map :
+    sig
+      val codeBodies : t * (Mil.codeBody -> Mil.codeBody) -> t
+      val blocks : t * (Mil.block -> Mil.block) -> t
+      val parameters : t * (Mil.variable Vector.t -> Mil.variable Vector.t) -> t
+      val instructions : t * (Mil.instruction -> Mil.instruction) -> t
+      val transfers : t * (Mil.transfer -> Mil.transfer) -> t
+    end
   end
 
   structure Global :
@@ -860,7 +881,15 @@ sig
       val gSum : t -> {tag : Mil.constant, ofVals : Mil.simple Vector.t, typs : Mil.fieldKind Vector.t} option
       val gPSet : t -> Mil.simple option
     end (* structure Dec *)
-
+    structure Map :
+    sig
+      val codeBodies : t * (Mil.codeBody -> Mil.codeBody) -> t
+      val codes : t * (Mil.code -> Mil.code) -> t
+      val blocks : t * (Mil.block -> Mil.block) -> t
+      val parameters : t * (Mil.variable Vector.t -> Mil.variable Vector.t) -> t
+      val instructions : t * (Mil.instruction -> Mil.instruction) -> t
+      val transfers : t * (Mil.transfer -> Mil.transfer) -> t
+    end
   end
 
   structure Globals :
@@ -869,6 +898,16 @@ sig
     val num : t -> int
     val vars : t -> Mil.VS.t
     val get : t * Mil.variable -> Global.t
+    structure Map :
+    sig
+      val globals : t * (Mil.global -> Mil.global) -> t
+      val codeBodies : t * (Mil.codeBody -> Mil.codeBody) -> t
+      val codes : t * (Mil.code -> Mil.code) -> t
+      val blocks : t * (Mil.block -> Mil.block) -> t
+      val parameters : t * (Mil.variable Vector.t -> Mil.variable Vector.t) -> t
+      val instructions : t * (Mil.instruction -> Mil.instruction) -> t
+      val transfers : t * (Mil.transfer -> Mil.transfer) -> t
+    end
   end
 
   structure VariableKind :
@@ -967,6 +1006,16 @@ sig
     val global : t * Mil.variable -> Global.t
     val symbolTable : t -> SymbolTable.t
     val entry : t -> Mil.variable
+    structure Map :
+    sig
+      val globals : t * (Mil.global -> Mil.global) -> t
+      val codeBodies : t * (Mil.codeBody -> Mil.codeBody) -> t
+      val codes : t * (Mil.code -> Mil.code) -> t
+      val blocks : t * (Mil.block -> Mil.block) -> t
+      val parameters : t * (Mil.variable Vector.t -> Mil.variable Vector.t) -> t
+      val instructions : t * (Mil.instruction -> Mil.instruction) -> t
+      val transfers : t * (Mil.transfer -> Mil.transfer) -> t
+    end
   end
 
   structure Uintp : MACHINE_INT
@@ -3938,9 +3987,18 @@ struct
 
     type t = Mil.block
 
-    fun parameters   (M.B {parameters,   ...}) = parameters
-    fun instructions (M.B {instructions, ...}) = instructions
-    fun transfer     (M.B {transfer,     ...}) = transfer
+
+    val ((setParameters, parameters),
+         (setInstructions, instructions),
+         (setTransfer, transfer)
+        ) = 
+        let
+          val r2t = fn (M.B {parameters, instructions, transfer}) =>
+                       (parameters, instructions, transfer)
+          val t2r = fn (parameters, instructions, transfer) =>
+                       M.B {parameters = parameters, instructions = instructions, transfer = transfer}
+        in FunctionalUpdate.mk3 (r2t, t2r)
+        end
 
     fun numParameters b = Vector.length (parameters b)
     fun parameter (b, idx) = Vector.sub (parameters b, idx)
@@ -3984,6 +4042,16 @@ struct
          of Mil.TCase {select = M.SeConstant, on, cases, default = NONE} =>  getBoolTargets cases
           | _ => NONE
 
+    structure Map =
+    struct
+      val lift = 
+       fn (set, get) => 
+          fn map => 
+             fn (t, f) => set (t, map (get t, f))
+      val parameters   = lift (setParameters, parameters) (fn (p, f) => f p)
+      val instructions = lift (setInstructions, instructions) Vector.map
+      val transfers    = lift (setTransfer, transfer) (fn (p, f) => f p)
+    end
 
   end
 
@@ -3991,6 +4059,18 @@ struct
   struct
 
     type t = Mil.codeBody
+
+    val ((setEntry, entry),
+         (setBlocks, blocks)
+        ) = 
+        let
+          val r2t = fn (M.CB {entry, blocks}) =>
+                       (entry, blocks)
+          val t2r = fn (entry, blocks) =>
+                       M.CB {entry = entry, blocks = blocks}
+        in FunctionalUpdate.mk2 (r2t, t2r)
+        end
+
 
     fun entry  (M.CB {entry,  ...}) = entry
     fun blocks (M.CB {blocks, ...}) = blocks
@@ -4101,6 +4181,17 @@ struct
         in ts
         end
 
+    structure Map =
+    struct
+      val lift = 
+       fn map => 
+          fn (t, f) => setBlocks (t, Mil.LD.map (blocks t, fn (l, b) => map (b, f)))
+      val blocks       = lift (fn (b, f) => f b)
+      val parameters   = lift Block.Map.parameters
+      val instructions = lift Block.Map.instructions
+      val transfers    = lift Block.Map.transfers
+    end
+
   end
 
   structure Code =
@@ -4150,6 +4241,18 @@ struct
 
     val compare = Compare.code
     val eq = Eq.code
+
+    structure Map =
+    struct
+      val lift = 
+       fn map => 
+          fn (t, f) => setBody (t, map (body t, f))
+      val codeBodies   = lift (fn (cb, f) => f cb)
+      val blocks       = lift CodeBody.Map.blocks
+      val parameters   = lift CodeBody.Map.parameters
+      val instructions = lift CodeBody.Map.instructions
+      val transfers    = lift CodeBody.Map.transfers
+    end
 
   end
 
@@ -4241,6 +4344,22 @@ struct
        fn g => (case g of M.GPSet r => SOME r | _ => NONE)
     end (* structure Dec *)
 
+    structure Map =
+    struct
+      val lift = 
+       fn map => 
+          fn (t, f) =>
+             (case t 
+               of M.GCode c => M.GCode (map (c, f))
+                | g         => g)
+      val codes        = lift (fn (c, f) => f c)
+      val codeBodies   = lift Code.Map.codeBodies
+      val blocks       = lift Code.Map.blocks
+      val parameters   = lift Code.Map.parameters
+      val instructions = lift Code.Map.instructions
+      val transfers    = lift Code.Map.transfers
+    end
+
   end
 
   structure Globals =
@@ -4256,6 +4375,20 @@ struct
                                "variable " ^ (I.variableString' v) ^
                                " not in globals")
           | SOME g => g
+
+    structure Map =
+    struct
+      val lift = 
+       fn map => 
+          fn (t, f) => Mil.VD.map (t, fn (v, g) => map (g, f))
+      val globals      = lift (fn (g, f) => f g)
+      val codes        = lift Global.Map.codes
+      val codeBodies   = lift Global.Map.codeBodies
+      val blocks       = lift Global.Map.blocks
+      val parameters   = lift Global.Map.parameters
+      val instructions = lift Global.Map.instructions
+      val transfers    = lift Global.Map.transfers
+    end
 
   end
 
@@ -4398,11 +4531,20 @@ struct
 
     type t = Mil.t
 
-    fun includes    (M.P {includes,    ...}) = includes
-    fun externs     (M.P {externs,     ...}) = externs
-    fun globals     (M.P {globals,     ...}) = globals
-    fun symbolTable (M.P {symbolTable, ...}) = symbolTable
-    fun entry       (M.P {entry,       ...}) = entry
+    val ((setIncludes, includes),
+         (setExterns, externs),
+         (setGlobals, globals),
+         (setSymbolTable, symbolTable),
+         (setEntry, entry)) = 
+        let
+          val r2t = fn M.P {includes, externs, globals, symbolTable, entry} => 
+                       (includes, externs, globals, symbolTable, entry)
+          val t2r = fn (includes, externs, globals, symbolTable, entry) => 
+                       M.P {includes = includes, externs = externs, globals = globals, 
+                            symbolTable = symbolTable, entry = entry} 
+                       
+        in FunctionalUpdate.mk5 (r2t, t2r)
+        end
 
     fun incl (p, i) = Vector.sub (includes p, i)
 
@@ -4416,6 +4558,20 @@ struct
     fun numGlobals  p     = Globals.num  (globals p   )
     fun globalVars  p     = Globals.vars (globals p   )
     fun global     (p, v) = Globals.get  (globals p, v)
+
+    structure Map =
+    struct
+      val lift = 
+       fn map => 
+          fn (t, f) => setGlobals (t, map (globals t, f))
+      val globals      = lift Globals.Map.globals
+      val codeBodies   = lift Globals.Map.codeBodies
+      val codes        = lift Globals.Map.codes
+      val blocks       = lift Globals.Map.blocks
+      val parameters   = lift Globals.Map.parameters
+      val instructions = lift Globals.Map.instructions
+      val transfers    = lift Globals.Map.transfers
+    end
 
   end
 
