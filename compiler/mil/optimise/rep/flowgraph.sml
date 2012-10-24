@@ -201,9 +201,9 @@ struct
   val propagate1 = 
    fn (fg, component) =>
       let
-        val help = fn n => propagate0 (fg, n)
+        val help = fn (n, changed) => propagate0 (fg, n) orelse changed
         val rec loop =  
-         fn () => if List.exists (component, help) then
+         fn () => if List.fold (component, false, help) then
                     loop ()
                   else
                     ()

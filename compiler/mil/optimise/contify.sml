@@ -30,6 +30,7 @@ struct
   structure MSTM = MU.SymbolTableManager
   structure MCG = MilCallGraph
   structure MFV = MilFreeVars
+  structure PD = PassData
 
   val passname = "MilContify"
 
@@ -59,15 +60,17 @@ struct
      *   Additionally the analysis provides the FMil.
      *)
 
-    datatype env = E of {config : Config.t, si : M.symbolInfo, fmil : FMil.t}
+    datatype env = E of {config : Config.t, si : M.symbolInfo, fmil : FMil.t, rLbls : M.label LD.t}
 
-    fun envMk (config, si, fmil) = E {config = config, si = si, fmil = fmil}
+    fun envMk (config, si, fmil, rLbls) = E {config = config, si = si, fmil = fmil, rLbls = rLbls}
 
     fun getConfig (E {config, ...}) = config
 
     fun getSi (E {si, ...}) = si
 
     fun getFMil (E {fmil, ...}) = fmil
+
+    fun getRLbls (E {rLbls, ...}) = rLbls
 
     fun layoutVariable (env, v) = MilLayout.layoutVariable (getConfig env, getSi env, v)
 
@@ -113,9 +116,8 @@ struct
     datatype return =
         RUncalled
       | RUnknown
-      | RCont of M.variable Vector.t option * M.label * M.cuts
-                 (* The return variables for the calls, if unique
-                  * The returned to label
+      | RCont of M.label * M.cuts
+                 (* The returned to label
                   * An upperbound on the cuts the calls can make
                   *)
       | RFunc of M.variable
@@ -126,7 +128,7 @@ struct
         case r
          of RUncalled => L.str "uncalled"
           | RUnknown => L.str "unknown"
-          | RCont (_, l, _) => L.str ("cont:" ^ I.labelString l)
+          | RCont (l, _) => L.str ("cont:" ^ I.labelString l)
           | RFunc v => L.str ("func:" ^ I.variableString' v)
 
     fun layoutAnalysis (A {funs = rs, ...}) =
@@ -143,26 +145,23 @@ struct
          of M.TInterProc {ret, ...} => ret
           | _                       => Fail.fail ("MilContify.A", "getReturn", "bad call graph")
 
-    fun getReturnLabel (env, c) =
-        case getReturn (env, c)
-         of M.RNormal {block, ...} => SOME block
-          | M.RTail _              => NONE
+    fun getReturnLabel (env, c) = LD.lookup (getRLbls env, c)
 
-    (* Compute the return vars and cuts for each return label *)
-    fun computeRetVarsCuts (env, MCG.CG {calls, ...}) =
+    (* Compute the cuts for each return label *)
+    fun computeCuts (env, MCG.CG {calls, ...}) =
         let
           fun doOne (c, _, map) =
-              case getReturn (env, c)
-               of M.RNormal {rets, block, cuts, ...} =>
+              case (getReturnLabel (env, c), getReturn (env, c))
+               of (SOME l, M.RNormal {rets, block, cuts, ...}) =>
                   let
-                    val (rvso, cuts) =
-                        case LD.lookup (map, block)
-                         of NONE            => (SOME rets, cuts)
-                          | SOME (_, cuts') => (NONE, MU.Cuts.union (cuts', cuts))
-                    val map = LD.insert (map, block, (rvso, cuts))
+                    val cuts =
+                        case LD.lookup (map, l)
+                         of NONE            => cuts
+                          | SOME cuts'      => MU.Cuts.union (cuts', cuts)
+                    val map = LD.insert (map, l, cuts)
                   in map
                   end
-                | M.RTail _ => map
+                | _ => map
           val map = LD.fold (calls, LD.empty, doOne)
         in map
         end
@@ -267,7 +266,7 @@ struct
      * descended.
      *)
 
-    fun computeAnalysis (env, graph, dt, MCG.CG {calls, ...}, r, rvCuts) =
+    fun computeAnalysis (env, graph, dt, MCG.CG {calls, ...}, r, rCuts) =
         let
           val Tree.T (_, tops) = dt
           fun doRest r  (Tree.T (n, children), a) =
@@ -288,8 +287,8 @@ struct
                       | NlFun f => (RFunc f, VD.insert (a, f, if VS.member (r, f) then RUnknown else RUncalled))
                       | NlRet r =>
                         let
-                          val (rvso, cuts) = Option.valOf (LD.lookup (rvCuts, r))
-                        in (RCont (rvso, r, cuts), a)
+                          val cuts = Option.valOf (LD.lookup (rCuts, r))
+                        in (RCont (r, cuts), a)
                         end
                 val a = Vector.fold (children, a, doRest r)
               in a
@@ -308,11 +307,11 @@ struct
     val (prnAnalyseD, prnAnalyse) =
         Config.Debug.mk (passname ^ ":analyse", "print analysis in Mil contifier")
 
-    fun analyseProgram (config, p) =
+    fun analyseProgram (config, p, rLbls) =
         let
           val (M.P {globals, symbolTable, entry, ...}, fmil) = FMil.program (config, p)
           val si = I.SymbolInfo.SiTable symbolTable
-          val env = envMk (config, si, fmil)
+          val env = envMk (config, si, fmil, rLbls)
           val cg = MCG.program (config, si, p)
           val () =
               if Config.debug andalso prnCallGraph config
@@ -325,8 +324,8 @@ struct
               else ()
           val (graph, root) = buildGraph (env, entry, cg, r)
           val dt = G.domTree (graph, root)
-          val rvCuts = computeRetVarsCuts (env, cg)
-          val a = computeAnalysis (env, graph, dt, cg, r, rvCuts)
+          val rCuts = computeCuts (env, cg)
+          val a = computeAnalysis (env, graph, dt, cg, r, rCuts)
           val () =
               if Config.debug andalso prnAnalyse config
               then LU.printLayout (L.align [L.str "Contification analysis:",
@@ -431,7 +430,7 @@ struct
      * return to the label or return from the code.  The codes to include
      * is the transitive closure of this information.
      *)
-    datatype funInfo = FI of (M.variable * M.cuts * (M.variable Vector.t option * M.label) option) list
+    datatype funInfo = FI of (M.variable * M.cuts * (M.label option)) list
 
     (* The environment records:
      *   config:     The configuration.
@@ -473,10 +472,10 @@ struct
           fun getFun r = FMil.getLabelFun (fmil, r)
           fun doOne (f, r, (keep, funs)) =
               case r
-               of A.RUncalled            => (keep,                funs                                               )
-                | A.RUnknown             => (VS.insert (keep, f), funs                                               )
-                | A.RFunc c              => (keep,                addEntry (funs, c, (f, MU.Cuts.justExits, NONE))   )
-                | A.RCont (rvs, r, cuts) => (keep,                addEntry (funs, getFun r, (f, cuts, SOME (rvs, r))))
+               of A.RUncalled       => (keep,                funs                                               )
+                | A.RUnknown        => (VS.insert (keep, f), funs                                               )
+                | A.RFunc c         => (keep,                addEntry (funs, c, (f, MU.Cuts.justExits, NONE))   )
+                | A.RCont (r, cuts) => (keep,                addEntry (funs, getFun r, (f, cuts, SOME r)))
           val (keep, funs) = VD.fold (funs, (VS.empty, VD.empty), doOne)
         in
           E {config = config, fmil = fmil, funs = funs, curReturn = NONE,
@@ -793,44 +792,13 @@ struct
            * have to adjust the return labels when computing the transitive
            * closure.
            *)
-          fun doOneA cuts ((f, cuts', ro), (fs, fes, retMap, retBlks)) =
+          fun doOneA cuts ((f, cuts', ro), (fs, fes)) =
               let
                 val () = click (state, "inlines")
                 val l = newLabel state
                 val fes = VD.insert (fes, f, l)
                 val cuts = MU.Cuts.inlineCall (cuts', cuts)
-                val (ro, retMap, retBlks) =
-                    case ro
-                     of NONE => (NONE, retMap, retBlks)
-                      | SOME (rvso, l) =>
-                        case rvso
-                          (* The return label did not have unique variables binding the return values
-                           * so the return values are dead.  Therefore, for this function generate a new
-                           * return label based on the return types of the function.
-                           *)
-                         of NONE =>
-                            let
-                              val l' = newLabel state
-                              val retTyps = MU.Code.rtyps (FMil.getCode (getFMil env, f))
-                              val rvs = Vector.map (retTyps, fn t => variableFresh (state, "ret", t, M.VkLocal))
-                              val retBlks = (l', rvs, l)::retBlks
-                            in (SOME l', retMap, retBlks)
-                            end
-                          (* The return label had unqiue variables binding the return values.  Use these
-                           * variables to generate a new label to return to for all functions returning to
-                           * that return label.
-                           *)
-                          | SOME rvs =>
-                            case LD.lookup (retMap, l)
-                             of NONE =>
-                                let
-                                  val l' = newLabel state
-                                  val retMap = LD.insert (retMap, l, l')
-                                  val retBlks = (l', rvs, l)::retBlks
-                                in (SOME l', retMap, retBlks)
-                                end
-                              | SOME l' => (SOME l', retMap, retBlks)
-                val x = doOneB (f, cuts, ((f, cuts, ro)::fs, fes, retMap, retBlks))
+                val x = doOneB (f, cuts, ((f, cuts, ro)::fs, fes))
               in x
               end
           and doOneB (f, cuts, x) =
@@ -838,7 +806,7 @@ struct
                of NONE => x
                 | SOME (FI fs) => List.fold (fs, x, doOneA cuts)
           (* justExits is the identity for inlineCall *)
-          val (fs, funEntries, retMap, retBlks) = doOneB (x, MU.Cuts.justExits, ([], VD.empty, LD.empty, []))
+          val (fs, funEntries) = doOneB (x, MU.Cuts.justExits, ([], VD.empty))
           (* Deconstruct the code *)
           val M.F {fx, escapes, recursive, cc, args, rtyps, body} = f
           val M.CB {entry, blocks} = body
@@ -852,15 +820,6 @@ struct
           val () = setSelf (state, x, se, cc)
           (* Transform this global's cb *)
           val () = transformCB (state, env, body)
-          (* Add in the return labels - do this before inlining as these blocks are looked up *)
-          fun doOne (l1, rvs, l2) =
-              let
-                val t = M.TGoto (M.T {block = l2, arguments = Vector.new0 ()})
-                val blk = M.B {parameters = rvs, instructions = Vector.new0 (), transfer = t}
-                val () = addBlock (state, l1, blk)
-              in ()
-              end
-          val () = List.foreach (retBlks, doOne)
           (* Inline and transform the included cbs *)
           val () = List.foreach (List.rev fs, fn x => addCode (state, env, x))
           (* Create the self entry if necessary *)
@@ -907,12 +866,156 @@ struct
 
   end (* structure T *)
 
+  structure Prep = 
+  struct
+    (* We make sure that every call of the form f(x) -> (rvars) Lret 
+     * is in a canonical form:
+     *  f(x) -> (rvars) Lret'
+     *  Lret'():
+     *    goto Lret(rvars)
+     * whenever rvars is non-empty.
+     * We treat Lret as the return label of the call.
+     *)
+
+    datatype state = S of {blocks : M.block LD.t ref, rLbls : M.label LD.t ref, stm : MSTM.t}
+
+    datatype env = E of {pd : PD.t}
+
+    val ((stateSetBlocks, stateGetBlocks),
+         (stateSetRLbls, stateGetRLbls),
+         (stateSetStm, stateGetStm)) = 
+        let
+          val r2t = fn S {blocks, rLbls, stm} => (blocks, rLbls, stm)
+          val t2r = fn (blocks, rLbls, stm) => 
+                       S {blocks = blocks, rLbls = rLbls, stm = stm}
+        in FunctionalUpdate.mk3 (r2t, t2r)
+        end
+
+    val ((envSetPd, envGetPd)
+        ) = 
+        let
+          val r2t = fn E {pd} => (pd)
+          val t2r = fn (pd) => E {pd = pd}
+        in FunctionalUpdate.mk1 (r2t, t2r)
+        end
+
+    val getBlock : state * env * M.label -> M.block = 
+     fn (state, env, l) => valOf (LD.lookup (!(stateGetBlocks state), l))
+
+    val addBlock : state * M.label * M.block -> unit = 
+     fn (state, l, b) => 
+        let
+          val br = stateGetBlocks state
+          val () = br := LD.insert (!br, l, b)
+        in ()
+        end
+
+    val addRLbl : state * M.label * M.label -> unit = 
+     fn (state, l, rl) =>
+        let
+          val rlr = stateGetRLbls state
+          val () = rlr := LD.insert (!rlr, l, rl)
+        in ()
+        end
+
+    val newLabel = fn state => MSTM.labelFresh (stateGetStm state)
+
+    val cloneVariables = fn (state, vs) => Vector.map (vs, fn v => MSTM.variableClone (stateGetStm state, v))
+   
+    val doTransfer : state * env * M.label * M.transfer -> M.transfer = 
+     fn (state, env, blockL, t) => 
+        let
+          val getPassthru' = 
+              Try.lift 
+                (fn (M.B {parameters, instructions, transfer}, rvs) => 
+                    let
+                      val () = Try.require (Vector.isEmpty instructions)
+                      val () = Try.require (Vector.isEmpty parameters)
+                      val M.T {block, arguments} = Try.<@ MU.Transfer.Dec.tGoto transfer
+                      val () = Try.require (Vector.length rvs = Vector.length arguments)
+                      val eq1 = fn (v, oper) => 
+                                   (case oper 
+                                     of M.SVariable v' => v = v'
+                                      | M.SConstant _  => false)
+                      val () = Try.require (Vector.forall2 (rvs, arguments, eq1))
+                    in block
+                    end)
+
+          val getPassthru = 
+           fn (block, rvs) => if Vector.isEmpty rvs then SOME block
+                              else getPassthru' (getBlock (state, env, block), rvs)
+
+          val t = 
+              case t
+               of M.TInterProc {callee = callee as M.IpCall _, ret = M.RNormal {rets, block, cuts}, fx} => 
+                  (case getPassthru (block, rets)
+                    of SOME retL => 
+                       let
+                         val () = addRLbl (state, blockL, retL)
+                       in t
+                       end
+                     | NONE => 
+                       let
+                         val retL = newLabel state
+                         val mergeL = newLabel state
+                         val rets' = cloneVariables (state, rets)
+                         val retB = M.B {parameters = Vector.new0 (),
+                                         instructions = Vector.new0 (),
+                                         transfer = M.TGoto (M.T {block = mergeL, 
+                                                                  arguments = Vector.map (rets', M.SVariable)})}
+                         val mergeB = M.B {parameters = rets,
+                                           instructions = Vector.new0 (),
+                                           transfer = M.TGoto (M.T {block = block, arguments = Vector.new0 ()})}
+                         val () = addBlock (state, retL, retB)
+                         val () = addBlock (state, mergeL, mergeB)
+                         val () = addRLbl (state, blockL, mergeL)
+                         val ret = M.RNormal {rets = rets', block = retL, cuts = cuts}
+                         val t = M.TInterProc {callee = callee, ret = ret, fx = fx}
+                       in t
+                       end)
+                | _ => t
+        in t
+        end
+
+    val doCodeBody : state * env * M.codeBody -> M.codeBody = 
+     fn (state, env, cb) => 
+        let
+          val M.CB {entry, blocks} = cb
+          val br = ref blocks
+          val state = stateSetBlocks (state, br)
+          val doT = fn l => fn t => doTransfer (state, env, l, t)
+          val doBlock =
+           fn (l, b) => addBlock (state, l, MU.Block.Map.transfers (b, doT l))
+          val blocks = LD.foreach (blocks, doBlock)
+          val blocks = !br
+        in M.CB {entry = entry, blocks = blocks}
+        end
+
+    val rewrite = 
+     fn (p, pd) =>
+        let
+          val M.P {includes, externs, entry, globals, symbolTable} = p
+          val stm = IM.fromExistingAll symbolTable
+          val rlr = ref LD.empty
+          val state = S {blocks = ref LD.empty, rLbls = rlr, stm = stm}
+          val env = E {pd = pd}
+          val globals = MU.Globals.Map.codeBodies (globals, fn g => doCodeBody (state, env, g))
+          val symbolTable = IM.finish stm
+          val rLbls = !rlr
+          val p = M.P {includes = includes, externs = externs, entry = entry, 
+                       globals = globals, symbolTable = symbolTable}
+        in (p, rLbls)
+        end
+  end (* structure prep *)
+
   (*** The pass ***)
 
   fun program (p, pd) =
       let
         val config = PassData.getConfig pd
-        fun doA () = A.analyseProgram (config, p)
+        fun doP () = Prep.rewrite (p, pd)
+        val (p, rLbls) = Pass.doPassPart (config, "Contify Prep", doP)
+        fun doA () = A.analyseProgram (config, p, rLbls)
         val a = Pass.doPassPart (config, "Contify Analysis", doA)
         fun doT () = T.transformProgram (pd, p, a)
         val p = Pass.doPassPart (config, "Contify Transformation", doT)

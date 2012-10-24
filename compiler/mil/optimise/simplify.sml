@@ -2660,7 +2660,7 @@ struct
                       case ret
                        of M.RNormal {rets, block, cuts} => 
                           (rets, M.TGoto (M.T {block = block, 
-                                               arguments = Vector.map (rets, M.SVariable)}))
+                                               arguments = Vector.new0 ()}))
                        | M.RTail _ => 
                          let
                            val c = IInstr.getIFunc (imil, i)

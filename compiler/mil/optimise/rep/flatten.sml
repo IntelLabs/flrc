@@ -557,6 +557,8 @@ struct
                                          let 
                                            val v = Vector.sub (dests, 0)
                                            val t = MT.Typer.variable (getConfig env, getSi state, v)
+                                           val vi = M.VI {typ = t, kind = M.VkGlobal}
+                                           val () = STM.variableSetInfo (getStm state, v, vi)
                                            val g = M.GErrorVal t
                                            val egs = getExtraGlobals state
                                            val () = egs := VD.insert (!egs, v, g)
