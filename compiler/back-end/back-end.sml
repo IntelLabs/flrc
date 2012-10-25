@@ -84,6 +84,10 @@ struct
 
   val noGMP = MilToPil.noGMP
 
+  val (gcIndirectionsF, gcIndirections) = 
+      Config.Feature.mk ("Plsr:gc-indirections",
+                         "GC cleans up thunk indirections")
+
   val (gmpUseGcMallocF, gmpUseGcMalloc) = 
       Config.Feature.mk ("Plsr:gmp-use-gc-malloc",
                          "use gc-malloc for gmp integer wrappers")
@@ -284,7 +288,8 @@ struct
         val thunks = 
             (if lightweightThunks config then ["PLSR_LIGHTWEIGHT_THUNKS"] else []) @
             (if interceptCuts config then ["PLSR_THUNK_INTERCEPT_CUTS"] else []) @
-            (if noThunkSubsumption config then ["PLSR_THUNK_NO_SUBSUMPTION"] else [])
+            (if noThunkSubsumption config then ["PLSR_THUNK_NO_SUBSUMPTION"] else []) @
+            (if gcIndirections config then ["PLSR_GC_INDIRECTIONS"] else [])
 
         val instr =
             List.concat
@@ -867,6 +872,7 @@ struct
                                   disableTailCallF,
                                   gcWriteBarriersF, 
                                   gcAllBarriersF,
+                                  gcIndirectionsF,
                                   gmpUseForcedGcF,
                                   gmpUseGAllocateF,
                                   gmpUseGcMallocF,
