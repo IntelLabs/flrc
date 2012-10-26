@@ -156,25 +156,34 @@ sig
     val fieldsBase          : Pil.identifier
     val setOffset           : Pil.identifier
     val setSize             : Pil.identifier
+    val setPadding          : Pil.identifier
     val typeSize            : Pil.identifier
+    val typePadding         : Pil.identifier
     val ratOffset           : Pil.identifier
     val ratSize             : Pil.identifier
+    val ratPadding          : Pil.identifier
     val floatOffset         : Pil.identifier
     val floatSize           : Pil.identifier
+    val floatPadding        : Pil.identifier
     val doubleOffset        : Pil.identifier
     val doubleSize          : Pil.identifier
+    val doublePadding       : Pil.identifier
     val arrayOLenOffset     : Pil.identifier
     val arrayOEltOffset     : Pil.identifier
     val arrayOBaseSize      : Pil.identifier
+    val arrayOPadding       : Pil.identifier
     val arrayILenOffset     : Pil.identifier
     val arrayIIdxOffset     : Pil.identifier
     val arrayIEltOffset     : Pil.identifier
     val arrayIBaseSize      : Pil.identifier
+    val arrayIPadding       : Pil.identifier
     val functionCodeOffset  : Pil.identifier
     val functionSize        : Pil.identifier
+    val functionPadding     : Pil.identifier
     val sumTagOffset        : Pil.identifier
     val sumValOffset        : Pil.identifier
     val sumSize             : Pil.identifier
+    val sumPadding          : Pil.identifier
 
   end
 
@@ -216,6 +225,7 @@ sig
     val return         : Mil.fieldKind -> Pil.identifier 
     val cut            : Mil.fieldKind -> Pil.identifier 
     val fixedSize      : Mil.fieldKind -> Pil.identifier 
+    val fixedPadding   : Mil.fieldKind -> Pil.identifier 
     val resultOffset   : Mil.fieldKind -> Pil.identifier 
     val vTable         : Mil.fieldKind -> Pil.identifier 
     val blackHole      : Mil.fieldKind -> Pil.identifier
@@ -680,25 +690,34 @@ struct
     val fieldsBase          = Pil.identifier "pLsrObjectFieldsBase"
     val setOffset           = Pil.identifier "pLsrPSetOffset"
     val setSize             = Pil.identifier "pLsrPSetSize"
+    val setPadding          = Pil.identifier "pLsrPSetPadding"
     val typeSize            = Pil.identifier "pLsrPTypeSize"
+    val typePadding         = Pil.identifier "pLsrPTypePadding"
     val ratOffset           = Pil.identifier "pLsrPRatOffset"
     val ratSize             = Pil.identifier "pLsrPRatSize"
+    val ratPadding          = Pil.identifier "pLsrPRatPadding"
     val floatOffset         = Pil.identifier "pLsrPFloatOffset"
     val floatSize           = Pil.identifier "pLsrPFloatSize"
+    val floatPadding        = Pil.identifier "pLsrPFloatPadding"
     val doubleOffset        = Pil.identifier "pLsrPDoubleOffset"
     val doubleSize          = Pil.identifier "pLsrPDoubleSize"
+    val doublePadding       = Pil.identifier "pLsrPDoublePadding"
     val arrayOLenOffset     = Pil.identifier "pLsrPArrayOLenOffset"
     val arrayOEltOffset     = Pil.identifier "pLsrPArrayOEltOffset"
     val arrayOBaseSize      = Pil.identifier "pLsrPArrayOBaseSize"
+    val arrayOPadding       = Pil.identifier "pLsrPArrayOPadding"
     val arrayILenOffset     = Pil.identifier "pLsrPArrayILenOffset"
     val arrayIIdxOffset     = Pil.identifier "pLsrPArrayIIdxOffset"
     val arrayIEltOffset     = Pil.identifier "pLsrPArrayIEltOffset"
     val arrayIBaseSize      = Pil.identifier "pLsrPArrayIBaseSize"
+    val arrayIPadding       = Pil.identifier "pLsrPArrayIPadding"
     val functionCodeOffset  = Pil.identifier "pLsrPFunctionCodeOffset"
     val functionSize        = Pil.identifier "pLsrPFunctionSize"
+    val functionPadding     = Pil.identifier "pLsrPFunctionPadding"
     val sumTagOffset        = Pil.identifier "pLsrPSumTagOffset"
     val sumValOffset        = Pil.identifier "pLsrPSumValOffset"
     val sumSize             = Pil.identifier "pLsrPSumSize"
+    val sumPadding          = Pil.identifier "pLsrPSumPadding"
 
   end
 
@@ -748,6 +767,7 @@ struct
     fun eval            fk = Pil.identifier ("pLsrThunkEval"          ^ typ fk)
     fun evalDirect      fk = Pil.identifier ("pLsrThunkEvalDirect"    ^ typ fk)
     fun fixedSize       fk = Pil.identifier ("pLsrThunkFixedSize"     ^ typ fk)
+    fun fixedPadding    fk = Pil.identifier ("pLsrThunkPadding"       ^ typ fk)
     fun init            fk = Pil.identifier ("pLsrThunkSetInit"       ^ typ fk)
     fun initValue       fk = Pil.identifier ("pLsrThunkValueInit"     ^ typ fk)
     fun isEvaled        fk = Pil.identifier ("pLsrThunkIsEvaled"      ^ typ fk)

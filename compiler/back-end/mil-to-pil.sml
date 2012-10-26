@@ -111,6 +111,7 @@ struct
    *   For each word offset in the fixed part of the object, whether it is
    *     a reference or not.
    *   The required alignment for the object (int bytes, power of two)
+   *   The total padding in the object (int bytes)
    *   An option variable-sized portion description consisting of:
    *     The size of the elements of the variable portion.
    *     The offset in the fixed portion of the field containing the
@@ -131,6 +132,7 @@ struct
            fixedSize : int,
            fixedRefs : bool Vector.t,
            alignment : int,
+           padding   : int,
            array     : {size : int, offset : int, isRef : bool} option,
            mut       : vtMutability
   }
@@ -154,12 +156,13 @@ struct
           | (VtmAlwaysImmutable, VtmAlwaysImmutable) => EQUAL
   in
   fun vtInfoCompare (Vti x1, Vti x2) =
-      rec8 (#name, String.compare,
+      rec9 (#name, String.compare,
             #tag, MU.PObjKind.compare, 
             #pinned, Bool.compare,
             #fixedSize, Int.compare,
             #fixedRefs, vector Bool.compare,
             #alignment, Int.compare,
+            #padding, Int.compare,
             #array, arrayCompare,
             #mut, vtMutabilityCompare)
            (x1, x2)
@@ -383,6 +386,8 @@ struct
        val extraSize : state * env * M.tupleDescriptor -> int
        (* Return the size for a thunk *)
        val thunkSize : state * env * M.fieldKind * M.fieldKind Vector.t -> int
+       (* Return the padding for a thunk *)
+       val thunkPadding : state * env * M.fieldKind * M.fieldKind Vector.t -> int
        (* Return the offset of the result in a thunk *)
        val thunkResultOffset :
            state * env * M.fieldKind -> int
@@ -578,11 +583,32 @@ struct
         in sz
         end
 
+    (* Padding for a basic thunk value.  *)
+    fun thunkFixedPadding (state, env, fk) =
+        let
+          val fks = thunkBaseElements (state, env)
+          val fks = Utils.Vector.snoc (fks, fk)
+          val (_, _, paddings, padding) = fieldPaddingG (state, env, MU.FieldKind.numBytes, fn _ => 1,
+                                                         fks, NONE, (0, 1))
+        in Vector.fold (paddings, padding, op +)
+        end
+
     (* Size of the thunk including free variables.  The initial part of the
      * object imposes no alignment restrictions on the rest of the object. *)
     fun thunkSize (state, env, typ, fks) =
         objectSizeG (state, env, MU.FieldKind.numBytes, fn _ => 1,
                      fks, NONE, (thunkFixedSize (state, env, typ), 1))
+
+    (* Padding of the thunk including free variables.  *)
+    fun thunkPadding (state, env, typ, fks) =
+        let
+          val fp = thunkFixedPadding (state, env, typ)
+          val size = thunkFixedSize (state, env, typ)
+          val (_, _, paddings, padding) = 
+              fieldPaddingG (state, env, MU.FieldKind.numBytes, fn _ => 1,
+                             fks, NONE, (size, 1))
+        in Vector.fold (paddings, fp + padding, op +)
+        end
 
     (* Offset of the thunk result field *)
     fun thunkResultOffset (state, env, typ) = 
@@ -603,29 +629,42 @@ struct
         let
           val c = getConfig env
           fun mk (id, n) = Pil.D.constantMacro (id, Pil.E.int n)
+          fun mkPad (id, td) =
+              let
+                val (_, _, paddings, padding) = fieldPadding (state, env, td)
+                val n = Vector.fold (paddings, padding, op +)
+              in mk (id, n)
+              end
           val fieldsBase = mk (RT.Object.fieldsBase, fieldBase (state, env))
           val setTD = POM.OptionSet.td c
           val setOffset =
               mk (RT.Object.setOffset,
                   fieldOffset (state, env, setTD, POM.OptionSet.ofValIndex))
           val setSize = mk (RT.Object.setSize, fixedSize (state, env, setTD))
+          val setPadding = mkPad (RT.Object.setPadding, setTD)
           val typeSize =
               mk (RT.Object.typeSize, fixedSize (state, env, POM.Type.td))
+          val typePadding =
+              mkPad (RT.Object.typePadding, POM.Type.td)
           val ratTD = POM.Rat.td c
           val ratOffset =
               mk (RT.Object.ratOffset,
                   fieldOffset (state, env, ratTD, POM.Rat.ofValIndex c))
+          val ratPadding =
+              mkPad (RT.Object.ratPadding, ratTD)
           val ratSize = mk (RT.Object.ratSize, fixedSize (state, env, ratTD))
           val floatOffset =
               fieldOffset (state, env, POM.Float.td, POM.Float.ofValIndex)
           val floatOffset = mk (RT.Object.floatOffset, floatOffset)
           val floatSize =
               mk (RT.Object.floatSize, fixedSize (state, env, POM.Float.td))
+          val floatPadding = mkPad (RT.Object.floatPadding, POM.Float.td)
           val doubleOffset =
               fieldOffset (state, env, POM.Double.td, POM.Double.ofValIndex)
           val doubleOffset = mk (RT.Object.doubleOffset, doubleOffset)
           val doubleSize =
               mk (RT.Object.doubleSize, fixedSize (state, env, POM.Double.td))
+          val doublePadding = mkPad (RT.Object.doublePadding, POM.Double.td)
           val arrayOTD = POM.OrdinalArray.tdVar (c, M.FkRef)
           val arrayOLenOffset =
               fieldOffset (state, env, arrayOTD, POM.OrdinalArray.lenIndex)
@@ -634,6 +673,7 @@ struct
           val arrayOEltOffset = mk (RT.Object.arrayOEltOffset, arrayOEltOffset)
           val arrayOBaseSize = fixedSize (state, env, arrayOTD)
           val arrayOBaseSize = mk (RT.Object.arrayOBaseSize, arrayOBaseSize)
+          val arrayOPadding = mkPad (RT.Object.arrayOPadding, arrayOTD)
           val arrayITD = POM.IndexedArray.tdVar (c, M.FkRef)
           val arrayILenOffset =
               fieldOffset (state, env, arrayITD, POM.IndexedArray.lenIndex)
@@ -645,12 +685,14 @@ struct
           val arrayIEltOffset = mk (RT.Object.arrayIEltOffset, arrayIEltOffset)
           val arrayIBaseSize = fixedSize (state, env, arrayITD)
           val arrayIBaseSize = mk (RT.Object.arrayIBaseSize, arrayIBaseSize)
+          val arrayIPadding = mkPad (RT.Object.arrayIPadding, arrayITD)
           val funTD = POM.Function.td (c, Vector.new0 ())
           val funCodeOffset =
               fieldOffset (state, env, funTD, POM.Function.codeIndex)
           val funCodeOffset = mk (RT.Object.functionCodeOffset, funCodeOffset)
           val funSize = fixedSize (state, env, funTD)
           val funSize = mk (RT.Object.functionSize, funSize)
+          val funPadding = mkPad (RT.Object.functionPadding, funTD)
           val sumTD = POM.Sum.td (c, M.FkRef, Vector.new1 (M.FkRef))
           val sumTagOffset = fieldOffset(state, env, sumTD, POM.Sum.tagIndex)
           val sumTagOffset = mk (RT.Object.sumTagOffset, sumTagOffset)
@@ -658,16 +700,27 @@ struct
           val sumValOffset = mk (RT.Object.sumValOffset, sumValOffset)
           val sumSize = fixedSize (state, env, sumTD)
           val sumSize = mk (RT.Object.sumSize, sumSize)
+          val sumPadding = mkPad (RT.Object.sumPadding, sumTD)
           val tfsRef = thunkFixedSize (state, env, M.FkRef)
           val thunkSizeRef = mk (RT.Thunk.fixedSize M.FkRef, tfsRef)
+          val thunkPaddingRef = 
+              mk (RT.Thunk.fixedPadding M.FkRef, thunkFixedPadding (state, env, M.FkRef))
           val tfs32 = thunkFixedSize (state, env, M.FkBits M.Fs32)
           val thunkSize32 = mk (RT.Thunk.fixedSize (M.FkBits M.Fs32), tfs32)
+          val thunkPadding32 = 
+              mk (RT.Thunk.fixedPadding (M.FkBits M.Fs32), thunkFixedPadding (state, env, (M.FkBits M.Fs32)))
           val tfs64 = thunkFixedSize (state, env, M.FkBits M.Fs64)
           val thunkSize64 = mk (RT.Thunk.fixedSize (M.FkBits M.Fs64), tfs64)
+          val thunkPadding64 = 
+              mk (RT.Thunk.fixedPadding (M.FkBits M.Fs64), thunkFixedPadding (state, env, (M.FkBits M.Fs64)))
           val tfsFloat = thunkFixedSize (state, env, M.FkFloat)
           val thunkSizeFloat = mk (RT.Thunk.fixedSize M.FkFloat, tfsFloat)
+          val thunkPaddingFloat = 
+              mk (RT.Thunk.fixedPadding M.FkFloat, thunkFixedPadding (state, env, M.FkFloat))
           val tfsDouble = thunkFixedSize (state, env, M.FkDouble)
           val thunkSizeDouble = mk (RT.Thunk.fixedSize M.FkDouble, tfsDouble)
+          val thunkPaddingDouble = 
+              mk (RT.Thunk.fixedPadding M.FkDouble, thunkFixedPadding (state, env, M.FkDouble))
           val troRef = thunkResultOffset (state, env, M.FkRef)
           val thunkResultOffsetRef = mk (RT.Thunk.resultOffset M.FkRef, troRef)
           val tro32 = thunkResultOffset (state, env, M.FkBits M.Fs32)
@@ -687,15 +740,16 @@ struct
           val smallIntegerMax = mk (RT.Integer.smallMax, 
                                     IntInf.toInt RT.Integer.optMax)
         in
-          Pil.D.sequence [fieldsBase, setOffset, setSize, typeSize,
-                          ratOffset, ratSize, floatOffset, floatSize,
-                          doubleOffset, doubleSize,
-                          arrayOLenOffset, arrayOEltOffset,
-                          arrayOBaseSize, arrayILenOffset, arrayIEltOffset,
-                          arrayIIdxOffset, arrayIBaseSize,
-                          funCodeOffset, funSize,
-                          sumTagOffset, sumValOffset, sumSize,
+          Pil.D.sequence [fieldsBase, setOffset, setSize, setPadding, typeSize, typePadding,
+                          ratOffset, ratSize, ratPadding, 
+                          floatOffset, floatSize, floatPadding,
+                          doubleOffset, doubleSize, doublePadding,
+                          arrayOLenOffset, arrayOEltOffset, arrayOBaseSize, arrayOPadding, 
+                          arrayILenOffset, arrayIEltOffset, arrayIIdxOffset, arrayIBaseSize, arrayIPadding, 
+                          funCodeOffset, funSize, funPadding,
+                          sumTagOffset, sumValOffset, sumSize, sumPadding,
                           thunkSizeRef, thunkSize32, thunkSize64, thunkSizeFloat, thunkSizeDouble,
+                          thunkPaddingRef, thunkPadding32, thunkPadding64, thunkPaddingFloat, thunkPaddingDouble,
                           thunkResultOffsetRef, thunkResultOffset32, thunkResultOffset64, 
                           thunkResultOffsetFloat, thunkResultOffsetDouble,
                           smallRationalMax, smallRationalMin, smallIntegerMax, smallIntegerMin]
@@ -844,6 +898,7 @@ struct
           val config = getConfig env
           val ws = OM.wordSize (state, env)
           val (fs, alignment, paddings, padding) = OM.fieldPadding (state, env, td)
+          val totalPadding = Vector.fold (paddings, padding, op +)
           val frefs = Array.new (fs div ws, false)
           fun doOne (padding, fd, off) =
               let
@@ -892,7 +947,8 @@ struct
                 VtmCreatedMutable
         in
           Vti {name = n, tag = pok, pinned = pinned, 
-               fixedSize = fs, fixedRefs = frefs, alignment = alignment,
+               fixedSize = fs, fixedRefs = frefs, 
+               alignment = alignment, padding = totalPadding, 
                array = a, mut = vtm}
         end
 
@@ -908,14 +964,14 @@ struct
     fun genMetaDataUnboxed (state, env, vti) =
         let
           val () = incVtables state
-          val Vti {name, tag, pinned, fixedSize, fixedRefs, alignment, array, mut} = vti
+          val Vti {name, tag, pinned, fixedSize, fixedRefs, alignment, padding, array, mut} = vti
           (* Generate the actual vtable *)
           val vt = freshVariableDT (state, env, "vtable", M.VkGlobal)
           val vt' = genVarE (state, env, vt)
           val () = 
               let
                 val tag = Pil.E.namedConstant (RT.MD.pObjKindTag tag)
-                val args = [vt', tag, Pil.E.string name]
+                val args = [vt', tag, Pil.E.string name, Pil.E.int padding]
                 val vtg = Pil.D.macroCall (RT.MD.static, args)
               in addXtrGlb (state, vtg)
               end
@@ -992,6 +1048,7 @@ struct
         else
           let
             val fs = OM.thunkSize (state, env, typ, fks)
+            val padding = OM.thunkPadding (state, env, typ, fks)
             (* Assumptions: The only refs are the free vars and the result.
              * XXX: This is highly runtime specific
              *)
@@ -1041,7 +1098,7 @@ struct
                 else
                   VtmCreatedMutable
             val vti = Vti {name = n, tag = M.PokCell, pinned = false, fixedSize = fs,
-                           fixedRefs = frefs, alignment = 4, array = NONE,
+                           fixedRefs = frefs, alignment = 4, padding = padding, array = NONE,
                            mut = mut}
             val vt = vTableFromInfo (state, env, vti)
           in vt
