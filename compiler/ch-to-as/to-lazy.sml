@@ -160,20 +160,23 @@ struct
         doTy0 (ref QS.empty) SD.empty
       end
 
-  fun makeVar (im, cfg, dict as { ndict, tdict, vdict, sdict }, v, vty)
-    = let 
+  fun makeVar (im, cfg, dict as { ndict, tdict, vdict, sdict }, mname, v, vty) = 
+      let 
         val ty = doTy (im, cfg, dict) vty
-        val u  = IM.variableFresh (im, CL.qNameToString v, ty)
+        val s = case v 
+                 of (SOME _, _) => CL.qNameToString v
+                  | (NONE, s)   => CL.qNameToString (mname, s)
+        val u  = IM.variableFresh (im, s, ty)
         val vdict = QD.insert (vdict, v, u)
       in 
-        ({ ndict = ndict, tdict = tdict, vdict = vdict, sdict = sdict }, u, ty)
+        ({ ndict = ndict , tdict = tdict, vdict = vdict, sdict = sdict }, u, ty)
       end
 
-  fun makeVars (im, cfg, dict, vbs)
+  fun makeVars (im, cfg, dict, mname, vbs)
     = let
         fun mkVbs ((v, vty), (vs, dict)) 
           = let 
-              val (dict, v, vty) = makeVar (im, cfg, dict, (NONE, v), vty) 
+              val (dict, v, vty) = makeVar (im, cfg, dict, mname, (NONE, v), vty) 
             in 
               ((v, vty) :: vs, dict)
             end
@@ -219,7 +222,7 @@ struct
         check [] e
       end
 
-  fun doExp (im, cfg, dict as { vdict, sdict, ... }) 
+  fun doExp (im, cfg, mname, dict as { vdict, sdict, ... }) 
     = fn CH.Var v => 
         (case QD.lookup (sdict, v)
           of SOME e => e
@@ -228,14 +231,14 @@ struct
        | oe as CH.Case (e, (v, vty), ty, alts) =>
         let
           val ty = doTy (im, cfg, dict) ty
-          val e = doExp (im, cfg, dict) e
+          val e = doExp (im, cfg, mname, dict) e
         in
           case (isSome (CU.isUtupleTy vty), alts)
             of (true, [CH.Acon (_, _, vbs, e')]) =>
               let
-                val (dict, vbs) = makeVars (im, cfg, dict, vbs)
+                val (dict, vbs) = makeVars (im, cfg, dict, mname, vbs)
                 val dict = addSubstitute (dict, (NONE, v), AL.Multi (List.map (vbs, #1))) 
-                val e' = doExp (im, cfg, dict) e'
+                val e' = doExp (im, cfg, mname, dict) e'
               in
                 AL.Let (AL.Nonrec (AL.Vdef (AL.VbMulti vbs, e)), e')
               end
@@ -244,7 +247,7 @@ struct
                  val tys = case doTy (im, cfg, dict) vty
                             of AL.Prim (GP.Tuple tys) => tys
                              | _ => failMsg ("doExp/case", "expect primitive tuple type for " ^ v)
-                 val vs = List.map (tys, fn ty => IM.variableFresh (im, v, ty))
+                 val vs = List.map (tys, fn ty => IM.variableFresh (im, CL.qNameToString (mname, v), ty))
                  val vbs = List.zip (vs, tys)
                in
                  AL.Let (AL.Nonrec (AL.Vdef (AL.VbMulti vbs, e)), AL.Multi vs)
@@ -252,91 +255,91 @@ struct
              | (true, _) => failMsg ("doExp", "Bad case on unboxed tuple: " ^ Layout.toString (CL.layoutExp oe))
              | _ => 
                let
-                 val (dict, v, vty) = makeVar (im, cfg, dict, (NONE, v), vty)
+                 val (dict, v, vty) = makeVar (im, cfg, dict, mname, (NONE, v), vty)
                in
-                 AL.Case (e, (v, vty), ty, List.map (alts, doAlt (im, cfg, dict)))
+                 AL.Case (e, (v, vty), ty, List.map (alts, doAlt (im, cfg, mname, dict)))
                end
         end
        | CH.Cast (e, ty) => 
          (case e (* assume cast has been translated to the following form in CoreNormalize *)
            of CH.Let (CH.Nonrec (CH.Vdef (v, vty, e)), CH.Var _) => 
-              AL.Cast (doExp (im, cfg, dict) e, doTy (im, cfg, dict) vty, doTy (im, cfg, dict) ty)
+              AL.Cast (doExp (im, cfg, mname, dict) e, doTy (im, cfg, dict) vty, doTy (im, cfg, dict) ty)
             | _ => failMsg ("valueExp", "expect normalized cast expression "))
        | CH.Lam (bind, e) =>
         (case bind 
           of CH.Vb (vstr, vty) => 
               let 
-                val (dict, v, vty) = makeVar (im, cfg, dict, (NONE, vstr), vty)
+                val (dict, v, vty) = makeVar (im, cfg, dict, mname, (NONE, vstr), vty)
               in
                 case vty (* we skip z7eUzh because it is a type variable *)
-                  of AL.Prim (GP.EqTy _) => doExp (im, cfg, dict) e
+                  of AL.Prim (GP.EqTy _) => doExp (im, cfg, mname, dict) e
                    | AL.Prim (GP.Tuple tys) => (* remove unboxed tuple when it's function argument *)
                     let
-                      val vs = List.map (tys, fn ty => IM.variableFresh (im, vstr, ty))
+                      val vs = List.map (tys, fn ty => IM.variableFresh (im, CL.qNameToString (mname, vstr), ty))
                       val dict = addSubstitute (dict, (NONE, vstr), AL.Multi vs)
                     in
-                      List.foldr (List.zip (vs, tys), doExp (im, cfg, dict) e, AL.Lam)
+                      List.foldr (List.zip (vs, tys), doExp (im, cfg, mname, dict) e, AL.Lam)
                     end
-                   | _ => AL.Lam ((v, vty), doExp (im, cfg, dict) e)
+                   | _ => AL.Lam ((v, vty), doExp (im, cfg, mname, dict) e)
               end
-           | CH.Tb (v, vkind) => doExp (im, cfg, dict) e)       (* ignore type bindings *)
+           | CH.Tb (v, vkind) => doExp (im, cfg, mname, dict) e)       (* ignore type bindings *)
        | CH.Let (vdefg, e) =>
         let
           val (vdefg, dict) = doVDefg (im, cfg, dict) vdefg
         in
-          AL.Let (vdefg, doExp (im, cfg, dict) e)
+          AL.Let (vdefg, doExp (im, cfg, mname, dict) e)
         end
-       | CH.Appt (e, ty) => doExp (im, cfg, dict) e
-       | CH.Note (s, e) => doExp (im, cfg, dict) e                (* TODO: handle notes *)
+       | CH.Appt (e, ty) => doExp (im, cfg, mname, dict) e
+       | CH.Note (s, e) => doExp (im, cfg, mname, dict) e                (* TODO: handle notes *)
        | e =>
         (case isSaturated (im, cfg, dict, e)
           of SOME e => e
            | _ =>
             (case e 
               of CH.App (f, e) =>
-               (case doExp (im, cfg, dict) e
-                 of AL.Var v => AL.App (doExp (im, cfg, dict) f, v)
+               (case doExp (im, cfg, mname, dict) e
+                 of AL.Var v => AL.App (doExp (im, cfg, mname, dict) f, v)
                   (* remove unboxed tuple when it is function argument *)
-                  | AL.Multi vs => List.fold (vs, doExp (im, cfg, dict) f, fn (v, f) => AL.App (f, v))
+                  | AL.Multi vs => List.fold (vs, doExp (im, cfg, mname, dict) f, fn (v, f) => AL.App (f, v))
                   | _ => failMsg ("doExp", "expresion not in a-norm form " ^ Layout.toString (CL.layoutExp e)))
                | _ => failMsg ("doExp", "cannot handle " ^ Layout.toString (CL.layoutExp e))))
 
-  and doAlt (im, cfg, dict as { ndict, ... }) 
+  and doAlt (im, cfg, mname, dict as { ndict, ... }) 
     = fn CH.Acon (con, tbs, vbs, e) =>
         let
           val (con, strictness) = 
               case QD.lookup (ndict, con)
                 of SOME con => con
                  | NONE => ((IM.nameFromString (im, CL.qNameToString con), 0), [])   (* unboxed tuple *)
-          val (dict, vbs) = makeVars (im, cfg, dict, vbs)
+          val (dict, vbs) = makeVars (im, cfg, dict, mname, vbs)
           fun annotate ((v, ty)::vbs) [] = (v, ty, false) :: annotate vbs []
             | annotate ((v, ty)::vbs) (strict::xs) = (v, ty, strict) ::annotate vbs xs
             | annotate _ _ = []
           val vbs = annotate vbs strictness
         in 
-          AL.Acon (con, vbs, doExp (im, cfg, dict) e)
+          AL.Acon (con, vbs, doExp (im, cfg, mname, dict) e)
         end
-       | CH.Alit (CH.Literal (lit, ty), e) => AL.Alit (lit, doTy (im, cfg, dict) ty, doExp (im, cfg, dict) e)
-       | CH.Adefault e => AL.Adefault (doExp (im, cfg, dict) e)
+       | CH.Alit (CH.Literal (lit, ty), e) => AL.Alit (lit, doTy (im, cfg, dict) ty, doExp (im, cfg, mname, dict) e)
+       | CH.Adefault e => AL.Adefault (doExp (im, cfg, mname, dict) e)
 
-  and doVDefVar (im, cfg, dict) (CH.Vdef (v as (_, vstr), vty, e)) = 
+  and doVDefVar (im, cfg, dict) (CH.Vdef (v as (mname, vstr), vty, e)) = 
       case isUtupleTy vty
        of SOME tys => 
          let
            val vbs = List.map (tys, fn t => (vstr, t))
-           val (dict, vbs) = makeVars (im, cfg, dict, vbs)
+           val (dict, vbs) = makeVars (im, cfg, dict, mname, vbs)
            val dict = addSubstitute (dict, v, AL.Multi (List.map (vbs, #1)))
          in
-           ((AL.VbMulti vbs, e), dict)
+           ((AL.VbMulti vbs, mname, e), dict)
          end
         | NONE => 
          let
-           val (dict, v, vty) = makeVar (im, cfg, dict, v, vty)
+           val (dict, v, vty) = makeVar (im, cfg, dict, mname, v, vty)
          in
-           ((AL.VbSingle (v, vty), e), dict)
+           ((AL.VbSingle (v, vty), mname, e), dict)
          end
 
-  and doVDef (im, cfg, dict) (bind, e) = AL.Vdef (bind, doExp (im, cfg, dict) e)
+  and doVDef (im, cfg, dict) (bind, mname, e) = AL.Vdef (bind, doExp (im, cfg, mname, dict) e)
 
   and doVDefg (im, cfg, dict)
     = fn CH.Rec vdefs =>
