@@ -3,6 +3,471 @@
  * Definitions of primitive operators and their types from GHC.Prim.
  *)
 
+signature GHC_PRIM_OP = 
+sig
+  datatype primOp
+      (* char *)
+    = GtCharzh
+    | GeCharzh
+    | EqCharzh
+    | NeCharzh
+    | LtCharzh
+    | LeCharzh
+    | Ordzh
+     (* integer *)
+    | Integerzmzh
+    | Integerzpzh
+    | Integerztzh
+    | NegateIntegerzh
+    | QuotIntegerzh
+    | RemIntegerzh
+    | QuotRemIntegerzh
+    | Integerzezezh
+    | Integerzszezh
+    | Integerzgzezh
+    | Integerzgzh
+    | Integerzlzezh
+    | Integerzlzh
+    | Int2Integerzh
+    | Int64ToIntegerzh
+    | Word2Integerzh
+    | Word64ToIntegerzh
+    | Integer2Intzh
+    | Integer2Int64zh
+    | Integer2Wordzh
+    | Integer2Word64zh
+    | Integer2Floatzh
+    | Integer2Doublezh
+    | IntegerAndzh
+    | IntegerOrzh
+    | IntegerXorzh
+    | IntegerIShiftLzh
+    | IntegerIShiftRzh
+    | IntegerEncodeFloatzh
+    | IntegerEncodeDoublezh
+     (* int *)
+    | Zmzh
+    | Zpzh
+    | Ztzh
+    | NegateIntzh
+    | QuotIntzh
+    | RemIntzh
+    | QuotRemIntzh
+    | Zezezh
+    | Zszezh
+    | Zgzezh
+    | Zgzh
+    | Zlzezh
+    | Zlzh
+    | Chrzh
+    | Int2Wordzh
+    | Int2Word64zh
+    | Int2Floatzh
+    | Int2Doublezh
+    | UncheckedIShiftLzh
+    | UncheckedIShiftRAzh
+    | UncheckedIShiftRLzh
+    | AddIntCzh
+    | SubIntCzh
+    | MulIntMayOflozh
+     (* word *)
+    | MinusWordzh
+    | PlusWordzh
+    | TimesWordzh
+    | QuotWordzh
+    | RemWordzh
+    | QuotRemWordzh
+    | Andzh
+    | Orzh
+    | Xorzh
+    | Notzh
+    | Word2Intzh
+    | GtWordzh
+    | GeWordzh
+    | EqWordzh
+    | NeWordzh
+    | LtWordzh
+    | LeWordzh
+    | UncheckedShiftLzh
+    | UncheckedShiftRLzh
+     (* narrowing *)
+    | Narrow8Intzh
+    | Narrow16Intzh
+    | Narrow32Intzh
+    | Narrow8Wordzh
+    | Narrow16Wordzh
+    | Narrow32Wordzh
+     (* double *)
+    | Zezezhzh
+    | Zszezhzh
+    | Zgzezhzh
+    | Zgzhzh
+    | Zlzezhzh
+    | Zlzhzh
+    | Zmzhzh
+    | Zpzhzh
+    | Ztzhzh
+    | Zszhzh
+    | NegateDoublezh
+    | Double2Intzh
+    | Double2Floatzh
+    | TanhDoublezh
+    | CoshDoublezh
+    | SinhDoublezh
+    | AtanDoublezh
+    | LogDoublezh
+    | ExpDoublezh
+    | AcosDoublezh
+    | AsinDoublezh
+    | TanDoublezh
+    | CosDoublezh
+    | SinDoublezh
+    | SqrtDoublezh
+    | Ztztzhzh
+    | DecodeDoublezu2Intzh
+     (* float *)
+    | EqFloatzh
+    | NeFloatzh
+    | GeFloatzh
+    | GtFloatzh
+    | LeFloatzh
+    | LtFloatzh
+    | MinusFloatzh
+    | PlusFloatzh
+    | TimesFloatzh
+    | DivideFloatzh
+    | NegateFloatzh
+    | Float2Intzh
+    | Float2Doublezh
+    | TanhFloatzh
+    | CoshFloatzh
+    | SinhFloatzh
+    | AtanFloatzh
+    | LogFloatzh
+    | ExpFloatzh
+    | AcosFloatzh
+    | AsinFloatzh
+    | TanFloatzh
+    | CosFloatzh
+    | SinFloatzh
+    | SqrtFloatzh
+    | PowerFloatzh
+    | DecodeFloatzuIntzh
+     (* bit operations *)
+    | PopCnt8zh
+    | PopCnt16zh
+    | PopCnt32zh
+    | PopCnt64zh
+    | PopCntzh
+     (* array *)
+    | NewArrayzh
+    | ReadArrayzh
+    | WriteArrayzh
+    | SameMutableArrayzh
+    | IndexArrayzh
+    | SizeofArrayzh
+    | SizeofMutableArrayzh
+    | UnsafeThawArrayzh
+    | UnsafeFreezzeArrayzh
+    | CopyArrayzh
+    | CopyMutableArrayzh
+    | CopyByteArrayzh
+    | CopyMutableByteArrayzh
+     (* Immutable Arrays *)
+    | NewImmutableArrayzh
+    | NewStrictImmutableArrayzh
+    | InitImmutableArrayzh
+    | InitStrictImmutableArrayzh
+    | ImmutableArrayInitedzh
+    | StrictImmutableArrayInitedzh
+    | SizzeofImmutableArrayzh
+    | SizzeofStrictImmutableArrayzh
+    | IndexImmutableArrayzh
+    | IndexStrictImmutableArrayzh
+     (* Unboxed Arrays *)
+    | NewUnboxedWordArrayzh
+    | NewUnboxedWord8Arrayzh
+    | NewUnboxedWord16Arrayzh
+    | NewUnboxedWord32Arrayzh
+    | NewUnboxedWord64Arrayzh
+    | NewUnboxedIntArrayzh
+    | NewUnboxedInt8Arrayzh
+    | NewUnboxedInt16Arrayzh
+    | NewUnboxedInt32Arrayzh
+    | NewUnboxedInt64Arrayzh
+    | NewUnboxedFloatArrayzh
+    | NewUnboxedDoubleArrayzh
+    | NewUnboxedCharArrayzh
+    | NewUnboxedAddrArrayzh
+    | InitUnboxedWordArrayzh
+    | InitUnboxedWord8Arrayzh
+    | InitUnboxedWord16Arrayzh
+    | InitUnboxedWord32Arrayzh
+    | InitUnboxedWord64Arrayzh
+    | InitUnboxedIntArrayzh
+    | InitUnboxedInt8Arrayzh
+    | InitUnboxedInt16Arrayzh
+    | InitUnboxedInt32Arrayzh
+    | InitUnboxedInt64Arrayzh
+    | InitUnboxedFloatArrayzh
+    | InitUnboxedDoubleArrayzh
+    | InitUnboxedCharArrayzh
+    | InitUnboxedAddrArrayzh
+    | UnboxedWordArrayInitedzh
+    | UnboxedWord8ArrayInitedzh
+    | UnboxedWord16ArrayInitedzh
+    | UnboxedWord32ArrayInitedzh
+    | UnboxedWord64ArrayInitedzh
+    | UnboxedIntArrayInitedzh
+    | UnboxedInt8ArrayInitedzh
+    | UnboxedInt16ArrayInitedzh
+    | UnboxedInt32ArrayInitedzh
+    | UnboxedInt64ArrayInitedzh
+    | UnboxedFloatArrayInitedzh
+    | UnboxedDoubleArrayInitedzh
+    | UnboxedCharArrayInitedzh
+    | UnboxedAddrArrayInitedzh
+    | SizeofUnboxedWordArrayzh
+    | SizeofUnboxedWord8Arrayzh
+    | SizeofUnboxedWord16Arrayzh
+    | SizeofUnboxedWord32Arrayzh
+    | SizeofUnboxedWord64Arrayzh
+    | SizeofUnboxedIntArrayzh
+    | SizeofUnboxedInt8Arrayzh
+    | SizeofUnboxedInt16Arrayzh
+    | SizeofUnboxedInt32Arrayzh
+    | SizeofUnboxedInt64Arrayzh
+    | SizeofUnboxedFloatArrayzh
+    | SizeofUnboxedDoubleArrayzh
+    | SizeofUnboxedCharArrayzh
+    | SizeofUnboxedAddrArrayzh
+    | IndexUnboxedWordArrayzh
+    | IndexUnboxedWord8Arrayzh
+    | IndexUnboxedWord16Arrayzh
+    | IndexUnboxedWord32Arrayzh
+    | IndexUnboxedWord64Arrayzh
+    | IndexUnboxedIntArrayzh
+    | IndexUnboxedInt8Arrayzh
+    | IndexUnboxedInt16Arrayzh
+    | IndexUnboxedInt32Arrayzh
+    | IndexUnboxedInt64Arrayzh
+    | IndexUnboxedFloatArrayzh
+    | IndexUnboxedDoubleArrayzh
+    | IndexUnboxedCharArrayzh
+    | IndexUnboxedAddrArrayzh
+     (* byte arrays *)
+    | NewByteArrayzh
+    | NewPinnedByteArrayzh
+    | NewAlignedPinnedByteArrayzh
+    | ByteArrayContentszh
+    | SameMutableByteArrayzh
+    | UnsafeFreezzeByteArrayzh
+    | SizzeofByteArrayzh
+    | SizzeofMutableByteArrayzh
+     (* typed unboxed array as alternative to creating byte arrays *)
+    | NewUnboxedArrayzh
+    | NewPinnedUnboxedArrayzh
+    | NewAlignedPinnedUnboxedArrayzh
+     (* the following operation is only defined on typed unboxed arrays, never use them on byte arrays! *)
+    | IndexWord64Arrayzh
+    | IndexWord32Arrayzh
+    | IndexWord16Arrayzh
+    | IndexWord8Arrayzh
+    | IndexInt64Arrayzh
+    | IndexInt32Arrayzh
+    | IndexInt16Arrayzh
+    | IndexInt8Arrayzh
+    | IndexWordArrayzh
+    | IndexIntArrayzh
+    | IndexWideCharArrayzh
+    | IndexCharArrayzh
+    | IndexStablePtrArrayzh
+    | IndexDoubleArrayzh
+    | IndexFloatArrayzh
+    | IndexAddrArrayzh
+     (* the following operation is only defined on typed unboxed arrays, never use them on byte arrays! *)
+    | ReadWord64Arrayzh
+    | ReadWord32Arrayzh
+    | ReadWord16Arrayzh
+    | ReadWord8Arrayzh
+    | ReadInt64Arrayzh
+    | ReadInt32Arrayzh
+    | ReadInt16Arrayzh
+    | ReadInt8Arrayzh
+    | ReadStablePtrArrayzh
+    | ReadDoubleArrayzh
+    | ReadFloatArrayzh
+    | ReadAddrArrayzh
+    | ReadWordArrayzh
+    | ReadIntArrayzh
+    | ReadWideCharArrayzh
+    | ReadCharArrayzh
+     (* the following operation is only defined on typed unboxed arrays, never use them on byte arrays! *)
+    | WriteWord64Arrayzh
+    | WriteWord32Arrayzh
+    | WriteWord16Arrayzh
+    | WriteWord8Arrayzh
+    | WriteInt64Arrayzh
+    | WriteInt32Arrayzh
+    | WriteInt16Arrayzh
+    | WriteInt8Arrayzh
+    | WriteStablePtrArrayzh
+    | WriteDoubleArrayzh
+    | WriteFloatArrayzh
+    | WriteAddrArrayzh
+    | WriteWordArrayzh
+    | WriteIntArrayzh
+    | WriteWideCharArrayzh
+    | WriteCharArrayzh
+     (* addr *)
+    | NullAddrzh
+    | PlusAddrzh
+    | MinusAddrzh
+    | RemAddrzh
+    | Addr2Intzh
+    | Int2Addrzh
+    | GtAddrzh
+    | GeAddrzh
+    | LtAddrzh
+    | LeAddrzh
+    | EqAddrzh
+    | CastToAddrzh
+    | CastFromAddrzh
+    | IndexWord64OffAddrzh
+    | IndexWord32OffAddrzh
+    | IndexWord16OffAddrzh
+    | IndexWord8OffAddrzh
+    | IndexInt64OffAddrzh
+    | IndexInt32OffAddrzh
+    | IndexInt16OffAddrzh
+    | IndexInt8OffAddrzh
+    | IndexWordOffAddrzh
+    | IndexIntOffAddrzh
+    | IndexWideCharOffAddrzh
+    | IndexStablePtrOffAddrzh
+    | IndexDoubleOffAddrzh
+    | IndexFloatOffAddrzh
+    | IndexAddrOffAddrzh
+    | IndexCharOffAddrzh
+    | ReadWord64OffAddrzh
+    | ReadWord32OffAddrzh
+    | ReadWord16OffAddrzh
+    | ReadWord8OffAddrzh
+    | ReadInt64OffAddrzh
+    | ReadInt32OffAddrzh
+    | ReadInt16OffAddrzh
+    | ReadInt8OffAddrzh
+    | ReadWordOffAddrzh
+    | ReadIntOffAddrzh
+    | ReadWideCharOffAddrzh
+    | ReadStablePtrOffAddrzh
+    | ReadDoubleOffAddrzh
+    | ReadFloatOffAddrzh
+    | ReadAddrOffAddrzh
+    | ReadCharOffAddrzh
+    | WriteWord64OffAddrzh
+    | WriteWord32OffAddrzh
+    | WriteWord16OffAddrzh
+    | WriteWord8OffAddrzh
+    | WriteInt64OffAddrzh
+    | WriteInt32OffAddrzh
+    | WriteInt16OffAddrzh
+    | WriteInt8OffAddrzh
+    | WriteWordOffAddrzh
+    | WriteIntOffAddrzh
+    | WriteWideCharOffAddrzh
+    | WriteStablePtrOffAddrzh
+    | WriteDoubleOffAddrzh
+    | WriteFloatOffAddrzh
+    | WriteAddrOffAddrzh
+    | WriteCharOffAddrzh
+     (* Mutable Variable *)
+    | NewMutVarzh
+    | ReadMutVarzh
+    | WriteMutVarzh
+    | SameMutVarzh
+    | CasMutVarzh
+    | AtomicModifyMutVarzh
+     (* STM *)
+    | NewTVarzh
+    | ReadTVarzh
+    | ReadTVarIOzh
+    | WriteTVarzh
+    | SameTVarzh
+    | Atomicallyzh
+    (* TODO
+    | Retryzh
+    | CatchRetryzh
+    | Checkzh
+    | CatchSTMzh
+    *)
+     (* exception *)
+    | Catchzh
+    | Raisezh
+    | RaiseIOzh
+    | MaskAsyncExceptionszh
+    | MaskUninterruptiblezh
+    | UnmaskAsyncExceptionszh
+    | GetMaskingStatezh
+     (* MVar *)
+    | NewMVarzh
+    | TakeMVarzh
+    | TryTakeMVarzh
+    | PutMVarzh
+    | TryPutMVarzh
+    | SameMVarzh
+    | IsEmptyMVarzh
+     (* delay/wait *)
+    | Delayzh
+    | WaitReadzh
+    | WaitWritezh
+    | AsyncReadzh
+    | AsyncWritezh
+    | AsyncDoProczh
+     (* concurrency *)
+    | Forkzh
+    | ForkOnzh
+    | KillThreadzh
+    | Yieldzh
+    | MyThreadIdzh
+    | LabelThreadzh
+    | IsCurrentThreadBoundzh
+    | NoDuplicatezh
+    | ThreadStatuszh
+     (* weak pointer *)
+    | MkWeakzh
+    | MkWeakForeignEnvzh
+    | DeRefWeakzh
+    | FinalizzeWeakzh
+    | Touchzh
+     (* stable pointer *)
+    | MakeStablePtrzh
+    | DeRefStablePtrzh
+    | FreeStablePtrzh
+    | EqStablePtrzh
+     (* XXX: not implemented
+    | MakeStableNamezh
+    | EqStableNamezh
+    | StableNameToIntzh
+     *)
+     (* unsafe pointer *)
+    | ReallyUnsafePtrEqualityzh
+     (* paralllelism *)
+     (* XXX: need to add these: parzh, sparkzh, getSparkzh, numSparkszh, parGlobalzh, parLocalzh, parAtzh,
+      *      parAtAbszh, parAtRelzh, parAtForNowzh, copyablezh, noFollowzh
+      *)
+    | Seqzh
+     (* tag to enum *)
+    | DataToTagzh
+    | TagToEnumzh
+     (* Misc *)
+     (* XXX: traceCcszh and traceEventzh *)
+    | TraceEventzh
+
+  val effects : primOp -> Effect.set
+
+end
+
 structure GHCPrimOp =
 struct
 
@@ -1818,4 +2283,436 @@ struct
   in
     val getType : primOp -> CoreHs.ty = mkTy o toTy
   end
+
+  fun effects p =
+    let
+      val xc  = Effect.Control
+      val xt  = Effect.Total
+      val xr  = Effect.ReadOnly
+      val xw  = Effect.Heap
+      val xrw = Effect.Heap
+      val xf  = Effect.Control
+      val xh  = Effect.Heap
+      val xa  = Effect.Any
+      val xig = Effect.InitGenS
+      val xir = Effect.InitReadS
+      val xiw = Effect.InitWriteS
+      val xio = Effect.IoS
+    in
+      case p
+       of GtCharzh => xt
+        | GeCharzh => xt
+        | EqCharzh => xt
+        | NeCharzh => xt
+        | LtCharzh => xt
+        | LeCharzh => xt
+        | Ordzh => xt
+        | Integerzmzh => xt
+        | Integerzpzh => xt
+        | Integerztzh => xt
+        | NegateIntegerzh => xt
+        | QuotIntegerzh => xt
+        | RemIntegerzh => xt
+        | QuotRemIntegerzh => xt
+        | Integerzezezh => xt
+        | Integerzszezh => xt
+        | Integerzgzezh => xt
+        | Integerzgzh => xt
+        | Integerzlzezh => xt
+        | Integerzlzh => xt
+        | Int2Integerzh => xt
+        | Int64ToIntegerzh => xt
+        | Word2Integerzh => xt
+        | Word64ToIntegerzh => xt
+        | Integer2Intzh => xt
+        | Integer2Int64zh => xt
+        | Integer2Wordzh => xt
+        | Integer2Word64zh => xt
+        | Integer2Floatzh => xt
+        | Integer2Doublezh => xt
+        | IntegerAndzh => xt
+        | IntegerOrzh => xt
+        | IntegerXorzh => xt
+        | IntegerIShiftLzh => xt
+        | IntegerIShiftRzh => xt
+        | IntegerEncodeFloatzh => xt
+        | IntegerEncodeDoublezh => xt
+        | Zmzh => xt
+        | Zpzh => xt
+        | Ztzh => xt
+        | NegateIntzh => xt
+        | QuotIntzh => xt
+        | RemIntzh => xt
+        | QuotRemIntzh => xt
+        | Zezezh => xt
+        | Zszezh => xt
+        | Zgzezh => xt
+        | Zgzh => xt
+        | Zlzezh => xt
+        | Zlzh => xt
+        | Chrzh => xt
+        | Int2Wordzh => xt
+        | Int2Word64zh => xt
+        | Int2Floatzh => xt
+        | Int2Doublezh => xt
+        | UncheckedIShiftLzh => xt
+        | UncheckedIShiftRAzh => xt
+        | UncheckedIShiftRLzh => xt
+        | AddIntCzh => xt
+        | SubIntCzh => xt
+        | MulIntMayOflozh => xt
+        | MinusWordzh => xt
+        | PlusWordzh => xt
+        | TimesWordzh => xt
+        | QuotWordzh => xt
+        | RemWordzh => xt
+        | QuotRemWordzh => xt
+        | Andzh => xt
+        | Orzh => xt
+        | Xorzh => xt
+        | Notzh => xt
+        | Word2Intzh => xt
+        | GtWordzh => xt
+        | GeWordzh => xt
+        | EqWordzh => xt
+        | NeWordzh => xt
+        | LtWordzh => xt
+        | LeWordzh => xt
+        | UncheckedShiftLzh => xt
+        | UncheckedShiftRLzh => xt
+        | Narrow8Intzh => xt
+        | Narrow16Intzh => xt
+        | Narrow32Intzh => xt
+        | Narrow8Wordzh => xt
+        | Narrow16Wordzh => xt
+        | Narrow32Wordzh => xt
+        | Zezezhzh => xt
+        | Zszezhzh => xt
+        | Zgzezhzh => xt
+        | Zgzhzh => xt
+        | Zlzezhzh => xt
+        | Zlzhzh => xt
+        | Zmzhzh => xt
+        | Zpzhzh => xt
+        | Ztzhzh => xt
+        | Zszhzh => xt
+        | NegateDoublezh => xt
+        | Double2Intzh => xt
+        | Double2Floatzh => xt
+        | TanhDoublezh => xt
+        | CoshDoublezh => xt
+        | SinhDoublezh => xt
+        | AtanDoublezh => xt
+        | LogDoublezh => xt
+        | ExpDoublezh => xt
+        | AcosDoublezh => xt
+        | AsinDoublezh => xt
+        | TanDoublezh => xt
+        | CosDoublezh => xt
+        | SinDoublezh => xt
+        | SqrtDoublezh => xt
+        | Ztztzhzh => xt
+        | DecodeDoublezu2Intzh => xr
+        | EqFloatzh => xt
+        | NeFloatzh => xt
+        | GeFloatzh => xt
+        | GtFloatzh => xt
+        | LeFloatzh => xt
+        | LtFloatzh => xt
+        | MinusFloatzh => xt
+        | PlusFloatzh => xt
+        | TimesFloatzh => xt
+        | DivideFloatzh => xt
+        | NegateFloatzh => xt
+        | Float2Intzh => xt
+        | Float2Doublezh => xt
+        | TanhFloatzh => xt
+        | CoshFloatzh => xt
+        | SinhFloatzh => xt
+        | AtanFloatzh => xt
+        | LogFloatzh => xt
+        | ExpFloatzh => xt
+        | AcosFloatzh => xt
+        | AsinFloatzh => xt
+        | TanFloatzh => xt
+        | CosFloatzh => xt
+        | SinFloatzh => xt
+        | SqrtFloatzh => xt
+        | PowerFloatzh => xt
+        | DecodeFloatzuIntzh => xr
+        | PopCnt8zh => xt
+        | PopCnt16zh => xt
+        | PopCnt32zh => xt
+        | PopCnt64zh => xt
+        | PopCntzh => xt
+        | NewArrayzh => xh
+        | ReadArrayzh => xh
+        | WriteArrayzh => xw
+        | SameMutableArrayzh => xt
+        | IndexArrayzh => xt
+        | SizeofArrayzh => xt
+        | SizeofMutableArrayzh => xr
+        | UnsafeThawArrayzh => xt
+        | UnsafeFreezzeArrayzh => xt
+        | UnsafeFreezzeByteArrayzh => xt
+        | CopyArrayzh => xw
+        | CopyMutableArrayzh => xw
+        | CopyByteArrayzh => xw
+        | CopyMutableByteArrayzh => xw
+        | NewImmutableArrayzh => xig
+        | NewStrictImmutableArrayzh => xig
+        | InitImmutableArrayzh => xiw
+        | InitStrictImmutableArrayzh => xiw
+        | ImmutableArrayInitedzh => xiw
+        | StrictImmutableArrayInitedzh => xiw
+        | SizzeofImmutableArrayzh => xt
+        | SizzeofStrictImmutableArrayzh => xt
+        | IndexImmutableArrayzh => xir
+        | IndexStrictImmutableArrayzh => xir
+        | NewUnboxedWordArrayzh => xig
+        | NewUnboxedWord8Arrayzh => xig
+        | NewUnboxedWord16Arrayzh => xig
+        | NewUnboxedWord32Arrayzh => xig
+        | NewUnboxedWord64Arrayzh => xig
+        | NewUnboxedIntArrayzh => xig
+        | NewUnboxedInt8Arrayzh => xig
+        | NewUnboxedInt16Arrayzh => xig
+        | NewUnboxedInt32Arrayzh => xig
+        | NewUnboxedInt64Arrayzh => xig
+        | NewUnboxedFloatArrayzh => xig
+        | NewUnboxedDoubleArrayzh => xig
+        | NewUnboxedCharArrayzh => xig
+        | NewUnboxedAddrArrayzh => xig
+        | InitUnboxedWordArrayzh => xiw
+        | InitUnboxedWord8Arrayzh => xiw
+        | InitUnboxedWord16Arrayzh => xiw
+        | InitUnboxedWord32Arrayzh => xiw
+        | InitUnboxedWord64Arrayzh => xiw
+        | InitUnboxedIntArrayzh => xiw
+        | InitUnboxedInt8Arrayzh => xiw
+        | InitUnboxedInt16Arrayzh => xiw
+        | InitUnboxedInt32Arrayzh => xiw
+        | InitUnboxedInt64Arrayzh => xiw
+        | InitUnboxedFloatArrayzh => xiw
+        | InitUnboxedDoubleArrayzh => xiw
+        | InitUnboxedCharArrayzh => xiw
+        | InitUnboxedAddrArrayzh => xiw
+        | UnboxedWordArrayInitedzh => xiw
+        | UnboxedWord8ArrayInitedzh => xiw
+        | UnboxedWord16ArrayInitedzh => xiw
+        | UnboxedWord32ArrayInitedzh => xiw
+        | UnboxedWord64ArrayInitedzh => xiw
+        | UnboxedIntArrayInitedzh => xiw
+        | UnboxedInt8ArrayInitedzh => xiw
+        | UnboxedInt16ArrayInitedzh => xiw
+        | UnboxedInt32ArrayInitedzh => xiw
+        | UnboxedInt64ArrayInitedzh => xiw
+        | UnboxedFloatArrayInitedzh => xiw
+        | UnboxedDoubleArrayInitedzh => xiw
+        | UnboxedCharArrayInitedzh => xiw
+        | UnboxedAddrArrayInitedzh => xiw
+        | SizeofUnboxedWordArrayzh => xt
+        | SizeofUnboxedWord8Arrayzh => xt
+        | SizeofUnboxedWord16Arrayzh => xt
+        | SizeofUnboxedWord32Arrayzh => xt
+        | SizeofUnboxedWord64Arrayzh => xt
+        | SizeofUnboxedIntArrayzh => xt
+        | SizeofUnboxedInt8Arrayzh => xt
+        | SizeofUnboxedInt16Arrayzh => xt
+        | SizeofUnboxedInt32Arrayzh => xt
+        | SizeofUnboxedInt64Arrayzh => xt
+        | SizeofUnboxedFloatArrayzh => xt
+        | SizeofUnboxedDoubleArrayzh => xt
+        | SizeofUnboxedCharArrayzh => xt
+        | SizeofUnboxedAddrArrayzh => xt
+        | IndexUnboxedWordArrayzh => xir
+        | IndexUnboxedWord8Arrayzh => xir
+        | IndexUnboxedWord16Arrayzh => xir
+        | IndexUnboxedWord32Arrayzh => xir
+        | IndexUnboxedWord64Arrayzh => xir
+        | IndexUnboxedIntArrayzh => xir
+        | IndexUnboxedInt8Arrayzh => xir
+        | IndexUnboxedInt16Arrayzh => xir
+        | IndexUnboxedInt32Arrayzh => xir
+        | IndexUnboxedInt64Arrayzh => xir
+        | IndexUnboxedFloatArrayzh => xir
+        | IndexUnboxedDoubleArrayzh => xir
+        | IndexUnboxedCharArrayzh => xir
+        | IndexUnboxedAddrArrayzh => xir
+        | NewByteArrayzh => xh
+        | NewPinnedByteArrayzh => xh
+        | NewAlignedPinnedByteArrayzh => xh
+        | ByteArrayContentszh => xt
+        | SameMutableByteArrayzh => xt
+        | SizzeofByteArrayzh => xt
+        | SizzeofMutableByteArrayzh => xt
+        | NewUnboxedArrayzh => xh
+        | NewPinnedUnboxedArrayzh => xh
+        | NewAlignedPinnedUnboxedArrayzh => xh
+        | IndexWord64Arrayzh => xt
+        | IndexWord32Arrayzh => xt
+        | IndexWord16Arrayzh => xt
+        | IndexWord8Arrayzh => xt
+        | IndexInt64Arrayzh => xt
+        | IndexInt32Arrayzh => xt
+        | IndexInt16Arrayzh => xt
+        | IndexInt8Arrayzh => xt
+        | IndexWordArrayzh => xt
+        | IndexIntArrayzh => xt
+        | IndexWideCharArrayzh => xt
+        | IndexCharArrayzh => xt
+        | IndexStablePtrArrayzh => xt
+        | IndexDoubleArrayzh => xt
+        | IndexFloatArrayzh => xt
+        | IndexAddrArrayzh => xt
+        | ReadWord64Arrayzh => xr
+        | ReadWord32Arrayzh => xr
+        | ReadWord16Arrayzh => xr
+        | ReadWord8Arrayzh => xr
+        | ReadInt64Arrayzh => xr
+        | ReadInt32Arrayzh => xr
+        | ReadInt16Arrayzh => xr
+        | ReadInt8Arrayzh => xr
+        | ReadStablePtrArrayzh => xr
+        | ReadDoubleArrayzh => xr
+        | ReadFloatArrayzh => xr
+        | ReadAddrArrayzh => xr
+        | ReadWordArrayzh => xr
+        | ReadIntArrayzh => xr
+        | ReadWideCharArrayzh => xr
+        | ReadCharArrayzh => xr
+        | WriteWord64Arrayzh => xw
+        | WriteWord32Arrayzh => xw
+        | WriteWord16Arrayzh => xw
+        | WriteWord8Arrayzh => xw
+        | WriteInt64Arrayzh => xw
+        | WriteInt32Arrayzh => xw
+        | WriteInt16Arrayzh => xw
+        | WriteInt8Arrayzh => xw
+        | WriteStablePtrArrayzh => xw
+        | WriteDoubleArrayzh => xw
+        | WriteFloatArrayzh => xw
+        | WriteAddrArrayzh => xw
+        | WriteWordArrayzh => xw
+        | WriteIntArrayzh => xw
+        | WriteWideCharArrayzh => xw
+        | WriteCharArrayzh => xw
+        | NullAddrzh => xt
+        | PlusAddrzh => xt
+        | MinusAddrzh => xt
+        | RemAddrzh => xt
+        | Addr2Intzh => xt
+        | Int2Addrzh => xt
+        | GtAddrzh => xt
+        | GeAddrzh => xt
+        | LtAddrzh => xt
+        | LeAddrzh => xt
+        | EqAddrzh => xt
+        | CastToAddrzh => xt
+        | CastFromAddrzh => xt
+        | IndexWord64OffAddrzh => xt
+        | IndexWord32OffAddrzh => xt
+        | IndexWord16OffAddrzh => xt
+        | IndexWord8OffAddrzh => xt
+        | IndexInt64OffAddrzh => xt
+        | IndexInt32OffAddrzh => xt
+        | IndexInt16OffAddrzh => xt
+        | IndexInt8OffAddrzh => xt
+        | IndexWordOffAddrzh => xt
+        | IndexIntOffAddrzh => xt
+        | IndexWideCharOffAddrzh => xt
+        | IndexStablePtrOffAddrzh => xt
+        | IndexDoubleOffAddrzh => xt
+        | IndexFloatOffAddrzh => xt
+        | IndexAddrOffAddrzh => xt
+        | IndexCharOffAddrzh => xt
+        | ReadWord64OffAddrzh => xr
+        | ReadWord32OffAddrzh => xr
+        | ReadWord16OffAddrzh => xr
+        | ReadWord8OffAddrzh => xr
+        | ReadInt64OffAddrzh => xr
+        | ReadInt32OffAddrzh => xr
+        | ReadInt16OffAddrzh => xr
+        | ReadInt8OffAddrzh => xr
+        | ReadWordOffAddrzh => xr
+        | ReadIntOffAddrzh => xr
+        | ReadWideCharOffAddrzh => xr
+        | ReadStablePtrOffAddrzh => xr
+        | ReadDoubleOffAddrzh => xr
+        | ReadFloatOffAddrzh => xr
+        | ReadAddrOffAddrzh => xr
+        | ReadCharOffAddrzh => xr
+        | WriteWord64OffAddrzh => xw
+        | WriteWord32OffAddrzh => xw
+        | WriteWord16OffAddrzh => xw
+        | WriteWord8OffAddrzh => xw
+        | WriteInt64OffAddrzh => xw
+        | WriteInt32OffAddrzh => xw
+        | WriteInt16OffAddrzh => xw
+        | WriteInt8OffAddrzh => xw
+        | WriteWordOffAddrzh => xw
+        | WriteIntOffAddrzh => xw
+        | WriteWideCharOffAddrzh => xw
+        | WriteStablePtrOffAddrzh => xw
+        | WriteDoubleOffAddrzh => xw
+        | WriteFloatOffAddrzh => xw
+        | WriteAddrOffAddrzh => xw
+        | WriteCharOffAddrzh => xw
+        | NewMutVarzh => xh
+        | ReadMutVarzh => xr
+        | WriteMutVarzh => xw
+        | SameMutVarzh => xt
+        | CasMutVarzh => xrw
+        | AtomicModifyMutVarzh => xrw
+        | NewTVarzh => xh
+        | ReadTVarzh => xr
+        | ReadTVarIOzh => xr
+        | WriteTVarzh => xw
+        | SameTVarzh => xt
+        | Atomicallyzh => xa
+        | Catchzh => xa
+        | Raisezh => xf
+        | RaiseIOzh => xf
+        | MaskAsyncExceptionszh => xa
+        | MaskUninterruptiblezh => xa
+        | UnmaskAsyncExceptionszh => xa
+        | GetMaskingStatezh => xt
+        | NewMVarzh => xh
+        | TakeMVarzh => xrw
+        | TryTakeMVarzh => xrw
+        | PutMVarzh => xrw
+        | TryPutMVarzh => xrw
+        | SameMVarzh => xt
+        | IsEmptyMVarzh => xr
+        | Delayzh => xio
+        | WaitReadzh => xio
+        | WaitWritezh => xio
+        | AsyncReadzh => xio
+        | AsyncWritezh => xio
+        | AsyncDoProczh => xio
+        | Forkzh => xio
+        | ForkOnzh => xio
+        | KillThreadzh => xio
+        | Yieldzh => xio
+        | MyThreadIdzh => xio
+        | LabelThreadzh => xio
+        | IsCurrentThreadBoundzh => xio
+        | NoDuplicatezh => xio
+        | ThreadStatuszh => xio
+        | MkWeakzh => xh
+        | MkWeakForeignEnvzh => xh
+        | DeRefWeakzh => xr
+        | FinalizzeWeakzh => xa
+        | Touchzh =>     xt
+        | MakeStablePtrzh => xh
+        | DeRefStablePtrzh => xt
+        | FreeStablePtrzh => xh
+        | EqStablePtrzh => xt
+        | ReallyUnsafePtrEqualityzh => xt
+        | Seqzh => xf
+        | DataToTagzh => xc
+        | TagToEnumzh => xr
+        | TraceEventzh => xt
+  end
+
 end
