@@ -10,7 +10,8 @@ static void* ihrStore[ISK_Num] = {NULL, };
 static struct PrtMutex* ihrStoreLock;
 
 /* hard code n_capabilities to 1 for now */
-unsigned int n_capabilities = 1;
+unsigned int n_capabilities_ = 1;
+unsigned int* n_capabilities = &n_capabilities_;
 
 void ihrGlobalInit()
 {
