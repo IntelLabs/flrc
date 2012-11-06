@@ -259,8 +259,8 @@ struct
                                    , L.align (semiMap layoutCDef cdefs)
                                    , L.str "}"], tabSize)]
     | layoutTDef (Newtype (qtcon, coercion, tbinds, tyopt)) =
-      L.mayAlign [ L.seq [ L.str "%newtype ", layoutQName qtcon, L.str " ", layoutQName coercion
-                         , separate (map layoutTBind tbinds)]
+      L.mayAlign [ L.seq [ L.str "%newtype " 
+                         , separate (layoutQName qtcon :: layoutQName coercion :: map layoutTBind tbinds)]
                  , L.indent (L.seq [L.str " = ", layoutTy tyopt], tabSize) ]
 
 
