@@ -87,8 +87,115 @@ struct
       (case VD.lookup (env, v)
         of SOME w => w
          | NONE   => AS.Thunk AS.Boxed (* TODO: shall we error here? *))
+
+  (* handle recursive cast of function types *)
+  val rec cast = 
+   fn (x as (_, _, e, _, _)) => 
+      case cast' x 
+        of SOME e => e
+         | NONE   => e
+
+  and rec cast' =
+   fn (im, env, e, t1, t2) =>
+      case (t1, t2)
+        of ([AS.Arr (t11, t12)], [AS.Arr (t21, t22)]) =>
+          let
+            val t1 = hd t1
+            val t2 = hd t2
+            val f = variableFresh (im, "f", t1)
+            val g = variableFresh (im, "g", t2)
+            val xs = List.map (t21, fn t => variableFresh (im, "x", t))
+            val ys = List.map (t11, fn t => variableFresh (im, "y", t))
+            val zs = List.map (t22, fn t => variableFresh (im, "z", t))
+            val retxs  = AS.Return xs
+            val retfys = AS.App (f, ys)
+            (* 
+             * let f = e
+             *     g = \x -> let y = cast (x, t21, t11)
+             *                   z = cast (f y, t12, t22)
+             *                in z
+             * in g
+             *)
+            fun mk (retxs, retfys) = SOME (
+                AS.Let (AS.Vdef ([(f, t1)], e),
+                  AS.Let (AS.Nonrec (AS.Vfun { name = g, ty = t2,  escapes = true, recursive = false, 
+                                               fvs = [], args = List.zip (xs, t21), body = 
+                      AS.Let (AS.Vdef (List.zip (ys, t11), retxs),
+                        AS.Let (AS.Vdef (List.zip (zs, t22), retfys), AS.Return zs))}), 
+                    AS.Return [g])))
+          in
+            case (cast' (im, env, retxs, t21, t11), cast' (im, env, retfys, t12, t22))
+              of (NONE, NONE)              => NONE
+               | (SOME retxs, NONE)        => mk (retxs, retfys)
+               | (NONE, SOME retfys)       => mk (retxs, retfys)
+               | (SOME retxs, SOME retfys) => mk (retxs, retfys)
+          end
+         | ([t1], [t2]) => 
+          let
+            val bind =
+             fn bodyF =>
+                case e
+                  of AS.Return [u] => SOME (bodyF u)
+                   | e =>
+                    let
+                      val v = variableFresh (im, "tscst", t1)
+                    in 
+                      SOME (AS.Let (AS.Vdef ([(v, t1)], e), bodyF v))
+                    end
+          in
+            case (t1, t2)
+              of (AS.Prim GP.Addr, AS.Prim (GP.StablePtr _)) => NONE
+               | (AS.Prim (GP.StablePtr _), AS.Prim GP.Addr) => NONE
+               | (AS.Prim _, AS.Prim GP.Addr)                => bind (fn v => AS.Cast (AS.ToAddr v))
+               | (AS.Prim _, AS.Prim (GP.StablePtr _))       => bind (fn v => AS.Cast (AS.ToAddr v))
+               | (AS.Prim (GP.StablePtr _), AS.Prim _)       => bind (fn v => AS.Cast (AS.FromAddr v))
+               | (AS.Prim GP.Addr, AS.Prim _)                => bind (fn v => AS.Cast (AS.FromAddr v))
+               | (AS.Prim Int, AS.Prim GP.Ref)               => SOME (AS.Cast AS.NullRef)
+               | (AS.Prim _, AS.Prim _)                      => NONE (* shall we error here? *)
+               | (_, AS.Prim _)                              => bind (fn v => AS.Cast (AS.Bottom v))
+               | _                                           => NONE 
+          end
+         | _ => 
+          if length t1 <> length t2 then 
+            let 
+              val ut = case t1 
+                         of [t] => t
+                          | _ => fail ("cast", "cast from multi to non-equal multi value not supported")
+              val u = variableFresh (im, "u", ut)
+              val vs = List.map (t2, fn t => variableFresh (im, "bot", t))
+              val vts = List.zip (vs, t2)
+              val lets = List.foldr (vts, AS.Return vs, 
+                           fn ((v, t), l) => AS.Let (AS.Vdef ([(v,t)], AS.Cast (AS.Bottom u)), l))
+            in
+              SOME (AS.Let (AS.Vdef ([(u, ut)], e), lets))
+            end
+          else 
+            let 
+              val us = List.map (t1, fn t => variableFresh (im, "u", t))
+              val vs = List.map (t2, fn t => variableFresh (im, "v", t))
+              val uts = List.zip (us, t1)
+              val vts = List.zip (vs, t2)
+              val uvts = List.zip (uts, vts)
+              val casts = List.map (uvts, fn ((v, vt), (u, ut)) => cast' (im, env, AS.Return [u], [ut], [vt]))
+            in
+              if List.forall (casts, fn x => case x of NONE => true | SOME _ => false)
+                then NONE
+                else 
+                  let
+                    val uvs = List.map (List.zip (casts, List.zip (us, vs)),
+                                fn (c, (u, v)) => case c of SOME _ => v | NONE => u)
+                    val lets = List.foldr (List.zip (casts, vts), AS.Return uvs,
+                          fn ((c, (v, vt)), l) => 
+                            case c 
+                              of SOME e => AS.Let (AS.Vdef ([(v, vt)], e), l)
+                               | NONE   => l)
+                    val lets = AS.Let (AS.Vdef (uts, e), lets)
+                  in
+                    SOME lets
+                  end
+            end
  
-  val rec valueExp =
+  and rec valueExp =
    fn (im, env, tys, e) =>
       (case e
         of AL.Var v => (case lookupEnv (env, v)
@@ -251,36 +358,15 @@ struct
                 | _  => AS.Let (udef, AS.Let (vdef, AS.Case (u, alts)))
            end
          | AL.Lit (l, ty) => let val ty = valueTy ty in AS.Lit (l, ty) end
-         | AL.Cast (e, vty, ty) => 
-           let
-             val vtys = multiValueTy vty
-             val e = valueExp (im, env, vtys, e)
-             val bind =
-              fn bodyF =>
-                 (case (e, vtys)
-                   of (AS.Return [u], _) => bodyF u
-                    | (AS.Return _, _)   => fail ("valueExp", "Too many/few returns in cast")
-                    | (e, [vty])         => 
-                      let
-                        val v = variableFresh (im, "tscst", vty)
-                      in AS.Let (AS.Vdef ([(v, vty)], e), bodyF v)
-                      end
-                    | (e, _)             => fail ("valueExp", "Too many/few types in cast"))
-             val cast =
-                 case (vty, ty)
-                  of (AL.Prim GP.Addr, AL.Prim (GP.StablePtr _)) => bind (fn v => AS.Return [v])
-                   | (AL.Prim (GP.StablePtr _), AL.Prim GP.Addr) => bind (fn v => AS.Return [v])
-                   | (AL.Prim _, AL.Prim GP.Addr)                => bind (fn v => AS.Cast (AS.ToAddr v))
-                   | (AL.Prim _, AL.Prim (GP.StablePtr _))       => bind (fn v => AS.Cast (AS.ToAddr v))
-                   | (AL.Prim (GP.StablePtr _), AL.Prim _)       => bind (fn v => AS.Cast (AS.FromAddr v))
-                   | (AL.Prim GP.Addr, AL.Prim _)                => bind (fn v => AS.Cast (AS.FromAddr v))
-                   | (AL.Prim Int, AL.Prim GP.Ref)               => AS.Cast AS.NullRef
-                   | (AL.Prim (GP.Tuple _), _)                   => e
-                   | (AL.Prim _, AL.Prim _)                      => bind (fn v => AS.Return [v]) (* Prevent this? *)
-                   | (_, AL.Prim _)                              => bind (fn v => AS.Cast (AS.Bottom v))
-                   | _                                           => bind (fn v => AS.Return [v])
-           in cast
-           end)
+         | AL.Cast (e, t1, t2) => 
+           let 
+             val t1 = multiValueTy t1
+             val t2 = multiValueTy t2
+             val e  = valueExp (im, env, t1, e)
+           in
+             cast (im, env, e, t1, t2)
+           end
+      )
 
   and rec valueAlt =
    fn (im, env, etys, alt) =>

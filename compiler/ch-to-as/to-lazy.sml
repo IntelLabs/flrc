@@ -71,8 +71,8 @@ struct
                 | _ => NONE)
       end
 
-  fun doSum doTy resolve resolved (dict as { tdict, ... }, con, args)
-    = if not resolve orelse QS.member (resolved, con)
+  fun doSum doTy resolved (dict as { tdict, ... }, con, args)
+    = if QS.member (!resolved, con)
         then AL.Data
         else
           (* Undefined types is allowed here because they are not declared in ExtCore *) 
@@ -80,21 +80,29 @@ struct
             of NONE => AL.Data  
              | SOME x => 
               let
-                val resolved = QS.insert (resolved, con)
+                val _ = resolved := QS.insert (!resolved, con)
               in
                 case x 
                   of Sumtype (tbinds, arms) =>
                     let
+                      val _ = if length tbinds <> length args 
+                                then failMsg ("doSum/Sumtype", CL.qNameToString con ^ 
+                                                               " has unbalanced tbinds and arguments")
+                                else ()
                       val env = SD.fromList (List.zip (List.map (tbinds, #1), args))
-                      fun doTy1 (ty, strict) = (doTy false resolved env ty, strict)
+                      fun doTy1 (ty, strict) = (doTy resolved env ty, strict)
                       val arms = List.map (arms, fn (tag, _, tys) => (tag, List.map (tys, doTy1)))
                     in
                       AL.Sum arms
                     end
                    | Newtype (tbinds, ty) => 
                     let
+                      val _ = if length tbinds <> length args 
+                                then failMsg ("doSum/Newtype", CL.qNameToString con ^ 
+                                                               " has unbalanced tbinds and arguments")
+                                else ()
                       val env = SD.fromList (List.zip (List.map (tbinds, #1), args))
-                      val ty = doTy false resolved env ty
+                      val ty = doTy resolved env ty
                     in
                       ty
                     end
@@ -108,17 +116,17 @@ struct
    *)
   fun doTy (im, cfg, dict as { tdict, ... })
     = let
-        fun doTy0 resolve resolved env t = 
-            case primTy (doTy0 resolve resolved env) (im, cfg, t) 
+        fun doTy0 resolved env t = 
+            case primTy (doTy0 resolved env) (im, cfg, t) 
               of SOME ty => ty 
-               | NONE => doTy1 resolve resolved env t
-        and doTy1 resolve resolved env t =
+               | NONE => doTy1 resolved env t
+        and doTy1 resolved env t =
             case t 
               of CH.Tvar v => 
                 (case SD.lookup (env, v) 
-                  of SOME t => t
+                  of SOME t => doTy0 resolved (SD.remove (env, v)) t (* prevent circular lookup *)
                    | NONE => AL.Data)
-               | CH.Tcon c => doSum doTy0 resolve resolved (dict, c, []) 
+               | CH.Tcon c => doSum doTy0 resolved (dict, c, []) 
                | CH.Tapp (t1, t2) =>
                  let
                    fun splitTy args (CH.Tapp (t1, t2)) = splitTy (t2 :: args) t1
@@ -127,14 +135,14 @@ struct
                    (*
                    val _ = print ("done split fty = " ^ Layout.toString (CL.layoutTy fty) ^ " args = " ^ 
                                   Layout.toString (Layout.seq (List.map (args, CL.layoutTy))) ^ "\n")
-                   *)
+                    *)
                  in
                    case (fty, args)
                      of (CH.Tcon c, [fty, aty]) =>
                        if c = CU.tcArrow
                          then let 
-                                val u = doTy0 resolve resolved env fty
-                                val v = doTy0 resolve resolved env aty
+                                val u = doTy0 resolved env fty
+                                val v = doTy0 resolved env aty
                               in
                                 case u 
                                   of AL.Prim (GP.EqTy _) => v
@@ -142,23 +150,14 @@ struct
                                    | AL.Prim (GP.Tuple tys) => List.foldr (tys, v, AL.Arr)
                                    | _ => AL.Arr (u, v)
                               end
-                         else let
-                                val args = List.map (args, doTy0 false resolved env) 
-                              in
-                                  doSum doTy0 resolve resolved (dict, c, args) 
-                              end
-                     | (CH.Tcon c, args) => 
-                       let
-                         val args = List.map (args, doTy0 false resolved env) 
-                       in
-                         doSum doTy0 resolve resolved (dict, c, args) 
-                       end
+                         else doSum doTy0 resolved (dict, c, args) 
+                     | (CH.Tcon c, args) => doSum doTy0 resolved (dict, c, args) 
                      | _ => AL.Data  (* TODO: shall we error here? *)
                  end
-               | CH.Tforall (_, ty) => doTy0 resolve resolved env ty         (* Ignore type abstraction *)
+               | CH.Tforall (_, ty) => doTy0 resolved env ty         (* Ignore type abstraction *)
                | _ => failMsg ("doTy", "unexcepted coercion type " ^ Layout.toString (CL.layoutTy t))
       in
-        doTy0 true QS.empty SD.empty
+        doTy0 (ref QS.empty) SD.empty
       end
 
   fun makeVar (im, cfg, dict as { ndict, tdict, vdict, sdict }, v, vty)
@@ -220,44 +219,6 @@ struct
         check [] e
       end
 
-  (* handle recursive cast of function types *)
-  fun cast (im, e, t1, t2)
-    = case (t1, t2)
-        of (AL.Arr (t11, t12), AL.Arr (t21, t22)) =>
-          let
-            val f = IM.variableFresh (im, "f", t1)
-            val g = IM.variableFresh (im, "g", t2)
-            val x = IM.variableFresh (im, "x", t21)
-            val y = IM.variableFresh (im, "y", t11)
-            val (v, w) = case t22
-                      of AL.Prim (GP.Tuple tys) =>
-                        let
-                          val vs = List.map (tys, fn t => IM.variableFresh (im, "z", t))
-                        in
-                          (AL.VbMulti (List.zip (vs, tys)), AL.Multi vs)
-                        end
-                       | _ => 
-                        let 
-                          val z = IM.variableFresh (im, "z", t22) 
-                        in 
-                          (AL.VbSingle (z, t22), AL.Var z) 
-                        end
-
-          in
-            (* 
-             * let f = e
-             *     g = \x -> let y = cast (x, t21, t11)
-             *                   v = cast (f y, t12, t22)
-             *                in w
-             * in g
-             *)
-            AL.Let (AL.Nonrec (AL.Vdef (AL.VbSingle (f, t1), e)),
-              AL.Let (AL.Nonrec (AL.Vdef (AL.VbSingle (g, t2), AL.Lam ((x, t21), 
-                AL.Let (AL.Nonrec (AL.Vdef (AL.VbSingle (y, t11), cast (im, AL.Var x, t21, t11))),
-                    AL.Let (AL.Nonrec (AL.Vdef (v, cast (im, AL.App (AL.Var f, y), t12, t22))), w))))), AL.Var g))
-          end
-         | _ => AL.Cast (e, t1, t2)
-
   fun doExp (im, cfg, dict as { vdict, sdict, ... }) 
     = fn CH.Var v => 
         (case QD.lookup (sdict, v)
@@ -299,7 +260,7 @@ struct
        | CH.Cast (e, ty) => 
          (case e (* assume cast has been translated to the following form in CoreNormalize *)
            of CH.Let (CH.Nonrec (CH.Vdef (v, vty, e)), CH.Var _) => 
-              cast (im, doExp (im, cfg, dict) e, doTy (im, cfg, dict) vty, doTy (im, cfg, dict) ty)
+              AL.Cast (doExp (im, cfg, dict) e, doTy (im, cfg, dict) vty, doTy (im, cfg, dict) ty)
             | _ => failMsg ("valueExp", "expect normalized cast expression "))
        | CH.Lam (bind, e) =>
         (case bind 
