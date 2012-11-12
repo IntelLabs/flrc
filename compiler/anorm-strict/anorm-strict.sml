@@ -45,11 +45,20 @@ struct
       | Alit of lit * ty * exp
       | Adefault of exp
 
+  (* f not escapes => every use is syntactically as the callee in a call
+   * f not recursive => 
+   *  calling f never leads to another call to f before the 
+   *  return of the first call.
+   *)
   and vDef
       (* lambda must be bound to variable, where the first ty is type of var, not exp *)
-      = Vfun of {name : var, ty : ty, escapes : bool, recursive : bool, fvs : var list, args : vbinds, body : exp}
+      = Vfun of {name : var, ty : ty, 
+                 escapes : bool, recursive : bool, 
+                 fvs : var list, args : vbinds, body : exp}
       (* thunks must also be bound to variable *)
-      | Vthk of {name : var, ty : ty, escapes : bool, recursive : bool, fvs : var list, body : exp}
+      | Vthk of {name : var, ty : ty, 
+                 escapes : bool, recursive : bool, 
+                 fvs : var list, body : exp}
 
   and vDefg 
       = Rec of vDef list
