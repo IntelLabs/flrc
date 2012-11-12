@@ -27,6 +27,7 @@ struct
   structure VS = I.VariableSet
   structure FVS = ANormStrictFreeVars
   structure C = Compare
+  structure Parse = StringParser 
 
   val passname = "ANormStrictOptimize"
 
@@ -742,13 +743,21 @@ struct
       end
 
   val showModule =
-   fn (stm, pd, nm, m) => 
+   fn (stm, pd, m) => 
       let
         val si = I.SymbolInfo.SiManager stm
         val c = PD.getConfig pd
-        val l = Layout.align [Layout.str ("Results of "^nm^" : "),
-                              LayoutUtils.indent (ASL.module (c, si, m))]
+        val l = LayoutUtils.indent (ASL.module (c, si, m))
         val () = LayoutUtils.printLayout l
+      in ()
+      end
+
+  val showResults =
+   fn (stm, pd, nm, m) => 
+      let
+        val l = Layout.align [Layout.str ("Results of "^nm^" : ")]
+        val () = LayoutUtils.printLayout l
+        val () = showModule (stm, pd, m)
       in ()
       end
 
@@ -3130,7 +3139,7 @@ struct
           val e = Time.toString (Time.- (Time.now (), s))
           val () = Chat.log1 (pd, "Done with "^name^" in "^e^"s")
           val () = if statPhases pd then Stats.report (PD.getStats pd) else ()
-          val () = if show pd then showModule (stm, pd, name, m) else ()
+          val () = if show pd then showResults (stm, pd, name, m) else ()
         in m
         end
 
@@ -3138,31 +3147,193 @@ struct
   val optimize1 = phase (Optimize1.doModule, skipOptimize1, showOptimize1, "Optimize1")
   val strictness = phase (Strictness.doModule, skipStrictness, showStrictness, "Strictness")
 
+  (* XXX should factor this out of here and mil compile --leaf *)
+  val opts = 
+      [
+        (#"O", optimize1 , "General optimization"),
+        (#"S", strictness, "Strictness"          ),
+        (#"U", uncurry   , "Uncurry"             )
+      ]
+        
+  val getOptInfo = 
+   fn c => 
+      let
+        fun match (c', p, d) = if c = c' then SOME (p, d) else NONE
+      in List.peekMap (opts, match)
+      end
+
+  val getOpt = 
+   fn c => Option.map (getOptInfo c, #1)
+
+  val getOptDescription = 
+   fn c => Option.map (getOptInfo c, #2)
+
+  datatype controlItem = CiPrint
+                       | CiPass of (AS.symbolTableManager * PD.t * AS.module -> AS.module) * string
+                                                                               
+  fun parseControl s =
+      let
+        val || = Parse.||
+        val && = Parse.&&
+        val -&& = Parse.-&&
+        infixr 6 -&&
+        infixr && ||
+        val $ = Parse.$
+
+        val simple : controlItem Parse.t = 
+            let
+              fun doOne c =
+                  case c
+                   of #"+" => SOME CiPrint
+                    | _    => Option.map (getOptInfo c, CiPass)
+            in Parse.satisfyMap doOne
+            end
+
+        val consume = fn c => Parse.ignore (Parse.satisfy (fn c' => c = c'))
+
+        val lparen = consume #"("
+        val rparen = consume #")"
+        val lbracket = consume #"["
+        val rbracket = consume #"]"
+        val lbrace = consume #"{"
+        val rbrace = consume #"}"
+
+        val whitespace = 
+            let
+              val whiteChar = 
+               fn c => c = Char.space orelse c = Char.newline orelse c = #"\t" orelse c = #"\r"
+              val white = Parse.satisfy whiteChar
+            in Parse.ignore (Parse.oneOrMore white)
+            end
+
+        val delimited : unit Parse.t * 'a Parse.t * unit Parse.t -> 'a Parse.t =
+         fn (left, item, right) => 
+            let
+              val p = left && item && right
+              val f = fn ((), (i, ())) => i
+            in Parse.map (p, f)
+            end
+
+        val nat : int Parse.t = 
+            let
+              val p = Parse.oneOrMore (Parse.satisfy Char.isDigit)
+              val f = Int.fromString o String.implode
+              val p = Parse.map (p, f)
+              val p = Parse.required (p, "Expected natural number")
+            in p
+            end
+        val exponentiated : 'a Parse.t -> 'a list Parse.t = 
+         fn p => 
+            let
+              val suffix = (consume #"^") && nat
+              val p = p && (Parse.optional suffix)
+              val f = fn (p, opt) => 
+                         (case opt
+                           of SOME ((), n) => List.duplicate (n, fn () => p)
+                            | NONE => [p])
+              val p = Parse.map (p, f)
+            in p
+            end
+        val rec pass' : unit -> controlItem list Parse.t = 
+         fn () => Parse.map ($passSeq', List.concat)
+        and rec passSeq' : unit -> controlItem list list Parse.t = 
+         fn () => Parse.oneOrMore ($passHead')
+        and rec passHead' : unit -> controlItem list Parse.t =
+         fn () => Parse.oneOrMore simple || $iterated'  || $constructed' || (whitespace -&& $passHead')
+        and rec iterated' : unit -> controlItem list Parse.t = 
+         fn () => Parse.map(exponentiated ($parenthesized'), List.concat)
+        and rec parenthesized' : unit -> controlItem list Parse.t = 
+         fn () => delimited (lparen, $pass', rparen)
+        and rec constructed' : unit -> controlItem list Parse.t =
+         fn () => 
+            let
+              val p = $interleave' && $pass' && $interleave'
+              val p = delimited (lbracket, p, rbracket)
+              val f = fn (pre, (pass, post)) => List.concatMap (pass, fn e => pre @ [e] @ post)
+            in Parse.map (p, f)
+            end
+        and rec interleave' : unit -> controlItem list Parse.t =
+         fn () => Parse.map ($interleave0', fn opt => Utils.Option.get (opt, []))
+        and rec interleave0' : unit -> controlItem list option Parse.t =
+         fn () => Parse.optional ($interleave1')
+        and rec interleave1' : unit -> controlItem list Parse.t =
+         fn () => delimited (lbrace, $pass', rbrace)
+
+        val eof = Parse.atEnd || Parse.error "Expected end of string"
+        val pass = Parse.map ($pass' && eof, #1)
+
+        val cis =
+            case Parse.parse (pass, (s, 0))
+             of Parse.Success (_, cis) => SOME cis
+              | Parse.Failure          => SOME []
+              | Parse.Error _          => NONE
+
+      in cis
+      end
+
+  val o0String = ""
+  val o1String = "O"
+  val o2String = "[{O}SU]O"
+  val o3String = "OOOO[{O}USUS]O"
+
+  val o0Control = Option.valOf (parseControl o0String)
+  val o1Control = Option.valOf (parseControl o1String)
+  val o2Control = Option.valOf (parseControl o2String)
+  val o3Control = Option.valOf (parseControl o3String)
+
+  val dftControls =
+      Vector.fromList [o0Control, o1Control, o2Control, o3Control]
+
+  fun dftControl c = Vector.sub (dftControls, Config.iflcOpt c)
+
+  fun describeOpt (c, p, d) =
+      L.seq [Char.layout c, L.str " => ", L.str d]
+
+  fun describeControl () =
+      L.align
+      [L.align [L.str (passname ^ " control string is of the form:"),
+                LU.indent (L.str "Desc ::= Pass* | [{Desc}Desc{Desc}] | ( Desc )^n")],
+       L.str " ",
+       L.align [L.str "A descriptor of the form [{Desc0}Desc{Desc1}] consists of the passes",
+                LU.indent (L.str "described by Desc with Desc0 prepended to each pass, and Desc1 appended"),
+                LU.indent (L.str "to each pass.  The {Desc} fields are optional. ")],
+       L.str " ",
+       L.align [L.str "A descriptor of the form (Desc)^n consists of n successive copies of Desc.",
+                LU.indent (L.str "The ^n is optional, and is assumed to be 1 if elided.")],
+       L.str " ",
+       L.str "A pass consists of any of the following characters:",
+       LU.indent
+         (L.align (List.map (opts, describeOpt) @
+                   [L.str "+ => Print"])),
+       L.str "defaults are:",
+       LU.indent
+         (L.align [L.seq [L.str "-O 0 => ", L.str o0String],
+                   L.seq [L.str "-O 1 => ", L.str o1String],
+                   L.seq [L.str "-O 2 => ", L.str o2String],
+                   L.seq [L.str "-O 3 => ", L.str o3String]])]
+
+  val (control, controlGet) =
+      Config.Control.mk (passname, describeControl, parseControl, dftControl)
+
+  val runItem = 
+   fn ci =>
+      fn (stm, pd, m) => 
+         (case ci
+           of CiPrint          => let val () = showModule (stm, pd, m) in m end
+            | CiPass (pass, _) => pass (stm, pd, m))
+
+  val run =
+   fn (stm, pd, m, cis) => 
+      List.fold (cis, m, fn (ci, m) => runItem ci (stm, pd, m))
+                
   val program : AS.t * PD.t -> AS.t = 
    fn (p as (m, im), pd) =>
       let
         val stm = IM.fromExistingAll im
-        val m = 
-            let
-              val rec loop = 
-               fn (m, i) => 
-                  let
-                    val m = optimize1 (stm, pd, m)
-                  in if i <= 0 then
-                       m
-                     else
-                       loop (m, i-1)
-                  end
-            in loop (m, 4)
-            end
-        val m = uncurry (stm, pd, m)
-        val m = optimize1 (stm, pd, m)
-        val m = strictness (stm, pd, m)
-        val m = optimize1 (stm, pd, m)
-        val m = uncurry (stm, pd, m)
-        val m = optimize1 (stm, pd, m)
-        val m = strictness (stm, pd, m)
-        val m = optimize1 (stm, pd, m)
+
+        val config = PassData.getConfig pd
+        val cis = controlGet config
+        val m = run (stm, pd, m, cis)
         val st = IM.finish stm
         val () = PD.report (pd, passname)
       in (m, st)
@@ -3179,7 +3350,7 @@ struct
                      mustBeAfter = [],
                      stats       = Click.stats}
 
-  val associates = {controls = [], debugs = debugs, features = features, subPasses = []}
+  val associates = {controls = [control], debugs = debugs, features = features, subPasses = []}
 
   val pass = Pass.mkOptPass (description, associates, program)
 
