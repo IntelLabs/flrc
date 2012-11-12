@@ -118,7 +118,7 @@ struct
              *)
             fun mk (retxs, retfys) = SOME (
                 AS.Let (AS.Vdef ([(f, t1)], e),
-                  AS.Let (AS.Nonrec (AS.Vfun { name = g, ty = t2,  escapes = true, recursive = false, 
+                  AS.Let (AS.Nonrec (AS.Vfun { name = g, ty = t2,  escapes = true, recursive = true, 
                                                fvs = [], args = List.zip (xs, t21), body = 
                       AS.Let (AS.Vdef (List.zip (ys, t11), retxs),
                         AS.Let (AS.Vdef (List.zip (zs, t22), retfys), AS.Return zs))}), 
