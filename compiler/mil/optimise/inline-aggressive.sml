@@ -141,14 +141,16 @@ struct
                         else 
                           let 
                             val () = dbgString (d, "Fun code used in call "^
-                                                   "but not callee!\n")
+                                                   "but not callee: " ^
+                                                   (L.toString (ID.layoutVariable' (fname))) ^
+                                                   "\n")
                           in Try.fail ()
                           end
                     (* XXX EB: What does doConv mean? *)
                     fun doConv conv = 
                         (case conv
                           of M.CCode {ptr, ...} => warn ptr
-                           | M.CDirectClosure {cls, code} => warn cls
+                           | M.CDirectClosure {cls, code} => warn code
                            | _ => Try.fail ())
                     (* Check transfer. Only TCall and TTailCall are valid. *)
                     (* XXX EB: Is there any other transfer that may
