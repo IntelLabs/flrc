@@ -684,7 +684,7 @@ struct
              val l = addInit (env, l, thunk)
            in l
            end
-         | M.RhsThunkGetValue {typ, thunk} => L.seq [L.str "ThunkGetValue", L.tuple [layoutThunkVar (env, thunk, typ)]]
+         | M.RhsThunkGetValue {typ, thunk} => L.seq [L.str "ThunkGetVal", L.tuple [layoutThunkVar (env, thunk, typ)]]
          | M.RhsThunkSpawn {typ, thunk, fx} =>
            L.seq [L.str "Spawn", LU.paren (layoutThunkVar (env, thunk, typ)), layoutEffects (env, fx)]
          | M.RhsClosureMk {fvs} => L.seq [L.str "ClosureMk", layoutClosureFvs (env, fvs)]

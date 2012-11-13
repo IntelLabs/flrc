@@ -1961,7 +1961,8 @@ struct
                                          | M.IpEval {typ, eval} => 
                                            (case eval
                                              of M.EThunk {thunk, value, code}       => Try.fail ()
-                                              | M.EDirectThunk {thunk, value, code} => Try.require (code = fname)))
+                                              | M.EDirectThunk {thunk, value, code} => 
+                                                Try.require ((not value) andalso (code = fname))))
                                   (* Check that the call is not already rewritten *)
                                   val () = 
                                       (case ret
@@ -4523,8 +4524,11 @@ struct
       in ()
       end
 
-  val simplify = 
-   fn (d, imil, ws) => 
+  (* stop : a -> bool, step : a -> a, init : a
+   * if stop returns true, stop
+   * step gets called after each successful reduction *)
+  val simplify_ = 
+   fn (d, imil, ws, stop, step, init) => 
       let
         val sEach = showEach d
         val sReductions = showReductions d
@@ -4534,9 +4538,9 @@ struct
                       else
                         Layout.empty
         val rec loop = 
-         fn () =>
-            case WS.chooseWork ws
-             of SOME i => 
+         fn c =>
+            case (stop c, WS.chooseWork ws)
+             of (false, SOME i) => 
                 let
                   val () = if sEach then LayoutUtils.printLayout (layout ("Trying: ", i)) else ()
                   val l1 = layout ("R: ", i)
@@ -4546,19 +4550,23 @@ struct
                       if (sReductions andalso reduced) then
                         LayoutUtils.printLayout l1
                       else ()
-                  val () = 
+                  val c = 
                       if reduced then
                         let
                           val () = if sReductions then LayoutUtils.printLayout (layout ("==> ", i)) else ()
                           val () = postReduction (d, imil)
-                        in ()
+                          val c = step c
+                        in c
                         end
-                      else ()
-                in loop ()
+                      else c
+                in loop c
                 end
-              | NONE => ()
-      in loop ()
+              | _ => ()
+      in loop init
       end
+
+  val simplify = 
+   fn (d, imil, ws) => simplify_ (d, imil, ws, fn _ => false, fn a => a, ())
 
 
 
@@ -4771,9 +4779,41 @@ struct
            val () = simplify (d, imil, ws)
          in ()
          end
+
+
+  local
+    fun default (_) = NONE
+                        
+    fun parser (s : string) =
+        case Int.fromString s
+         of NONE => NONE
+          | SOME n => if n > 0 then SOME (SOME n) else NONE
+
+    fun description () =
+        L.str (passname ^ " stop the simplifier after n reductions")
+        
+    val name = passname ^ ":stop-after"
+  in
+    val (stopAfterC, getStopAfter) =
+        Config.Control.mk (name, description, parser, default) 
+  end
+
   val doUnreachable = doPhase (skipUnreachable, unreachableCode, "unreachable object elimination")
   val doSimplify = 
-   fn ws => doPhase (skipSimplify, fn (d, imil) => simplify (d, imil, ws), "simplification")
+   fn ws =>
+      let
+        val doIt = 
+         fn (d, imil) => 
+            let
+              val (stop, step, init) = 
+                  case (Config.debug, getStopAfter (PD.getConfig d))
+                   of (true, SOME n) => (fn n => n <= 0, fn i => i-1, n)
+                    | _              => (fn _ => false, fn i => i, 0)
+            in
+              simplify_ (d, imil, ws, stop, step, init)
+            end
+      in doPhase (skipSimplify, doIt, "simplification")
+      end
   val doCodeSimplify = 
    fn ws => doPhase (skipCodeSimplify, fn (d, imil) => codeSimplify (d, imil, ws), "code simplification")
   val doCfgSimplify = 
@@ -4833,7 +4873,7 @@ struct
        mustBeAfter = [],
        stats       = stats}
 
-  val associates = {controls  = [],
+  val associates = {controls  = [stopAfterC],
                     debugs    = debugs @ MilCfgSimplify.debugs (*@ MilFunKnown.debugs*),
                     features  = features,
                     subPasses = []}
