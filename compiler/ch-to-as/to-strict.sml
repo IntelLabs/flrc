@@ -124,7 +124,7 @@ struct
                         AS.Let (AS.Vdef (List.zip (zs, t22), retfys), AS.Return zs))}), 
                     AS.Return [g])))
           in
-            case (cast' (im, env, retxs, t21, t11), cast' (im, env, retfys, t12, t22))
+            case (cast' (im, env, hint, retxs, t21, t11), cast' (im, env, hint, retfys, t12, t22))
               of (NONE, NONE)              => NONE
                | (SOME retxs, NONE)        => mk (retxs, retfys)
                | (NONE, SOME retfys)       => mk (retxs, retfys)
@@ -176,7 +176,7 @@ struct
               val uts = List.zip (us, t1)
               val vts = List.zip (vs, t2)
               val uvts = List.zip (uts, vts)
-              val casts = List.map (uvts, fn ((v, vt), (u, ut)) => cast' (im, env, AS.Return [u], [ut], [vt]))
+              val casts = List.map (uvts, fn ((v, vt), (u, ut)) => cast' (im, env, hint, AS.Return [u], [ut], [vt]))
             in
               if List.forall (casts, fn x => case x of NONE => true | SOME _ => false)
                 then NONE
@@ -238,7 +238,7 @@ struct
               of (true, true, _::vty::[]) =>  (* IO a *)
                  let
                    val paramTys = List.allButLast paramTys
-                   val v = variableFresh (im, hint^"_tsepp", vty)
+                   val v = variableFresh (im, hint, "tsepp", vty)
                    val fty = AS.Arr (paramTys, [vty])
                    val vdef = AS.Vdef ([(v, vty)], AS.ExtApp (p, cc, f, fty, List.allButLast vs))
                    val s = List.last vs
@@ -303,7 +303,7 @@ struct
               of AS.Return [f] => AS.App (f, [v])
                | _ => 
                  let 
-                   val u = variableFresh (im, hint^"_tsapp", ety)
+                   val u = variableFresh (im, hint, "tsapp", ety)
                  in
                    AS.Let (AS.Vdef ([(u, ety)], e), AS.App (u, [v]))
                  end                   
@@ -319,7 +319,7 @@ struct
              val etys = resultTys (1, ty)
              val hint = IM.variableName (im, v)
              val e = valueExp (im, env, hint, etys, e)
-             val u  = variableFresh (im, hint^"_tslam", ty)
+             val u  = variableFresh (im, hint, "tslam", ty)
              (* Even syntactic non-rec functions might be semantically recursive *)
              val vd = AS.Vfun {name = u, ty = ty, escapes = true, recursive = true, 
                                fvs = [], args = [(v, vty)], body = e}
@@ -338,7 +338,7 @@ struct
              val tys = multiValueTy ty
              val vty = valueTy vty
              val e  = valueExp (im, env, hint, [vty], e)
-             val u = variableFresh (im, hint^"_tsscr", vty)
+             val u = variableFresh (im, hint, "tsscr", vty)
              val udef = AS.Vdef ([(u, vty)], e)
              (* val vty  = thunkTy' ety *)
              val vty = thunkTy' vty
