@@ -97,6 +97,7 @@ struct
       doPass ANormLazyToStrict.pass >> 
       doPass ANormStrictOptimize.pass >> 
       doPass ANormStrictClosureConvert.pass >> 
+      stopAt "ans" >>
       doPass ANormStrictToMil.pass)
 
   fun doGhc ext =
@@ -112,7 +113,7 @@ struct
 
   val keeps = StringSet.fromList ["hcr"]
 
-  val stops = StringSet.fromList ["hsc"]
+  val stops = StringSet.fromList ["hsc", "ans"]
 
   val langVersion = "GHC 7.4.2"
 

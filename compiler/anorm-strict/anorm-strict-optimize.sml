@@ -11,6 +11,7 @@ struct
   structure AS = ANormStrict
   structure ASFV = ANormStrictFreeVars
   structure GPT = GHCPrimType
+  structure GPO = GHCPrimOp
   structure ASL = ANormStrictLayout
   structure ASU = ANormStrictUtils
   structure ASC = ANormStrictClone
@@ -797,7 +798,11 @@ struct
           val fx =
               case e
                of AS.Return vs                    => (useVars (state, env, vs); ETotal)
-                | AS.PrimApp (s, vs)              => (useVars (state, env, vs); EThreaded)
+                | AS.PrimApp (s, vs)              => (useVars (state, env, vs); 
+                                                      if Effect.subset (GPO.effects s, Effect.Total) then
+                                                        ETotal
+                                                      else
+                                                        EThreaded)
                 | AS.ExtApp (pname, cc, s, t, vs) => (useVars (state, env, vs); EImplicit)
                 | AS.ConApp (c, vs)               => (useVars (state, env, vs); ETotal)
                 | AS.App (f, vs)                  => 
