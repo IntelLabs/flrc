@@ -2078,7 +2078,13 @@ struct
               val arms = Vector.toListMap (cases, doArm)
               val default =
                   case default
-                   of NONE => NONE
+                   of NONE =>
+                      let
+                        val ret = Pil.E.namedConstant RT.runtimeError
+                        val args = [Pil.E.string "Default case triggered in supposedly exhaustive case statement."]
+                        val s = Pil.S.call (ret, args)
+                      in SOME (s)
+                      end
                     | SOME t => SOME (genGoto (state, env, cb, src, t))
               val res = Pil.S.switch (on, arms, default)
             in res

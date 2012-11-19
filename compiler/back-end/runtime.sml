@@ -244,6 +244,7 @@ sig
   val haltV     : Pil.identifier
   val pmain     : Pil.identifier 
   val gErrorVal : Pil.identifier 
+  val runtimeError : Pil.identifier
 
 end
 
@@ -797,5 +798,6 @@ struct
   val haltV = Pil.identifier "pLsrHaltV"
   val pmain = Pil.identifier "__pmain"
   val gErrorVal = Pil.identifier "pLsrErrorVal"
+  val runtimeError = Pil.identifier "pLsrRuntimeError"
 
 end;
