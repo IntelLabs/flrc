@@ -1774,6 +1774,70 @@ struct
           end
         | _ => failMsg("asyncDoProc", "argument number mismatch")
 
+  (* Make a thunk that:
+   *   evals f to a closure, which should have type (state)=>(state,a)
+   *   apply this to s
+   *   return second component
+   *)
+  fun mkForkWrapper (state, fx, f, ft, s, st) =
+      let
+        val {im, cfg, ...} = state
+        val f' = IM.variableClone (im, f)
+        val s' = IM.variableClone (im, s)
+        val rt =
+            case ft
+             of M.TThunk t => t
+              | _ => failMsg ("mkForkWrapper", "bad thunk type")
+        val rv = TMU.localVariableFresh0 (im, rt)
+        val blk1 = TMU.kmThunk (state, Vector.new1 rv, f', fx)
+        val rts =
+            case rt
+             of M.TClosure {ress, ...} => ress
+              | _ => failMsg ("mkForkWrapper", "bad closure type")
+        val rt = Vector.sub (rts, 1)
+        val rvs = Vector.map (rts, fn t => TMU.localVariableFresh0 (im, t))
+        val c = M.CClosure {cls = rv, code = TMU.stateGetCodesForFunction (state, rv)}
+        val blk2 = MU.call (im, cfg, c, Vector.new1 (M.SVariable s'), TMU.exitCut, fx, rvs)
+        val blks = MS.seq (blk1, blk2)
+        val t = M.TReturn (Vector.new1 (M.SVariable (Vector.sub (rvs, 1))))
+        val tt = M.TThunk rt
+        val svar = TMU.localVariableFresh0 (im, tt)
+        val tf = TMU.mkThunkFunction (state, svar, tt, true, true, Vector.new2 (f', s'), rt, blks, t, fx)
+        val t = TMU.localVariableFresh0 (im, tt)
+        val fvs = Vector.new2 ((M.FkRef, M.SVariable f), (FK.fromTyp (cfg, st), M.SVariable s))
+        val rhs = M.RhsThunkInit {typ = FK.fromTyp (cfg, rt), thunk = NONE, fx = fx, code = SOME tf, fvs = fvs}
+        val blk = MS.bindRhs (t, rhs)
+      in (blk, t, tt)
+      end
+
+  fun forkIO fx ((state, rvar), argstyps) =
+      case argstyps
+       of [(M.SVariable f, ft), (so as (M.SVariable s), st)] =>
+          let
+            val {im, ...} = state
+            val (blk1, fw, fwt) = mkForkWrapper (state, fx, f, ft, s, st)
+            val uvar = TMU.localVariableFresh0 (im, threadIdTyp)
+            val (blk2, _) = extern fx "ihrFork" ((state, Vector.new1 uvar), [(M.SVariable fw, fwt)])
+            val blk3 = tupleRhs ((state, rvar), [(M.RhsSimple so, st), (M.RhsSimple (M.SVariable uvar), threadIdTyp)])
+            val blks = MS.seqn [blk1, blk2, blk3]
+          in (blks, fx)
+          end
+        | _ => failMsg ("forkIO", "argument number mismatch")
+
+  fun forkIOon fx ((state, rvar), argstyps) =
+      case argstyps
+       of [(M.SVariable f, ft), (p, pt), (so as (M.SVariable s), st)] =>
+          let
+            val {im, ...} = state
+            val (blk1, fw, fwt) = mkForkWrapper (state, fx, f, ft, s, st)
+            val uvar = TMU.localVariableFresh0 (im, threadIdTyp)
+            val (blk2, _) = extern fx "ihrForkOn" ((state, Vector.new1 uvar), [(p, pt), (M.SVariable fw, fwt)])
+            val blk3 = tupleRhs ((state, rvar), [(M.RhsSimple so, st), (M.RhsSimple (M.SVariable uvar), threadIdTyp)])
+            val blks = MS.seqn [blk1, blk2, blk3]
+          in (blks, fx)
+          end
+        | _ => failMsg ("forkIO", "argument number mismatch")
+
   fun threadStatus ((state as {im, cfg, ...}, rvar), argstyps) =
       case argstyps
        of [(t, _), (s, st)] =>
@@ -2549,8 +2613,8 @@ struct
             | GPO.AsyncReadzh => asyncRead & (fx p)
             | GPO.AsyncWritezh => asyncWrite & (fx p)
             | GPO.AsyncDoProczh => asyncDoProc & (fx p)
-            | GPO.Forkzh => externWithState (fx p ()) ("ihrFork", threadIdTyp)
-            | GPO.ForkOnzh => externWithState (fx p ()) ("ihrForkOn", threadIdTyp)
+            | GPO.Forkzh => forkIO (fx p ())
+            | GPO.ForkOnzh => forkIOon (fx p ())
             | GPO.KillThreadzh => externWithStateDo (fx p ()) "ihrKillThread"
             | GPO.Yieldzh => externWithStateDo (fx p ()) "ihrYield"
             | GPO.MyThreadIdzh => externWithState (fx p ()) ("ihrMyThreadId", threadIdTyp)
