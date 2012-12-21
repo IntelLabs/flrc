@@ -115,7 +115,7 @@ struct
 
   val stops = StringSet.fromList ["hsc", "ans"]
 
-  val langVersion = "GHC 7.4.2"
+  val langVersion = "GHC 7.6.1"
 
   val langVersions = [langVersion]
 
