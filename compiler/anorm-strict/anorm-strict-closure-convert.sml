@@ -578,7 +578,7 @@ struct
                | AS.PrimApp (s, vs)           => variablesUse (state, env, context, vs)
                | AS.ExtApp (p, cc, s, t, vs)  => variablesUse (state, env, context, vs)
                | AS.ConApp (c, vs)            => variablesUse (state, env, context, vs)
-               | AS.App (f, vs)               => doCall (state, env, context, f, vs)
+               | AS.App (f, vs, _)            => doCall (state, env, context, f, vs)
                | AS.Let (vdg, e)              => doExp (state, env, doVDefG (state, env, context, vdg), e)
                | AS.Case (v, alts)            => doCase (state, env, context, v, alts)
                | AS.Lit _                     => ()
@@ -1087,13 +1087,13 @@ struct
                     val e = AS.ConApp (c, vs)
                   in return e
                   end
-                | AS.App (f, vs) => 
+                | AS.App (f, vs, effect) => 
                   let
                     val extras = getFunctionExtras (state, env, f)
                     val f = doVar (state, env, f)
                     val vs = doVars (state, env, vs)
                     val extras = doVars (state, env, extras)
-                  in AS.App (f, vs @ extras)
+                  in AS.App (f, vs @ extras, effect)
                   end
                 | AS.Let (defG, e) => 
                   let
@@ -1148,7 +1148,7 @@ struct
                     val extraTs = List.map (VS.toList extras, fn v => variableTy (state, env, v))
                     val ty = 
                         case ty
-                         of AS.Arr (ts, rts) => AS.Arr (ts @ extraTs, rts)
+                         of AS.Arr (ts, rts, effect) => AS.Arr (ts @ extraTs, rts, effect)
                           | _                => fail ("doVDef0", "Vfun typ is not an arrow typ")
                     val () = IM.variableSetInfo (State.getStm state, name, (ty, AS.VkLocal))
                   in ()

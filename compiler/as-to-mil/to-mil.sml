@@ -49,8 +49,8 @@ struct
     = (GP.tagToConst (Config.targetWordSize cfg, i), Vector.fromListMap (tys,  doType imcfg))
 
   and doType (x as (im, cfg)) 
-    = fn Arr (ts, ts2) => M.TClosure { args = Vector.fromListMap (ts, doType x)
-                                     , ress = Vector.fromListMap (ts2, doType x) }
+    = fn Arr (ts, ts2, _) => M.TClosure { args = Vector.fromListMap (ts, doType x)
+                                        , ress = Vector.fromListMap (ts2, doType x) }
       |  Prim t       => GP.primToMilTy (Config.targetWordSize cfg, doType x) t
       |  Sum cons     => M.TSum { tag = GP.tagTyp (Config.targetWordSize cfg), 
                                   arms = Vector.fromList (List.mapi (cons, doSumDCon x)) }
@@ -84,7 +84,7 @@ struct
    *)
   fun doExp (state : TMU.state, env : (var * var) list, rvar : var Vector.t, e : exp) : MS.t * Effect.set
     = let 
-        val { im, cfg, globals, effects, stateful, worlds, ... } = state
+        val { im, cfg, globals, effects, ... } = state
         val ws = Config.targetWordSize cfg
       in
         case e
@@ -129,7 +129,8 @@ struct
                     if SS.member (declaredSet, fstr) then
                       (IM.variableFresh (im, fstr, M.VI { typ = M.TNonRefPtr, kind = M.VkExtern }), M.TNonRefPtr)
                     else
-                      TMU.externVariable (state, pname, fstr, fn () => M.TNonRefPtr) before print ("declare " ^ fstr ^ "\n")
+                      TMU.externVariable (state, pname, fstr, fn () => M.TNonRefPtr) 
+                      (* before print ("declare " ^ fstr ^ "\n") *)
               in
                 (MS.bindsRhs (rvar, M.RhsSimple (M.SVariable fvar)), Effect.Total)
               end
@@ -176,18 +177,11 @@ struct
             in
               GP.primOp (state, f, rvar, argstyps)
             end 
-          | App (f, vs) =>
+          | App (f, vs, fx) =>
             let 
               val fvar = lookup1 (im, env) f
               val args = Vector.fromListMap(vs, lookup1 (im, env))
-              val isStateful = case vs
-                           of [s] => VS.member (stateful, s)
-                            | _ => false
-              val isIO = case vs
-                           of [s] => VS.member (worlds, s)
-                            | _ => false
-              val fx = TMU.lookupEffect (effects, fvar, isStateful, isIO)
-              (* val _ = print ("app " ^ IM.variableString (im, fvar) ^ " has * effect " ^ Layout.toString (Effect.layout fx) ^ "\n") *)
+              val fx   = TMU.lookupEffect (effects, fvar, fx)
               val cuts = if Effect.contains (fx, Effect.Fails) then TMU.exitCut else TMU.noCut
               val code = TMU.stateGetCodesForFunction (state, f)
             in
@@ -251,7 +245,7 @@ struct
             let
               val fvar = lookup1 (im, env) v
               (* Aggressive assumption: thunk evals are also pure and stateless! *)
-              val fx = TMU.lookupEffect (effects, fvar, false, false)
+              val fx = TMU.lookupEffect (effects, fvar, Effect.Control)
             in
               (TMU.kmThunk (state, rvar, fvar, fx), fx)
             end
@@ -316,7 +310,7 @@ struct
               val env = List.zip (map #1 vbinds, Vector.toList us) @ env
               val u = TMU.variablesClone (im, rvar)
               val (eblks, fx) = doExp (state, env, u, e) 
-              val fx = Effect.union (fx, Effect.Total)
+              (* val fx = Effect.union (fx, Effect.Total) *) (* this a no-op *)
             in
               (u, tag, MS.seqn (Vector.toList blks @ [eblks]), fx)
             end
@@ -400,9 +394,10 @@ struct
               val etyp = TMU.variableTyp (im, lhs)
               val etyp'= case etyp of M.TThunk ty => ty 
                                     | _ => failMsg ("doVDef", "Bad type for thunk")
+              val isThunkVal = case e of AS.Return [v] => lhs <> v | _ => false
               val () = 
-                  case TMU.variableKind (im, lhs)
-                   of M.VkLocal => 
+                  case (isThunkVal, TMU.variableKind (im, lhs))
+                   of (false, M.VkLocal) => 
                       let
                         (* Associates cptr with lhs *)
                         val cptr = TMU.mkThunkFunction0 (state, lhs, ftyp, Vector.fromList fvtyps, etyp')
@@ -449,31 +444,47 @@ struct
                    val fvtyps = List.map (fvs, fn x => TMU.variableTyp (im, x))
                    val fvsA = List.map (fvs, fn x => IM.variableClone (im, x)) 
                    val ftyp = M.TThunk (M.TRef)
-                   (* Inner closure name *)
-                   val fvar = TMU.localVariableFresh (im, IM.variableName (im, lhs), ftyp)
-                   val cptr = codePtrForFunction (state, lhs)
-                   (* Associate the inner closure name with the code pointer*)
-                   val () = TMU.stateAddCodePtr (state, fvar, cptr)
-                   val env' = List.zip (fvs0, fvsA) @ env1
-                   val env' = if recursiveB then (lhs, fvar) :: env' else env'
                    val etyp = TMU.variableTyp (im, lhs)
                    val etyp'= case etyp of M.TThunk ty => ty 
                                          | _ => failMsg ("doVDef", "Bad type for thunk")
-                   val res  = TMU.localVariableFresh0 (im, etyp')
-                   val (blk, fx) = doExp (state, env', Vector.new1 res, e)
-                   val fx = if recursiveB orelse recursive then Effect.union (fx, Effect.PartialS) else fx
-                   val tr   = M.TReturn (Vector.new1 (M.SVariable res))
-                   val () = TMU.mkThunkFunction1 (state, fvar, cptr, escapes, recursive, 
-                                                  Vector.fromList fvsA, etyp', blk, tr, fx)
-                   val _ = effects := VD.insert (!effects, lhs, fx)
-                   val fks = List.map (fvs, fn x => FK.fromTyp (cfg, TMU.variableTyp (im, x)))
-                   val blk0 = MS.bindRhs (lhs, M.RhsThunkMk { typ = M.FkRef, fvs = Vector.fromList fks })
-                   val blk1 = MS.doRhs 
-                                (M.RhsThunkInit 
-                                   { typ = M.FkRef, thunk = SOME lhs, fx = Effect.Total, 
-                                     code = SOME cptr, fvs = Vector.fromList (List.zip (fks, map M.SVariable fvs)) })
+                   val isThunkVal = case e 
+                                      of AS.Return [v] => if lhs <> v then SOME v else NONE 
+                                       | _ => NONE
                  in
-                   (blk0, blk1)
+                   case isThunkVal
+                     of SOME v =>
+                       let
+                         val u = lookup1 (im, env1) v
+                         val blk0 = MS.bindRhs (lhs, M.RhsThunkMk {typ = M.FkRef, fvs = Vector.new0 ()})
+                         val blk1 = MS.doRhs (M.RhsThunkValue {typ = M.FkRef, thunk = SOME lhs, ofVal = M.SVariable u})
+                       in
+                         (blk0, blk1)
+                       end
+                      | _ =>
+                       let
+                         (* Inner closure name *)
+                         val fvar = TMU.localVariableFresh (im, IM.variableName (im, lhs), ftyp)
+                         val cptr = codePtrForFunction (state, lhs)
+                         (* Associate the inner closure name with the code pointer*)
+                         val () = TMU.stateAddCodePtr (state, fvar, cptr)
+                         val env' = List.zip (fvs0, fvsA) @ env1
+                         val env' = if recursiveB then (lhs, fvar) :: env' else env'
+                         val res  = TMU.localVariableFresh0 (im, etyp')
+                         val (blk, fx) = doExp (state, env', Vector.new1 res, e)
+                         val fx = if recursiveB orelse recursive then Effect.union (fx, Effect.PartialS) else fx
+                         val tr   = M.TReturn (Vector.new1 (M.SVariable res))
+                         val () = TMU.mkThunkFunction1 (state, fvar, cptr, escapes, recursive, 
+                                                        Vector.fromList fvsA, etyp', blk, tr, fx)
+                         val _ = effects := VD.insert (!effects, lhs, fx)
+                         val fks = List.map (fvs, fn x => FK.fromTyp (cfg, TMU.variableTyp (im, x)))
+                         val blk0 = MS.bindRhs (lhs, M.RhsThunkMk { typ = M.FkRef, fvs = Vector.fromList fks })
+                         val blk1 = MS.doRhs 
+                                      (M.RhsThunkInit 
+                                         { typ = M.FkRef, thunk = SOME lhs, fx = Effect.Total, 
+                                           code = SOME cptr, fvs = Vector.fromList (List.zip (fks, map M.SVariable fvs)) })
+                       in
+                         (blk0, blk1)
+                       end
                  end
                | M.VkGlobal => 
                  let
@@ -877,30 +888,17 @@ struct
       let
         val im = IM.fromExistingNoInfo oldim 
         val cfg = PassData.getConfig pd
-        val stateful = ref VS.empty
-        val worlds = ref VS.empty
         val realWorld = IM.nameFromString (im, CL.qNameToString (CHP.tcRealWorld))
         fun convertInfo v = 
             let 
               val (t, k) = I.variableInfo (oldim, v)
-              val _ = case t
-                        of Prim (GHCPrimType.State c) =>
-                          let
-                            val () = stateful := VS.insert (!stateful, v)
-                            val () =
-                                case c
-                                 of Sum [(c, [])] => worlds := VS.insert(!worlds, v)
-                                  | _             => ()
-                          in ()
-                          end
-                         | _ => ()
             in
               M.VI { typ = doType (im, cfg) t, kind = case k of AS.VkGlobal => M.VkGlobal | AS.VkLocal => M.VkLocal }
             end
         val _ = List.map (I.listVariables oldim, fn v => IM.variableSetInfo (im, v, convertInfo v))
         val (rvar, rval) = GP.initStableRoot (im, cfg)
         val state = TMU.newState (im, cfg, aliases, VD.empty, VD.fromList [(rvar, rval)], 
-                                  MS.empty, rvar, SD.empty, VD.empty, !stateful, !worlds)
+                                  MS.empty, rvar, SD.empty, VD.empty)
         val ws = Config.targetWordSize cfg
         val v1_typ = M.TCode { cc   = M.CcUnmanaged M.AbiCdecl
                              , args = Vector.new2 (M.TCString, GP.intTyp ws)

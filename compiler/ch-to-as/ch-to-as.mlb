@@ -5,13 +5,11 @@ local
         $(SML_LIB)/mlton/sources.mlb
         ../common/common.mlb
         ../core-hs/core-hs.mlb
+        ../anorm-lazy/anorm-lazy.mlb
         ../anorm-strict/anorm-strict.mlb
-        anorm-lazy.sml
         to-lazy.sml
         to-strict.sml
 in
-        structure ANormLazy
-        structure ANormLazyLayout
         structure CoreHsToANormLazy
         structure ANormLazyToStrict 
 end

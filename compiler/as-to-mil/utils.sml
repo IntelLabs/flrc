@@ -36,8 +36,6 @@ struct
                , stableRoot : I.variable
                , externs    : (string * I.variable) SD.t ref
                , effects    : Effect.set VD.t ref
-               , stateful   : VS.t
-               , worlds     : VS.t
                }
 
   val noCode  = { possible = VS.empty, exhaustive = false }
@@ -81,10 +79,10 @@ struct
         IM.variableSetInfo (im, v, M.VI { typ = typ, kind = kind }) 
       end
 
-  fun newState (im, cfg, aliases, codePtrs, globals, prelude, stableRoot, externs, effects, stateful, worlds) : state = 
+  fun newState (im, cfg, aliases, codePtrs, globals, prelude, stableRoot, externs, effects) : state = 
       { im = im, cfg = cfg, aliases = aliases, codePtrs = ref codePtrs, globals = ref globals, prelude = ref prelude, 
         stableRoot = stableRoot, externs = ref externs, 
-        effects = ref effects, stateful = stateful, worlds = worlds }
+        effects = ref effects }
 
   (* either lookup an existing extern variable, or make a new one *)
   fun externVariable (state : state, pname, str, mkTyp) = 
@@ -266,12 +264,10 @@ struct
                                                      ^ IM.variableString (im, fvar))
       end
 
-  fun lookupEffect (effects, v, isStateful, isIO) = 
+  fun lookupEffect (effects, v, default) = 
       case VD.lookup (!effects, v) 
         of SOME fx => fx
-         | NONE => if isIO then Effect.Any 
-                     else if isStateful then Effect.union (Effect.HeapInit, Effect.Control)
-                       else Effect.Control
+         | NONE => default
                                      
   fun constInt (i, arbTyp) 
     = case arbTyp

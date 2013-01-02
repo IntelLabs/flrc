@@ -2715,4 +2715,30 @@ struct
         | TraceEventzh => xt
   end
 
+  val keepStrictArgs : primOp * 'a list -> 'a list =
+    fn (NewArrayzh, [i,da,s]) => [i,s]
+     | (WriteArrayzh, [ma,i,da,s]) => [ma,i,s]
+     | (InitImmutableArrayzh, [ia,i,da,s]) => [ia,i,s]
+     | (NewMutVarzh, [da,s]) => [s]
+     | (WriteMutVarzh, [muv,da,s]) => [muv,s]
+     | (CasMutVarzh, [muv,da0,da1,da2,s]) => [muv,s]
+     | (NewTVarzh, [da,s]) => [s]
+     | (WriteTVarzh, [muv,da,s]) => [muv,s]
+     | (Catchzh, [arr,arr',srw]) => [arr,srw]
+     | (Raisezh, [da]) => []
+     | (RaiseIOzh, [da,srw]) => [srw]
+     | (PutMVarzh, [mv,da,s]) => [mv,s]
+     | (TryPutMVarzh, [mv,da,s]) => [mv,s]
+     | (Forkzh, [da,srw]) => [srw]
+     | (ForkOnzh, [i,da,srw]) => [i,srw]
+     | (KillThreadzh, [ti,da,srw]) => [ti,srw]
+     | (MkWeakzh, [da,db,dc,srw]) => [srw]
+     | (MkWeakForeignEnvzh, [da,db,a0,a1,i,a2,srw]) => [a0,a1,i,a2,srw]
+     | (Touchzh, [da,srw]) => [srw]
+     | (MakeStablePtrzh, [da,srw]) => [srw]
+     (*
+     | (MakeStableNamezh, [da,s]) => [s]
+     *)
+     | (_, vs) => vs
+
 end

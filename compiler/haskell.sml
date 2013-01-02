@@ -53,6 +53,7 @@ struct
   val topLevelPassesUC = [CoreHsParse.pass]
   val topLevelPassesCC = [CoreHsNormalize.pass]
   val topLevelPassesCA = [CoreHsToANormLazy.pass]
+  val topLevelPassesAA = [ANormLazyStrictness.pass]
   val topLevelPassesAS = [ANormLazyToStrict.pass]
   val topLevelPassesSS = [ANormStrictOptimize.pass]
   val topLevelPassesCL = [ANormStrictClosureConvert.pass]
@@ -65,6 +66,7 @@ struct
         val x = List.fold (topLevelPassesUC, x, Pass.addPassDriverInfo)
         val x = List.fold (topLevelPassesCC, x, Pass.addPassDriverInfo)
         val x = List.fold (topLevelPassesCA, x, Pass.addPassDriverInfo)
+        val x = List.fold (topLevelPassesAA, x, Pass.addPassDriverInfo)
         val x = List.fold (topLevelPassesAS, x, Pass.addPassDriverInfo)
         val x = List.fold (topLevelPassesSS, x, Pass.addPassDriverInfo)
         val x = List.fold (topLevelPassesCL, x, Pass.addPassDriverInfo)
@@ -94,6 +96,7 @@ struct
       stopAt "hsc" >> Pass.first (
       doPass CoreHsNormalize.pass >> 
       doPass CoreHsToANormLazy.pass >> 
+      doPass ANormLazyStrictness.pass >>
       doPass ANormLazyToStrict.pass >> 
       doPass ANormStrictOptimize.pass >> 
       doPass ANormStrictClosureConvert.pass >> 

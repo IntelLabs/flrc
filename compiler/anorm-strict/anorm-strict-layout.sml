@@ -127,7 +127,8 @@ struct
          | ANS.Tname v      => variable (env, v)
          | ANS.Thunk t      => L.seq [L.str "Thunk(", ty (env, t), L.str ")"] 
          | ANS.Prim t       => L.seq [L.str "%primtype ", PTL.layoutPrimTy (fn t => ty (env, t)) t]
-         | ANS.Arr (t1, t2) => L.mayAlign [angleList (tys (env, t1)) , L.seq [L.str "-> ", angleList (tys (env, t2))]]
+         | ANS.Arr (t1, t2, effect) => L.mayAlign [angleList (tys (env, t1)) , 
+                                                   L.seq [Effect.layout effect, L.str "-> ", angleList (tys (env, t2))]]
          | ANS.Sum cons     => 
            let 
              val layCon = fn ((con, _), ts) => L.seq [name (env, con), L.str " ", 
@@ -193,7 +194,7 @@ struct
                                            , L.str (" \"" ^ CL.escape p ^ "\" \"" ^ CL.escape n ^ "\"")
                                            , L.str "::", L.paren (ty (env, t)) ])
                           , L.str " ", variableSeq (env, xs)])
-         | ANS.App (f, xs) => L.seq [variable (env, f), L.str " ", variableSeq (env, xs)]
+         | ANS.App (f, xs, _) => L.seq [variable (env, f), L.str " ", variableSeq (env, xs)]
          | ANS.Lit (l, t) => L.paren (L.seq [literal l, L.str " :: ", ty (env, t)])
          | ANS.Cast (ANS.ToAddr v) => L.paren (L.seq [ L.str "%castToAddr ", variable (env, v)])
          | ANS.Cast (ANS.FromAddr v) => L.paren (L.seq [ L.str "%castFromAddr ", variable (env, v)])

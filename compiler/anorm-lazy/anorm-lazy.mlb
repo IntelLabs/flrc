@@ -1,0 +1,24 @@
+(* The Intel P to C/Pillar Compiler *)
+(* Copyright (C) Intel Corporation, October 2006 *)
+
+local
+        $(SML_LIB)/mlton/sources.mlb
+        ../common/common.mlb
+        ../core-hs/core-hs.mlb
+        anorm-lazy.sml
+        domain.sml
+        abs-core.sml
+        to-abs-core.sml
+        abs-eval.sml
+        strictness.sml
+in
+        structure ANormLazy
+        structure ANormLazyLayout
+        signature ABS_DOMAIN
+        structure Pointed
+        functor AbsCoreF
+        functor AbsCoreLayoutF
+        functor ANormLazyToAbsCoreF
+        functor AbsCoreEvalF
+        structure ANormLazyStrictness
+end

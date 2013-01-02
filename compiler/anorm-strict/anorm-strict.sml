@@ -1,9 +1,18 @@
 (* COPYRIGHT_NOTICE_1 *)
 (*
- * A strict variation of A-normal form that has explicit thunks.
+ * ANormStrict is a strict variation of A-normal form with
+ * explicit thunks and effect annotation.
+ *
+ * In addition to side effects in ANormLazy, non-termination
+ * (or partial) is also considered as an effect. But we only 
+ * annotate each App because:
+ * 1. The effect of PrimApp can be looked up from GhcPrimOp.
+ * 2. The effect of ExtApp is assumed to any.
+ * 3. The effect of thunk Eval is assumed to be partial.
  *)
 structure ANormStrict =
 struct
+  type effect = Effect.set
   type var   = Identifier.variable
   type con   = Identifier.name * int
   type lit   = CoreHs.coreLit
@@ -13,12 +22,12 @@ struct
   type 'a primTy = 'a GHCPrimType.primTy
 
   datatype ty 
-      = Boxed                            (* unknown boxed type *)
-      | Prim  of ty primTy               (* primitive type *)
-      | Arr   of ty list * ty list       (* function type *)
-      | Sum   of (con * ty list) list    (* (boxed) Sum type *)
-      | Tname of var                     (* named type *)
-      | Thunk of ty                      (* thunk type *)
+      = Boxed                               (* unknown boxed type *)
+      | Prim  of ty primTy                  (* primitive type *)
+      | Arr   of ty list * ty list * effect (* function type *)
+      | Sum   of (con * ty list) list       (* (boxed) Sum type *)
+      | Tname of var                        (* named type *)
+      | Thunk of ty                         (* thunk type *)
 
   type vbinds = (var * ty) list
 
@@ -33,7 +42,7 @@ struct
       | PrimApp  of GHCPrimOp.primOp * var list          (* saturated prim application *)
       | ExtApp   of pname * cc * string * ty * var list  (* saturated extern application *)
       | ConApp   of con * var list                       (* saturated data constructor *)
-      | App      of var * var list                       (* multi-param application *)
+      | App      of var * var list * effect              (* multi-param application *)
       | Let      of vDefg * exp
       | Case     of var * alt list
       | Lit      of lit * ty

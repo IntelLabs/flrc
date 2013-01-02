@@ -142,11 +142,11 @@ struct
                         val e = AS.ConApp (c, vs)
                       in e
                       end
-                    | AS.App (f, vs) => 
+                    | AS.App (f, vs, effect) => 
                       let
                         val f = doVar (state, env, f)
                         val vs = doVars (state, env, vs)
-                        val e = AS.App (f, vs)
+                        val e = AS.App (f, vs, effect)
                       in e
                       end
                     | AS.Let (defG, e) => 

@@ -37,7 +37,7 @@ struct
   val rec unCurryTy =
    fn t =>
       (case t
-        of AL.Arr (t1, t2) =>
+        of AL.Arr (t1, t2, effect) => (* TODO: fix effect *)
            let
              val (paramTys, resultTy) = unCurryTy t2
            in
@@ -57,11 +57,13 @@ struct
         of AL.Data               => AS.Boxed
          | AL.Prim (GP.Tuple ts) => fail ("valueTy", "Got unexpected unboxed tuple")
          | AL.Prim t             => AS.Prim (GP.mapPrimTy (t, valueTy))
-         | AL.Arr (t1, t2)       => AS.Arr ([thunkTy t1], multiValueTy t2)
+         | AL.Arr (t1, t2, effect) => AS.Arr ([thunkTy t1], multiValueTy t2, 
+                                              (* default effect is partial+throws+returns+fails *)
+                                              Utils.Option.out (effect, fn _ => Effect.Control))
          | AL.Tname v            => AS.Tname v
          | AL.Sum cons           => 
            AS.Sum (List.map (cons, fn (con, tys) => 
-                                      (con, List.map (tys, fn (t, s) => if s then valueTy t else thunkTy t)))))
+                                      (con, List.map (tys, fn (t, strict) => thunkTy t)))))
 
   and rec thunkTy' =
    fn ty =>
@@ -75,12 +77,12 @@ struct
   val rec resultTys =
    fn (n, b) =>
       (case (n, b)
-        of  (_, AS.Boxed)        => [AS.Boxed]
-          | (0, t)               => [t]
-          | (1, AS.Arr (_, ts))  => ts
-          | (n, AS.Arr (_, [t])) => resultTys (n - 1, t)
-          | (n, AS.Arr (_, _))   => fail ("resultTys", "Multiple results")
-          | _                    => fail ("resultTys", "expect function type"))
+        of  (_, AS.Boxed)           => [AS.Boxed]
+          | (0, t)                  => [t]
+          | (1, AS.Arr (_, ts, _))  => ts
+          | (n, AS.Arr (_, [t], _)) => resultTys (n - 1, t)
+          | (n, AS.Arr (_, _, _))   => fail ("resultTys", "Multiple results")
+          | _                       => fail ("resultTys", "expect function type"))
 
   val lookupEnv =
    fn (env, v) =>
@@ -98,7 +100,7 @@ struct
   and rec cast' =
    fn (im, env, hint, e, t1, t2) =>
       case (t1, t2)
-        of ([AS.Arr (t11, t12)], [AS.Arr (t21, t22)]) =>
+        of ([AS.Arr (t11, t12, _)], [AS.Arr (t21, t22, effect)]) =>
           let
             val t1 = hd t1
             val t2 = hd t2
@@ -108,7 +110,7 @@ struct
             val ys = List.map (t11, fn t => variableFresh (im, hint, "y", t))
             val zs = List.map (t22, fn t => variableFresh (im, hint, "z", t))
             val retxs  = AS.Return xs
-            val retfys = AS.App (f, ys)
+            val retfys = AS.App (f, ys, effect)
             (* 
              * let f = e
              *     g = \x -> let y = cast (x, t21, t11)
@@ -196,7 +198,7 @@ struct
             end
  
   and rec valueExp =
-   fn (im, env, hint, tys, e) =>
+   fn (im, env, hint, tys, e, effectful) =>
       (case e
         of AL.Var v => (case lookupEnv (env, v)
                          of AS.Thunk _ => AS.Eval v
@@ -205,14 +207,19 @@ struct
          | AL.ConApp (c, vs) => 
            let
              val folder = 
-              fn ((v, s), (us, lets)) =>
-                 case (s, lookupEnv (env, v))
-                  of (true, AS.Thunk uty) =>
+              fn ((v, strict), (us, lets)) =>
+                 case (strict, lookupEnv (env, v))
+                  of (true, uty as (AS.Thunk wty)) =>
                      let 
                        val u = IM.variableClone (im, v)
+                       val w = IM.variableClone (im, v)
                        val _ = variableSetInfo (im, u, uty)
+                       val _ = variableSetInfo (im, w, wty)
                      in
-                       (u :: us, fn e => AS.Let (AS.Vdef ([(u, uty)], AS.Eval v), lets e))
+                       (u :: us, fn e => AS.Let (AS.Vdef ([(w, wty)], AS.Eval v), 
+                                           AS.Let (AS.Nonrec (AS.Vthk { name = u, ty = uty, escapes = true, 
+                                                                        recursive = false, fvs = [w], 
+                                                                        body = AS.Return [w] }), lets e)))
                      end
                    | _ => (v :: us, lets)
              val (us, lets) = List.foldr (vs, ([], fn e => e), folder)
@@ -239,7 +246,7 @@ struct
                  let
                    val paramTys = List.allButLast paramTys
                    val v = variableFresh (im, hint, "tsepp", vty)
-                   val fty = AS.Arr (paramTys, [vty])
+                   val fty = AS.Arr (paramTys, [vty], Effect.Any)
                    val vdef = AS.Vdef ([(v, vty)], AS.ExtApp (p, cc, f, fty, List.allButLast vs))
                    val s = List.last vs
                  in
@@ -248,7 +255,7 @@ struct
             | (true, true, _::[]) => (* IO () *)
               let
                 val paramTys = List.allButLast paramTys
-                val fty = AS.Arr (paramTys, [])
+                val fty = AS.Arr (paramTys, [], Effect.Any)
                 val vdef = AS.Vdef ([], AS.ExtApp (p, cc, f, fty, List.allButLast vs))
                 val s = List.last vs
               in
@@ -288,7 +295,7 @@ struct
             *)
             | _ =>             
               let
-                val fty = AS.Arr (paramTys, resultTys)
+                val fty = AS.Arr (paramTys, resultTys, Effect.Any)
               in 
                 AS.ExtApp (p, cc, f, fty, vs)
               end
@@ -296,19 +303,20 @@ struct
          | AL.App (e, v) => 
            let
              val vty = lookupEnv (env, v)
-             val ety = AS.Arr ([vty], tys)
-             val e = valueExp (im, env, hint, [ety], e)
+             val effect = if effectful then Effect.Any else Effect.Control
+             val ety = AS.Arr ([vty], tys, effect)
+             val e = valueExp (im, env, hint, [ety], e, false)
            in
              case e
-              of AS.Return [f] => AS.App (f, [v])
+              of AS.Return [f] => AS.App (f, [v], effect)
                | _ => 
                  let 
                    val u = variableFresh (im, hint, "tsapp", ety)
                  in
-                   AS.Let (AS.Vdef ([(u, ety)], e), AS.App (u, [v]))
+                   AS.Let (AS.Vdef ([(u, ety)], e), AS.App (u, [v], effect))
                  end                   
            end
-         | AL.Lam ((v, vty), e) =>
+         | AL.Lam ((v, vty, strict), e) =>
            let
              val vty = thunkTy vty
              val _   = variableSetInfo (im, v, vty)
@@ -318,7 +326,7 @@ struct
                         | _    => fail ("valueExp", "bad number of types for lambda")
              val etys = resultTys (1, ty)
              val hint = IM.variableName (im, v)
-             val e = valueExp (im, env, hint, etys, e)
+             val e = valueExp (im, env, hint, etys, e, false)
              val u  = variableFresh (im, hint, "tslam", ty)
              (* Even syntactic non-rec functions might be semantically recursive *)
              val vd = AS.Vfun {name = u, ty = ty, escapes = true, recursive = true, 
@@ -328,16 +336,16 @@ struct
            end
          | AL.Let (vdefg, e) =>
            let
-             val (vdefg, env) = thunkVDefg (im, env, hint, vdefg)
-             val e = valueExp (im, env, hint, tys, e)
+             val (vdefgs, env) = thunkVDefg (im, env, hint, vdefg)
+             val e = valueExp (im, env, hint, tys, e, false)
            in 
-             AS.Let (vdefg, e)
+             List.foldr (vdefgs, e, AS.Let) 
            end
          | AL.Case (e, (v, vty), ty, alts) =>
            let
              val tys = multiValueTy ty
              val vty = valueTy vty
-             val e  = valueExp (im, env, hint, [vty], e)
+             val e  = valueExp (im, env, hint, [vty], e, false)
              val u = variableFresh (im, hint, "tsscr", vty)
              val udef = AS.Vdef ([(u, vty)], e)
              (* val vty  = thunkTy' ety *)
@@ -349,7 +357,7 @@ struct
                               of AS.Eval w => AS.Vdef ([(v, vty)], AS.Return [w])
                                | _         => AS.Nonrec (AS.Vthk {name = v, ty = vty, 
                                                                   escapes = true, recursive = false, 
-                                                                  fvs = [], body = AS.Return [u]}))
+                                                                  fvs = [u], body = AS.Return [u]}))
                           | _ => AS.Vdef ([(v, vty)], AS.Return [u])
              val env = VD.insert (env, v, vty)
              val alts = List.map (alts, fn alt => valueAlt (im, env, hint, tys, alt))
@@ -363,7 +371,7 @@ struct
            let 
              val t1 = multiValueTy t1
              val t2 = multiValueTy t2
-             val e  = valueExp (im, env, hint, t1, e)
+             val e  = valueExp (im, env, hint, t1, e, false)
            in
              cast (im, env, hint, e, t1, t2)
            end
@@ -378,6 +386,7 @@ struct
               fn t => (case t of AL.Prim _ => true | _ => false)
              val folder =
               fn ((v, ty, s), (ubs, vbs, lets)) => 
+                (* 
                  if s andalso not (isPrim ty) 
                  then 
                    let
@@ -391,6 +400,7 @@ struct
                      ((u, uty) :: ubs, (v, vty) :: vbs, lets)
                     end
                  else 
+                *)
                    let
                      val vs = variableSetInfo (im, v, thunkTy ty)
                    in
@@ -399,21 +409,21 @@ struct
              val (ubs, vbs, lets) = 
                  List.foldr (vbs, ([], [], fn e => e), folder)
              val env = List.fold (vbs, env, fn ((v, ty), env') => VD.insert (env', v, ty))
-             val exp = lets (valueExp (im, env, hint, etys, exp))
+             val exp = lets (valueExp (im, env, hint, etys, exp, false))
            in 
              AS.Acon (con, ubs, exp)
            end
-       | AL.Alit (lit, t, exp) => AS.Alit (lit, valueTy t, valueExp (im, env, hint, etys, exp))
-       | AL.Adefault exp => AS.Adefault (valueExp (im, env, hint, etys, exp)))
+       | AL.Alit (lit, t, exp) => AS.Alit (lit, valueTy t, valueExp (im, env, hint, etys, exp, false))
+       | AL.Adefault exp => AS.Adefault (valueExp (im, env, hint, etys, exp, false)))
 
   and rec recVDef = 
    fn (im, env, hint, vd) => 
       (case vd
-        of (AL.Vdef (AL.VbSingle (v, vty), e)) =>
+        of (AL.Vdef (AL.VbSingle (v, vty, _), e)) => 
            let
              val ety = valueTy vty
              val hint = IM.variableName (im, v)
-             val e = valueExp (im, env, hint, [ety], e)
+             val e = valueExp (im, env, hint, [ety], e, false)
              val (f, ty)  = case ety
                              of AS.Prim _ => fail ("recVDef", "primitive value binding in let rec is not allowed")
                               | _         => (fn (v, ty, e) => AS.Vthk {name = v, ty = ty, 
@@ -434,38 +444,53 @@ struct
              fun setInfo ((v, ty), env) = let val _ = variableSetInfo (im, v, ty) in VD.insert (env, v, ty) end
            in
              case bind
-              of AL.VbSingle (v, vty) => 
+              of AL.VbSingle (v, vty, strict) => 
                  let
                    val vty = valueTy vty
                    val hint = IM.variableName (im, v)
-                   val e = valueExp (im, env, hint, [vty], e)
+                   val e = valueExp (im, env, hint, [vty], e, false)
                  in 
                    (case vty
                      of AS.Prim _ => 
                         let
                           val vd = AS.Vdef ([(v, vty)], e)
                           val env = setInfo ((v, vty), env)
-                        in (vd, env)
+                        in ([vd], env)
                         end
                       | _         => 
-                        let
-                          val tty = AS.Thunk vty
-                          (* Even syntactic non-rec thunks might be semantically recursive *)
-                          val vd = AS.Nonrec (AS.Vthk {name = v, ty = tty, escapes = true, recursive = true, 
-                                                       fvs = [], body = e})
-                          val env = setInfo ((v, tty), env)
-                        in (vd, env)
-                        end)
+                       if strict
+                         then
+                           let 
+                             val u = IM.variableClone (im, v)
+                             val _ = variableSetInfo (im, u, vty)
+                             val vd0 = AS.Vdef ([(u, vty)], e)
+                             val tty = AS.Thunk vty
+                             (* Even syntactic non-rec thunks might be semantically recursive *)
+                             val vd1 = AS.Nonrec (AS.Vthk {name = v, ty = tty, escapes = true, recursive = true, 
+                                                          fvs = [], body = AS.Return [u]})
+                             val env = setInfo ((v, tty), env)
+                           in
+                             ([vd0, vd1], env)
+                           end
+                         else
+                           let
+                             val tty = AS.Thunk vty
+                             (* Even syntactic non-rec thunks might be semantically recursive *)
+                             val vd = AS.Nonrec (AS.Vthk {name = v, ty = tty, escapes = true, recursive = true, 
+                                                          fvs = [], body = e})
+                             val env = setInfo ((v, tty), env)
+                           in ([vd], env)
+                           end)
                  end
-               | AL.VbMulti vts => 
+               | AL.VbMulti (vts, effectful) => 
                  let
                    val (vs, tys) = List.unzip vts
                    val ttys = List.map (tys, thunkTy)
-                   val e = valueExp (im, env, hint, ttys, e)
+                   val e = valueExp (im, env, hint, ttys, e, effectful)
                    val vts = List.zip (vs, ttys)
                    val vd = AS.Vdef (vts, e)
                    val env = List.fold (vts, env, setInfo)
-                 in (vd, env)
+                 in ([vd], env)
                  end
            end)
 
@@ -474,19 +499,19 @@ struct
       (case vdg
         of AL.Rec vdefs =>
            let
-             fun mkThunk (AL.Vdef (AL.VbSingle (v, ty), _)) = (v, thunkTy ty)
+             fun mkThunk (AL.Vdef (AL.VbSingle (v, ty, strict), _)) = (v, thunkTy ty)
                | mkThunk _ = fail ("thunkVDefg", "multi-return cannot be recursively defined")
              val vartys = List.map (vdefs, mkThunk)
              val env    = List.fold (vartys, env, fn ((v, ty), env) => VD.insert (env, v, ty))
              val vdefs  = List.map (vdefs, fn vd => #1 (recVDef (im, env, hint, vd)))
            in
-             (AS.Rec vdefs, env)
+             ([AS.Rec vdefs], env)
            end
          | AL.Nonrec vdef =>
            let
-             val (vdef, env) = nonrecVDef (im, env, hint, vdef)
+             val (vdefs, env) = nonrecVDef (im, env, hint, vdef)
            in
-             (vdef, env)
+             (vdefs, env)
            end)
 
   fun doModule (AL.Module (main, vdefgs), im) =
@@ -500,7 +525,7 @@ struct
           end
         val (vdefgs, _) = List.fold (vdefgs, ([], VD.empty), oneVDefg)
       in 
-        (AS.Module (main, List.rev vdefgs), IM.finish im)
+        (AS.Module (main, List.rev (List.concat vdefgs)), IM.finish im)
       end
 
   fun toStrict (x, pd) = doModule x

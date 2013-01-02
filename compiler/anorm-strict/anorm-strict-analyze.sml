@@ -72,7 +72,7 @@ struct
               | AS.PrimApp (s, vs)              => analyzeVariables (state, env, vs)
               | AS.ExtApp (pname, cc, s, t, vs) => analyzeVariables (state, env, vs)
               | AS.ConApp (c, vs)               => analyzeVariables (state, env, vs)
-              | AS.App (f, vs)                  => 
+              | AS.App (f, vs, _)               => 
                 let
                   val () = analyzeVariable (state, env, f)
                   val () = analyzeVariables (state, env, vs)

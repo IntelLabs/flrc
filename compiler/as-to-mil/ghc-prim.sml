@@ -1276,7 +1276,7 @@ struct
                         in M.EThunk { thunk = fvar, value = not (MilUtils.Codes.exhaustive code), code = code }
                         end
                     val blk0 = MU.eval (im, cfg, FK.fromTyp (cfg, ftyp), eval, TMU.exitCut, Effect.Any, clo)
-                    val fx = TMU.lookupEffect (effects, clo, true, true)
+                    val fx = TMU.lookupEffect (effects, clo, Effect.Any)
                     val blk1 = MU.call (im, cfg, M.CClosure { cls = clo, code = TMU.noCode },
                                          Vector.new1 svar, TMU.exitCut, fx, rvar)
                   in
@@ -1870,7 +1870,7 @@ struct
                 val fk   = FK.fromTyp (cfg, vtyp)
                 val vvar = TMU.localVariableFresh0 (im, vtyp)
                 val wvar = TMU.localVariableFresh0 (im, tagTyp)
-                val blk0 = TMU.kmThunk (state, Vector.new1 vvar, tvar, TMU.lookupEffect (effects, tvar, false, false))
+                val blk0 = TMU.kmThunk (state, Vector.new1 vvar, tvar, TMU.lookupEffect (effects, tvar, Effect.Control))
                 val blk1 = MS.bindRhs (wvar, M.RhsSumGetTag { typ = fk, sum = vvar })
                 val blk2 = MS.bindsRhs (rvar, convert (tagNumTyp, intNumTyp) [(M.SVariable wvar, tagTyp)])
               in

@@ -72,17 +72,18 @@ struct
       end
 
   fun doSum doTy resolved (dict as { tdict, ... }, con, args)
-    = if QS.member (!resolved, con)
-        then AL.Data
-        else
+    = case QD.lookup (!resolved, con)
+        of SOME (SOME x) => x
+         | SOME _ => AL.Data
+         | _ => 
           (* Undefined types is allowed here because they are not declared in ExtCore *) 
-          case QD.lookup (tdict, con)
+          (case QD.lookup (tdict, con)
             of NONE => AL.Data  
              | SOME x => 
               let
-                val _ = resolved := QS.insert (!resolved, con)
-              in
-                case x 
+                val _ = resolved := QD.insert (!resolved, con, NONE)
+                val ty = 
+                  case x 
                   of Sumtype (tbinds, arms) =>
                     let
                       val _ = if length tbinds <> length args 
@@ -106,8 +107,24 @@ struct
                     in
                       ty
                     end
-              end
-    
+                val _ = resolved := QD.insert (!resolved, con, SOME ty)
+              in
+                ty 
+              end)
+
+  (* We annotate arrow type with effect if the argument type is State# *) 
+  fun arrow (t1, t2) = 
+      let
+        val effect = case t1 
+                       of AL.Prim (GP.State t) => 
+                         SOME (case t 
+                                 of AL.Sum _ => Effect.Any             (* assume t is RealWorld, then it is IO monad *)
+                                  | _ => Effect.union (Effect.HeapInit, Effect.Control)) (* otherwise it is ST monad *)
+                        | _ => NONE
+      in
+        AL.Arr (t1, t2, effect)
+      end
+
   (*
    * Simplify the haskell type. 
    *
@@ -147,8 +164,8 @@ struct
                                 case u 
                                   of AL.Prim (GP.EqTy _) => v
                                    (* remove unboxed tuple when it is a function argument *)
-                                   | AL.Prim (GP.Tuple tys) => List.foldr (tys, v, AL.Arr)
-                                   | _ => AL.Arr (u, v)
+                                   | AL.Prim (GP.Tuple tys) => List.foldr (tys, v, arrow)
+                                   | _ => arrow (u, v)
                               end
                          else doSum doTy0 resolved (dict, c, args) 
                      | (CH.Tcon c, args) => doSum doTy0 resolved (dict, c, args) 
@@ -157,7 +174,7 @@ struct
                | CH.Tforall (_, ty) => doTy0 resolved env ty         (* Ignore type abstraction *)
                | _ => failMsg ("doTy", "unexcepted coercion type " ^ Layout.toString (CL.layoutTy t))
       in
-        doTy0 (ref QS.empty) SD.empty
+        doTy0 (ref QD.empty) SD.empty
       end
 
   fun makeVar (im, cfg, dict as { ndict, tdict, vdict, sdict }, mname, v, vty) = 
@@ -200,11 +217,11 @@ struct
                 of SOME n => SOME (AL.Multi args)
                 | _ => 
                   let
-                    val (con, strictness) = lookupMayFail (ndict, con, "isSaturated")
-                    val _ = if length strictness = length args then ()
+                    val (con, stricts) = lookupMayFail (ndict, con, "isSaturated")
+                    val _ = if length stricts = length args then ()
                              else failMsg ("isSaturated", "arity of strictness does not match that number of fields")
                   in
-                    SOME (AL.ConApp (con, List.zip (args, strictness)))
+                    SOME (AL.ConApp (con, List.zip (args, stricts)))
                   end)
             | CH.Var (p, v) => if p = SOME CU.primMname then 
                                  case GHCPrimOp.fromString v
@@ -239,8 +256,11 @@ struct
                 val (dict, vbs) = makeVars (im, cfg, dict, mname, vbs)
                 val dict = addSubstitute (dict, (NONE, v), AL.Multi (List.map (vbs, #1))) 
                 val e' = doExp (im, cfg, mname, dict) e'
+                val effectful = case hd vbs 
+                                  of (_, AL.Prim (GP.State t)) => true
+                                   | _ => false
               in
-                AL.Let (AL.Nonrec (AL.Vdef (AL.VbMulti vbs, e)), e')
+                AL.Let (AL.Nonrec (AL.Vdef (AL.VbMulti (vbs, effectful), e)), e')
               end
              | (true, []) =>
                let
@@ -250,7 +270,7 @@ struct
                  val vs = List.map (tys, fn ty => IM.variableFresh (im, CL.qNameToString (mname, v), ty))
                  val vbs = List.zip (vs, tys)
                in
-                 AL.Let (AL.Nonrec (AL.Vdef (AL.VbMulti vbs, e)), AL.Multi vs)
+                 AL.Let (AL.Nonrec (AL.Vdef (AL.VbMulti (vbs, false), e)), AL.Multi vs)
                end
              | (true, _) => failMsg ("doExp", "Bad case on unboxed tuple: " ^ Layout.toString (CL.layoutExp oe))
              | _ => 
@@ -278,9 +298,10 @@ struct
                       val vs = List.map (tys, fn ty => IM.variableFresh (im, CL.qNameToString (mname, vstr), ty))
                       val dict = addSubstitute (dict, (NONE, vstr), AL.Multi vs)
                     in
-                      List.foldr (List.zip (vs, tys), doExp (im, cfg, mname, dict) e, AL.Lam)
+                      List.foldr (List.map (List.zip (vs, tys), fn (v, t) => (v, t, false)), 
+                                  doExp (im, cfg, mname, dict) e, AL.Lam)
                     end
-                   | _ => AL.Lam ((v, vty), doExp (im, cfg, mname, dict) e)
+                   | _ => AL.Lam ((v, vty, false), doExp (im, cfg, mname, dict) e)
               end
            | CH.Tb (v, vkind) => doExp (im, cfg, mname, dict) e)       (* ignore type bindings *)
        | CH.Let (vdefg, e) =>
@@ -330,13 +351,14 @@ struct
            val (dict, vbs) = makeVars (im, cfg, dict, mname, vbs)
            val dict = addSubstitute (dict, v, AL.Multi (List.map (vbs, #1)))
          in
-           ((AL.VbMulti vbs, mname, e), dict)
+           ((AL.VbMulti (vbs, false), mname, e), dict)
          end
         | NONE => 
          let
            val (dict, v, vty) = makeVar (im, cfg, dict, mname, v, vty)
+           val strict = case vty of AL.Prim _ => true | _ => false
          in
-           ((AL.VbSingle (v, vty), mname, e), dict)
+           ((AL.VbSingle (v, vty, strict), mname, e), dict)
          end
 
   and doVDef (im, cfg, dict) (bind, mname, e) = AL.Vdef (bind, doExp (im, cfg, mname, dict) e)
@@ -364,6 +386,10 @@ struct
           let
             fun makeName (i, CH.Constr (con, tbinds, tys))
               = let 
+                  val isPrimTy =
+                    fn CH.Tcon (m, _) => m = SOME CU.primMname
+                     | _ => false
+                  val tys = List.map (tys, fn (ty, strict) => (ty, strict orelse isPrimTy ty))
                   val strictness = List.map (tys, #2)
                   val tag = (IM.nameMake (im, CL.qNameToString con), i)
                 in

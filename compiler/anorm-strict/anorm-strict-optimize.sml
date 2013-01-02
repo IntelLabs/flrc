@@ -645,7 +645,7 @@ struct
   val typeToReturnTypes = 
    fn (state, env, t) => 
       (case t 
-        of AS.Arr (_, tys) => tys
+        of AS.Arr (_, tys, _) => tys
          | _               => fail ("typeToReturnType", "Not a function type"))
 
   val unboxTy = 
@@ -680,7 +680,7 @@ struct
          | AS.PrimApp (s, vs)              => true
          | AS.ExtApp (pname, cc, s, t, vs) => true
          | AS.ConApp (c, vs)               => true
-         | AS.App (f, vs)                  => true
+         | AS.App (f, vs, _)               => true
          | AS.Let (defG, e)                => vDefgNonDuplicative (state, env, defG) 
                                               andalso expNonDuplicative (state, env, e)
          | AS.Case (v, alts)               => false
@@ -707,7 +707,7 @@ struct
          | AS.PrimApp (s, vs)              => false
          | AS.ExtApp (pname, cc, s, t, vs) => false
          | AS.ConApp (c, vs)               => true
-         | AS.App (f, vs)                  => false
+         | AS.App (f, vs, _)               => false
          | AS.Let (defG, e)                => vDefgIsValue (state, env, defG) andalso expIsValue (state, env, e)
          | AS.Case (v, alts)               => false
          | AS.Lit (l, t)                   => true
@@ -805,7 +805,7 @@ struct
                                                         EThreaded)
                 | AS.ExtApp (pname, cc, s, t, vs) => (useVars (state, env, vs); EImplicit)
                 | AS.ConApp (c, vs)               => (useVars (state, env, vs); ETotal)
-                | AS.App (f, vs)                  => 
+                | AS.App (f, vs, effect)          => 
                   let
                     val () = useVar (state, env, f)
                     val () = useVars (state, env, vs)
@@ -1090,8 +1090,8 @@ struct
             | _                       => (env, [], AS.Eval v)
         end
 
-    and rec doApp : state * env * AS.var * AS.var List.t * AS.ty List.t -> env * AS.vDefg List.t * AS.exp = 
-     fn (state, env, f, vs, tys) => 
+    and rec doApp : state * env * AS.var * AS.var List.t * AS.ty List.t * AS.effect -> env * AS.vDefg List.t * AS.exp = 
+     fn (state, env, f, vs, tys, effect) => 
         let
           val f = doVar (state, env, f)
           val vs = doVars (state, env, vs)
@@ -1126,8 +1126,8 @@ struct
                           orelse (not r andalso i < inlineSmallLimit)) then
                 inlineSmall (vs, ps, e)
               else 
-                (env, [], AS.App (f, vs))
-            | _        => (env, [], AS.App (f, vs))
+                (env, [], AS.App (f, vs, effect))
+            | _        => (env, [], AS.App (f, vs, effect))
         end
 
     and rec doExpFlattenNamed : state * env * AS.exp * AS.ty List.t -> env * AS.vDefg List.t * AS.var List.t =
@@ -1184,7 +1184,7 @@ struct
                     val e = AS.ConApp (c, vs)
                   in return e
                   end
-                | AS.App (f, vs) => doApp (state, env, f, vs, tys)
+                | AS.App (f, vs, effect) => doApp (state, env, f, vs, tys, effect)
                 | AS.Let (defG, e) => 
                   let
                     val outerEnv = env
@@ -2039,7 +2039,7 @@ struct
                       val () = addSumDefinition (state, env, name, vs)
                     in nonStrict
                     end
-                  | AS.App (f, vs) => 
+                  | AS.App (f, vs, effect) => 
                     let
                       val strictness = applyVar (state, env, f, vs)
                     in strictness
@@ -2326,7 +2326,7 @@ struct
                 case ty
                  of AS.Boxed => AS.Boxed
                   | AS.Prim pt => AS.Prim (GPT.mapPrimTy (pt, doTy'))
-                  | AS.Arr (ts, rts) => AS.Arr (List.map (ts, doTy'), List.map (rts, doTy'))
+                  | AS.Arr (ts, rts, effect) => AS.Arr (List.map (ts, doTy'), List.map (rts, doTy'), effect)
                   | AS.Sum arms => 
                     let
                       val doArm =
@@ -2374,7 +2374,7 @@ struct
                     val e = AS.ConApp (c, std)
                   in (env, [], e)
                   end
-                | AS.App (f, vs) => 
+                | AS.App (f, vs, effect) => 
                   (case getFnInfo (state, env, f)
                     of SOME (ref fi) => 
                        let
@@ -2385,7 +2385,7 @@ struct
                               of SOME fnew => 
                                  (fnew, std @ ubx)
                                | NONE      => (f, vs)
-                         val e = AS.App (f, vs)
+                         val e = AS.App (f, vs, effect)
                        in (env, rbnds1, e)
                        end
                      | _ => return e)
@@ -2487,7 +2487,7 @@ struct
                                val ts = std @ ubx 
                                val ty = 
                                    case doTy (state, env, ty)
-                                    of AS.Arr (_, rt) => AS.Arr (ts, rt)
+                                    of AS.Arr (_, rt, effect) => AS.Arr (ts, rt, effect)
                                      | _              => fail ("doVDef", "Not a function type")
                              in ty
                              end
@@ -2545,7 +2545,10 @@ struct
                               if escapes then
                                 let
                                   val vs = cloneVariables (state, env, vs)
-                                  val body = doExp (state, env, AS.App (name, vs))
+                                  val effect = case ty
+                                                 of AS.Arr (_, _, efx) => efx
+                                                  | _ => Effect.Control (* TODO: shall we error here? *)
+                                  val body = doExp (state, env, AS.App (name, vs, effect)) 
                                   val args = List.map2 (vs, args, fn (v, (_, t)) => (v, t))
                                   val escapeF = AS.Vfun {name = name, ty = ty, escapes = true, recursive = recursive0, 
                                                          fvs = [], args = args, body = body}
@@ -2811,14 +2814,14 @@ struct
                     val e = AS.ConApp (c, vs)
                   in return e
                   end
-                | AS.App (f, vs) => 
+                | AS.App (f, vs, effect) => 
                   let
                     val default = 
                      fn () => 
                         let
                           val f = doVar (state, env, f)
                           val vs = doVars (state, env, vs)
-                          val e = AS.App (f, vs)
+                          val e = AS.App (f, vs, effect)
                         in e
                         end
                    (* Not all apps are named *)
@@ -2833,7 +2836,7 @@ struct
                                     val vs = doVars (state, env, vs)
                                     val args = List.appendRev (vs, args)
                                   in
-                                    AS.App (uncurry, List.rev args)
+                                    AS.App (uncurry, List.rev args, Effect.Control)
                                   end
                                 else 
                                   default ()
@@ -2946,7 +2949,7 @@ struct
                  fn (t, ll, acc) => 
                     (case (t, ll)
                       of (_            , (f, t, binds)::ll) => loop (t, ll, List.appendRev (binds, acc))
-                       | (AS.Arr (_, t), [])                => AS.Arr (List.revMap (acc, #2), t)
+                       | (AS.Arr (_, t, effect), [])        => AS.Arr (List.revMap (acc, #2), t, effect)
                        | (_            , [])                => 
                          fail ("uncurryTyp", "Inner lambda doesn't have lambda type"))
               in loop (t, lambdas, [])
@@ -2979,7 +2982,7 @@ struct
                              let
                                (* The inner application may be (semantically) recursive, but all of the outer
                                 * functions are not. *)
-                               val curryBody = AS.App (uncurryF, uncurryActuals)
+                               val curryBody = AS.App (uncurryF, uncurryActuals, Effect.Control)
                                val mk = fn ((f, t, binds), (e, recursive)) => 
                                            let
                                              val vd = AS.Vfun {name = f, ty = t, escapes = true, recursive = recursive,
@@ -3061,7 +3064,7 @@ struct
                   let
                     val (env, e) = 
                         case e
-                         of AS.App (f, vs) => 
+                         of AS.App (f, vs, effect) => 
                             (case getDef (state, env, f)
                               of DEta {remaining, uncurry, args} =>
                                  let
@@ -3072,7 +3075,7 @@ struct
                                       let
                                         val () = Click.uncurry (getPd (state, env))
                                       in
-                                        (env, AS.App (uncurry, List.rev args))
+                                        (env, AS.App (uncurry, List.rev args, Effect.Control))
                                       end
                                     else if remaining > 0 andalso List.length vts = 1 then
                                       let
