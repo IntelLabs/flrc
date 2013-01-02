@@ -389,10 +389,10 @@ struct
 
   fun doModule (cfg, CH.Module (name, tdefs, vdefgs))
     = let 
-        (* Prepare a few built-in definitions *)
-        val tdefs  = CH.Data (CP.tcStatezh, [("s", CH.Klifted)], [CH.Constr (CP.tcStatezh, [], [(CH.Tvar "s", true)])]) :: tdefs
-        val tdefs  = CH.Data (CP.tcRealWorld, [], [CH.Constr (CP.tcRealWorld, [], [])]) :: tdefs
-        val vdefgs = CH.Nonrec (CH.Vdef (CP.vRealWorldzh, CH.Tcon CP.tcRealWorld, CH.Dcon CP.tcRealWorld)) :: vdefgs
+        (* Prepare a few built-in definitions, e.g., realWorld# : State# RealWorld# *)
+        val tdefs  = CH.Data (CP.tcStatezh, [("s", CH.Klifted)], [CH.Constr (CP.tcRealWorld, [], [])]) :: tdefs
+        val tdefs  = CH.Data (CP.tcRealWorld, [], []) :: tdefs
+        val vdefgs = CH.Nonrec (CH.Vdef (CP.vRealWorldzh, CP.tRWS, CH.Dcon CP.tcRealWorld)) :: vdefgs
         val dict   = List.fold (tdefs, emptyDict (), doTDef)
         fun oneVDefg (vdefg, (vdefgs, dict))
           = let 
