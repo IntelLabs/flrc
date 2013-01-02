@@ -229,7 +229,7 @@ struct
                          else failMsg ("norm/Var", "variable " ^ v ^ " not found"))
         | CH.Dcon con => 
           (case QD.lookup (vdict, con)
-            of SOME t => (saturateWrapper (dict, exp, t), t)
+            of SOME t => (saturate (dict, exp, t), t)
              | NONE => 
               (case CU.isUtupleDc con
                 of SOME n => 
@@ -242,7 +242,7 @@ struct
                     val ty = List.foldr (vs, ty, fn (v, ty) => CH.Tforall ((v, CH.Kopen), ty))
                   in 
                     (*
-                     * Even unboxed tuple has to go through saturate because A-normalizationmay 
+                     * Even unboxed tuple has to go through saturate because A-normalization may 
                      * result in them being partially applied. Note that we don't use saturateWrapper 
                      * here because constructors for unboxed tuple do not have a uniform type.
                      *)
@@ -251,8 +251,8 @@ struct
                  | NONE => failMsg ("norm/Dcon", "constructor " ^ CL.qNameToString con ^ " not found")))
         | CH.External (p, cc, _, ty) => 
           (case cc
-            of CH.CCall   => (saturateWrapper (dict, exp, ty), ty) 
-             | CH.StdCall => (saturateWrapper (dict, exp, ty), ty) 
+            of CH.CCall   => (saturate (dict, exp, ty), ty) 
+             | CH.StdCall => (saturate (dict, exp, ty), ty) 
              | _          => (saturate (dict, exp, ty), ty))         (* do not wrap non-function calls *)
         | CH.Lit (CH.Literal (lit, ty)) => (exp, ty)
         | CH.App (f, e) =>
