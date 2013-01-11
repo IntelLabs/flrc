@@ -5,7 +5,6 @@
 signature ANORM_LAZY_TO_ABS_CORE =
 sig
   type t
-  val pass : (ANormLazy.t, t) Pass.t
   val doModule : ANormLazy.t -> t
 end
 
@@ -108,22 +107,5 @@ struct
       in 
         (AC.Module (main, vdefgs), IM.finish im)
       end
-
-  fun toAbs (x, pd) = doModule x
-
-  fun layoutLazy (module, config) = ANormLazyLayout.layoutModule module
-
-  fun layoutAbs (module, config) = ACL.layout module
-
-  val description = {name        = passname,
-                     description = "Lazy A-Normal Form to strict A-Normal Form",
-                     inIr        = { printer = layoutLazy, stater = layoutLazy },
-                     outIr       = { printer = layoutAbs,  stater = layoutAbs },
-                     mustBeAfter = [],
-                     stats       = []}
-
-  val associates = {controls = [], debugs = [], features = [], extraDriverInfo = NONE}
-
-  val pass = Pass.mkCompulsoryPass (description, associates, toAbs)
 
 end

@@ -10,6 +10,8 @@ end
 structure ANormLazyStrictness :> ANORM_LAZY_STRICTNESS =
 struct
   structure I = Identifier
+  structure L = Layout
+  structure LU = LayoutUtils
   structure AL = ANormLazy
   structure AC = AbsCoreF (struct structure Dom = Pointed end) 
   structure LC = ANormLazyToAbsCoreF (struct structure AbsCore = AC end)
@@ -93,12 +95,33 @@ struct
         of AL.Rec vdefs => AL.Rec (List.map (vdefs, fn def => doVDef (st, def)))
          | AL.Nonrec vdef => AL.Nonrec (doVDef (st, vdef)))
 
-  fun runPass (pd, bn, pass, p) = Pass.apply (Pass.doSubPass pass) (pd, bn, p)
+  val describe =
+   fn () =>
+      L.align [L.str (passname ^ " control string consists of:"),
+               LU.indent (L.align [L.str "- => show AbsCore before strictness analysis",
+                                   L.str "+ => show AbsCore after strictness analysis" ]),
+               L.str "default is nothing"]
+
+  type showOpt = { showBefore : bool, showAfter : bool }
+  val defaultOpt = { showBefore = false, showAfter = false }
+
+  val parse =
+    fn s => 
+      if s = "+" then SOME { showBefore = false, showAfter = true }
+        else if s = "-" then SOME { showBefore = true, showAfter = false }
+        else if s = "+-" orelse s = "-+" then SOME { showBefore = true, showAfter = true }
+        else NONE
+
+  val (control, showOptGet) = Config.Control.mk (passname, describe, parse, fn _ => defaultOpt)
 
   fun program (p as (AL.Module (main, vdefgs), im), pd, bn) = 
       let
-        val q = runPass (pd, bn, LC.pass, p)
-        val (_, st) = runPass (pd, bn, AE.pass, q)
+        val cfg = PassData.getConfig pd
+        val opt = showOptGet cfg
+        val q   = LC.doModule p
+        val ()  = if #showBefore opt then LU.printLayout (ACL.layout q) else ()
+        val q' as (_, st) = AE.annotate q
+        val ()  = if #showAfter opt then LU.printLayout (ADL.layout q') else ()
         val vdefgs = List.map (vdefgs, fn vdefg => doVDefg (st, vdefg))
       in
         (AL.Module (main, vdefgs), im)
@@ -113,9 +136,7 @@ struct
                      mustBeAfter = [],
                      stats       = []}
 
-  val associates = { controls = [], debugs = [], features = [], 
-                     extraDriverInfo = SOME ((Function.curry Pass.addPassDriverInfo LC.pass) o 
-                                             (Function.curry Pass.addPassDriverInfo AE.pass)) }
+  val associates = { controls = [control], debugs = [], features = [], subPasses = [] }
 
   val pass = Pass.mkOptFullPass (description, associates, program) 
 

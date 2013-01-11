@@ -11,7 +11,6 @@ sig
   type t  = module * ANormLazy.ty Identifier.symbolTable
   type t' = module * demand Identifier.symbolTable
   val annotate : t -> t'
-  val pass : (t, t') Pass.t
   val layoutDemand : 'a -> demand -> Layout.t
 end
 
@@ -360,21 +359,6 @@ struct
       in
         (AC.Module (main, vdefgs), IM.finish im)
       end
-
-  val layoutAC = fn (module, config) => ACL.layout module
-  val layoutAD = fn (module, config) => ADL.layout module
-
-  val description = {name        = passname,
-                     description = "Evaluation of Abstract Core",
-                     inIr        = { printer = layoutAC, stater = layoutAC },
-                     outIr       = { printer = layoutAD, stater = layoutAD },
-                     mustBeAfter = [],
-                     stats       = []}
-  
-  val associates = {controls = [], debugs = [], features = [], extraDriverInfo = NONE}
-
-  val pass : (t, t') Pass.t 
-    = Pass.mkCompulsoryPass (description, associates, annotate o #1)
 
 end
 
