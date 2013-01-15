@@ -1787,13 +1787,13 @@ struct
         val rt =
             case ft
              of M.TThunk t => t
-              | _ => failMsg ("mkForkWrapper", "bad thunk type")
+              | _ => failMsg ("mkForkWrapper", "bad thunk type for variable " ^ IM.variableString (im, f))
         val rv = TMU.localVariableFresh0 (im, rt)
         val blk1 = TMU.kmThunk (state, Vector.new1 rv, f', fx)
         val rts =
             case rt
              of M.TClosure {ress, ...} => ress
-              | _ => failMsg ("mkForkWrapper", "bad closure type")
+              | _ => failMsg ("mkForkWrapper", "bad closure type for variable " ^ IM.variableString (im, f))
         val rt = Vector.sub (rts, 1)
         val rvs = Vector.map (rts, fn t => TMU.localVariableFresh0 (im, t))
         val c = M.CClosure {cls = rv, code = TMU.stateGetCodesForFunction (state, rv)}
@@ -1826,7 +1826,7 @@ struct
 
   fun forkIOon fx ((state, rvar), argstyps) =
       case argstyps
-       of [(M.SVariable f, ft), (p, pt), (so as (M.SVariable s), st)] =>
+       of [(p, pt), (M.SVariable f, ft),(so as (M.SVariable s), st)] =>
           let
             val {im, ...} = state
             val (blk1, fw, fwt) = mkForkWrapper (state, fx, f, ft, s, st)
