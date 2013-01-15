@@ -193,7 +193,7 @@ struct
       case f 
         of CH.Lam (CH.Tb (v, _), body) =>
           let
-            (* a limited form of subst that works only for saturated exp *) 
+            (* a limited form of substitution that works only for saturated exp *) 
             fun subst exp = 
                 case exp 
                   of CH.App (e1, e2) => CH.App (subst e1, subst e2)
@@ -211,6 +211,15 @@ struct
           end
         | _ => CH.Appt (f, ty)
 
+  (* Extract nested let definition from its inner expression *)
+  val rec letExtract =
+    fn CH.Let (def, f) => 
+      let 
+        val (lets, e) = letExtract f
+      in 
+        (fn e => CH.Let (def, lets e), e)
+      end
+     | e => (fn e => e, e)
 
   (*
    * Normalize an expression when its type is not given and return the 
@@ -225,11 +234,11 @@ struct
                          then 
                            case GP.fromString v
                              of SOME p => let val ty = GP.getType p in (saturate (dict, exp, ty), ty) end
-                              | NONE => failMsg ("norm/Var", "primitive " ^ v ^ " supported")
+                              | NONE => failMsg ("norm/Var", "primitive " ^ v ^ " not supported")
                          else failMsg ("norm/Var", "variable " ^ v ^ " not found"))
         | CH.Dcon con => 
           (case QD.lookup (vdict, con)
-            of SOME t => (saturate (dict, exp, t), t)
+            of SOME t => (saturateWrapper (dict, exp, t), t)
              | NONE => 
               (case CU.isUtupleDc con
                 of SOME n => 
@@ -251,8 +260,8 @@ struct
                  | NONE => failMsg ("norm/Dcon", "constructor " ^ CL.qNameToString con ^ " not found")))
         | CH.External (p, cc, _, ty) => 
           (case cc
-            of CH.CCall   => (saturate (dict, exp, ty), ty) 
-             | CH.StdCall => (saturate (dict, exp, ty), ty) 
+            of CH.CCall   => (saturateWrapper (dict, exp, ty), ty) 
+             | CH.StdCall => (saturateWrapper (dict, exp, ty), ty) 
              | _          => (saturate (dict, exp, ty), ty))         (* do not wrap non-function calls *)
         | CH.Lit (CH.Literal (lit, ty)) => (exp, ty)
         | CH.App (f, e) =>
@@ -269,8 +278,11 @@ struct
                 | _ =>
                   let
                     val v = freshVar (dict, NONE, varPrefix)
-                  in 
-                    (CH.Let (CH.Nonrec (CH.Vdef (v, ety, e)), tryBeta (f, CH.Var v)), rty) 
+                    val vdef = CH.Nonrec (CH.Vdef (v, ety, e))
+                    (* let floating inward *)
+                    val (lets, f') = letExtract f
+                  in      
+                    (lets (CH.Let (vdef, tryBeta (f', CH.Var v))), rty) 
                   end
             end
         | CH.Case (e, (v, vty), ty, alts) =>
