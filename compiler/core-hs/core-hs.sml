@@ -315,7 +315,7 @@ struct
   val z0tc : tcon qualified = (SOME tupleMname, "Z0T")
   val z0t : ty = Tcon z0tc
 
-  (* substitute a type variable v in type vty with an actual type t *)
+  (* substitute a type variable v in type t with an actual type vty *)
   fun substTy (v, vty, t)
     = let
         fun sub ty =
