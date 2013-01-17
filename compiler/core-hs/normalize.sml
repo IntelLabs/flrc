@@ -122,25 +122,32 @@ struct
       end
 
   fun saturate (dict, e, ty)
-    = case ty
-        of CH.Tforall ((t, k), ty) =>
-          let
-            val v = freshInlineableVar (dict, typPrefix)
-          in
-            CH.Lam (CH.Tb (v, k), saturate (dict, CH.Appt (e, CH.Tvar v), ty))
-          end
-        | CH.Tapp (t1, t2) =>
-          (case t1
-            of CH.Tapp (CH.Tcon a, t3) => 
-              if a = CU.tcArrow 
-                then let 
-                       val v = freshInlineableVar (dict, varPrefix)
-                     in
-                       CH.Lam (CH.Vb (v, t3), saturate (dict, CH.App (e, CH.Var (NONE, v)), t2))
-                     end
-                else e
-             | _ => e)
-        | _ => e
+    = let
+        fun saturate0 (substTy, e, ty) 
+          = case ty
+              of CH.Tforall ((t, k), ty) =>
+                let
+                  val v = freshInlineableVar (dict, typPrefix)
+                  val substTy = fn ty => CU.substTy (t, CH.Tvar v, substTy ty)
+                in
+                  CH.Lam (CH.Tb (v, k), saturate0 (substTy, CH.Appt (e, CH.Tvar v), ty))
+                end
+              | CH.Tapp (t1, t2) =>
+                (case t1
+                  of CH.Tapp (CH.Tcon a, t3) => 
+                    if a = CU.tcArrow 
+                      then let 
+                             val v = freshInlineableVar (dict, varPrefix)
+                             val t3 = substTy t3
+                           in
+                             CH.Lam (CH.Vb (v, t3), saturate0 (substTy, CH.App (e, CH.Var (NONE, v)), t2))
+                           end
+                      else e
+                   | _ => e)
+              | _ => e
+      in
+        saturate0 (fn ty => ty, e, ty)
+      end
 
   fun saturateWrapper (dict, e, ty)
     = let
@@ -375,8 +382,6 @@ struct
     = (case typ
         of CH.Data (name, tbs, cdefs) => 
           let
-            (* make some fresh type variables *)
-            val tbs = List.map (tbs, fn (t, k) => (typPrefix ^ t, k))
             val typ = List.fold (tbs, CH.Tcon name, fn ((t, _), ty) => CH.Tapp (ty, CH.Tvar t))
             fun insertCon (CH.Constr (con, tbs', tys), vdict) =
                 let 
