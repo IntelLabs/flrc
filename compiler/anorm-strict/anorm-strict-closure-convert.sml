@@ -742,6 +742,7 @@ struct
      val config : env -> Config.t = fn env => env
      val variableBind       : (state * env * ANormStrict.var -> env) option = SOME variableBind'
      val variableUse        : (state * env * ANormStrict.var -> unit) option = NONE
+     val analyzeTy          : (state * env * ANormStrict.ty -> unit) option  = NONE
      val analyzeExp         : (state * env * ANormStrict.exp -> unit) option = NONE
      val analyzeAlt         : (state * env * ANormStrict.alt -> unit) option = NONE
      val analyzeVDef        : (state * env * ANormStrict.vDef -> unit) option = SOME analyzeVDef'
@@ -1256,14 +1257,14 @@ struct
       in (p, fa)
       end
 
-  val stater = fn _ => Layout.str "No stats yet"
+  val stater = ANormStrictStats.layout (ANormStrictStats.O {id = SOME passname})
 
   val description = {name        = passname,
                      description = "ANormStrict closure converter",
                      inIr        = { printer = Utils.Function.flipIn ASL.layout,
                                      stater  = stater },
                      outIr       = { printer = fn ((p, fa), config) => ASL.layout (config, p),
-                                     stater  = stater },
+                                     stater  = fn ((p, fa), config) => stater (p, config) },
                      mustBeAfter = [],
                      stats       = Click.stats}
 

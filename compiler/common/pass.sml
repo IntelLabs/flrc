@@ -34,6 +34,17 @@ sig
    *)
   val mkLevelDebug : string * string * string * int * (t -> bool) -> (Config.Debug.debug * (t -> bool)) 
 
+  val phase : {measure : 'state * t  * string * 'object -> unit,
+               print   : 'state * t * string * 'object -> unit,
+               log     : t * string -> unit} 
+              -> {name       : string,
+                  doIt       : 'state * t * 'object -> 'object,
+                  measureItP : t -> bool,
+                  printItP   : t -> bool,
+                  skipItP    : t -> bool,
+                  statItP    : t -> bool} 
+              -> 'state * t * 'object -> 'object
+
 end;
 
 structure PassData :> PASS_DATA =
@@ -126,6 +137,29 @@ struct
             end
       in (debugD, debug)
       end
+
+  val phase =
+   fn {measure, print, log} => 
+      fn {name, doIt, measureItP, skipItP, printItP, statItP} => 
+         fn (state, pd, object) => 
+            if skipItP pd then
+              let
+                val () = log (pd, "Skipping "^name)
+              in object
+              end
+            else
+              let
+                val pd = push pd
+                val () = log (pd, "Doing "^name)
+                val s = Time.now ()
+                val object = doIt (state, pd, object)
+                val e = Time.toString (Time.- (Time.now (), s))
+                val () = log (pd, "Done with "^name^" in "^e^"s")
+                val () = if statItP pd then Stats.report (getStats pd) else ()
+                val () = if measureItP pd then measure (state, pd, name, object) else ()
+                val () = if printItP pd then print (state, pd, name, object) else ()
+              in object
+              end
 
 end;
 

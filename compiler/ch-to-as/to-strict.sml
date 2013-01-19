@@ -539,7 +539,7 @@ struct
                      inIr        = { printer = layoutLazy,
                                      stater  = layoutLazy },
                      outIr       = { printer = layoutStrict,
-                                     stater  = layoutStrict },
+                                     stater  = ANormStrictStats.layout (ANormStrictStats.O {id = SOME passname}) },
                      mustBeAfter = [],
                      stats       = []}
 

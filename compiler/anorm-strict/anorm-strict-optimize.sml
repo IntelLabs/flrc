@@ -9,6 +9,7 @@ end
 structure ANormStrictOptimize :> ANORM_STRICT_OPTIMIZE = 
 struct
   structure AS = ANormStrict
+  structure ANSS = ANormStrictStats
   structure ASFV = ANormStrictFreeVars
   structure GPT = GHCPrimType
   structure GPO = GHCPrimOp
@@ -120,7 +121,10 @@ struct
    fn (tag, description, level) => PD.mkLogFeature (passname, passname^":"^tag, description, level)
 
   val (statPhasesF, statPhases) = 
-      mkLogFeature ("stat-phases", "Show stats between phases", 3)
+      mkLogFeature ("stat-phases", "Show stats between phases", 2)
+
+  val (measurePhasesF, measurePhases) = 
+      mkLogFeature ("measure-phases", "Measure IR between phases", 2)
 
   val (skipOptimize1F, skipOptimize1) = 
       mkFeature ("skip-optimize1", "Skip the optimize1 phase")
@@ -137,7 +141,9 @@ struct
   val (noSinkMainF, noSinkMain) = 
       mkFeature ("no-sink-main", "Don't sink into main")
 
-  val features = [evalFreesF, noSinkMainF, skipOptimize1F, skipStrictnessF, skipUncurryF, statPhasesF]
+  val features = [evalFreesF, measurePhasesF, noSinkMainF, 
+                  skipOptimize1F, skipStrictnessF, skipUncurryF, 
+                  statPhasesF]
 
   datatype liveStatusS = LsLive | LsUses of liveStatus List.t
   withtype liveStatus = liveStatusS ref
@@ -2319,7 +2325,7 @@ struct
           end
 
       val rec doTy = 
-       fn (state, env, ty) => 
+       fn (state, env, ty) =>
           let
             val doTy' = fn ty => doTy (state, env, ty)
             val ty = 
@@ -3131,30 +3137,37 @@ struct
   end  (* structure Uncurry *)
 
   val phase = 
-   fn (f, skip, show, name) =>
-   fn (stm, pd, m) => 
-      if skip pd then
-        let
-          val () = Chat.log1 (pd, "Skipping "^name)
-        in m
-        end
-      else
-        let
-          val pd = PD.push pd
-          val () = Chat.log1 (pd, "Doing "^name)
-          val s = Time.now ()
-          val m = f (stm, pd, m)
-          val e = Time.toString (Time.- (Time.now (), s))
-          val () = Chat.log1 (pd, "Done with "^name^" in "^e^"s")
-          val () = if statPhases pd then Stats.report (PD.getStats pd) else ()
-          val () = if show pd then showResults (stm, pd, name, m) else ()
-        in m
-        end
+      let
+        val opts = fn name => ANSS.O {id = SOME name}
+        val stdOut = Pervasive.TextIO.stdOut
+        val measure = 
+         fn (stm, pd, name, m) => 
+            let
+              val st = IM.finish stm
+              val p = (m, st)
+              val () = ANSS.program (PD.getConfig pd, opts name, p, stdOut)
+            in ()
+            end
+        val print = showResults
+        val log = Chat.log1
+      in PD.phase {measure = measure, print = print, log = log}
+      end
 
-  val uncurry = phase (Uncurry.doModule, skipUncurry, showUncurry, "Uncurry")
-  val optimize1 = phase (Optimize1.doModule, skipOptimize1, showOptimize1, "Optimize1")
-  val strictness = phase (Strictness.doModule, skipStrictness, showStrictness, "Strictness")
+  val uncurry    = 
+      phase {name = "Uncurry", 
+             doIt = Uncurry.doModule, printItP = showUncurry, measureItP = measurePhases,
+             statItP = statPhases, skipItP = skipUncurry}
 
+  val optimize1  = 
+      phase {name = "Optimize1", 
+             doIt = Optimize1.doModule, printItP = showOptimize1, measureItP = measurePhases,
+             statItP = statPhases, skipItP = skipOptimize1}
+            
+  val strictness = 
+      phase {name = "Strictness", 
+             doIt = Strictness.doModule, printItP = showStrictness, measureItP = measurePhases,
+             statItP = statPhases, skipItP = skipStrictness}
+            
   (* XXX should factor this out of here and mil compile --leaf *)
   val opts = 
       [
@@ -3347,7 +3360,7 @@ struct
       in (m, st)
       end
 
-  val stater = fn _ => Layout.str "No stats yet"
+  val stater = ANormStrictStats.layout (ANormStrictStats.O {id = SOME passname})
 
   val description = {name        = passname,
                      description = "Cleanup and optimize ANorm",

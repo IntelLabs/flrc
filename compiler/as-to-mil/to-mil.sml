@@ -930,10 +930,11 @@ struct
       end
 
   val layoutOut = Utils.Function.flipIn ANormStrictLayout.layout
+  val statIn = fn ((p, fa), config) => ANormStrictStats.layout (ANormStrictStats.O {id = SOME passname}) (p, config)
   val description = {name        = passname,
                      description = "Strict A-Normal Form to Mil",
                      inIr        = { printer = fn ((p, fa), config) => ANormStrictLayout.layout (config, p),
-                                     stater  = fn _ => Layout.str "No stats yet"},
+                                     stater  = statIn},
                      outIr       = MilUtils2.irHelpers,
                      mustBeAfter = [],
                      stats       = []}

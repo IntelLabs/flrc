@@ -10,6 +10,7 @@ local
         anorm-strict-utils.sml
         anorm-strict-rewrite.sml
         anorm-strict-analyze.sml
+        stats.sml
         anorm-strict-free-vars.sml
         anorm-strict-clone.sml
         anorm-strict-closure-convert.sml
@@ -19,4 +20,5 @@ in
         structure ANormStrictClosureConvert
         structure ANormStrictLayout
         structure ANormStrictOptimize
+        structure ANormStrictStats
 end

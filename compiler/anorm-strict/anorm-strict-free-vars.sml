@@ -57,6 +57,7 @@ struct
                         val config = fn c => c
                         val variableBind  = SOME varBind
                         val variableUse = SOME varUse
+                        val analyzeTy = NONE
                         val analyzeExp = NONE
                         val analyzeAlt = NONE
                         val analyzeVDef = NONE
