@@ -31,6 +31,13 @@ struct
 
   fun emptyDict () : dict = { vdict = QD.empty, tdict = QD.empty, wrapper = ref SD.empty, varCount = ref 0 }
 
+  (* make uniform newtype coercion prefix in the name of constructor witness *)
+  fun fixCoercionPrefix (con as (mname, str)) = 
+      if String.hasPrefix (str, {prefix="NTCoZC"}) orelse
+         String.hasPrefix (str, {prefix="TFCoZC"})
+        then (mname, "CoZC" ^ String.dropPrefix (str, 6))
+        else con
+
   fun insertVar ({ vdict, tdict, wrapper, varCount }, v, vty) 
     = { vdict = QD.insert (vdict, v, vty), tdict = tdict, wrapper = wrapper, varCount = varCount }
 
@@ -108,7 +115,7 @@ struct
                    | _ => ty)
                | SOME (con, s) => 
                 let 
-                  (* val () = print ("sep returns con = " ^ CL.qNameToString con ^ "\n")  *)
+                  val con = fixCoercionPrefix con
                   val s  = List.map (s, fn t => cast (false, t))
                 in
                   case QD.lookup (tdict, con)
@@ -356,7 +363,9 @@ struct
             val dict = List.fold (vbs, dict, fn ((v, vty), dict) => insertVar (dict, (NONE, v), vty))
             val (e, _) = normExp (cfg, dict, e)
           in 
-            CH.Acon (con, tbs, vbs, e)
+            if con = CP.dcEq  (* match type on cases over Eq constructor *)
+              then CH.Acon (con, List.map (vbs, fn (v, _) => (v, CH.Kopen)), [], e)
+              else CH.Acon (con, tbs, vbs, e)
           end
         | CH.Alit (l, e) => CH.Alit (l, #1 (normExp (cfg, dict, e)))
         | CH.Adefault e  => CH.Adefault (#1 (normExp (cfg, dict, e))))
@@ -399,6 +408,7 @@ struct
           let
             (* val tdict = QD.insert (tdict, name, typ) *)
             (* tcon seems to be only used in casting *)
+            val tcon = fixCoercionPrefix tcon
             val tdict = QD.insert (tdict, tcon, typ)
           in
             { vdict = vdict, tdict = tdict, wrapper = wrapper, varCount = varCount }
@@ -406,10 +416,21 @@ struct
 
   fun doModule (cfg, CH.Module (name, tdefs, vdefgs))
     = let 
-        (* Prepare a few built-in definitions, e.g., realWorld# : State# RealWorld# *)
+        (* Prepare a few built-in definitions *)
+        (* realWorld# : State# RealWorld# *)
         val tdefs  = CH.Data (CP.tcStatezh, [("s", CH.Klifted)], [CH.Constr (CP.tcRealWorld, [], [])]) :: tdefs
         val tdefs  = CH.Data (CP.tcRealWorld, [], []) :: tdefs
         val vdefgs = CH.Nonrec (CH.Vdef (CP.vRealWorldzh, CP.tRWS, CH.Dcon CP.tcRealWorld)) :: vdefgs
+        (* remove existing datatype definition for ~ (z7eU) *)
+        val tdefs  = List.keepAll (tdefs, 
+                       fn CH.Data ((_, s), _, _) => s <> "z7eU"
+                        | _ => true)
+        (* 
+         * Simplify it to: data z7eU  = forall k a b . Eq# (forall c . c)
+         * Note: this breaks 7.4, and only works for GHC 7.6 or above.
+         *)
+        val tdefs  = CH.Data (CP.tcEq, List.map (["k","a","b"], fn s => (s, CH.Kopen)),
+                       [CH.Constr (CP.dcEq, [("c", CH.Kopen)], [])]) :: tdefs
         val dict   = List.fold (tdefs, emptyDict (), doTDef)
         fun oneVDefg (vdefg, (vdefgs, dict))
           = let 

@@ -471,6 +471,8 @@ struct
   val tThreadIdzh  : ty = Tcon (primId "ThreadId#")
   val tLiftedzh    : ty = Tcon (primId "*")
 
+  val tcEq        : tcon qualified = (SOME CHU.typeMname, "z7eU")
+  val dcEq        : tcon qualified = (SOME CHU.typeMname, "Eqzh")
   val tcEqzh      : tcon qualified = pvz "z7eU"
   val tcWeakPtrzh : tcon qualified = pvz "Weak"
   val tWeakPtrzh  : ty -> ty       = fn t => Tapp (Tcon tcWeakPtrzh, t)
