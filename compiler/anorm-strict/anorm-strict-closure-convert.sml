@@ -686,7 +686,7 @@ struct
        List.fold (vdgs, context, fn (vdg, context) => doVDefG (state, env, context, vdg))
 
    val doModule : State.t * Env.t * AS.module -> unit = 
-    fn (state, env, AS.Module (main, vdgs)) => 
+    fn (state, env, AS.Module (tm, main, vdgs)) => 
        let
          val context = Context.new NONE
          val context = doVDefGs (state, env, context, vdgs)
@@ -1148,10 +1148,10 @@ struct
                     val {frees, extras, ...} = getFunctionFvs (state, env, name)
                     val extraTs = List.map (VS.toList extras, fn v => variableTy (state, env, v))
                     val ty = 
-                        case ty
+                        case TypeRep.repToBase ty
                          of AS.Arr (ts, rts, effect) => AS.Arr (ts @ extraTs, rts, effect)
                           | _                => fail ("doVDef0", "Vfun typ is not an arrow typ")
-                    val () = IM.variableSetInfo (State.getStm state, name, (ty, AS.VkLocal))
+                    val () = IM.variableSetInfo (State.getStm state, name, (TypeRep.newRep_ ty, AS.VkLocal))
                   in ()
                   end
                 | AS.Vthk _ => ()
@@ -1234,12 +1234,12 @@ struct
           val stm = IM.fromExistingAll st
           val state = State.mk stm
           val env = Env.mk (pd, fvInfo)
-          val AS.Module (v, vdgs) = m
+          val AS.Module (tm, v, vdgs) = m
           val doOne = 
            fn vdg => doVDefg (state, env, vdg)
           val vdgs = List.map (vdgs, doOne)
           val v = doVar (state, env, v)
-          val m = AS.Module (v, vdgs)
+          val m = AS.Module (tm, v, vdgs)
           val () = markGlobals (globals, stm)
           val st = IM.finish stm
           val p = (m, st)

@@ -31,20 +31,22 @@ struct
   type strictness = CoreHs.strictness
   type effect = Effect.set
   type effectful = bool
+  type name  = Identifier.name
   type var   = Identifier.variable
-  type con   = Identifier.name * int
+  type con   = name * int
   type lit   = CoreHs.coreLit
   type mname = string
   type pname = string
   type cc    = CoreHs.callconv
   type 'a primTy = 'a GHCPrimType.primTy
 
-  datatype ty 
+  datatype ty_
       = Data                             (* lifted type   *)
-      | Prim  of ty GHCPrimType.primTy   (* unlifted type *)
+      | Prim  of ty primTy               (* unlifted type *)
       | Arr   of ty * ty * effect option (* function type *)
       | Sum   of (con * (ty * strictness) list) list   (* Sum type *)
-      | Tname of var                     (* named type (whose definition can be looked up) *)
+
+  withtype ty = ty_ TypeRep.rep
 
   datatype vBind = VbSingle of var * ty * strictness   (* single binding, may introduce thunk if not strict *)
                  | VbMulti of (var * ty) List.t * effectful (* multiple return binding, no thunk introduced *)
@@ -76,12 +78,38 @@ struct
 
   type tDef = var * ty 
 
-  type im = ty Identifier.symbolTable
+  type st = ty Identifier.symbolTable
+
+  type tyMgr = ty_ TypeRep.manager
 
   datatype module 
-      = Module of var * vDefg list 
+      = Module of tyMgr * var * vDefg list 
 
-  type t = module * im
+  type t = module * st 
+
+  val hashTy_ : ty Identifier.SymbolInfo.t -> ty_ TypeRep.baseHash
+    = fn st => fn (tm, t) => 
+      let
+        fun hashRep t = TypeRep.hashRep (tm, t)
+      in
+        case t 
+          of Data   => "D"
+           | Prim p => 
+            let
+              val l = GHCPrimTypeLayout.layoutPrimTy (Layout.str o hashRep) p
+            in
+              "P(" ^ Layout.toString l ^ ")"
+            end
+           | Arr (t1, t2, _) => "A(" ^ hashRep t1 ^ "," ^ hashRep t2 ^ ")"
+           | Sum arms => 
+            let
+              fun doTys tys = List.toString hashRep tys
+              fun doArm ((n, _), tys) 
+                = Identifier.SymbolInfo.nameString (st, n) ^ doTys (List.map (tys, #1))
+            in
+              "S" ^ List.toString doArm arms
+            end
+      end
 end
 
 signature ANORM_LAZY_LAYOUT =
@@ -115,20 +143,22 @@ struct
       |  [x] => [f x]
       |  l   => map (fn v => L.seq [f v, L.str ";"]) l
 
-  fun layoutTy im 
-    = fn Data         => L.str "%data"
-      |  Tname v      => IS.layoutVariable (v, im)
-      |  Prim ty      => L.seq [L.str "%primtype ", GHCPrimTypeLayout.layoutPrimTy (L.paren o layoutTy im) ty]
-      |  Arr (t1, t2, effect) => L.mayAlign [layoutTy im t1, 
-                                  L.seq [ UO.dispatch (effect, Effect.layout, fn () => L.empty), L.str "-> ", layoutTy im t2]]
-      |  Sum cons     =>
-         let 
-           fun layoutTy1 (ty, strict) = 
-               if strict then L.seq [L.str "!", layoutTy im ty] else layoutTy im ty
-           fun layCon ((con, _), tys) = L.seq [IS.layoutName (con, im), L.str " ", angleList (map layoutTy1 tys)]
-         in
-           L.sequence ("{", "}", ",") (List.map (cons, layCon))
-         end
+  and layoutTy im 
+    = fn ty =>
+        (case TypeRep.repToBase ty
+          of Data         => L.str "%data"
+          |  Prim ty      => L.seq [L.str "%primtype ", GHCPrimTypeLayout.layoutPrimTy (L.paren o layoutTy im) ty]
+          |  Arr (t1, t2, effect) => L.mayAlign [layoutTy im t1, 
+                                      L.seq [ UO.dispatch (effect, Effect.layout, fn () => L.empty), 
+                                              L.str "-> ", layoutTy im t2 ]]
+          |  Sum cons     =>
+             let 
+               fun layoutTy1 (ty, strict) = 
+                   if strict then L.seq [L.str "!", layoutTy im ty] else layoutTy im ty
+               fun layCon ((con, _), tys) = L.seq [IS.layoutName (con, im), L.str " ", angleList (map layoutTy1 tys)]
+             in
+               L.sequence ("{", "}", ",") (List.map (cons, layCon))
+             end)
 
   fun layoutTDef im (v, t) = L.seq [L.str "%data ", IS.layoutVariable (v, im), L.str  " = ", layoutTy im t]
 
@@ -216,7 +246,7 @@ struct
                                  , L.str "}"]
       |  Nonrec vdef => layoutVDef im vdef
 
-  fun layoutModule (Module (_, vdefgs), im) = 
+  fun layoutModule (Module (_, _, vdefgs), im) = 
       let
         val variables = I.listVariables im
         val im = IS.SiTable im

@@ -243,7 +243,9 @@ struct
 
   datatype state = S of {fns  : fnInfo ref VD.t ref,
                          stm  : AS.symbolTableManager,
-                         vars : (liveStatus * useCount) VD.t ref}
+                         vars : (liveStatus * useCount) VD.t ref,
+                         tm   : AS.tm}
+                       
 
   datatype env = E of {curFns  : AS.var List.t,
                        current : liveStatus, 
@@ -253,12 +255,13 @@ struct
 
   val ((stateSetFns, stateGetFns),
        (stateSetStm, stateGetStm),
-       (stateSetVars, stateGetVars)) = 
+       (stateSetVars, stateGetVars),
+       (stateSetTm, stateGetTm)) =
         let
-          val r2t = fn S {fns, stm, vars} => (fns, stm, vars)
-          val t2r = fn (fns, stm, vars) => 
-                       S {fns = fns, stm = stm, vars = vars}
-        in FunctionalUpdate.mk3 (r2t, t2r)
+          val r2t = fn S {fns, stm, vars, tm} => (fns, stm, vars, tm)
+          val t2r = fn (fns, stm, vars, tm) => 
+                       S {fns = fns, stm = stm, vars = vars, tm = tm}
+        in FunctionalUpdate.mk4 (r2t, t2r)
         end
 
   val ((envSetCurFns, envGetCurFns),
@@ -650,13 +653,13 @@ struct
 
   val typeToReturnTypes = 
    fn (state, env, t) => 
-      (case t 
+      (case TypeRep.repToBase t 
         of AS.Arr (_, tys, _) => tys
          | _               => fail ("typeToReturnType", "Not a function type"))
 
   val unboxTy = 
    fn (state, env, t) => 
-      (case t 
+      (case TypeRep.repToBase t 
         of AS.Thunk t => t
          | _          => fail ("unboxTy", "Not a thunk type"))
 
@@ -933,11 +936,11 @@ struct
     val doModule : state * env * AS.module -> unit =
      fn (state, env, m) => 
         let
-          val AS.Module (v, vdgs) = m
+          val AS.Module (tm, v, vdgs) = m
           (* val () = addVars1 (state, env, tds) *)
           val () = List.foreach (vdgs, fn vdg => let val _ = doVDefg (state, env, vdg) in () end)
           val () = useVar (state, env, v)
-        in()
+        in ()
         end
 
     val finalize : state * env -> unit = 
@@ -951,9 +954,9 @@ struct
         end
 
     val census : AS.symbolTableManager * PD.t * AS.module -> (state * env) = 
-     fn (stm, pd, m) =>
+     fn (stm, pd, m as AS.Module (tm, _, _)) =>
         let
-          val state = S {fns = ref VD.empty, stm = stm, vars = ref VD.empty}
+          val state = S {fns = ref VD.empty, stm = stm, vars = ref VD.empty, tm = tm}
           val env = E {current = ref LsLive,
                        curFns   = [],
                        control = C {uncurry = false},
@@ -1461,7 +1464,7 @@ struct
     val sinkMain : PD.t * AS.module -> AS.module =
      fn (pd, m) => 
         let
-          val AS.Module (mainV, vdgs) = m
+          val AS.Module (tm, mainV, vdgs) = m
           val rec loop = 
            fn (vdgs, rbnds) => 
               (case vdgs
@@ -1473,7 +1476,7 @@ struct
                        val mainF = AS.Nonrec (AS.Vfun {name = f, ty = ty, escapes = true, recursive = false,
                                                        fvs = [], args = binds, body = mkLet (rbnds, e)})
                        val vdgs = [mainF, main]
-                     in AS.Module (mainV, vdgs)
+                     in AS.Module (tm, mainV, vdgs)
                      end
                    else
                      m
@@ -1487,7 +1490,7 @@ struct
           val m = if noSinkMain pd then m else sinkMain (pd, m) 
           val (state, env) = Census.census (stm, pd, m)
           val () = Census.show (state, env)
-          val AS.Module (v, vdgs) = m
+          val AS.Module (tm, v, vdgs) = m
           val doOne = 
            fn (vdg, (env, vdgs)) => 
               let
@@ -1498,7 +1501,7 @@ struct
           val v = doVar (state, env, v)
           val vdgs = List.rev vdgs
           val vdgs = filterVDefgs (state, env, vdgs)
-          val m = AS.Module (v, vdgs)
+          val m = AS.Module (tm, v, vdgs)
         in m
         end
 
@@ -1526,7 +1529,8 @@ struct
                            strict  : VS.t ref, 
                            fns     : fnInfo ref VD.t ref,
                            sums    : sumInfo ref ND.t ref,
-                           stm     : AS.symbolTableManager}
+                           stm     : AS.symbolTableManager,
+                           tm      : AS.tm}
 
     datatype env = E of {pd      : PD.t,
                          evals   : AS.var VD.t,
@@ -1538,12 +1542,15 @@ struct
          (stateSetStrict, stateGetStrict),
          (stateSetFns, stateGetFns),
          (stateSetSums, stateGetSums),
-         (stateSetStm, stateGetStm)) = 
+         (stateSetStm, stateGetStm),
+         (stateSetTm, stateGetTm)) = 
         let
-          val r2t = fn S {escapes, used, strict, fns, sums, stm} => (escapes, used, strict, fns, sums, stm)
-          val t2r = fn (escapes, used, strict, fns, sums, stm) => 
-                       S {escapes = escapes, used = used, strict = strict, fns = fns, sums = sums, stm = stm}
-        in FunctionalUpdate.mk6 (r2t, t2r)
+          val r2t = fn S {escapes, used, strict, fns, sums, stm, tm} => 
+                       (escapes, used, strict, fns, sums, stm, tm)
+          val t2r = fn (escapes, used, strict, fns, sums, stm, tm) => 
+                       S {escapes = escapes, used = used, strict = strict, 
+                          fns = fns, sums = sums, stm = stm, tm = tm}
+        in FunctionalUpdate.mk7 (r2t, t2r)
         end
 
     val ((envSetPd, envGetPd),
@@ -1881,18 +1888,18 @@ struct
         end
 
     val unboxTy = 
-     fn (state, env, t) => 
-        (case t 
+     fn (state, env, v, t) => 
+        (case TypeRep.repToBase t 
           of AS.Thunk t => t
            | _          =>
              let
                val l = ASL.ty (getConfig (state, env), getSi (state, env), t)
                val s = L.toString l
-             in fail ("unboxTy", "Not a thunk type: "^s)
+             in fail ("unboxTy", IM.variableString (getStm (state, env), v) ^ " is not a thunk type: "^s)
              end)
 
     val unboxedTy = 
-     fn (state, env, v) => unboxTy (state, env, variableTy (state, env, v))
+     fn (state, env, v) => unboxTy (state, env, v, variableTy (state, env, v))
 
     val setEvalForVariable = 
      fn (state, env, v, uv) => envSetEvals (env, VD.insert (envGetEvals env, v, uv))
@@ -2233,7 +2240,7 @@ struct
       val doModule : state * env * AS.module -> unit =
        fn (state, env, m) => 
         let
-          val AS.Module (v, vdgs) = m
+          val AS.Module (tm, v, vdgs) = m
           val e = mkLet (List.rev vdgs, AS.Return [v])
           val strictness = doExp (state, env, e)
           val () = show (state, env)
@@ -2327,9 +2334,10 @@ struct
       val rec doTy = 
        fn (state, env, ty) =>
           let
+            val tm = stateGetTm state
             val doTy' = fn ty => doTy (state, env, ty)
             val ty = 
-                case ty
+                case TypeRep.repToBase ty
                  of AS.Boxed => AS.Boxed
                   | AS.Prim pt => AS.Prim (GPT.mapPrimTy (pt, doTy'))
                   | AS.Arr (ts, rts, effect) => AS.Arr (List.map (ts, doTy'), List.map (rts, doTy'), effect)
@@ -2345,9 +2353,9 @@ struct
                       val arms = List.map (arms, doArm)
                     in AS.Sum arms
                     end
-                  | AS.Tname t => AS.Tname t
                   | AS.Thunk t => AS.Thunk (doTy' t)
-          in ty
+          in 
+            TypeRep.newRep (tm, ty)
           end
 
 
@@ -2492,12 +2500,12 @@ struct
                                val ubx = List.map (ubx, fn v => unboxedTy (state, env, v))
                                val ts = std @ ubx 
                                val ty = 
-                                   case doTy (state, env, ty)
+                                   case TypeRep.repToBase (doTy (state, env, ty))
                                     of AS.Arr (_, rt, effect) => AS.Arr (ts, rt, effect)
                                      | _              => fail ("doVDef", "Not a function type")
                              in ty
                              end
-                         val (env, fNew) = mkFnVariable (state, env, name, ty)
+                         val (env, fNew) = mkFnVariable (state, env, name, TypeRep.newRep_ ty)
                        in env
                        end
                      | NONE => env)
@@ -2551,7 +2559,7 @@ struct
                               if escapes then
                                 let
                                   val vs = cloneVariables (state, env, vs)
-                                  val effect = case ty
+                                  val effect = case TypeRep.repToBase ty
                                                  of AS.Arr (_, _, efx) => efx
                                                   | _ => Effect.Control (* TODO: shall we error here? *)
                                   val body = doExp (state, env, AS.App (name, vs, effect)) 
@@ -2693,7 +2701,7 @@ struct
      fn (state, env, m) => 
         let
           val () = doStm (state, env, getStm (state, env))
-          val AS.Module (v, vdgs) = m
+          val AS.Module (tm, v, vdgs) = m
           val doOne = 
            fn (vdg, (env, vdgs)) => 
               let
@@ -2702,21 +2710,22 @@ struct
               end
           val (env, vdgs) = List.fold (vdgs, (env, []), doOne)
           val vdgs = List.rev vdgs
-          val m = AS.Module (v, vdgs)
+          val m = AS.Module (tm, v, vdgs)
         in m
         end
 
     end (* structure Rewrite *)
 
     val doModule : AS.symbolTableManager * PD.t * AS.module -> AS.module =
-     fn (stm, pd, m) => 
+     fn (stm, pd, m as AS.Module (tm, _, _)) => 
         let
           val state = S {fns = ref VD.empty, 
                          sums = ref ND.empty, 
                          stm = stm, 
                          escapes = ref VS.empty, 
                          strict = ref VS.empty,
-                         used = ref VS.empty}
+                         used = ref VS.empty,
+                         tm = tm}
           val env = E {pd = pd, evals = VD.empty, inScope = VS.empty, newFns = VD.empty}
           val () = Analyze.doModule (state, env, m)
           val m = Rewrite.doModule (state, env, m)
@@ -2951,11 +2960,13 @@ struct
           val uncurryTyp = 
            fn (t, lambdas) => 
               let
+                val tm = stateGetTm state
                 val rec loop = 
                  fn (t, ll, acc) => 
-                    (case (t, ll)
+                    (case (TypeRep.repToBase t, ll)
                       of (_            , (f, t, binds)::ll) => loop (t, ll, List.appendRev (binds, acc))
-                       | (AS.Arr (_, t, effect), [])        => AS.Arr (List.revMap (acc, #2), t, effect)
+                       | (AS.Arr (_, t, effect), [])        => 
+                          TypeRep.newRep (tm, AS.Arr (List.revMap (acc, #2), t, effect))
                        | (_            , [])                => 
                          fail ("uncurryTyp", "Inner lambda doesn't have lambda type"))
               in loop (t, lambdas, [])
@@ -3113,13 +3124,13 @@ struct
     val doModule : AS.symbolTableManager * PD.t * AS.module -> AS.module =
      fn (stm, pd, m) => 
         let
-          val state = S {fns = ref VD.empty, stm = stm, vars = ref VD.empty}
+          val AS.Module (tm, v, vdgs) = m
+          val state = S {fns = ref VD.empty, stm = stm, vars = ref VD.empty, tm = tm}
           val env = E {curFns = [],
                        current = ref LsLive, 
                        control = C {uncurry = true},
                        defs = VD.empty,
                        pd = pd}
-          val AS.Module (v, vdgs) = m
           val doOne = 
            fn (vdg, (env, vdgs)) => 
               let
@@ -3130,7 +3141,7 @@ struct
           val v = doVar (state, env, v)
           val vdgs = List.rev vdgs
           val vdgs = filterVDefgs (state, env, vdgs)
-          val m = AS.Module (v, vdgs)
+          val m = AS.Module (tm, v, vdgs)
         in m
         end
 

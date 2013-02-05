@@ -312,7 +312,7 @@ struct
      fn (state, env, m) => 
         let
           val doIt = 
-           fn (state, env, AS.Module (v, vdgs))=> 
+           fn (state, env, AS.Module (tm, v, vdgs))=> 
               let
                 val fold = 
                  fn (vdg, env) => 
@@ -322,7 +322,7 @@ struct
                     end
                 val (vdgs, env) = Utils.List.mapFoldl (vdgs, env, fold)
                 val v = doVar (state, env, v)
-              in AS.Module (v, vdgs)
+              in AS.Module (tm, v, vdgs)
               end
         in callClientCode (clientModule, doIt, state, env, m)
         end

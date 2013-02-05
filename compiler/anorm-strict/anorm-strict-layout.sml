@@ -122,9 +122,8 @@ struct
 
   val rec ty = 
    fn (env, vTy) =>
-      (case vTy
+      (case TypeRep.repToBase vTy
         of ANS.Boxed        => L.str "%boxed"
-         | ANS.Tname v      => variable (env, v)
          | ANS.Thunk t      => L.seq [L.str "Thunk(", ty (env, t), L.str ")"] 
          | ANS.Prim t       => L.seq [L.str "%primtype ", PTL.layoutPrimTy (fn t => ty (env, t)) t]
          | ANS.Arr (t1, t2, effect) => L.mayAlign [angleList (tys (env, t1)) , 
@@ -136,6 +135,7 @@ struct
            in
              LU.braceSeq (List.map (cons, layCon))
            end)
+
   and rec tys = 
    fn (env, tys) => List.map (tys, fn t => ty (env, t))
 
@@ -252,7 +252,7 @@ struct
   val module =
       fn (env, m) => 
          (case m
-           of ANS.Module (v, vdefgs)=>
+           of ANS.Module (_, v, vdefgs)=>
               L.align [ L.str "%module"
                       , indent (L.align (semiMap (env, vdefgs, vDefg)))
                       , L.seq [L.str "%entry ", variable (env, v)]])

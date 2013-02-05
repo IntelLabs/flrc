@@ -2,6 +2,7 @@
 (*
  * Translation from ANormLazy.t to AbsCore.t.
  *)
+ (* FIXME: TypeRef.new_ *)
 signature ANORM_LAZY_TO_ABS_CORE =
 sig
   type t
@@ -32,8 +33,10 @@ struct
   val fail = fn (f, msg) => Fail.fail (passname, f, msg)
 
   val resultTy = 
-    fn AL.Arr (t1, t2, _) => t2
-     | _ => AL.Data
+    fn ty =>
+      (case TypeRep.repToBase ty
+        of AL.Arr (t1, t2, _) => t2
+         | _ => TypeRep.newRep_ AL.Data)
 
   val rec doExp =
    fn (im, e, ty) =>
@@ -46,12 +49,12 @@ struct
              if List.isEmpty vs then AC.Const Dom.top else AC.GLB vs
            end
          | AL.ConApp ((c, _), vs) => 
-           (case ty
+           (case TypeRep.repToBase ty
              of AL.Sum [(_, _)] => AC.Con (c, vs) (* preserve only sum type with single constructors *)
               | _ => AC.Const Dom.top)
          | AL.Multi vs => AC.Multi vs  
          | AL.ExtApp (p, cc, f, ty, vs) => if List.isEmpty vs then AC.Const Dom.top else AC.GLB vs
-         | AL.App (e, v) => AC.App (doExp (im, e, AL.Arr (IM.variableInfo (im, v), ty, NONE)), v)
+         | AL.App (e, v) => AC.App (doExp (im, e, TypeRep.newRep_ (AL.Arr (IM.variableInfo (im, v), ty, NONE))), v)
          | AL.Lam ((v, vty, strictness), e) => AC.Lam (v, doExp (im, e, resultTy ty)) (* ignore existing strictness for the moment *)
          | AL.Let (vdefg, e) => AC.Let (doVDefg (im, vdefg), doExp (im, e, ty))
          | AL.Case (e, (v, vty), ty, alts) =>
@@ -89,7 +92,7 @@ struct
          | (AL.Vdef (AL.VbMulti (vtys, effectful), e)) => 
           let
             val (vs, ts) = List.unzip vtys
-            val ty = AL.Prim (GHCPrimType.Tuple ts)
+            val ty = TypeRep.newRep_ (AL.Prim (GHCPrimType.Tuple ts)) 
           in
             AC.Vdef (AC.VbMulti (vs, effectful), doExp (im, e, ty))
           end)
@@ -100,7 +103,7 @@ struct
         of AL.Rec vdefs => AC.Rec (List.map(vdefs, fn def => doVDef (im, def)))
          | AL.Nonrec vdef => AC.Nonrec (doVDef (im, vdef)))
 
-  fun doModule (AL.Module (main, vdefgs), im) =
+  fun doModule (AL.Module (tm, main, vdefgs), im) =
       let 
         val im = IM.fromExistingAll im
         val vdefgs = List.map (vdefgs, fn vdefg => doVDefg (im, vdefg))

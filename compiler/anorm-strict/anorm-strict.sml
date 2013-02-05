@@ -13,6 +13,7 @@
 structure ANormStrict =
 struct
   type effect = Effect.set
+  type name  = Identifier.name
   type var   = Identifier.variable
   type con   = Identifier.name * int
   type lit   = CoreHs.coreLit
@@ -21,13 +22,14 @@ struct
   type pname = string
   type 'a primTy = 'a GHCPrimType.primTy
 
-  datatype ty 
+  datatype ty_
       = Boxed                               (* unknown boxed type *)
       | Prim  of ty primTy                  (* primitive type *)
       | Arr   of ty list * ty list * effect (* function type *)
       | Sum   of (con * ty list) list       (* (boxed) Sum type *)
-      | Tname of var                        (* named type *)
       | Thunk of ty                         (* thunk type *)
+
+  withtype ty = ty_ TypeRep.rep
 
   type vbinds = (var * ty) list
 
@@ -80,13 +82,40 @@ struct
 
   type im = (ty * variableKind) Identifier.symbolTable
 
+  type tm = ty_ TypeRep.manager
+
   type symbolInfo = (ty * variableKind) Identifier.SymbolInfo.t
 
   type symbolTableManager = (ty * variableKind) Identifier.Manager.t
 
   datatype module 
-      = Module of var * vDefg list 
+      = Module of tm * var * vDefg list 
 
   type t = module * im
+
+  val hashTy_ : (ty * variableKind) Identifier.SymbolInfo.t -> ty_ TypeRep.baseHash
+    = fn st => fn (tm, t) => 
+      let
+        fun hashRep t = TypeRep.hashRep (tm, t)
+      in
+        case t 
+          of Boxed => "B"
+           | Prim p => 
+            let
+              val l = GHCPrimTypeLayout.layoutPrimTy (Layout.str o hashRep) p
+            in
+              "P(" ^ Layout.toString l ^ ")"
+            end
+           | Arr (t1, t2, _) => "A(" ^ List.toString hashRep t1 ^ "," ^ List.toString hashRep t2 ^ ")"
+           | Sum arms => 
+            let
+              fun doTys tys = List.toString hashRep tys
+              fun doArm ((n, _), tys) = Identifier.SymbolInfo.nameString (st, n) ^ doTys tys
+            in
+              "S" ^ List.toString doArm arms
+            end
+           | Thunk t => "T(" ^ hashRep t ^ ")"
+      end
+
 end (* structure ANormStrict *)
 

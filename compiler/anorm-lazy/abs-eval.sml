@@ -55,6 +55,9 @@ struct
                                          val layoutTy = layoutDemand
                                   end)
 
+  val arrTyFrom : AL.ty -> AL.ty
+    = fn ty => TypeRep.newRep_ (AL.Arr (ty, TypeRep.newRep_ AL.Data, NONE))
+
   val lookup : Dom.t env -> AC.var -> Dom.t = 
     fn env => fn v => 
       case VD.lookup (env, v)
@@ -90,9 +93,12 @@ struct
                     in
                       U d
                     end
-        val d = case (d, ty)
-                  of (S, AL.Arr (AL.Sum [(con, tys)], _, _)) => probeTys tys
-                   | (S, AL.Arr (AL.Prim (GP.Tuple tys), _, _)) => probeTys tys
+        val d = case (d, TypeRep.repToBase ty)
+                  of (S, AL.Arr (ty, _, _)) =>
+                    (case TypeRep.repToBase ty
+                      of AL.Sum [(con, tys)] => probeTys tys
+                       | AL.Prim (GP.Tuple tys) => probeTys tys
+                       | _ => d)
                    | _ => d
       in
           d
@@ -284,7 +290,7 @@ struct
                          of SOME f => f Dom.bottom
                           | NONE => Dom.bottom 
           val f = fn x => check (evalExp (im, st, extend ((v, x), env)) e, expect)
-          val () = IM.variableSetInfo (im, v, probeDemand (f, AL.Arr (ty, AL.Data, NONE)))
+          val () = IM.variableSetInfo (im, v, probeDemand (f, arrTyFrom ty))
         in 
           probeExp (im, st, env, expect) e
         end
@@ -302,11 +308,11 @@ struct
                                 *)
                   val f = fn x => check (evalExp (im, st, extend ((v, x), env)) e, expect)
                 in
-                  IM.variableSetInfo (im, v, probeDemand (f, AL.Arr (ty, AL.Data, NONE)))
+                  IM.variableSetInfo (im, v, probeDemand (f, arrTyFrom ty))
                 end
                | _ => (* otherwise treat vs as an unboxed tuple *)
                 let
-                  val ty = AL.Prim (GP.Tuple (List.map (vs, fn v => I.variableInfo (st, v))))
+                  val ty = TypeRep.newRep_ (AL.Prim (GP.Tuple (List.map (vs, fn v => I.variableInfo (st, v)))))
                   val f = 
                     fn x => 
                       let 
@@ -317,7 +323,7 @@ struct
                       in check (evalExp (im, st, env) e, expect)
                       end
                 in
-                  case probeDemand (f, AL.Arr (ty, AL.Data, NONE))
+                  case probeDemand (f, arrTyFrom ty)
                     of U ds => List.foreach (List.zip (vs, ds), fn (v, d) => IM.variableSetInfo (im, v, d))
                      | _ => List.foreach (vs, fn v => IM.variableSetInfo (im, v, L))
                 end

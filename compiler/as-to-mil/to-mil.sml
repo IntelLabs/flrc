@@ -9,7 +9,6 @@ end
 
 structure ANormStrictToMil :> ANORM_STRICT_TO_MIL =
 struct
-  open ANormStrict
   structure AS = ANormStrict
   structure L  = Layout
   structure M  = Mil
@@ -41,22 +40,32 @@ struct
   structure MF = TMU.MF
   structure MU = TMU.MU
 
+  type var = I.variable
+
   fun failMsg (f, s) = Fail.fail (passname, f, s)
 
   fun varIsGlobal (im, v) = TMU.variableKind (im, v) = M.VkGlobal
 
-  fun doSumDCon (imcfg as (_, cfg)) (i, (con, tys)) 
-    = (GP.tagToConst (Config.targetWordSize cfg, i), Vector.fromListMap (tys,  doType imcfg))
+  fun doSumDCon (imcfg as (_, cfg), level) (i, (con, tys)) 
+    = (GP.tagToConst (Config.targetWordSize cfg, i), Vector.fromListMap (tys,  doType0 (imcfg, level)))
 
-  and doType (x as (im, cfg)) 
-    = fn Arr (ts, ts2, _) => M.TClosure { args = Vector.fromListMap (ts, doType x)
-                                        , ress = Vector.fromListMap (ts2, doType x) }
-      |  Prim t       => GP.primToMilTy (Config.targetWordSize cfg, doType x) t
-      |  Sum cons     => M.TSum { tag = GP.tagTyp (Config.targetWordSize cfg), 
-                                  arms = Vector.fromList (List.mapi (cons, doSumDCon x)) }
-      |  Tname tcon   => if IM.variableExists (im, tcon) then TMU.variableTyp (im, tcon) else M.TRef
-      |  Thunk t      => Mil.TThunk (doType x t)
-      |  _            => M.TRef
+  and doType0 (x as (im, cfg), level)
+    = fn ty =>
+      (case TypeRep.repToBase ty
+        of AS.Prim t => GP.primToMilTy (Config.targetWordSize cfg, doType0 (x, level + 1)) t
+         | t => 
+          if level > 1 then M.TRef
+          else 
+          (case t
+            of AS.Arr (ts, ts2, _) => M.TClosure { args = Vector.fromListMap (ts, doType0 (x, level + 1))
+                                                 , ress = Vector.fromListMap (ts2, doType0 (x, level + 1)) }
+            |  AS.Sum cons => if level >= 1 then M.TRef 
+                              else M.TSum { tag = GP.tagTyp (Config.targetWordSize cfg), 
+                                            arms = Vector.fromList (List.mapi (cons, doSumDCon (x, level + 1))) }
+            |  AS.Thunk t => Mil.TThunk (doType0 (x, level) t)
+            |  _  => M.TRef))
+       
+  fun doType x = doType0 (x, 0)
   
   fun resultType typ
     = case typ
@@ -82,13 +91,13 @@ struct
    * doExp translates an expression into MIL code blocks.
    * It returns a code block that assigns rvar the value of this expression. 
    *)
-  fun doExp (state : TMU.state, env : (var * var) list, rvar : var Vector.t, e : exp) : MS.t * Effect.set
+  fun doExp (state : TMU.state, env : (var * var) list, rvar : var Vector.t, e : AS.exp) : MS.t * Effect.set
     = let 
         val { im, cfg, globals, effects, ... } = state
         val ws = Config.targetWordSize cfg
       in
         case e
-          of Return vs =>
+          of AS.Return vs =>
              let
                val args = Vector.fromListMap (vs, lookup1 (im, env))
                fun sub (i, (u, v), blk) = MS.seq (blk, MS.bindRhs (u, M.RhsSimple (M.SVariable v)))
@@ -100,7 +109,7 @@ struct
              in 
                (blk, Effect.Total)
              end
-          |  ConApp ((_, tag), vs)  =>
+          |  AS.ConApp ((_, tag), vs)  =>
              let
                val args = Vector.fromListMap (vs, lookup1 (im, env))
                val typs = Vector.map (args, fn v => TMU.variableTyp (im, v))
@@ -113,7 +122,7 @@ struct
                 Effect.Total)
 
              end
-          |  ExtApp (pname, cc, fstr, fty, vs) => 
+          |  AS.ExtApp (pname, cc, fstr, fty, vs) => 
             (case cc 
               of CH.Prim => failMsg ("doExp/ExpApp", "external primitives is not supported")
               | CH.Label =>
@@ -171,13 +180,13 @@ struct
                 (* assume all external call involve IO *)
                 (blk, Effect.Any)
               end)
-          | PrimApp (f, vs) =>
+          | AS.PrimApp (f, vs) =>
             let
               val argstyps = List.map (vs, fn v => (M.SVariable (lookup1 (im, env) v), TMU.variableTyp (im, v)))
             in
               GP.primOp (state, f, rvar, argstyps)
             end 
-          | App (f, vs, fx) =>
+          | AS.App (f, vs, fx) =>
             let 
               val fvar = lookup1 (im, env) f
               val args = Vector.fromListMap(vs, lookup1 (im, env))
@@ -189,15 +198,18 @@ struct
                         Vector.map (args, M.SVariable), cuts, fx, rvar),
                fx)
             end
-          | Let (vdefg, e) =>
+          | AS.Let (vdefg, e) =>
               let 
                 val (env, gblks, fx1) = doVDefg (state, env) vdefg
                 val (eblks, fx2) = doExp (state, env, rvar, e)
               in
                 (MS.seq (gblks, eblks), Effect.union (fx1, fx2))
               end
-          | Lit (l, Prim ty) => 
+          | AS.Lit (l, ty) => 
             let 
+              val ty = case TypeRep.repToBase ty
+                         of AS.Prim ty => ty
+                          | _ => failMsg ("doExp/Lit", "not a primitive type")
               fun constant (v, typ) = MS.bindsRhs (rvar, M.RhsSimple (M.SConstant v))
               fun global (v, typ) 
                 = let 
@@ -231,8 +243,7 @@ struct
             in
               (blk, Effect.Total)
             end
-          | Lit (l, _) => failMsg ("doExp", "literal of non-primitive type is not supported: " ^ Layout.toString (CoreHsLayout.layoutCoreLit l) ^ "\n")
-          | Case (v, alts) =>
+          | AS.Case (v, alts) =>
               let 
                 val w = lookup1 (im, env) v
                 (*
@@ -241,7 +252,7 @@ struct
               in
                 doAlts (state, env, rvar, w, alts)
               end
-          | Eval v => 
+          | AS.Eval v => 
             let
               val fvar = lookup1 (im, env) v
               (* Aggressive assumption: thunk evals are also pure and stateless! *)
@@ -249,7 +260,7 @@ struct
             in
               (TMU.kmThunk (state, rvar, fvar, fx), fx)
             end
-          | Cast cast => 
+          | AS.Cast cast => 
             let
               fun castV v = 
                   let
@@ -260,10 +271,10 @@ struct
                   end
               val blk = 
                   case cast
-                    of FromAddr v => #1 (GP.primOp (state, GPO.CastFromAddrzh, rvar, castV v))
-                     | ToAddr v => #1 (GP.primOp (state, GPO.CastToAddrzh, rvar, castV v))
-                     | NullRef => MS.bindsRhs (rvar, M.RhsSimple (M.SConstant (M.CRef 0)))
-                     | Bottom _ => 
+                    of AS.FromAddr v => #1 (GP.primOp (state, GPO.CastFromAddrzh, rvar, castV v))
+                     | AS.ToAddr v => #1 (GP.primOp (state, GPO.CastToAddrzh, rvar, castV v))
+                     | AS.NullRef => MS.bindsRhs (rvar, M.RhsSimple (M.SConstant (M.CRef 0)))
+                     | AS.Bottom _ => 
                       let
                         fun mkBottom u = 
                             let
@@ -319,8 +330,8 @@ struct
           = let
               val u = TMU.variablesClone (im, rvar)
               val (eblk, fx) = doExp (state, env, u, e)
-              val (c, _) = case ty 
-                             of Prim ty => GP.castLiteral ws (l, ty) 
+              val (c, _) = case TypeRep.repToBase ty 
+                             of AS.Prim ty => GP.castLiteral ws (l, ty) 
                               | _ => failMsg ("doLitAlt", "literal not of primitive type")
             in
               (u, c, eblk, fx)
@@ -337,9 +348,9 @@ struct
         fun groupAlts [] (sumcase, litcase, defcase) = (List.rev sumcase, List.rev litcase, List.rev defcase)
           | groupAlts (x::xs) (s, l, d)
           = case x 
-              of Acon x     => groupAlts xs (x::s, l, d)
-               | Alit x     => groupAlts xs (s, x::l, d)
-               | Adefault x => groupAlts xs (s, l, x::d)
+              of AS.Acon x     => groupAlts xs (x::s, l, d)
+               | AS.Alit x     => groupAlts xs (s, x::l, d)
+               | AS.Adefault x => groupAlts xs (s, l, x::d)
 
         val (sumcase, litcase, defcase) = groupAlts alts ([], [], [])
         val (sts, tags, sblks, fx1) = Utils.List.unzip4 (map doSumAlt sumcase) 
@@ -386,7 +397,7 @@ struct
         val {im, cfg, aliases, globals, prelude, effects, ...} = state
       in
         case vd
-         of Vthk {name = lhs, ty = _, escapes, recursive, fvs, body = e} =>
+         of AS.Vthk {name = lhs, ty = _, escapes, recursive, fvs, body = e} =>
             let 
               val fvs = if recursiveB then List.remove (fvs, fn s => s = lhs) else fvs
               val fvtyps = List.map (fvs, fn x => TMU.variableTyp (im, x))
@@ -410,7 +421,7 @@ struct
                     | _         => ()
             in ()
            end
-          | Vfun {name = lhs, ty = _, escapes, recursive, fvs, args, body = e} =>
+          | AS.Vfun {name = lhs, ty = _, escapes, recursive, fvs, args, body = e} =>
             let 
               val ftyp   = M.TRef
               val fvs = if recursiveB then List.remove (fvs, fn s => s = lhs) else fvs
@@ -435,7 +446,7 @@ struct
         val {im, cfg, globals, prelude, effects, ...} = state
       in
         case vd
-         of Vthk {name = lhs, ty = _, escapes, recursive, fvs, body = e} =>
+         of AS.Vthk {name = lhs, ty = _, escapes, recursive, fvs, body = e} =>
             (case TMU.variableKind (im, lhs)
               of M.VkLocal => 
                  let
@@ -503,7 +514,7 @@ struct
                    (MS.empty, MS.empty)
                  end
                | M.VkExtern => failMsg ("bindRhsThunk", "impossible"))
-          | Vfun {name = lhs, ty = _, escapes, recursive, fvs, args = bs, body = e} =>
+          | AS.Vfun {name = lhs, ty = _, escapes, recursive, fvs, args = bs, body = e} =>
             let 
               val global = varIsGlobal (im, lhs)
               (* val _ = print ("doVfun lhs = " ^ lhs ^ " fvs = " ^ String.concat (map (fn x => x ^ " ") fvs) ^ "\n") *)
@@ -551,10 +562,10 @@ struct
   and doVDefg (state, env) 
     = let
         val {im, cfg, globals, prelude, ...} = state
-        fun getDefVar def = case def of Vfun {name, ...} => name | Vthk {name, ...} => name
+        fun getDefVar def = case def of AS.Vfun {name, ...} => name | AS.Vthk {name, ...} => name
         val ws = Config.targetWordSize cfg
       in
-        fn Rec defs =>
+        fn AS.Rec defs =>
           let
             val vars = List.map (defs, getDefVar)
             val env1 = List.zip (vars, vars) @ env
@@ -563,7 +574,7 @@ struct
           in
             (env1, MS.seqn (blk0 @ blk1), Effect.Total)
           end
-        |  Nonrec def =>
+        |  AS.Nonrec def =>
           let 
             val var = getDefVar def
             val () = doVDef0 (state, false, env, def)
@@ -571,7 +582,7 @@ struct
           in
             ((var, var) :: env, MS.seq (blk0, blk1), Effect.Total)
           end
-        | Vdef (lhs, e) => 
+        | AS.Vdef (lhs, e) => 
          let
            val (lhs, tys) = List.unzip lhs
            val lhs = Vector.fromList lhs
@@ -884,11 +895,10 @@ struct
         (includes, externs)
       end
 
-  fun compile (((Module (main, vdefgs), oldim), aliases), pd) =
+  fun compile (((AS.Module (tm, main, vdefgs), oldim), aliases), pd) =
       let
         val im = IM.fromExistingNoInfo oldim 
         val cfg = PassData.getConfig pd
-        val realWorld = IM.nameFromString (im, CL.qNameToString (CHP.tcRealWorld))
         fun convertInfo v = 
             let 
               val (t, k) = I.variableInfo (oldim, v)

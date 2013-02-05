@@ -88,7 +88,7 @@ struct
                case clientTy 
                 of NONE => ()
                  | SOME dt => dt (s, e, t)
-         in case t
+         in case TypeRep.repToBase t
              of AS.Boxed              => ()
               | AS.Prim pt            => analyzePrimTy (s, e, pt)
               | AS.Arr (ts0, ts1, fx) => 
@@ -98,7 +98,6 @@ struct
                 in ()
                 end
               | AS.Sum ctss           => List.foreach (ctss, fn (c, ts) => analyzeTys (s, e, ts))
-              | AS.Tname v            => analyzeVariable (s, e, v)
               | AS.Thunk ty           => analyzeTy (s, e, ty)
          end
 
@@ -229,7 +228,7 @@ struct
     val analyzeModule : state * env * AS.module -> unit =
      fn (state, env, m) => 
         let
-          val AS.Module (v, vdgs) = m
+          val AS.Module (tm, v, vdgs) = m
           val env = List.fold (vdgs, env, fn (vdg, env) => analyzeVDefg (state, env, vdg))
           val () = analyzeVariable (state, env, v)
         in ()
