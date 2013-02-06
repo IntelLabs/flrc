@@ -244,7 +244,7 @@ struct
   datatype state = S of {fns  : fnInfo ref VD.t ref,
                          stm  : AS.symbolTableManager,
                          vars : (liveStatus * useCount) VD.t ref,
-                         tm   : AS.tm}
+                         tm   : AS.typeManager}
                        
 
   datatype env = E of {curFns  : AS.var List.t,
@@ -763,7 +763,7 @@ struct
       end
 
   val showResults =
-   fn (stm, pd, nm, m) => 
+   fn ((stm, tm), pd, nm, m) => 
       let
         val l = Layout.align [Layout.str ("Results of "^nm^" : ")]
         val () = LayoutUtils.printLayout l
@@ -936,7 +936,7 @@ struct
     val doModule : state * env * AS.module -> unit =
      fn (state, env, m) => 
         let
-          val AS.Module (tm, v, vdgs) = m
+          val AS.Module (v, vdgs) = m
           (* val () = addVars1 (state, env, tds) *)
           val () = List.foreach (vdgs, fn vdg => let val _ = doVDefg (state, env, vdg) in () end)
           val () = useVar (state, env, v)
@@ -953,8 +953,8 @@ struct
         in ()
         end
 
-    val census : AS.symbolTableManager * PD.t * AS.module -> (state * env) = 
-     fn (stm, pd, m as AS.Module (tm, _, _)) =>
+    val census : AS.symbolTableManager * AS.typeManager * PD.t * AS.module -> (state * env) = 
+     fn (stm, tm, pd, m as AS.Module (_, _)) =>
         let
           val state = S {fns = ref VD.empty, stm = stm, vars = ref VD.empty, tm = tm}
           val env = E {current = ref LsLive,
@@ -1464,7 +1464,7 @@ struct
     val sinkMain : PD.t * AS.module -> AS.module =
      fn (pd, m) => 
         let
-          val AS.Module (tm, mainV, vdgs) = m
+          val AS.Module (mainV, vdgs) = m
           val rec loop = 
            fn (vdgs, rbnds) => 
               (case vdgs
@@ -1476,7 +1476,7 @@ struct
                        val mainF = AS.Nonrec (AS.Vfun {name = f, ty = ty, escapes = true, recursive = false,
                                                        fvs = [], args = binds, body = mkLet (rbnds, e)})
                        val vdgs = [mainF, main]
-                     in AS.Module (tm, mainV, vdgs)
+                     in AS.Module (mainV, vdgs)
                      end
                    else
                      m
@@ -1484,13 +1484,13 @@ struct
         in loop (vdgs, [])
         end
 
-    val doModule : AS.symbolTableManager * PD.t * AS.module -> AS.module =
-     fn (stm, pd, m) => 
+    val doModule : (AS.symbolTableManager * AS.typeManager) * PD.t * AS.module -> AS.module =
+     fn ((stm, tm), pd, m) => 
         let
           val m = if noSinkMain pd then m else sinkMain (pd, m) 
-          val (state, env) = Census.census (stm, pd, m)
+          val (state, env) = Census.census (stm, tm, pd, m)
           val () = Census.show (state, env)
-          val AS.Module (tm, v, vdgs) = m
+          val AS.Module (v, vdgs) = m
           val doOne = 
            fn (vdg, (env, vdgs)) => 
               let
@@ -1501,7 +1501,7 @@ struct
           val v = doVar (state, env, v)
           val vdgs = List.rev vdgs
           val vdgs = filterVDefgs (state, env, vdgs)
-          val m = AS.Module (tm, v, vdgs)
+          val m = AS.Module (v, vdgs)
         in m
         end
 
@@ -1530,7 +1530,7 @@ struct
                            fns     : fnInfo ref VD.t ref,
                            sums    : sumInfo ref ND.t ref,
                            stm     : AS.symbolTableManager,
-                           tm      : AS.tm}
+                           tm      : AS.typeManager}
 
     datatype env = E of {pd      : PD.t,
                          evals   : AS.var VD.t,
@@ -2240,7 +2240,7 @@ struct
       val doModule : state * env * AS.module -> unit =
        fn (state, env, m) => 
         let
-          val AS.Module (tm, v, vdgs) = m
+          val AS.Module (v, vdgs) = m
           val e = mkLet (List.rev vdgs, AS.Return [v])
           val strictness = doExp (state, env, e)
           val () = show (state, env)
@@ -2701,7 +2701,7 @@ struct
      fn (state, env, m) => 
         let
           val () = doStm (state, env, getStm (state, env))
-          val AS.Module (tm, v, vdgs) = m
+          val AS.Module (v, vdgs) = m
           val doOne = 
            fn (vdg, (env, vdgs)) => 
               let
@@ -2710,14 +2710,14 @@ struct
               end
           val (env, vdgs) = List.fold (vdgs, (env, []), doOne)
           val vdgs = List.rev vdgs
-          val m = AS.Module (tm, v, vdgs)
+          val m = AS.Module (v, vdgs)
         in m
         end
 
     end (* structure Rewrite *)
 
-    val doModule : AS.symbolTableManager * PD.t * AS.module -> AS.module =
-     fn (stm, pd, m as AS.Module (tm, _, _)) => 
+    val doModule : (AS.symbolTableManager * AS.typeManager) * PD.t * AS.module -> AS.module =
+     fn ((stm, tm), pd, m as AS.Module (_, _)) => 
         let
           val state = S {fns = ref VD.empty, 
                          sums = ref ND.empty, 
@@ -3121,10 +3121,10 @@ struct
         in r
         end
         
-    val doModule : AS.symbolTableManager * PD.t * AS.module -> AS.module =
-     fn (stm, pd, m) => 
+    val doModule : (AS.symbolTableManager * AS.typeManager) * PD.t * AS.module -> AS.module =
+     fn ((stm, tm), pd, m) => 
         let
-          val AS.Module (tm, v, vdgs) = m
+          val AS.Module (v, vdgs) = m
           val state = S {fns = ref VD.empty, stm = stm, vars = ref VD.empty, tm = tm}
           val env = E {curFns = [],
                        current = ref LsLive, 
@@ -3141,7 +3141,7 @@ struct
           val v = doVar (state, env, v)
           val vdgs = List.rev vdgs
           val vdgs = filterVDefgs (state, env, vdgs)
-          val m = AS.Module (tm, v, vdgs)
+          val m = AS.Module (v, vdgs)
         in m
         end
 
@@ -3152,10 +3152,10 @@ struct
         val opts = fn name => ANSS.O {id = SOME name}
         val stdOut = Pervasive.TextIO.stdOut
         val measure = 
-         fn (stm, pd, name, m) => 
+         fn ((stm, tm), pd, name, m) => 
             let
               val st = IM.finish stm
-              val p = (m, st)
+              val p = (m, st, tm)
               val () = ANSS.program (PD.getConfig pd, opts name, p, stdOut)
             in ()
             end
@@ -3201,7 +3201,7 @@ struct
    fn c => Option.map (getOptInfo c, #2)
 
   datatype controlItem = CiPrint
-                       | CiPass of (AS.symbolTableManager * PD.t * AS.module -> AS.module) * string
+                       | CiPass of ((AS.symbolTableManager * AS.typeManager) * PD.t * AS.module -> AS.module) * string
                                                                                
   fun parseControl s =
       let
@@ -3349,26 +3349,26 @@ struct
 
   val runItem = 
    fn ci =>
-      fn (stm, pd, m) => 
+      fn (stm, tm, pd, m) => 
          (case ci
            of CiPrint          => let val () = showModule (stm, pd, m) in m end
-            | CiPass (pass, _) => pass (stm, pd, m))
+            | CiPass (pass, _) => pass ((stm, tm), pd, m))
 
   val run =
-   fn (stm, pd, m, cis) => 
-      List.fold (cis, m, fn (ci, m) => runItem ci (stm, pd, m))
+   fn (stm, tm, pd, m, cis) => 
+      List.fold (cis, m, fn (ci, m) => runItem ci (stm, tm, pd, m))
                 
   val program : AS.t * PD.t -> AS.t = 
-   fn (p as (m, im), pd) =>
+   fn (p as (m, im, tm), pd) =>
       let
         val stm = IM.fromExistingAll im
 
         val config = PassData.getConfig pd
         val cis = controlGet config
-        val m = run (stm, pd, m, cis)
+        val m = run (stm, tm, pd, m, cis)
         val st = IM.finish stm
         val () = PD.report (pd, passname)
-      in (m, st)
+      in (m, st, tm)
       end
 
   val stater = ANormStrictStats.layout (ANormStrictStats.O {id = SOME passname})

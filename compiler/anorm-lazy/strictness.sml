@@ -114,7 +114,7 @@ struct
 
   val (control, showOptGet) = Config.Control.mk (passname, describe, parse, fn _ => defaultOpt)
 
-  fun program (p as (AL.Module (tm, main, vdefgs), im), pd, bn) = 
+  fun program (p as (AL.Module (main, vdefgs), im, tm), pd, bn) = 
       let
         val cfg = PassData.getConfig pd
         val opt = showOptGet cfg
@@ -124,11 +124,15 @@ struct
         val ()  = if #showAfter opt then LU.printLayout (ADL.layout q') else ()
         val vdefgs = List.map (vdefgs, fn vdefg => doVDefg (st, vdefg))
       in
-        (AL.Module (tm, main, vdefgs), im)
+        (AL.Module (main, vdefgs), im, tm)
       end
  
   fun layout (module, _) = ANormLazyLayout.layoutModule module
-  val ir = { printer = layout, stater = layout }
+
+  val layout' = ANormLazyStats.layout (ANormLazyStats.O { id = SOME passname })
+
+  val ir = { printer = layout, stater = layout' }
+
   val description = {name        = passname,
                      description = "Strictness Analysis on A-Normal Form",
                      inIr        = ir,

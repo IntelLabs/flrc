@@ -895,7 +895,7 @@ struct
         (includes, externs)
       end
 
-  fun compile (((AS.Module (tm, main, vdefgs), oldim), aliases), pd) =
+  fun compile (((AS.Module (main, vdefgs), oldim, tm), aliases), pd) =
       let
         val im = IM.fromExistingNoInfo oldim 
         val cfg = PassData.getConfig pd

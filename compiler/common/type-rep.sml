@@ -13,6 +13,8 @@ sig
   val hashRep     : 'base repHash
   (* create an empty rep manager *)
   val newManager  : 'base baseHash -> 'base manager
+  (* create an empty rep manager *)
+  val size        : 'base manager -> int
   (* create a managed rep, store it with the manager *)
   val newRep      : 'base manager * 'base -> 'base rep 
   (* create an un-managed rep, which should only be used for temporary cases *)
@@ -31,6 +33,9 @@ struct
 
   val newManager : 'base baseHash -> 'base manager
     = fn hash => Tbl (hash, ref StringDict.empty)
+
+  val size : 'base manager -> int
+    = fn Tbl (_, dict) => StringDict.size (!dict)
 
   val hashRep : 'base repHash
     = fn (tbl as Tbl (hash, dict), Ty (x, id)) =>

@@ -80,20 +80,20 @@ struct
 
   datatype variableKind = VkGlobal | VkLocal 
 
-  type im = (ty * variableKind) Identifier.symbolTable
-
-  type tm = ty_ TypeRep.manager
+  type symbolTable = (ty * variableKind) Identifier.symbolTable
 
   type symbolInfo = (ty * variableKind) Identifier.SymbolInfo.t
 
   type symbolTableManager = (ty * variableKind) Identifier.Manager.t
 
+  type typeManager = ty_ TypeRep.manager
+
   datatype module 
-      = Module of tm * var * vDefg list 
+      = Module of var * vDefg list 
 
-  type t = module * im
+  type t = module * symbolTable * typeManager
 
-  val hashTy_ : (ty * variableKind) Identifier.SymbolInfo.t -> ty_ TypeRep.baseHash
+  val hashTy_ : symbolInfo -> ty_ TypeRep.baseHash
     = fn st => fn (tm, t) => 
       let
         fun hashRep t = TypeRep.hashRep (tm, t)

@@ -25,7 +25,7 @@ struct
 
   val fail = fn (f, msg) => Fail.fail (passname, f, msg)
 
-  type state = { im : AS.im, tm : AS.tm } 
+  type state = { im : AS.symbolTableManager, tm : AS.typeManager } 
 
   type env = { cfg : Config.t, tyenv : AS.ty VD.t }
 
@@ -566,7 +566,7 @@ struct
            end
     end
 
-  fun doModule ((AL.Module (otm, main, vdefgs), im), pd) =
+  fun doModule ((AL.Module (main, vdefgs), im, otm), pd) =
       let 
         val cfg = PassData.getConfig pd
         val im = IM.fromExistingNoInfo im 
@@ -582,7 +582,7 @@ struct
           end
         val (vdefgs, _) = List.fold (vdefgs, ([], env), oneVDefg)
       in 
-        (AS.Module (tm, main, List.rev (List.concat vdefgs)), IM.finish im)
+        (AS.Module (main, List.rev (List.concat vdefgs)), IM.finish im, tm)
       end
 
   fun layoutLazy (module, config) = ANormLazyLayout.layoutModule module
@@ -592,7 +592,7 @@ struct
   val description = {name        = passname,
                      description = "Lazy A-Normal Form to strict A-Normal Form",
                      inIr        = { printer = layoutLazy,
-                                     stater  = layoutLazy },
+                                     stater  = ANormLazyStats.layout (ANormLazyStats.O {id = SOME passname}) },
                      outIr       = { printer = layoutStrict,
                                      stater  = ANormStrictStats.layout (ANormStrictStats.O {id = SOME passname}) },
                      mustBeAfter = [],

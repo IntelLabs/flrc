@@ -40,7 +40,7 @@ struct
 
   val emptyDict = { ndict = QD.empty, tdict = QD.empty, vdict = QD.empty, sdict = QD.empty }
 
-  type state = { im : AL.ty IM.t, tm : AL.tyMgr }
+  type state = { im : AL.ty IM.t, tm : AL.typeManager }
 
   type env = { cfg : Config.t, dict : dict, mname : CH.mName }
 
@@ -553,7 +553,7 @@ struct
         val mainVar = if CoreHsParse.noMainWrapper cfg then CU.mainVar else CU.wrapperMainVar
         val main = lookupMayFail (#vdict (#dict env), mainVar, "doModule") 
       in 
-        (AL.Module (tm, main, List.rev vdefgs), IM.finish im)
+        (AL.Module (main, List.rev vdefgs), IM.finish im, tm)
       end
 
   fun layout  (module, _) = CoreHsLayout.layoutModule module
@@ -565,7 +565,7 @@ struct
                      inIr        = { printer = layout,
                                      stater  = layout },
                      outIr       = { printer = layout',
-                                     stater  = layout' },
+                                     stater  = ANormLazyStats.layout (ANormLazyStats.O { id = SOME passname }) },
                      mustBeAfter = [],
                      stats       = []}
 

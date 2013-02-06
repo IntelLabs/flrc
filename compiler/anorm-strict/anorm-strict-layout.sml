@@ -252,7 +252,7 @@ struct
   val module =
       fn (env, m) => 
          (case m
-           of ANS.Module (_, v, vdefgs)=>
+           of ANS.Module (v, vdefgs)=>
               L.align [ L.str "%module"
                       , indent (L.align (semiMap (env, vdefgs, vDefg)))
                       , L.seq [L.str "%entry ", variable (env, v)]])
@@ -280,7 +280,7 @@ struct
                          si = si,
                          options = controlGet config}
   val layout = 
-   fn (config, (m, im)) =>
+   fn (config, (m, im, _)) =>
       let
         val env = envMk (config, IS.SiTable im)
       in

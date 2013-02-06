@@ -178,7 +178,7 @@ struct
            FunctionalUpdate.mk3 (r2t, t2r)
          end
 
-     val layout : t * Config.t * AS.im -> Layout.t = 
+     val layout : t * Config.t * AS.symbolTable -> Layout.t = 
       fn (t, config, symbolTable) => 
          let
            val var = fn v => ASL.var (config, I.SymbolInfo.SiTable symbolTable, v)
@@ -228,9 +228,9 @@ struct
    struct
 
      datatype t = E of {pd : PassData.t,
-                        symbolTable : AS.im}
+                        symbolTable : AS.symbolTable}
 
-     val mk : PassData.t * AS.im -> t = fn (pd, symbolTable) => E {pd = pd, symbolTable = symbolTable}
+     val mk : PassData.t * AS.symbolTable -> t = fn (pd, symbolTable) => E {pd = pd, symbolTable = symbolTable}
 
      val ((_, getPd), (_, getSymbolTable)) =
          FunctionalUpdate.mk2 (fn (E {pd, symbolTable}) => (pd, symbolTable),
@@ -686,7 +686,7 @@ struct
        List.fold (vdgs, context, fn (vdg, context) => doVDefG (state, env, context, vdg))
 
    val doModule : State.t * Env.t * AS.module -> unit = 
-    fn (state, env, AS.Module (tm, main, vdgs)) => 
+    fn (state, env, AS.Module (main, vdgs)) => 
        let
          val context = Context.new NONE
          val context = doVDefGs (state, env, context, vdgs)
@@ -695,7 +695,7 @@ struct
        end
 
    val doProgram : State.t * Env.t * AS.t -> unit = 
-    fn (state, env, (m, im)) => doModule (state, env, m)
+    fn (state, env, (m, im, tm)) => doModule (state, env, m)
 
    (*  Before running the analysis, entries are allocated for all of the objects
     *  of interest.  Dataflow nodes are introduced with a reasonable default 
@@ -913,7 +913,7 @@ struct
          ()
 
    val program : PD.t * AS.t -> (VS.t * fvInfo VD.t) =
-    fn (pd, p as (m, symbolTable)) =>
+    fn (pd, p as (m, symbolTable, tm)) =>
        let
          val config = PD.getConfig pd
          val env = Env.mk (pd, symbolTable)
@@ -1229,20 +1229,20 @@ struct
         end
 
     val program : PD.t * VS.t * fvInfo VD.t * AS.t -> AS.t * (VS.t VD.t) =
-     fn (pd, globals, fvInfo, (m, st)) => 
+     fn (pd, globals, fvInfo, (m, st, tm)) => 
         let
           val stm = IM.fromExistingAll st
           val state = State.mk stm
           val env = Env.mk (pd, fvInfo)
-          val AS.Module (tm, v, vdgs) = m
+          val AS.Module (v, vdgs) = m
           val doOne = 
            fn vdg => doVDefg (state, env, vdg)
           val vdgs = List.map (vdgs, doOne)
           val v = doVar (state, env, v)
-          val m = AS.Module (tm, v, vdgs)
+          val m = AS.Module (v, vdgs)
           val () = markGlobals (globals, stm)
           val st = IM.finish stm
-          val p = (m, st)
+          val p = (m, st, tm)
           val fa = !(State.getFunAliases state)
         in (p, fa)
         end
@@ -1250,7 +1250,7 @@ struct
   end (* structure Rewrite *)
 
   val program : AS.t * PD.t -> AS.t * (VS.t VD.t) = 
-   fn (p as (m, im), pd) =>
+   fn (p as (m, im, tm), pd) =>
       let
         val (globals, info) = run (pd, 1, "Analysis") Analyze.program (pd, p)
         val (p, fa) = run (pd, 1, "Rewriting") Rewrite.program (pd, globals, info, p)

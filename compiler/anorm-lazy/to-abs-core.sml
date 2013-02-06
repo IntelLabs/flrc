@@ -103,7 +103,7 @@ struct
         of AL.Rec vdefs => AC.Rec (List.map(vdefs, fn def => doVDef (im, def)))
          | AL.Nonrec vdef => AC.Nonrec (doVDef (im, vdef)))
 
-  fun doModule (AL.Module (tm, main, vdefgs), im) =
+  fun doModule (AL.Module (main, vdefgs), im, tm) =
       let 
         val im = IM.fromExistingAll im
         val vdefgs = List.map (vdefgs, fn vdefg => doVDefg (im, vdefg))

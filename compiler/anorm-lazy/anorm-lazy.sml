@@ -78,14 +78,14 @@ struct
 
   type tDef = var * ty 
 
-  type st = ty Identifier.symbolTable
+  type symbolTable = ty Identifier.symbolTable
 
-  type tyMgr = ty_ TypeRep.manager
+  type typeManager = ty_ TypeRep.manager
 
   datatype module 
-      = Module of tyMgr * var * vDefg list 
+      = Module of var * vDefg list 
 
-  type t = module * st 
+  type t = module * symbolTable * typeManager
 
   val hashTy_ : ty Identifier.SymbolInfo.t -> ty_ TypeRep.baseHash
     = fn st => fn (tm, t) => 
@@ -246,7 +246,7 @@ struct
                                  , L.str "}"]
       |  Nonrec vdef => layoutVDef im vdef
 
-  fun layoutModule (Module (_, _, vdefgs), im) = 
+  fun layoutModule (Module (_, vdefgs), im, tm) = 
       let
         val variables = I.listVariables im
         val im = IS.SiTable im

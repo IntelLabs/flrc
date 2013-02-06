@@ -6,6 +6,8 @@ local
         ../common/common.mlb
         ../core-hs/core-hs.mlb
         anorm-lazy.sml
+        anorm-lazy-analyze.sml
+        stats.sml
         domain.sml
         abs-core.sml
         to-abs-core.sml
@@ -14,6 +16,8 @@ local
 in
         structure ANormLazy
         structure ANormLazyLayout
+        functor ANormLazyAnalyzeF
+        structure ANormLazyStats
         signature ABS_DOMAIN
         structure Pointed
         functor AbsCoreF
