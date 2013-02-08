@@ -1441,7 +1441,7 @@ struct
   (* MVars:
    *   We use a heap object with a single mutable field that is null when empty.
    *   To implement the operations in a thread-safe manner, we must CAS.
-   *   To block until the contents is empty/not-empty we use ?
+   *   To block until the contents is empty/not-empty we use TupleWait
    *)
 
   fun mkMVarTD (cfg, t) =
@@ -1455,6 +1455,9 @@ struct
 
   fun mkMVarCAS (cfg, t, mv, cmp, new) =
       M.RhsTupleCAS {tupField = mkMVarTF (cfg, t, mv), cmpVal = cmp, newVal = new}
+
+  fun mkMVarWait (cfg, t, mv, wp) =
+      M.RhsTupleWait {tupField = mkMVarTF (cfg, t, mv), pred = wp}
 
   fun newMVar (cfg, argstyps) =
       case argstyps
@@ -1476,7 +1479,7 @@ struct
              *   rv = mv.0
              *   if rv==0 goto L2() else L3()
              * L2():
-             *   yield()
+             *   wait(mv.0, nonNull)
              *   goto L1()
              * L3():
              *   cv = CAS(mv.0, rv, null)
@@ -1518,11 +1521,7 @@ struct
             val blk8 = MS.prependTL (mkIf4, l4, Vector.new0 (), MS.empty) 
             val blk1 = MS.bindRhs (rv, mkMVarRead (cfg, et, mv))
             val blk2 = MS.bindRhs (cmp1, rhsPrim (MP.Prim MP.PPtrEq) [(M.SVariable rv, et), (null, et)])
-            fun pyTyp () = M.TCode {cc = M.CcCode, args = Vector.new0 (), ress = Vector.new0 ()}
-            (* prtYield is not actually in pkgName, but it's not in an actual package, and is included *)
-            val (py, _) = TMU.externVariable (state, pkgName, "prtYield", pyTyp)
-            val call = M.CCode {ptr = py, code = TMU.noCode}
-            val blk4 = MU.call (im, cfg, call, Vector.new0 (), TMU.noCut, Effect.Any, Vector.new0 ())
+            val blk4 = MS.doRhs (mkMVarWait (cfg, et, mv, M.WpNonNull))
             val blk6 = MS.bindRhs (cv, mkMVarCAS (cfg, et, mv, M.SVariable rv, null))
             val blk7 = MS.bindRhs (cmp2, rhsPrim (MP.Prim MP.PPtrEq) [(M.SVariable rv, et), (M.SVariable cv, et)])
             val blk9 = tupleSimple ((state, rvar), [(s, st), (M.SVariable rv, et)])
@@ -1539,7 +1538,7 @@ struct
              *   if rv1==0 goto L2() else L1()
              * L1():
              *   cv = CAS(mv.0, rv1, null)
-             *   if cv==rv goto L3(1, rv1) else goto L2
+             *   if cv==rv1 goto L3(1, rv1) else goto L2
              * L2():
              *   undefined = thunk{loop;}
              *   goto L3(0, undefined)
@@ -1615,7 +1614,7 @@ struct
              *   cv = CAS(mv.0, null, x)
              *   if cv==0 goto L3() else L2()
              * L2():
-             *   yield()
+             *   wait(mv.0, null)
              *   goto L1()
              * L3():
              *   rvar = s
@@ -1643,11 +1642,7 @@ struct
             val blk3 = MS.prependTL (mkIf2, l2, Vector.new0 (), MS.empty)
             val blk1 = MS.bindRhs (cv, mkMVarCAS (cfg, et, mv, null, x))
             val blk2 = MS.bindRhs (cmp, rhsPrim (MP.Prim MP.PPtrEq) [(M.SVariable cv, et), (null, et)])
-            fun pyTyp () = M.TCode {cc = M.CcCode, args = Vector.new0 (), ress = Vector.new0 ()}
-            (* prtYield is not actually in pkgName, but it's not in an actual package, and is included *)
-            val (py, _) = TMU.externVariable (state, pkgName, "prtYield", pyTyp)
-            val call = M.CCode {ptr = py, code = TMU.noCode}
-            val blk4 = MU.call (im, cfg, call, Vector.new0 (), TMU.noCut, Effect.Any, Vector.new0 ())
+            val blk4 = MS.doRhs (mkMVarWait (cfg, et, mv, M.WpNull))
             val blk6 = MS.bindsRhs (rvar, M.RhsSimple s)
             val blk = MS.seqn [blk0, blk1, blk2, blk3, blk4, blk5, blk6]
           in blk
