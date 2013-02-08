@@ -790,8 +790,8 @@ struct
 
   structure Sync =
   struct
-    val waitNull    : Pil.identifier = Pil.identifier "pLsrSynchWaitNull"
-    val waitNonNull : Pil.identifier = Pil.identifier "pLsrSynchWaitNonNull"
+    val waitNull    : Pil.identifier = Pil.identifier "iFlcSynchWaitNull"
+    val waitNonNull : Pil.identifier = Pil.identifier "iFlcSynchWaitNonNull"
     val casUInt32   : Pil.identifier = Pil.identifier "pLsrSynchLockedCmpxchgUInt32"
     val casUInt64   : Pil.identifier = Pil.identifier "pLsrSynchLockedCmpxchgUInt64"
     val casRef      : Pil.identifier = Pil.identifier "pLsrSynchLockedCmpxchgRef"
