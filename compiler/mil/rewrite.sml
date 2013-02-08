@@ -146,7 +146,8 @@ struct
               | M.FiVectorFixed {descriptor, mask, index} => 
                 M.FiVectorFixed {descriptor = descriptor, mask = doOpO mask, index = index}
               | M.FiVectorVariable {descriptor, base, mask, index, kind} =>
-                M.FiVectorVariable {descriptor = descriptor, base = base, mask = doOpO mask, index = doOp index, kind = kind}
+                M.FiVectorVariable {descriptor = descriptor, base = base, mask = doOpO mask, index = doOp index,
+                                    kind = kind}
         fun doTf (M.TF {tupDesc, tup, field}) =
             M.TF {tupDesc = tupDesc, tup = doVar tup, field = doFi field}
         fun doFkOps fkos = Vector.map (fkos, fn (fk, opnd) => (fk, doOp opnd))
@@ -162,6 +163,7 @@ struct
             M.RhsTupleSet {tupField = doTf tupField, ofVal = doOp ofVal}
           | M.RhsTupleCAS {tupField, cmpVal, newVal} =>
             M.RhsTupleCAS {tupField = doTf tupField, cmpVal = doOp cmpVal, newVal = doOp newVal}
+          | M.RhsTupleWait {tupField, pred} => M.RhsTupleWait {tupField = doTf tupField, pred = pred}
           | M.RhsTupleInited {mdDesc, tup} =>
             M.RhsTupleInited {mdDesc = mdDesc, tup = doVar tup}
           | M.RhsIdxGet {idx, ofVal} =>

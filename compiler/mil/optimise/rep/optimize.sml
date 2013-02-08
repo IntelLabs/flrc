@@ -383,6 +383,23 @@ struct
                          val boxedV = fn vv => Vector.foreach (vv, boxed)
                          val boxedO = boxed o opToVar
                          val boxedOV = fn vv => Vector.foreach (vv, boxedO)
+                         val getTupFieldNode =
+                          fn M.TF {field, ...} =>
+                             case MRS.iInfo (SE1.getSummary s, MU.Id.I n)
+                              of MRB.IiTupleDescriptor {fixed, array} =>
+                                 (case field
+                                   of M.FiFixed i => Vector.sub (fixed, i)
+                                    | M.FiVariable _ =>
+                                      (case array
+                                        of NONE =>
+                                           fail ("analyseInstruction'.getTupFieldNode",
+                                                 "bad tuple descriptor metadata")
+                                         | SOME n => n)
+                                    | M.FiVectorFixed _ =>
+                                      fail ("analyseInstruction'.getTupFieldNode", "bad tuple descriptor")
+                                    | M.FiVectorVariable _ =>
+                                      fail ("analyseInstruction'.getTupFieldNode", "bad tuple descriptor"))
+                               | _ => fail ("analyseInstruction'.getTupFieldNode", "bad tuple descriptor metadata")
                          val () = 
                              (case rhs
                                of M.RhsSimple s         => 
@@ -418,6 +435,14 @@ struct
                                       val () = boxedV dests
                                     in ()
                                     end
+                                | M.RhsTupleWait r      =>
+                                  let
+                                    val tf = #tupField r
+                                    val n  = getTupFieldNode tf
+                                    val ts = MU.TupleField.traceabilitySize tf
+                                    val () = addBoxedNodeIfRef (s, e, n, ts)
+                                  in ()
+                                  end
                                 | M.RhsTupleInited _    => ()
                                 | M.RhsIdxGet _         => fixed ()
                                 | M.RhsCont _           => fixed ()
@@ -1172,6 +1197,7 @@ struct
                                 | M.RhsTupleSub _       => ()
                                 | M.RhsTupleSet _       => ()
                                 | M.RhsTupleCAS _       => ()
+                                | M.RhsTupleWait _      => ()
                                 | M.RhsTupleInited _    => ()
                                 | M.RhsIdxGet _         => mark ()
                                 | M.RhsCont _           => mark ()

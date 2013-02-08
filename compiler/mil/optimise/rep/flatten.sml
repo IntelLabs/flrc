@@ -160,6 +160,7 @@ struct
                                 | M.RhsTupleSub _       => noFlatten ()
                                 | M.RhsTupleSet _       => noFlatten ()
                                 | M.RhsTupleCAS _       => noFlatten ()
+                                | M.RhsTupleWait _      => noFlatten ()
                                 | M.RhsTupleInited _    => noFlatten ()
                                 | M.RhsIdxGet _         => noFlatten ()
                                 | M.RhsCont _           => noFlatten ()

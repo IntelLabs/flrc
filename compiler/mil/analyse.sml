@@ -176,6 +176,7 @@ functor MilAnalyseF (
             val () = analyseOperand (s, e, newVal)
           in ()
           end
+        | M.RhsTupleWait {tupField, pred} => analyseTupleField (s, e, tupField)
         | M.RhsTupleInited {mdDesc, tup} =>
           let
             val () = analyseVariable (s, e, tup)

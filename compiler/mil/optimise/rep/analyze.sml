@@ -712,6 +712,12 @@ struct
                    val () = op <-- (tupleOp (se, id, tupField, nvn))
                  in ()
                  end
+               | M.RhsTupleWait {tupField, pred} =>
+                 let
+                   val dummy = newShallowTypedBottomNode (se, M.TRef)
+                   val () = op --> (tupleOp (se, id, tupField, dummy))
+                 in ()
+                 end
                | M.RhsTupleInited {mdDesc, tup} => variable (se, tup) <-- tupleMk (se, id, mdDesc, Vector.new0 ())
                | M.RhsIdxGet {idx, ofVal} => node () <-- Build.base (MU.Uintp.t (getConfig se))
                | M.RhsCont l => 

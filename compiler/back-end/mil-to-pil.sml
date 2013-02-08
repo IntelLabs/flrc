@@ -1629,6 +1629,36 @@ struct
       in Pil.S.expr a
       end
 
+  fun genTupleWait (state, env, tf, p) =
+      let
+        val M.TF {tup, ...} = tf
+        val v = genVarE (state, env, tup)
+        val (off, ssk, M.FD {kind, ...}) = doTupleField (state, env, tf)
+        val off = Pil.E.int off
+        val w =
+            case p
+             of M.WpNull    => RT.Sync.waitNull
+              | M.WpNonNull => RT.Sync.waitNonNull
+        val w = Pil.E.namedConstant w
+        fun doIndex e =
+            let
+              val es = MU.FieldKind.numBytes (getConfig env, kind)
+              val es = Pil.E.int es
+              val e = Pil.E.arith (Pil.E.arith (v, Pil.E.AoMul, es), Pil.E.AoAdd, off)
+            in e
+            end
+        val s =
+            case ssk
+             of SskScalarFixed                    => Pil.E.call (w, [v, off])
+              | SskScalarVariable e               => Pil.E.call (w, [v, doIndex e])
+              | SskVectorFixed _                  => fail ("genTupleWait", "field must be scalar")
+              | SskVectorVariableStrided _        => fail ("genTupleWait", "field must be scalar")
+              | SskVectorVariableIndexed _        => fail ("genTupleWait", "field must be scalar")
+              | SskVectorVariableVectorStrided _  => fail ("genTupleWait", "field must be scalar")
+              | SskVectorVariableVectorIndexed _  => fail ("genTupleWait", "field must be scalar")
+      in Pil.S.expr s
+      end
+
   val (instrumentAllocationSitesF, instrumentAllocationSites) =
       Config.Feature.mk ("Plsr:instrument-allocation-sites",
                          "gather allocation statistics per alloc site")
@@ -1851,17 +1881,14 @@ struct
             assign (genTupleSet (state, env, tupField, ofVal))
           | M.RhsTupleCAS {tupField, cmpVal, newVal} =>
             bind (fn v => genTupleCAS (state, env, v, tupField, cmpVal, newVal))
+          | M.RhsTupleWait {tupField, pred} => genTupleWait (state, env, tupField, pred)
           | M.RhsTupleInited {mdDesc, tup} =>
             let
-              val () = Fail.assert (modname,
-                                    "genInstr",
-                                    "TupleInited returns no value",
-                                    (fn () => Vector.isEmpty dests))
+              val () =
+                  Fail.assert (modname, "genInstr", "TupleInited returns no value", (fn () => Vector.isEmpty dests))
               val fvtb = MD.genMetaData (state, env, NONE, mdDesc, true)
               val tpl = genVarE (state, env, tup)
-              val finalise =
-                  Pil.E.call (Pil.E.namedConstant RT.GC.vtableChange,
-                              [tpl, fvtb])
+              val finalise = Pil.E.call (Pil.E.namedConstant RT.GC.vtableChange, [tpl, fvtb])
             in Pil.S.expr finalise
             end
           | M.RhsIdxGet {idx, ofVal} =>

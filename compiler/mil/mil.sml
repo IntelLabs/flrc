@@ -166,6 +166,10 @@ struct
     field   : fieldIdentifier
   }
 
+  datatype waitPredicate =
+      WpNull
+    | WpNonNull
+
   datatype rhs =
     (* Core *)
       RhsSimple        of simple
@@ -184,6 +188,8 @@ struct
     | RhsTupleCAS      of {tupField : tupleField,        (* Only pointer sized fields allowed. *)
                            cmpVal : operand,             (* Returns the field's old value.     *)
                            newVal : operand}
+    | RhsTupleWait     of {tupField : tupleField,
+                           pred : waitPredicate}
     | RhsTupleInited   of {mdDesc : metaDataDescriptor, 
                            tup : variable}
     | RhsIdxGet        of {idx : variable, 

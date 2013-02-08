@@ -223,6 +223,7 @@ struct
               M.RhsTupleCAS {tupField = tupleField (nm, tupField),
                              cmpVal = operand (nm, cmpVal),
                              newVal = operand (nm, newVal)}
+            | M.RhsTupleWait {tupField, pred} => M.RhsTupleWait {tupField = tupleField (nm, tupField), pred = pred}
             | M.RhsTupleInited _ => r
             | M.RhsIdxGet {idx, ofVal} => M.RhsIdxGet {idx = idx, ofVal = operand (nm, ofVal)}
             | M.RhsCont _ => r
@@ -1194,6 +1195,17 @@ struct
       in p
       end
 
+  fun waitPredicate (state : state, env : env) : M.waitPredicate P.t =
+      let
+        fun doKw s =
+            case s
+             of "nonnull" => P.succeed M.WpNonNull
+              | "null" => P.succeed M.WpNull
+              | _ => P.fail
+      in
+        P.bind identifierF doKw || P.error "expected wait predicate"
+      end
+
   fun codeOption (state : state, env : env) : M.variable option P.t =
       P.map (keycharSF #"-", fn _ => NONE) ||
       P.map (variableF (state, env), SOME) ||
@@ -1352,6 +1364,8 @@ struct
               | "ThunkMk" => P.map (parenSemiComma (fieldKind (state, env), fieldKind (state, env)),
                                     fn (fk, fks) => M.RhsThunkMk {typ = fk, fvs = fks})
               | "ThunkMkVal" => thunkMkVal NONE
+              | "Wait" => P.map (paren (tupleField (state, env) &&- keycharS #"," && waitPredicate (state, env)),
+                                 fn (tf, wp) => M.RhsTupleWait {tupField = tf, pred = wp})
               | _ => P.fail
         val kw = P.bind identifierF doKw
         val setQuery = P.map (keycharSF #"?" && operand (state, env), fn (_, opnd) => M.RhsPSetQuery opnd)

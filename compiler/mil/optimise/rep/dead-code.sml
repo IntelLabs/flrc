@@ -193,6 +193,7 @@ struct
                                | M.RhsTupleSub tf      => data ()
                                | M.RhsTupleSet r       => tupleSetDeps (#tupField r)
                                | M.RhsTupleCAS r       => (tupleSetDeps (#tupField r); data ())
+                               | M.RhsTupleWait r      => keep ()
                                | M.RhsTupleInited r    => tupleDeps ()
                                | M.RhsIdxGet _         => data ()
                                | M.RhsCont _           => ()
@@ -771,6 +772,12 @@ struct
                                                val {tupField, cmpVal = cv, newVal = nv} = r
                                                val tupField = tupleField tupField
                                                val rhs = M.RhsTupleCAS {tupField = tupField, cmpVal = cv, newVal = nv}
+                                             in replace rhs
+                                             end
+                  | M.RhsTupleWait r      => let
+                                               val {tupField, pred} = r
+                                               val tupField = tupleField tupField
+                                               val rhs = M.RhsTupleWait {tupField = tupField, pred = pred}
                                              in replace rhs
                                              end
                   | M.RhsTupleInited r    => keepIfLive (#tup r)

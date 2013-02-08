@@ -234,9 +234,11 @@ sig
 
   structure Sync :
   sig
-    val casUInt32 : Pil.identifier
-    val casUInt64 : Pil.identifier
-    val casRef    : Pil.identifier
+    val waitNull    : Pil.identifier
+    val waitNonNull : Pil.identifier
+    val casUInt32   : Pil.identifier
+    val casUInt64   : Pil.identifier
+    val casRef      : Pil.identifier
   end
 
   val exit      : Pil.identifier 
@@ -788,9 +790,11 @@ struct
 
   structure Sync =
   struct
-    val casUInt32 : Pil.identifier = Pil.identifier "pLsrSynchLockedCmpxchgUInt32"
-    val casUInt64 : Pil.identifier = Pil.identifier "pLsrSynchLockedCmpxchgUInt64"
-    val casRef    : Pil.identifier = Pil.identifier "pLsrSynchLockedCmpxchgRef"
+    val waitNull    : Pil.identifier = Pil.identifier "pLsrSynchWaitNull"
+    val waitNonNull : Pil.identifier = Pil.identifier "pLsrSynchWaitNonNull"
+    val casUInt32   : Pil.identifier = Pil.identifier "pLsrSynchLockedCmpxchgUInt32"
+    val casUInt64   : Pil.identifier = Pil.identifier "pLsrSynchLockedCmpxchgUInt64"
+    val casRef      : Pil.identifier = Pil.identifier "pLsrSynchLockedCmpxchgRef"
   end
 
   val exit = Pil.identifier "pLsrExit"

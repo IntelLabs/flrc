@@ -676,6 +676,18 @@ struct
                    val () = checkConsistentTyp (s, e, msg', ft, nvt)
                  in some ft
                  end
+               | M.RhsTupleWait {tupField as M.TF {field, ...}, pred} =>
+                 let
+                   val ft = tupleField (s, e, msg, tupField)
+                   val () = if MUT.isRef ft then () else reportError (s, msg () ^ ": field must be ref")
+                   val () =
+                       case field
+                        of M.FiFixed _ => ()
+                         | M.FiVariable _ => ()
+                         | M.FiVectorFixed _ => reportError (s, msg () ^ ": field must be scalar")
+                         | M.FiVectorVariable _ => reportError (s, msg () ^ ": field must be scalar")
+                 in none
+                 end
                | M.RhsTupleInited {mdDesc, tup} =>
                  let
                    fun msg' () = msg () ^ ": tuple"

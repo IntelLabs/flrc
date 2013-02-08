@@ -34,6 +34,7 @@ sig
     val layoutOperand              : Mil.operand layout
     val layoutFieldIdentifier      : Mil.fieldIdentifier layout
     val layoutTupleField           : Mil.tupleField layout
+    val layoutWaitPredicate        : Mil.waitPredicate layout
     val layoutRhs                  : Mil.rhs layout
     val layoutInstruction          : Mil.instruction layout
     val layoutTarget               : Mil.target layout
@@ -531,6 +532,11 @@ struct
        in l
        end
 
+   fun layoutWaitPredicate (env, wp) =
+       case wp
+        of M.WpNull => L.str "null"
+         | M.WpNonNull => L.str "nonnull"
+
    fun layoutTuple (env, mdDesc, inits) =
        let
          val mdd = layoutMetaDataDescriptor (env, mdDesc)
@@ -614,6 +620,8 @@ struct
          | M.RhsTupleCAS {tupField, cmpVal, newVal} =>
            L.seq [L.str "CAS",
                   L.tuple [layoutTupleField (env, tupField), layoutOperand (env, cmpVal), layoutOperand (env, newVal)]]
+         | M.RhsTupleWait {tupField, pred} =>
+           L.seq [L.str "Wait", L.tuple [layoutTupleField (env, tupField), layoutWaitPredicate (env, pred)]]
          | M.RhsTupleInited {mdDesc, tup} =>
            let
              val mdDesc = layoutMetaDataDescriptor (env, mdDesc)
@@ -1236,6 +1244,7 @@ struct
    val layoutOperand              = wrap layoutOperand
    val layoutFieldIdentifier      = wrap layoutFieldIdentifier
    val layoutTupleField           = wrap layoutTupleField
+   val layoutWaitPredicate        = wrap layoutWaitPredicate
    val layoutRhs                  = wrap layoutRhs
    val layoutInstruction          = wrap layoutInstruction
    val layoutTarget               = wrap layoutTarget

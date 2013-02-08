@@ -48,6 +48,7 @@ sig
     val vectorIndexKind    : Mil.vectorIndexKind t
     val fieldIdentifier    : Mil.fieldIdentifier t
     val tupleField         : Mil.tupleField t
+    val waitPredicate      : Mil.waitPredicate t
     val rhs                : Mil.rhs t
     val instruction        : Mil.instruction t
     val target             : Mil.target t
@@ -92,6 +93,7 @@ sig
     val vectorIndexKind    : Mil.vectorIndexKind t
     val fieldIdentifier    : Mil.fieldIdentifier t
     val tupleField         : Mil.tupleField t
+    val waitPredicate      : Mil.waitPredicate t
     val rhs                : Mil.rhs t
     val instruction        : Mil.instruction t
     val target             : Mil.target t
@@ -314,6 +316,7 @@ sig
     val valueSize : Config.t * t -> ValueSize.t
     val numBits : Config.t * t -> int
     val numBytes : Config.t * t -> int
+    val traceabilitySize : t -> TraceabilitySize.t
     val traceability : t -> TraceabilitySize.traceability
     val isRef : t -> bool
     val toString : t -> string
@@ -336,6 +339,7 @@ sig
     val valueSize : Config.t * t -> ValueSize.t
     val numBits : Config.t * t -> int
     val numBytes : Config.t * t -> int
+    val traceabilitySize : t -> TraceabilitySize.t
     val traceability : t -> TraceabilitySize.traceability
     val isRef : t -> bool
     val kind : t -> FieldKind.t
@@ -506,10 +510,23 @@ sig
     val isScalar : t -> bool
     val isVector : t -> bool
     val isVectorIndex : t -> bool
+    val traceabilitySize : t -> TraceabilitySize.t
     val fixed : t -> int option
     val variable : t -> Operand.t option
     val compare : t Compare.t
     val eq : t * t -> bool
+  end
+
+  structure WaitPredicate :
+  sig
+    type t = Mil.waitPredicate
+    val compare : t Compare.t
+    val eq : t * t -> bool
+    structure Dec :
+    sig
+      val wpNull : t -> unit option
+      val wpNotNull : t -> unit option
+    end
   end
 
   structure Rhs :
@@ -536,6 +553,8 @@ sig
                            inits  : Mil.operand Vector.t} option
       val rhsTupleSub : t -> Mil.tupleField option
       val rhsTupleSet : t -> {tupField : Mil.tupleField, ofVal: Mil.operand} option
+      val rhsTupleCas : t -> {tupField : Mil.tupleField, cmpVal : Mil.operand, newVal : Mil.operand} option
+      val rhsTupleWait : t -> {tupField : Mil.tupleField, pred : Mil.waitPredicate} option
       val rhsTupleInited : t -> {mdDesc : Mil.metaDataDescriptor, tup : Mil.variable} option
       val rhsIdxGet : t -> {idx : Mil.variable, ofVal : Mil.operand} option
       val rhsCont : t -> Mil.label option
@@ -1271,11 +1290,12 @@ struct
   structure M = Mil
   structure MP = Mil.Prims
 
+  val modname = "MilUtils"
+
   structure Chat = ChatF(type env = Config.t
                          fun extract c = c
-                         val name = "MilUtils"
+                         val name = modname
                          val indent = 0)
-
 
   structure FieldSize =
   struct
@@ -1696,6 +1716,13 @@ struct
                 #field, fieldIdentifier)
           (tf1, tf2)
 
+    fun waitPredicate (wp1, wp2) =
+        case (wp2, wp2)
+         of (Mil.WpNull,    Mil.WpNull   ) => EQUAL
+          | (Mil.WpNull,    Mil.WpNonNull) => LESS
+          | (Mil.WpNonNull, Mil.WpNull   ) => GREATER
+          | (Mil.WpNonNull, Mil.WpNonNull) => EQUAL
+
     fun rhs (rhs1, rhs2) =
         let
           val l    = label
@@ -1710,6 +1737,7 @@ struct
           val tf   = tupleField
           val ts   = C.rec2 (#tupField, tupleField, #ofVal, operand)
           val tcas = C.rec3 (#tupField, tupleField, #cmpVal, operand, #newVal, operand)
+          val tw   = C.rec2 (#tupField, tupleField, #pred, waitPredicate)
           val ti   = C.rec2 (#mdDesc, metaDataDescriptor,
                              #tup, variable)
           val ig   = C.rec2 (#idx, variable, #ofVal, operand)
@@ -1760,6 +1788,9 @@ struct
             | (M.RhsTupleCAS       x1, M.RhsTupleCAS       x2) => tcas (x1, x2)
             | (M.RhsTupleCAS       _ , _                     ) => LESS
             | (_                     , M.RhsTupleCAS       _ ) => GREATER
+            | (M.RhsTupleWait      x1, M.RhsTupleWait      x2) => tw (x1, x2)
+            | (M.RhsTupleWait      _ , _                     ) => LESS
+            | (_                     , M.RhsTupleWait      _ ) => GREATER
             | (M.RhsTupleInited    x1, M.RhsTupleInited    x2) => ti (x1, x2)
             | (M.RhsTupleInited    _ , _                     ) => LESS
             | (_                     , M.RhsTupleInited    _ ) => GREATER
@@ -2023,6 +2054,7 @@ struct
     val vectorIndexKind    : Mil.vectorIndexKind t = Equality.fromCompare Compare.vectorIndexKind
     val fieldIdentifier    : Mil.fieldIdentifier t = Equality.fromCompare Compare.fieldIdentifier
     val tupleField         : Mil.tupleField t = Equality.fromCompare Compare.tupleField
+    val waitPredicate      : Mil.waitPredicate t = Equality.fromCompare Compare.waitPredicate
     val rhs                : Mil.rhs t = Equality.fromCompare Compare.rhs
     val instruction        : Mil.instruction t = Equality.fromCompare Compare.instruction
     val target             : Mil.target t = Equality.fromCompare Compare.target
@@ -2723,6 +2755,13 @@ struct
     fun numBits   (config, fk) = FieldSize.numBits     (fieldSize (config, fk))
     fun numBytes  (config, fk) = FieldSize.numBytes    (fieldSize (config, fk))
 
+    fun traceabilitySize fk =
+        case fk
+         of M.FkRef     => TS.TsRef
+          | M.FkBits fs => TS.TsBits (FieldSize.toValueSize fs)
+          | M.FkFloat   => TS.TsFloat
+          | M.FkDouble  => TS.TsDouble
+
     fun traceability fk =
         case fk
          of M.FkRef    => TS.TRef
@@ -2843,6 +2882,7 @@ struct
     fun numBits   (config, fd) = FieldKind.numBits   (config, kind fd)
     fun numBytes  (config, fd) = FieldKind.numBytes  (config, kind fd)
 
+    fun traceabilitySize fd = FieldKind.traceabilitySize (kind fd)
     fun traceability fd = FieldKind.traceability (kind fd)
     fun isRef fd = TraceabilitySize.traceabilityIsRef (traceability fd)
 
@@ -3166,6 +3206,9 @@ struct
   structure TupleField =
   struct
 
+    val modname = modname ^ ".TupleField"
+    fun fail (f, m) = Fail.fail (modname, f, m)
+
     type t = Mil.tupleField
 
     fun tupDesc (M.TF {tupDesc = td, ...}) = td
@@ -3184,8 +3227,51 @@ struct
     fun fieldDescriptor tf =
         FieldIdentifier.fieldDescriptor (tupDesc tf, field tf)
 
+    fun traceabilitySize (M.TF {tupDesc = M.TD {fixed, array, ...}, field, ...}) =
+        case field
+         of M.FiFixed i =>
+            let
+              val fd =
+                  if i < 0 then
+                    fail ("traceabilitySize", "bad tuple field")
+                  else if i < Vector.length fixed then
+                    Vector.sub (fixed, i)
+                  else
+                    case array
+                     of NONE => fail ("traceabilitySize", "bad tuple field")
+                      | SOME fd => fd
+              val ts = FieldDescriptor.traceabilitySize fd
+            in ts
+            end
+          | M.FiVariable _ =>
+            (case array
+              of NONE => fail ("traceabilitySize", "bad tuple field")
+               | SOME fd => FieldDescriptor.traceabilitySize fd)
+          | M.FiVectorFixed {descriptor = M.Prims.Vd {vectorSize, ...}, ...} =>
+            TraceabilitySize.TsBits (Prims.Utils.VectorSize.toValueSize vectorSize)
+          | M.FiVectorVariable {descriptor = M.Prims.Vd {vectorSize, ...}, ...} =>
+            TraceabilitySize.TsBits (Prims.Utils.VectorSize.toValueSize vectorSize)
+
     val compare = Compare.tupleField
     val eq = Eq.tupleField
+
+  end
+
+  structure WaitPredicate =
+  struct
+
+    type t = Mil.waitPredicate
+
+    val compare = Compare.waitPredicate
+    val eq = Eq.waitPredicate
+
+    structure Dec =
+    struct
+
+      fun wpNull    wp = case wp of M.WpNull => SOME () | _ => NONE
+      fun wpNotNull wp = case wp of M.WpNonNull => SOME () | _ => NONE
+
+    end
 
   end
 
@@ -3202,6 +3288,7 @@ struct
           | M.RhsTupleSub _       => true
           | M.RhsTupleSet _       => true
           | M.RhsTupleCAS _       => true
+          | M.RhsTupleWait _      => true
           | M.RhsTupleInited _    => true
           | M.RhsIdxGet _         => true
           | M.RhsCont _           => true
@@ -3286,6 +3373,7 @@ struct
           | M.RhsTupleSub x           => tupleSub x
           | M.RhsTupleSet x           => tupleSet x
           | M.RhsTupleCAS x           => readWriteS
+          | M.RhsTupleWait _          => fromList [HeapRead, InitRead, Partial] (* XXX NG : not completely accurate *)
           | M.RhsTupleInited _        => InitWriteS
           | M.RhsIdxGet _             => InitReadS
           | M.RhsCont _               => T
@@ -3351,6 +3439,7 @@ struct
            | M.RhsTupleSub _           => NONE
            | M.RhsTupleSet _           => NONE
            | M.RhsTupleCAS _           => NONE
+           | M.RhsTupleWait _          => NONE
            | M.RhsTupleInited _        => NONE
            | M.RhsIdxGet _             => NONE
            | M.RhsCont _               => NONE
@@ -3381,6 +3470,7 @@ struct
           | M.RhsTupleSub _                        => 1
           | M.RhsTupleSet _                        => 0
           | M.RhsTupleCAS _                        => 1
+          | M.RhsTupleWait _                       => 0
           | M.RhsTupleInited _                     => 0
           | M.RhsIdxGet _                          => 1
           | M.RhsCont _                            => 1
@@ -3420,6 +3510,8 @@ struct
        fn rhs => (case rhs of M.RhsTupleSet r => SOME r | _ => NONE)
       val rhsTupleCas = 
        fn rhs => (case rhs of M.RhsTupleCAS r => SOME r | _ => NONE)
+      val rhsTupleWait = 
+       fn rhs => (case rhs of M.RhsTupleWait r => SOME r | _ => NONE)
       val rhsTupleInited = 
        fn rhs => (case rhs of M.RhsTupleInited r => SOME r | _ => NONE)
       val rhsIdxGet = 

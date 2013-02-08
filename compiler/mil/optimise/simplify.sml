@@ -3914,6 +3914,15 @@ struct
         in tupleField
         end
 
+    val tupleWait =
+        let
+          val tupleField = 
+              tupleField {dec = fn {tupField, pred} => (tupField, pred),
+                          con = fn (tupField, wp) =>
+                                   M.RhsTupleWait {tupField = tupField, pred = wp}}
+        in tupleField
+        end
+
     val tupleInited = fn (state, (i, dests, r)) => NONE
 
     val idxGet = 
@@ -4393,6 +4402,7 @@ struct
                 | M.RhsTupleSub r       => tupleSub (state, (i, dests, r))
                 | M.RhsTupleSet r       => tupleSet (state, (i, dests, r))
                 | M.RhsTupleCAS r       => tupleCAS (state, (i, dests, r))
+                | M.RhsTupleWait r      => tupleWait (state, (i, dests, r))
                 | M.RhsTupleInited r    => tupleInited (state, (i, dests, r))
                 | M.RhsIdxGet r         => idxGet (state, (i, dests, r))
                 | M.RhsCont r           => cont (state, (i, dests, r))
