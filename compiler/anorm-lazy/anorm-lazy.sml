@@ -80,6 +80,8 @@ struct
 
   type symbolTable = ty Identifier.symbolTable
 
+  type symbolInfo = ty Identifier.SymbolInfo.t
+
   type typeManager = ty_ TypeRep.manager
 
   datatype module 
@@ -87,39 +89,48 @@ struct
 
   type t = module * symbolTable * typeManager
 
-  val hashTy_ : ty Identifier.SymbolInfo.t -> ty_ TypeRep.baseHash
-    = fn st => fn (tm, t) => 
-      let
-        fun hashRep t = TypeRep.hashRep (tm, t)
-      in
-        case t 
-          of Data   => "D"
-           | Prim p => 
-            let
-              val l = GHCPrimTypeLayout.layoutPrimTy (Layout.str o hashRep) p
-            in
-              "P(" ^ Layout.toString l ^ ")"
-            end
-           | Arr (t1, t2, _) => "A(" ^ hashRep t1 ^ "," ^ hashRep t2 ^ ")"
+  val eqTy_ : ty_ TypeRep.baseEq
+    = fn f => fn (x, y) =>
+      (case (x, y)
+        of (Data, Data) => true
+         | (Prim a, Prim b) => GHCPrimType.eqPrimTy f (a, b)
+         | (Arr (a, b, c), Arr (u, v, w)) => 
+          f (a, u) andalso f (b, v) andalso c = w
+         | (Sum xs, Sum ys) => 
+          let
+            fun h ((t1, s1), (t2, s2)) = f (t1, t2) andalso s1 = s2
+            fun g (((_, i), l), ((_, j), m)) 
+              = i = j andalso List.length l = List.length m andalso 
+                List.forall (List.zip (l,m), h)
+          in
+            List.length xs = List.length ys andalso 
+            List.forall (List.zip (xs, ys), g)
+          end
+         | _ => false)
+
+  val rec hashTy_ : symbolInfo -> ty_ TypeRep.baseHash
+    = fn st => fn hashRep => fn t =>
+       (case t 
+          of Data   => 0w1
+           | Prim p => TypeRep.hash2 (0w2, GHCPrimType.hashPrimTy hashRep p)
+           | Arr (t1, t2, _) => TypeRep.hash3 (0w3, hashRep t1, hashRep t2)
            | Sum arms => 
             let
-              fun doTys tys = List.toString hashRep tys
-              fun doArm ((n, _), tys) 
-                = Identifier.SymbolInfo.nameString (st, n) ^ doTys (List.map (tys, #1))
+              fun doArm ((_, i), tys) 
+                = TypeRep.hash2 (Word.fromInt i, TypeRep.hashList (List.map (tys, hashRep o #1)))
             in
-              "S" ^ List.toString doArm arms
-            end
-      end
+              TypeRep.hash2 (0w4, TypeRep.hashList (List.map (arms, doArm)))
+            end)
 end
 
 signature ANORM_LAZY_LAYOUT =
 sig
-  val layoutTy     : ANormLazy.ty Identifier.SymbolInfo.t -> ANormLazy.ty     -> Layout.t
-  val layoutAlt    : ANormLazy.ty Identifier.SymbolInfo.t -> ANormLazy.alt    -> Layout.t
-  val layoutExp    : ANormLazy.ty Identifier.SymbolInfo.t -> ANormLazy.exp    -> Layout.t
-  val layoutVDef   : ANormLazy.ty Identifier.SymbolInfo.t -> ANormLazy.vDef   -> Layout.t
-  val layoutVDefg  : ANormLazy.ty Identifier.SymbolInfo.t -> ANormLazy.vDefg  -> Layout.t
-  val layoutTDef   : ANormLazy.ty Identifier.SymbolInfo.t -> ANormLazy.tDef   -> Layout.t
+  val layoutTy     : ANormLazy.symbolInfo -> ANormLazy.ty     -> Layout.t
+  val layoutAlt    : ANormLazy.symbolInfo -> ANormLazy.alt    -> Layout.t
+  val layoutExp    : ANormLazy.symbolInfo -> ANormLazy.exp    -> Layout.t
+  val layoutVDef   : ANormLazy.symbolInfo -> ANormLazy.vDef   -> Layout.t
+  val layoutVDefg  : ANormLazy.symbolInfo -> ANormLazy.vDefg  -> Layout.t
+  val layoutTDef   : ANormLazy.symbolInfo -> ANormLazy.tDef   -> Layout.t
   val layoutModule : ANormLazy.t -> Layout.t
 end
 

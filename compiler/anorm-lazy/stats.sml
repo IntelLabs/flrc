@@ -15,7 +15,7 @@ struct
   val passname = "ANormLazyStats"
 
   structure AL = ANormLazy
-  structure SS = StringSet
+  structure WS = WordSet 
   structure I = Identifier
   structure L = Layout
 
@@ -28,7 +28,7 @@ struct
   val getTM = fn (E { tm = tm, ... }) => tm
 
   datatype state = S of {
-                   tySet    : SS.t ref,
+                   tySet    : WS.t ref,
                    expNodes : int ref,
                    tyNodes  : int ref,
                    varUses  : int ref,
@@ -37,7 +37,7 @@ struct
 
   val stateMk =
    fn () => 
-      S {tySet = ref SS.empty, expNodes = ref 0, tyNodes = ref 0, varUses = ref 0, vDefs = ref 0}
+      S {tySet = ref WS.empty, expNodes = ref 0, tyNodes = ref 0, varUses = ref 0, vDefs = ref 0}
 
   val incr = fn r => r := (!r) + 1
 
@@ -48,7 +48,7 @@ struct
   val incrVDefs = incrF #vDefs
   val insertTyNode = 
    fn (S { tySet = tySet, ... }, env, ty) => 
-     tySet := SS.insert (!tySet, TypeRep.hashRep (getTM env, ty))
+     tySet := WS.insert (!tySet, TypeRep.hashRepWithManager (getTM env, ty))
 
   val variableUse = fn (s, e, _) => incrVarUses s
   val analyzeExp = fn (s, e, _) => incrExpNodes s
@@ -71,7 +71,7 @@ struct
         val doOne = fn (s, r) => L.seq [L.str ("  Number of " ^ s), Int.layout r]
         val l = L.align [doOne ("exp nodes:          ", !expNodes),
                          doOne ("ty nodes:           ", !tyNodes),
-                         doOne ("ty nodes (unique):  ", SS.size (!tySet)),
+                         doOne ("ty nodes (unique):  ", WS.size (!tySet)),
                          doOne ("ty nodes (managed): ", TypeRep.size (getTM e)),
                          doOne ("var uses:           ", !varUses),
                          doOne ("def bindings:       ", !vDefs)]

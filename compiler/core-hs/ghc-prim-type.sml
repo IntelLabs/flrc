@@ -15,6 +15,8 @@ sig
 
   val hsToPrimTy : ((CoreHs.ty -> 'a) * CoreHs.ty) -> 'a primTy option
   val mapPrimTy : ('a primTy * ('a -> 'b)) -> 'b primTy 
+  val eqPrimTy : ('a * 'a -> bool) -> 'a primTy * 'a primTy -> bool
+  val hashPrimTy : ('a -> word) -> 'a primTy -> word
 end
 
 structure GHCPrimType :> GHC_PRIM_TYPE =
@@ -144,6 +146,95 @@ struct
         |  Ref                    => Ref
         |  LiftedKind             => LiftedKind
         |  EqTy (a, b, c)         => EqTy (f a, f b, f c))
+
+fun eqPrimTy f (ty1, ty2) =    
+      (case (ty1, ty2)
+        of (Int                    , Int) => true
+        |  (Int64                  , Int64) => true
+        |  (Integer                , Integer) => true
+        |  (Bool                   , Bool) => true
+        |  (Word                   , Word) => true
+        |  (Word64                 , Word64) => true
+        |  (Char                   , Char) => true
+        |  (Addr                   , Addr) => true
+        |  (Double                 , Double) => true
+        |  (Float                  , Float) => true
+        |  (Array a                , Array u) => f (a, u)
+        |  (ImmutableArray a       , ImmutableArray u) => f (a, u)
+        |  (StrictImmutableArray a , StrictImmutableArray u) => f (a, u)
+        |  (UnboxedWordArray       , UnboxedWordArray) => true
+        |  (UnboxedWord8Array      , UnboxedWord8Array) => true
+        |  (UnboxedWord16Array     , UnboxedWord16Array) => true
+        |  (UnboxedWord32Array     , UnboxedWord32Array) => true
+        |  (UnboxedWord64Array     , UnboxedWord64Array) => true
+        |  (UnboxedIntArray        , UnboxedIntArray) => true
+        |  (UnboxedInt8Array       , UnboxedInt8Array) => true
+        |  (UnboxedInt16Array      , UnboxedInt16Array) => true
+        |  (UnboxedInt32Array      , UnboxedInt32Array) => true
+        |  (UnboxedInt64Array      , UnboxedInt64Array) => true
+        |  (UnboxedFloatArray      , UnboxedFloatArray) => true
+        |  (UnboxedDoubleArray     , UnboxedDoubleArray) => true
+        |  (UnboxedCharArray       , UnboxedCharArray) => true
+        |  (UnboxedAddrArray       , UnboxedAddrArray) => true
+        |  (ByteArray              , ByteArray) => true
+        |  (MutableArray (a,b)     , MutableArray (u,v)) => f (a, u) andalso f (b, v)
+        |  (MutableByteArray a     , MutableByteArray u) => f (a, u)
+        |  (ThreadId               , ThreadId ) => true
+        |  (State a                , State u) => f (a, u)
+        |  (WeakPtr a              , WeakPtr u) => f (a, u)
+        |  (StablePtr a            , StablePtr u) => f (a, u)
+        |  (StableName             , StableName) => true
+        |  (MVar (a, b)            , MVar (u, v)) => f (a, u) andalso f (b, v)
+        |  (MutVar (a, b)          , MutVar (u, v)) => f (a, u) andalso f (b, v)
+        |  (Tuple tys1             , Tuple tys2) => List.forall (List.zip (tys1, tys2), f)
+        |  (Ref                    , Ref) => true
+        |  (LiftedKind             , LiftedKind) => true
+        |  (EqTy (a, b, c)         , EqTy (u, v, w)) => f (a, u) andalso f (b, v) andalso f (c, w)
+        |  _ => false)
+
+  val hashPrimTy = fn f => fn ty =>
+      (case ty 
+        of Int                    => 0w1
+        |  Int64                  => 0w2
+        |  Integer                => 0w3
+        |  Bool                   => 0w4
+        |  Word                   => 0w5
+        |  Word64                 => 0w6
+        |  Char                   => 0w7
+        |  Addr                   => 0w8
+        |  Double                 => 0w9
+        |  Float                  => 0w10
+        |  Array a                => TypeRep.hash2 (0w11, f a)
+        |  ImmutableArray a       => TypeRep.hash2 (0w12, f a)
+        |  StrictImmutableArray a => TypeRep.hash2 (0w13, f a)
+        |  UnboxedWordArray       => 0w14
+        |  UnboxedWord8Array      => 0w15
+        |  UnboxedWord16Array     => 0w16
+        |  UnboxedWord32Array     => 0w17
+        |  UnboxedWord64Array     => 0w18
+        |  UnboxedIntArray        => 0w19
+        |  UnboxedInt8Array       => 0w20
+        |  UnboxedInt16Array      => 0w21
+        |  UnboxedInt32Array      => 0w22
+        |  UnboxedInt64Array      => 0w23
+        |  UnboxedFloatArray      => 0w24
+        |  UnboxedDoubleArray     => 0w25
+        |  UnboxedCharArray       => 0w26
+        |  UnboxedAddrArray       => 0w27
+        |  ByteArray              => 0w28
+        |  MutableArray (a,b)     => TypeRep.hash3 (0w29, f a, f b)
+        |  MutableByteArray a     => TypeRep.hash2 (0w30, f a)
+        |  ThreadId               => 0w31
+        |  State a                => TypeRep.hash2 (0w32, f a)
+        |  WeakPtr a              => TypeRep.hash2 (0w33, f a)
+        |  StablePtr a            => TypeRep.hash2 (0w34, f a)
+        |  StableName             => 0w35
+        |  MVar (a, b)            => TypeRep.hash3 (0w36, f a, f b)
+        |  MutVar (a, b)          => TypeRep.hash3 (0w37, f a, f b)
+        |  Tuple tys              => TypeRep.hashList (0w38 :: List.map (tys, f))
+        |  Ref                    => 0w39
+        |  LiftedKind             => 0w40
+        |  EqTy (a, b, c)         => TypeRep.hash4 (0w41, f a, f b, f c))
 
 end
 

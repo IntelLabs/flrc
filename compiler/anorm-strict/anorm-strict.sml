@@ -93,29 +93,40 @@ struct
 
   type t = module * symbolTable * typeManager
 
-  val hashTy_ : symbolInfo -> ty_ TypeRep.baseHash
-    = fn st => fn (tm, t) => 
+  val eqTy_ : ty_ TypeRep.baseEq
+    = fn f => fn (x, y) =>
       let
-        fun hashRep t = TypeRep.hashRep (tm, t)
+        fun both (m, n, h) = List.length m = List.length n andalso List.forall (List.zip (m, n), h)
       in
-        case t 
-          of Boxed => "B"
-           | Prim p => 
+        case (x, y)
+          of (Boxed, Boxed) => true
+           | (Prim a, Prim b) => GHCPrimType.eqPrimTy f (a, b)
+           | (Arr (a, b, c), Arr (u, v, w)) => both (a, u, f) andalso both (b, v, f) andalso c = w
+           | (Sum xs, Sum ys) => 
             let
-              val l = GHCPrimTypeLayout.layoutPrimTy (Layout.str o hashRep) p
+              fun g (((_, i), l), ((_, j), m)) = i = j andalso both (l, m, f)
             in
-              "P(" ^ Layout.toString l ^ ")"
+              both (xs, ys, g)
             end
-           | Arr (t1, t2, _) => "A(" ^ List.toString hashRep t1 ^ "," ^ List.toString hashRep t2 ^ ")"
+            | (Thunk a, Thunk u) => f (a, u)
+            | _ => false
+      end
+
+  val hashTy_ : symbolInfo -> ty_ TypeRep.baseHash
+    = fn st => fn hashRep => fn t => 
+       (case t 
+          of Boxed => 0w1
+           | Prim p => TypeRep.hash2 (0w2, GHCPrimType.hashPrimTy hashRep p)
+           | Arr (t1, t2, _) => TypeRep.hash3 (0w3, TypeRep.hashList (List.map (t1, hashRep)), 
+                                                    TypeRep.hashList (List.map (t2, hashRep)))
            | Sum arms => 
             let
-              fun doTys tys = List.toString hashRep tys
-              fun doArm ((n, _), tys) = Identifier.SymbolInfo.nameString (st, n) ^ doTys tys
+              fun doArm ((_, i), tys) 
+                = TypeRep.hash2 (Word.fromInt i, TypeRep.hashList (List.map (tys, hashRep)))
             in
-              "S" ^ List.toString doArm arms
+              TypeRep.hash2 (0w4, TypeRep.hashList (List.map (arms, doArm)))
             end
-           | Thunk t => "T(" ^ hashRep t ^ ")"
-      end
+           | Thunk t => TypeRep.hash2 (0w5, hashRep t))
 
 end (* structure ANormStrict *)
 

@@ -677,6 +677,9 @@ end;
 structure IntSet =
     SetF (struct type t = int val compare = Int.compare end);
 
+structure WordSet =
+    SetF (struct type t = word val compare = Word.compare end);
+
 structure StringSet =
     SetF (struct type t = string val compare = String.compare end);
 
@@ -797,6 +800,9 @@ end;
 
 structure IntDict =
     DictF (struct type t = int val compare = Int.compare end);
+
+structure WordDict =
+    DictF (struct type t = word val compare = Word.compare end);
 
 structure StringDict =
     DictF (struct type t = string val compare = String.compare end);

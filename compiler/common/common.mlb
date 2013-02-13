@@ -65,7 +65,11 @@ local
         end
         rename.sml
         effect.sml
-        type-rep.sml
+        local 
+          $(SML_LIB)/smlnj-lib/Util/smlnj-lib.mlb
+        in
+          type-rep.sml
+        end
 
 in
         signature CHAT
@@ -145,6 +149,8 @@ in
         structure UnParser
         structure Utils
         structure Word32
+        structure WordDict
+        structure WordSet
         structure ZCoding
         signature TYPE_REP
         structure TypeRep

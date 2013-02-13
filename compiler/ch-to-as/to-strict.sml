@@ -571,7 +571,7 @@ struct
         val cfg = PassData.getConfig pd
         val im = IM.fromExistingNoInfo im 
         val si = I.SymbolInfo.SiManager im
-        val tm = TypeRep.newManager (AS.hashTy_ si)
+        val tm = TypeRep.newManager (AS.hashTy_ si, AS.eqTy_)
         val state = { im = im, tm = tm }
         val env = { cfg = cfg, tyenv = VD.empty }
         fun oneVDefg (vdefg, (vdefgs, env))
