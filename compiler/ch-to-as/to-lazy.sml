@@ -536,9 +536,7 @@ struct
     = let 
         val cfg  = PassData.getConfig pd
         val im   = IM.new ""
-        val si   = I.SymbolInfo.SiManager im
-        val hashTy = Layout.toString o (ANormLazyLayout.layoutTy si)
-        val tm   = TypeRep.newManager (AL.hashTy_ si, AL.eqTy_)
+        val tm   = TypeRep.newManager (AL.hashTy_, AL.eqTy_)
         val name = String.dropLast (CL.qNameToString (SOME name, ""))
         val dict = List.fold (tdefs, emptyDict, doTDef (im, cfg))
         val state = { im = im, tm = tm } 

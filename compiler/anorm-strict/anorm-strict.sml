@@ -104,7 +104,7 @@ struct
            | (Arr (a, b, c), Arr (u, v, w)) => both (a, u, f) andalso both (b, v, f) andalso c = w
            | (Sum xs, Sum ys) => 
             let
-              fun g (((_, i), l), ((_, j), m)) = i = j andalso both (l, m, f)
+              fun g (((u, i), l), ((v, j), m)) = u = v andalso i = j andalso both (l, m, f)
             in
               both (xs, ys, g)
             end
@@ -112,8 +112,8 @@ struct
             | _ => false
       end
 
-  val hashTy_ : symbolInfo -> ty_ TypeRep.baseHash
-    = fn st => fn hashRep => fn t => 
+  val hashTy_ : ty_ TypeRep.baseHash
+    = fn hashRep => fn t => 
        (case t 
           of Boxed => 0w1
            | Prim p => TypeRep.hash2 (0w2, GHCPrimType.hashPrimTy hashRep p)

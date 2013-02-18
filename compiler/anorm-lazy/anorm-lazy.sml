@@ -99,8 +99,8 @@ struct
          | (Sum xs, Sum ys) => 
           let
             fun h ((t1, s1), (t2, s2)) = f (t1, t2) andalso s1 = s2
-            fun g (((_, i), l), ((_, j), m)) 
-              = i = j andalso List.length l = List.length m andalso 
+            fun g (((u, i), l), ((v, j), m)) 
+              = u =v andalso i = j andalso List.length l = List.length m andalso 
                 List.forall (List.zip (l,m), h)
           in
             List.length xs = List.length ys andalso 
@@ -108,8 +108,8 @@ struct
           end
          | _ => false)
 
-  val rec hashTy_ : symbolInfo -> ty_ TypeRep.baseHash
-    = fn st => fn hashRep => fn t =>
+  val rec hashTy_ : ty_ TypeRep.baseHash
+    = fn hashRep => fn t =>
        (case t 
           of Data   => 0w1
            | Prim p => TypeRep.hash2 (0w2, GHCPrimType.hashPrimTy hashRep p)
