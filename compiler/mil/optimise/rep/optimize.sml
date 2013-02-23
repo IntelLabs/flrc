@@ -437,6 +437,11 @@ struct
                                     end
                                 | M.RhsTupleWait r      =>
                                   let
+                                    val () = 
+                                        if noTupleUnbox pd then
+                                          ()
+                                        else
+                                          boxed (MU.TupleField.tup (#tupField r))
                                     val tf = #tupField r
                                     val n  = getTupFieldNode tf
                                     val ts = MU.TupleField.traceabilitySize tf

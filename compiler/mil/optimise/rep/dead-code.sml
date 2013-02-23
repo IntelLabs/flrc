@@ -105,6 +105,7 @@ struct
                          val summary = SE1.getSummary s
                          val fg = SE1.getFlowGraph s
                          val fvs = MFV.rhs (SE1.getConfig e, rhs)
+                         val liveN = fn n => FG.add (fg, n, true)
                          val live =
                           fn v => FG.add (fg, MRS.variableNode (summary, v), true)
                          val keep = fn () => VS.foreach (fvs, live)
@@ -185,6 +186,42 @@ struct
                                  in Vector.foreach (dests, fn v => FG.addEdge (fg, n, MRS.variableNode (summary, v)))
                                  end
                                | _ => ()
+
+                         val keepWait =
+                          fn M.TF {tupDesc, tup, field} => 
+                             let
+                               val () = keep ()
+                               val id = MU.Id.I n
+                               val {fixed, array} = 
+                                   (case MRS.iInfo (summary, id)
+                                     of MRB.IiTupleDescriptor r => r
+                                      | _ => fail ("keepWait", "Bad metadata"))
+                               val doVariable = 
+                                fn () =>
+                                   case array
+                                    of SOME n => liveN n
+                                     | NONE   => keep ()
+                               val doFixed =  
+                                fn i => 
+                                   if i >= 0 andalso i < Vector.length fixed then
+                                     liveN (Vector.sub (fixed, i))
+                                   else
+                                     doVariable ()
+                               val () = 
+                                   case field
+                                    of M.FiFixed i       => doFixed i
+                                     | M.FiVariable _    => doVariable ()
+                                     | M.FiVectorFixed r => 
+                                       let
+                                         val {index, descriptor, ...} = r
+                                         val count = MU.Prims.Utils.VectorDescriptor.elementCount descriptor
+                                       in Utils.Iterate.foreach 
+                                            (index, fn i => i + 1, fn i => i < index + count, doFixed)
+                                       end
+                                     | M.FiVectorVariable _ => doVariable ()
+                             in ()
+                             end
+ 
                          val () = 
                              case rhs
                               of M.RhsSimple s         => ()
@@ -193,7 +230,7 @@ struct
                                | M.RhsTupleSub tf      => data ()
                                | M.RhsTupleSet r       => tupleSetDeps (#tupField r)
                                | M.RhsTupleCAS r       => (tupleSetDeps (#tupField r); data ())
-                               | M.RhsTupleWait r      => keep ()
+                               | M.RhsTupleWait r      => keepWait (#tupField r)
                                | M.RhsTupleInited r    => tupleDeps ()
                                | M.RhsIdxGet _         => data ()
                                | M.RhsCont _           => ()
