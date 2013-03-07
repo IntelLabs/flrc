@@ -126,16 +126,17 @@ struct
            VtmAlwaysMutable | VtmCreatedMutable | VtmAlwaysImmutable
 
   datatype vtInfo = Vti of {
-           name      : string,
-           tag       : M.pObjKind,
-           pinned    : bool,
-           fixedSize : int,
-           fixedRefs : bool Vector.t,
-           alignment : int,
-           padding   : int,
-           array     : {size : int, offset : int, isRef : bool} option,
-           mut       : vtMutability
-  }
+                    code      : M.variable option,
+                    name      : string,
+                    tag       : M.pObjKind,
+                    pinned    : bool,
+                    fixedSize : int,
+                    fixedRefs : bool Vector.t,
+                    alignment : int,
+                    padding   : int,
+                    array     : {size : int, offset : int, isRef : bool} option,
+                    mut       : vtMutability
+                  }
 
   (* An order on vtInfo *)
   local
@@ -156,16 +157,17 @@ struct
           | (VtmAlwaysImmutable, VtmAlwaysImmutable) => EQUAL
   in
   fun vtInfoCompare (Vti x1, Vti x2) =
-      rec9 (#name, String.compare,
-            #tag, MU.PObjKind.compare, 
-            #pinned, Bool.compare,
-            #fixedSize, Int.compare,
-            #fixedRefs, vector Bool.compare,
-            #alignment, Int.compare,
-            #padding, Int.compare,
-            #array, arrayCompare,
-            #mut, vtMutabilityCompare)
-           (x1, x2)
+      rec10 (#code, option Identifier.variableCompare,
+             #name, String.compare,
+             #tag, MU.PObjKind.compare, 
+             #pinned, Bool.compare,
+             #fixedSize, Int.compare,
+             #fixedRefs, vector Bool.compare,
+             #alignment, Int.compare,
+             #padding, Int.compare,
+             #array, arrayCompare,
+             #mut, vtMutabilityCompare)
+            (x1, x2)
   end
 
   local
@@ -345,7 +347,8 @@ struct
   val (lightweightThunksF, lightweightThunks) =
       Config.Feature.mk ("Plsr:lightweight-thunks",
                          "Use lightweight sequential thunks")
-                        
+
+  val vtThunkCode = lightweightThunks
 
   (*** Object Model ***)
 
@@ -549,7 +552,8 @@ struct
 
     (* Highly runtime specific assumptions:
      *  A thunk is a vtable, a sequence of word sized fields, followed by the results field, 
-     *  followed by free variables.
+     *  followed by free variables.  For the lightweight thunks, the free variables overlap
+     *  with the results field.
      *)
 
     (* Fieldkinds for the vtable + sequence of word sized fields *)
@@ -594,10 +598,30 @@ struct
         end
 
     (* Size of the thunk including free variables.  The initial part of the
-     * object imposes no alignment restrictions on the rest of the object. *)
+     * object imposes no alignment restrictions on the rest of the object. 
+     * For the lightweight thunks, we compute the size in bytes assuming no
+     * overlap.  If the free variable size is larger than the result size,
+     * we subtract the result size from the total to account for overlap.
+     * If the free variable size is smaller than the result size, we 
+     * simply use original object size.
+     *)
     fun thunkSize (state, env, typ, fks) =
-        objectSizeG (state, env, MU.FieldKind.numBytes, fn _ => 1,
-                     fks, NONE, (thunkFixedSize (state, env, typ), 1))
+        if lightweightThunks (getConfig env) then 
+          let
+            val sz1 = thunkFixedSize (state, env, typ)
+            val sz2 = objectSizeG (state, env, MU.FieldKind.numBytes, fn _ => 1,
+                                   fks, NONE, (sz1, 1))
+            val rsz = MU.FieldKind.numBytes (getConfig env, typ)
+            val fvsz = sz2 - sz1
+            val sz = if fvsz >  rsz then
+                       sz2 - rsz
+                     else
+                       sz1
+          in sz
+          end
+        else
+          objectSizeG (state, env, MU.FieldKind.numBytes, fn _ => 1,
+                       fks, NONE, (thunkFixedSize (state, env, typ), 1))
 
     (* Padding of the thunk including free variables.  *)
     fun thunkPadding (state, env, typ, fks) =
@@ -622,8 +646,16 @@ struct
         end
 
     fun thunkFvOffset (state, env, typ, fks, i) =
-        fieldOffsetG (state, env, MU.FieldKind.numBytes, fn _ => 1,
-                      fks, NONE, i, thunkFixedSize (state, env, typ))
+        let
+          val config = getConfig env
+          val off = fieldOffsetG (state, env, MU.FieldKind.numBytes, fn _ => 1,
+                                 fks, NONE, i, thunkFixedSize (state, env, typ))
+        in
+          if lightweightThunks config then 
+            off - (MU.FieldKind.numBytes (config, typ))
+          else
+            off
+        end
 
     fun genDefs (state, env) =
         let
@@ -871,7 +903,7 @@ struct
         * generating it if necessary.
         *)
        val genMetaDataThunk :
-           state * env * string option * M.fieldKind * M.fieldKind Vector.t * bool * bool
+           state * env * string option * M.fieldKind * M.fieldKind Vector.t * bool * M.variable option * bool
            -> Pil.E.t
      end =
   struct
@@ -946,7 +978,8 @@ struct
               else
                 VtmCreatedMutable
         in
-          Vti {name = n, tag = pok, pinned = pinned, 
+          Vti {code = NONE,
+               name = n, tag = pok, pinned = pinned, 
                fixedSize = fs, fixedRefs = frefs, 
                alignment = alignment, padding = totalPadding, 
                array = a, mut = vtm}
@@ -964,15 +997,28 @@ struct
     fun genMetaDataUnboxed (state, env, vti) =
         let
           val () = incVtables state
-          val Vti {name, tag, pinned, fixedSize, fixedRefs, alignment, padding, array, mut} = vti
+          val Vti {code, name, tag, pinned, fixedSize, fixedRefs, alignment, padding, array, mut} = vti
           (* Generate the actual vtable *)
           val vt = freshVariableDT (state, env, "vtable", M.VkGlobal)
           val vt' = genVarE (state, env, vt)
           val () = 
               let
                 val tag = Pil.E.namedConstant (RT.MD.pObjKindTag tag)
-                val args = [vt', tag, Pil.E.string name, Pil.E.int padding]
-                val vtg = Pil.D.macroCall (RT.MD.static, args)
+                val vtg = 
+                    case code
+                     of NONE => 
+                        let
+                          val args = [vt', tag, Pil.E.string name, Pil.E.int padding]
+                          val vtg = Pil.D.macroCall (RT.MD.static, args)
+                        in vtg
+                        end
+                      | SOME cv => 
+                        let
+                          val cv = genVarE (state, env, cv)
+                          val args = [vt', tag, Pil.E.string name, Pil.E.int padding, cv]
+                          val vtg = Pil.D.macroCall (RT.MD.staticCustom, args)
+                        in vtg
+                        end
               in addXtrGlb (state, vtg)
               end
           (* Generate an array of the fixed reference information *)
@@ -1040,7 +1086,7 @@ struct
           in vt
           end
 
-    fun genMetaDataThunk (state, env, no, typ, fks, backpatch, value) =
+    fun genMetaDataThunk (state, env, no, typ, fks, backpatch, codeO, value) =
         if vtTagOnly env then
           Pil.E.namedConstant (RT.Thunk.vTable typ)
         else if value andalso not backpatch then
@@ -1097,7 +1143,7 @@ struct
                     VtmAlwaysImmutable
                 else
                   VtmCreatedMutable
-            val vti = Vti {name = n, tag = M.PokCell, pinned = false, fixedSize = fs,
+            val vti = Vti {code = codeO, name = n, tag = M.PokCell, pinned = false, fixedSize = fs,
                            fixedRefs = frefs, alignment = 4, padding = padding, array = NONE,
                            mut = mut}
             val vt = vTableFromInfo (state, env, vti)
@@ -1672,17 +1718,17 @@ struct
       else
         NONE
 
-  fun mkThunk0 (state, env, dest, typ, fvs, backpatch, value) = 
+  fun mkThunk0 (state, env, dest, typ, fvs, backpatch, codeO, value) = 
       let
         val no = mkAllocSiteName (state, env, SOME dest)
-        val vt = MD.genMetaDataThunk (state, env, no, typ, fvs, backpatch, value)
+        val vt = MD.genMetaDataThunk (state, env, no, typ, fvs, backpatch, codeO, value)
         val sz = Pil.E.int (OM.thunkSize (state, env, typ, fvs))
       in (vt, sz)
       end
 
-  fun mkThunk (state, env, dest, typ, fvs) =
+  fun mkThunk (state, env, dest, typ, codeO, fvs) =
       let
-        val (vt, sz) = mkThunk0 (state, env, dest, typ, fvs, true, false)
+        val (vt, sz) = mkThunk0 (state, env, dest, typ, fvs, true, codeO, false)
         val new = Pil.E.namedConstant (RT.Thunk.new typ)
         val v = genVarE (state, env, dest)
         val mk = Pil.E.call (new, [v, vt, sz])
@@ -1691,7 +1737,7 @@ struct
 
   fun mkThunkValue (state, env, dest, typ, fvs, value) =
       let
-        val (vt, sz) = mkThunk0 (state, env, dest, typ, fvs, false, true)
+        val (vt, sz) = mkThunk0 (state, env, dest, typ, fvs, false, NONE, true)
         val new = Pil.E.namedConstant (RT.Thunk.newValue typ)
         val v = genVarE (state, env, dest)
         val mk = Pil.E.call (new, [v, vt, sz, value])
@@ -1703,28 +1749,59 @@ struct
         val c = getConfig env
         val si = getSymbolInfo state
         val fail = fn s => fail ("genRhs", "ThunkInit: " ^ s)
-        val (mk, thunk) =
-            case (thunk, dest)
-             of (NONE, NONE) => fail "expecting dest"
-              | (NONE, SOME v) =>
-                let
-                  val fvfks = Vector.map (fvs, #1)
-                  val mk = mkThunk (state, env, v, typ, fvfks)
-                in (mk, v)
-                end
-              | (SOME v, SOME _) => fail "returns no value"
-              | (SOME v, NONE) => (Pil.S.empty, v)
-        val thunk = genVarE (state, env, thunk)
-        val code  =
-            case code
-             of NONE => Pil.E.null
-              | SOME v => genVarE (state, env, v)
-        val fks = Vector.map (fvs, #1)
+        val fvfks = Vector.map (fvs, #1)
+        val (mk, thunk, markInit) =
+            let
+              val mkCodeInit = 
+               fn thunk => 
+                  (case code
+                    of SOME cv => 
+                       Pil.S.expr (Pil.E.call (Pil.E.variable (RT.Thunk.init typ),
+                                               [thunk, genVarE (state, env, cv)]))
+                     | NONE    => Pil.S.empty)
+            in
+              case (thunk, dest)
+               of (NONE, NONE) => fail "expecting dest"
+                | (NONE, SOME v) =>
+                  let
+                    val codeO = if vtThunkCode c then code else NONE
+                    val mk = mkThunk (state, env, v, typ, codeO, fvfks)
+                    val thunk = genVarE (state, env, v)
+                    val init = if vtThunkCode c then 
+                                 Pil.S.empty
+                               else
+                                 mkCodeInit thunk
+                                            
+                  in (mk, thunk, init)
+                  end
+                | (SOME v, SOME _) => fail "returns no value"
+                | (SOME v, NONE) => 
+                  let
+                    val thunk = genVarE (state, env, v)
+                    val init = 
+                        if vtThunkCode c then
+                          (case code
+                            of SOME cv => 
+                               let
+                                 val vt = MD.genMetaDataThunk (state, env, NONE, typ, fvfks, true, code, false)
+                                 val init = 
+                                     Pil.S.expr (Pil.E.call (Pil.E.variable (RT.Thunk.init typ),
+                                                             [thunk, vt]))
+                               in init
+                               end
+                             | NONE => 
+                               Pil.S.empty)
+                        else
+                          mkCodeInit thunk
+                  in 
+                    (Pil.S.empty, thunk, init)
+                  end
+            end
         fun doInit (i, (fk, opnd)) =
             let
               val t = MTT.operand (c, si, opnd)
               val t = Pil.T.ptr (genTyp (state, env, t))
-              val off = Pil.E.int (OM.thunkFvOffset (state, env, typ, fks, i))
+              val off = Pil.E.int (OM.thunkFvOffset (state, env, typ, fvfks, i))
               val f = Pil.E.call (Pil.E.namedConstant RT.Object.field,
                                   [thunk, off, Pil.E.hackTyp t])
               val opnd = genOperand (state, env, opnd)
@@ -1733,11 +1810,8 @@ struct
             end
         val initFvs = Vector.mapi (fvs, doInit)
         val initFvs = Vector.toList initFvs
-        val init =
-            Pil.S.expr (Pil.E.call (Pil.E.variable (RT.Thunk.init typ),
-                                    [thunk, code]))
       in
-        Pil.S.sequence [mk, Pil.S.sequence initFvs, init]
+        Pil.S.sequence [mk, Pil.S.sequence initFvs, markInit]
       end
 
   fun genThunkFvProjection (state, env, typ, fvs, thunk, idx, t) =
@@ -1918,7 +1992,7 @@ struct
             in assignP e
             end
           | M.RhsThunkMk {typ, fvs} =>
-            bind (fn v => mkThunk (state, env, v, typ, fvs))
+            bind (fn v => mkThunk (state, env, v, typ, NONE, fvs))
           | M.RhsThunkInit {typ, thunk, fx, code, fvs} =>
             genThunkInit (state, env, zeroOneDest dests, typ, thunk, code, fvs)
           | M.RhsThunkGetFv {typ, fvs, thunk, idx} =>

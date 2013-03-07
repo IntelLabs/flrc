@@ -45,6 +45,11 @@ sig
                 * ('a -> 'e) * 'e t * ('a -> 'f) * 'f t * ('a -> 'g) * 'g t
                 * ('a -> 'h) * 'h t * ('a -> 'i) * 'i t * ('a -> 'j) * 'j t
                 -> 'a t
+  val rec10   : ('a -> 'b) * 'b t * ('a -> 'c) * 'c t * ('a -> 'd) * 'd t
+                * ('a -> 'e) * 'e t * ('a -> 'f) * 'f t * ('a -> 'g) * 'g t
+                * ('a -> 'h) * 'h t * ('a -> 'i) * 'i t * ('a -> 'j) * 'j t
+                * ('a -> 'k) * 'k t
+                -> 'a t
   val fromOrd : ('a -> int) -> 'a t
 
 end;
@@ -338,6 +343,35 @@ struct
              | ord => ord)
         | ord => ord
 
+  fun rec10 (p1, c1, p2, c2, p3, c3, p4, c4, p5, c5, p6, c6, p7, c7, p8, c8, p9, c9, p10, c10) (x1, x2) =
+      case c1 (p1 x1, p1 x2)
+       of EQUAL =>
+          (case c2 (p2 x1, p2 x2)
+            of EQUAL =>
+               (case c3 (p3 x1, p3 x2)
+                 of EQUAL => 
+                    (case c4 (p4 x1, p4 x2)
+                      of EQUAL =>
+                         (case c5 (p5 x1, p5 x2)
+                           of EQUAL =>
+                              (case c6 (p6 x1, p6 x2)
+                                of EQUAL => 
+                                   (case c7 (p7 x1, p7 x2)
+                                     of EQUAL => 
+                                        (case c8 (p8 x1, p8 x2)
+                                          of EQUAL => 
+                                             (case c9 (p9 x1, p9 x2)
+                                               of EQUAL => c10 (p10 x1, p10 x2)
+                                                | ord => ord)
+                                           | ord   => ord)
+                                      | ord   => ord)
+                                 | ord => ord)
+                            | ord => ord)
+                       | ord => ord)
+                  | ord => ord)
+             | ord => ord)
+        | ord => ord
+                   
   fun fromOrd ord (x1, x2) = Int.compare (ord x1, ord x2)
 
 end;

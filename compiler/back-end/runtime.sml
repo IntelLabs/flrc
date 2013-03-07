@@ -9,6 +9,7 @@ sig
   structure MD :
   sig
     val static : Pil.identifier 
+    val staticCustom : Pil.identifier 
     val isRefTyp : Pil.identifier 
     val pObjKindTag : Mil.pObjKind -> Pil.identifier
     val pObjKindMetaData : Mil.pObjKind -> Pil.identifier
@@ -261,6 +262,8 @@ struct
   struct
 
     val static = Pil.identifier "pLsrVTableStatic"
+
+    val staticCustom = Pil.identifier "pLsrVTableStaticWithCustom"
 
     val isRefTyp = Pil.identifier "PgcIsRef"
 
