@@ -208,9 +208,8 @@ struct
    *
    * For reporting global roots: For roots in global objects, we just report
    * the global object.  For roots outside global objects, we need to know
-   * the locations of refs.  Since we don't have any of these right now, we
-   * record and do nothing.  If refs outside of global objects are generated,
-   * then this scheme needs to be modified.  
+   * the locations of refs.  The globalrs list keeps global refs
+   * which get reported directly.
    * The vtables for the global roots must be registered before the global
    * objects are reported.
    *
@@ -246,7 +245,7 @@ struct
         val () = Stats.newStat (s, "aliases", "global aliases")
         val () = Stats.newStat (s, "singleGlobals", "single globals")
         val () = Stats.newStat (s, "multipleGlobals",
-                               "multiply recursive globals")
+                                "multiply recursive globals")
         val () = Stats.newStat (s, "globalRoots", "global roots")
         val () = Stats.newStat (s, "registrations", "registrations")
         val () = Stats.newStat (s, "xtrGlbs", "extra globals")
@@ -887,270 +886,7 @@ struct
   fun genVars (state, env, vs) =
       Vector.toListMap (vs, fn v => genVar (state, env, v))
 
-  (*** Metadata ***)
 
-  (* This structure creates and memoises metadata for various objects
-   * we want to create.
-   *)
-
-  structure MD
-  :> sig
-       (* Return a pointer to the metadata for the given metadata descriptor,
-        * generating it if necessary.
-        *)
-       val genMetaData : state * env * string option * M.metaDataDescriptor * bool -> Pil.E.t
-       (* Return a pointer to the metadata for the given thunk,
-        * generating it if necessary.
-        *)
-       val genMetaDataThunk :
-           state * env * string option * M.fieldKind * M.fieldKind Vector.t * bool * M.variable option * bool
-           -> Pil.E.t
-     end =
-  struct
-
-    fun vtiToName (state, env, pok, fixedSize, fixedRefs, array) =
-        (String.fromChar (MU.PObjKind.toChar pok)) ^
-        (String.concat (Vector.toListMap (fixedRefs,
-                                       fn b => if b then "r" else "w"))) ^
-        (String.make (fixedSize mod OM.wordSize (state, env), #"b")) ^
-        (case array
-          of NONE => ""
-           | SOME {size, offset, isRef} =>
-             "[" ^
-             Int.toString offset ^ "," ^
-             Int.toString size ^ "," ^
-             (if isRef then "r" else "w") ^
-             "]")
-
-    (* From the components of a tuple type, compute its vtable information *)
-    fun deriveVtInfo (state, env, no, mdd, nebi) =
-        let
-          val M.MDD {pok, pinned, fixed, array} = mdd
-          val td = MU.MetaDataDescriptor.toTupleDescriptor mdd
-          val config = getConfig env
-          val ws = OM.wordSize (state, env)
-          val (fs, alignment, paddings, padding) = OM.fieldPadding (state, env, td)
-          val totalPadding = Vector.fold (paddings, padding, op +)
-          val frefs = Array.new (fs div ws, false)
-          fun doOne (padding, fd, off) =
-              let
-                val off = off + padding
-                val () = 
-                    if MU.FieldDescriptor.isRef fd then
-                      let
-                        val () =
-                            if off mod ws <> 0 then
-                              Fail.unimplemented (modname ^ ".VT", "deriveVtInfo", "unaligned reference field")
-                            else
-                              ()
-                        val idx = off div ws
-                        val () = Array.update (frefs, idx, true)
-                      in ()
-                      end
-                    else
-                      ()
-                val off = off + MU.FieldDescriptor.numBytes (config, fd)
-              in off
-              end
-          val _ = Vector.fold2 (paddings, fixed, OM.fieldBase (state, env), doOne)
-          val frefs = Array.toVector frefs
-          val a =
-              case array
-               of NONE => NONE
-                | SOME (lenIdx, fd) =>
-                  let
-                    val es = OM.extraSize (state, env, td)
-                    val lenOff = OM.fieldOffset (state, env, td, lenIdx)
-                    val eref = MU.FieldDescriptor.isRef fd
-                  in
-                    SOME {size = es, offset = lenOff, isRef = eref}
-                  end
-          val n =
-              case no
-               of NONE => vtiToName (state, env, pok, fs, frefs, a)
-                | SOME n => n
-          val mut = not (MU.MetaDataDescriptor.immutable mdd)
-          val vtm =
-              if mut then
-                VtmAlwaysMutable
-              else if nebi then 
-                VtmAlwaysImmutable
-              else
-                VtmCreatedMutable
-        in
-          Vti {code = NONE,
-               name = n, tag = pok, pinned = pinned, 
-               fixedSize = fs, fixedRefs = frefs, 
-               alignment = alignment, padding = totalPadding, 
-               array = a, mut = vtm}
-        end
-
-    fun genVtMutability vtm =
-        case vtm
-         of VtmAlwaysMutable   => RT.MD.alwaysMutable
-          | VtmCreatedMutable  => RT.MD.createdMutable
-          | VtmAlwaysImmutable => RT.MD.alwaysImmutable
-
-    (* Given vtable information generate the global for the unboxed vtable
-     * and return the variable bound to it.
-     *)
-    fun genMetaDataUnboxed (state, env, vti) =
-        let
-          val () = incVtables state
-          val Vti {code, name, tag, pinned, fixedSize, fixedRefs, alignment, padding, array, mut} = vti
-          (* Generate the actual vtable *)
-          val vt = freshVariableDT (state, env, "vtable", M.VkGlobal)
-          val vt' = genVarE (state, env, vt)
-          val () = 
-              let
-                val tag = Pil.E.namedConstant (RT.MD.pObjKindTag tag)
-                val vtg = 
-                    case code
-                     of NONE => 
-                        let
-                          val args = [vt', tag, Pil.E.string name, Pil.E.int padding]
-                          val vtg = Pil.D.macroCall (RT.MD.static, args)
-                        in vtg
-                        end
-                      | SOME cv => 
-                        let
-                          val cv = genVarE (state, env, cv)
-                          val args = [vt', tag, Pil.E.string name, Pil.E.int padding, cv]
-                          val vtg = Pil.D.macroCall (RT.MD.staticCustom, args)
-                        in vtg
-                        end
-              in addXtrGlb (state, vtg)
-              end
-          (* Generate an array of the fixed reference information *)
-          val refsv = freshVariableDT (state, env, "vtrefs", M.VkGlobal)
-          val refsv = genVar (state, env, refsv)
-          val () = 
-              if vtReg env then 
-                let
-                  fun doOne b = Pil.E.int (if b then 1 else 0)
-                  val refs = Pil.E.strctInit (Vector.toListMap (fixedRefs, doOne))
-                  val isRefT = Pil.T.named RT.MD.isRefTyp
-                  val refsvd = Pil.varDec (Pil.T.array isRefT, refsv)
-                  val refsg = Pil.D.staticVariableExpr (refsvd, refs)
-                in addXtrGlb (state, refsg) 
-                end
-              else ()
-          val refsv = Pil.E.variable refsv
-          (* Generate code to register vtable with GC *)
-          val () = 
-              if vtReg env then 
-                let
-                  val fs = Pil.E.int fixedSize
-                  val ag = Pil.E.int alignment
-                  val (vs, vlo, vr) =
-                      case array
-                       of NONE => (Pil.E.int 0, Pil.E.int 0, Pil.E.int 0)
-                        | SOME {size, offset, isRef} =>
-                          (Pil.E.int size, Pil.E.int offset,
-                           Pil.E.int (if isRef then 1 else 0))
-                  val mut = Pil.E.namedConstant (genVtMutability mut)
-                  val pinned = if pinned then Pil.E.int 1 else Pil.E.int 0
-                  val args = [Pil.E.addrOf vt', ag, fs, refsv, vs, vlo, vr, mut, pinned]
-                  val vtr = Pil.E.call (Pil.E.namedConstant RT.MD.register, args)
-                in addReg0 (state, Pil.S.expr vtr) 
-                end 
-              else ()
-        in vt
-        end
-
-    (* Given a vtable information, return a pointer to a vtable for it,
-     * generating the vtable if necessary.
-     *)
-    fun vTableFromInfo (state, env, vti) =
-        let
-          val vt =
-              case getVtable (state, vti)
-               of NONE =>
-                  let
-                    val vt = genMetaDataUnboxed (state, env, vti)
-                    val () = addVtable (state, vti, vt)
-                  in vt
-                  end
-                | SOME v => v
-        in
-          Pil.E.addrOf (genVarE (state, env, vt))
-        end
-
-    fun genMetaData (state, env, no, mdd as M.MDD {pok, ...}, nebi) =
-        if vtTagOnly env then
-          Pil.E.namedConstant (RT.MD.pObjKindMetaData pok)
-        else
-          let
-            val vti = deriveVtInfo (state, env, no, mdd, nebi)
-            val vt = vTableFromInfo (state, env, vti)
-          in vt
-          end
-
-    fun genMetaDataThunk (state, env, no, typ, fks, backpatch, codeO, value) =
-        if vtTagOnly env then
-          Pil.E.namedConstant (RT.Thunk.vTable typ)
-        else if value andalso not backpatch then
-          Pil.E.namedConstant (RT.Thunk.vTable typ)
-        else
-          let
-            val fs = OM.thunkSize (state, env, typ, fks)
-            val padding = OM.thunkPadding (state, env, typ, fks)
-            (* Assumptions: The only refs are the free vars and the result.
-             * XXX: This is highly runtime specific
-             *)
-            val ws = OM.wordSize (state, env)
-            val frefs = Array.new (fs div ws, false)
-            fun doOne (i, fk) =
-                if MU.FieldKind.isRef fk then
-                  let
-                    val off = OM.thunkFvOffset (state, env, typ, fks, i)
-                    val () =
-                        if off mod ws <> 0 then
-                          Fail.unimplemented (modname ^ ".MD", "genMetaDataThunk", "unaligned free variable")
-                        else
-                          ()
-                    val idx = off div ws
-                    val () = Array.update (frefs, idx, true)
-                  in
-                    ()
-                  end
-                else
-                  ()
-            val () = Vector.foreachi (fks, doOne)
-            val off = OM.thunkResultOffset (state, env, typ)
-            val () =
-                if off mod ws <> 0 then
-                  Fail.unimplemented (modname ^ ".MD", "genMetaDataThunk", "unaligned result")
-                else
-                  ()
-            val idx = off div ws
-            val isRef = MU.FieldKind.isRef typ
-            (* Non value lightweight-thunks re-use the code slot for
-             * the result 
-             *)
-            val () = if lightweightThunks (getConfig env) then ()
-                     else Array.update (frefs, idx, isRef)
-            val frefs = Array.toVector frefs
-            val n =
-                case no
-                 of NONE => vtiToName (state, env, M.PokCell, fs, frefs, NONE)
-                  | SOME n => n
-            val mut = 
-                if value then
-                  if backpatch then
-                    VtmCreatedMutable
-                  else
-                    VtmAlwaysImmutable
-                else
-                  VtmCreatedMutable
-            val vti = Vti {code = codeO, name = n, tag = M.PokCell, pinned = false, fixedSize = fs,
-                           fixedRefs = frefs, alignment = 4, padding = padding, array = NONE,
-                           mut = mut}
-            val vt = vTableFromInfo (state, env, vti)
-          in vt
-          end
-
-  end (* structure MD *)
 
   (*** Names ***)
 
@@ -1344,6 +1080,279 @@ struct
 
   fun genVarsDecInits (state, env, xs) = 
       List.map (xs, fn (x, eo) => (genVarDec (state, env, x), eo))
+
+
+
+  (*** Metadata ***)
+
+  (* This structure creates and memoises metadata for various objects
+   * we want to create.
+   *)
+
+  structure MD
+  :> sig
+       (* Return a pointer to the metadata for the given metadata descriptor,
+        * generating it if necessary.
+        *)
+       val genMetaData : state * env * string option * M.metaDataDescriptor * bool -> Pil.E.t
+       (* Return a pointer to the metadata for the given thunk,
+        * generating it if necessary.
+        *)
+       val genMetaDataThunk :
+           state * env * string option * M.fieldKind * M.fieldKind Vector.t * bool * M.variable option * bool
+           -> Pil.E.t
+     end =
+  struct
+
+    fun vtiToName (state, env, pok, fixedSize, fixedRefs, array) =
+        (String.fromChar (MU.PObjKind.toChar pok)) ^
+        (String.concat (Vector.toListMap (fixedRefs,
+                                       fn b => if b then "r" else "w"))) ^
+        (String.make (fixedSize mod OM.wordSize (state, env), #"b")) ^
+        (case array
+          of NONE => ""
+           | SOME {size, offset, isRef} =>
+             "[" ^
+             Int.toString offset ^ "," ^
+             Int.toString size ^ "," ^
+             (if isRef then "r" else "w") ^
+             "]")
+
+    (* From the components of a tuple type, compute its vtable information *)
+    fun deriveVtInfo (state, env, no, mdd, nebi) =
+        let
+          val M.MDD {pok, pinned, fixed, array} = mdd
+          val td = MU.MetaDataDescriptor.toTupleDescriptor mdd
+          val config = getConfig env
+          val ws = OM.wordSize (state, env)
+          val (fs, alignment, paddings, padding) = OM.fieldPadding (state, env, td)
+          val totalPadding = Vector.fold (paddings, padding, op +)
+          val frefs = Array.new (fs div ws, false)
+          fun doOne (padding, fd, off) =
+              let
+                val off = off + padding
+                val () = 
+                    if MU.FieldDescriptor.isRef fd then
+                      let
+                        val () =
+                            if off mod ws <> 0 then
+                              Fail.unimplemented (modname ^ ".VT", "deriveVtInfo", "unaligned reference field")
+                            else
+                              ()
+                        val idx = off div ws
+                        val () = Array.update (frefs, idx, true)
+                      in ()
+                      end
+                    else
+                      ()
+                val off = off + MU.FieldDescriptor.numBytes (config, fd)
+              in off
+              end
+          val _ = Vector.fold2 (paddings, fixed, OM.fieldBase (state, env), doOne)
+          val frefs = Array.toVector frefs
+          val a =
+              case array
+               of NONE => NONE
+                | SOME (lenIdx, fd) =>
+                  let
+                    val es = OM.extraSize (state, env, td)
+                    val lenOff = OM.fieldOffset (state, env, td, lenIdx)
+                    val eref = MU.FieldDescriptor.isRef fd
+                  in
+                    SOME {size = es, offset = lenOff, isRef = eref}
+                  end
+          val n =
+              case no
+               of NONE => vtiToName (state, env, pok, fs, frefs, a)
+                | SOME n => n
+          val mut = not (MU.MetaDataDescriptor.immutable mdd)
+          val vtm =
+              if mut then
+                VtmAlwaysMutable
+              else if nebi then 
+                VtmAlwaysImmutable
+              else
+                VtmCreatedMutable
+        in
+          Vti {code = NONE,
+               name = n, tag = pok, pinned = pinned, 
+               fixedSize = fs, fixedRefs = frefs, 
+               alignment = alignment, padding = totalPadding, 
+               array = a, mut = vtm}
+        end
+
+    fun genVtMutability vtm =
+        case vtm
+         of VtmAlwaysMutable   => RT.MD.alwaysMutable
+          | VtmCreatedMutable  => RT.MD.createdMutable
+          | VtmAlwaysImmutable => RT.MD.alwaysImmutable
+
+    (* Given vtable information generate the global for the unboxed vtable
+     * and return the variable bound to it.
+     *)
+    fun genMetaDataUnboxed (state, env, vti) =
+        let
+          val () = incVtables state
+          val Vti {code, name, tag, pinned, fixedSize, fixedRefs, alignment, padding, array, mut} = vti
+          (* Generate the actual vtable, with a forward dec of the code variable if present *)
+          val vt = freshVariableDT (state, env, "vtable", M.VkGlobal)
+          val vt' = genVarE (state, env, vt)
+          val () = 
+              let
+                val tag = Pil.E.namedConstant (RT.MD.pObjKindTag tag)
+                val vtg = 
+                    case code
+                     of NONE => 
+                        let
+                          val args = [vt', tag, Pil.E.string name, Pil.E.int padding]
+                          val vtg = Pil.D.macroCall (RT.MD.static, args)
+                        in vtg
+                        end
+                      | SOME cv => 
+                        let
+                          val ubt = 
+                              (case getVarTyp (state, cv)
+                                of M.TCode {cc, args, ress} => genCodeType (state, env, (cc, args, ress))
+                                 | _ => fail ("genMetaDataUnboxed", "Code pointer not of code type"))
+                          val d = Pil.varDec (ubt, genVar (state, env, cv))
+                          val () = addXtrGlb (state, Pil.D.staticVariable d)
+                          val cv = genVarE (state, env, cv)
+                          val args = [vt', tag, Pil.E.string name, Pil.E.int padding, cv]
+                          val vtg = Pil.D.macroCall (RT.MD.staticCustom, args)
+                        in vtg
+                        end
+              in addXtrGlb (state, vtg)
+              end
+          (* Generate an array of the fixed reference information *)
+          val refsv = freshVariableDT (state, env, "vtrefs", M.VkGlobal)
+          val refsv = genVar (state, env, refsv)
+          val () = 
+              if vtReg env then 
+                let
+                  fun doOne b = Pil.E.int (if b then 1 else 0)
+                  val refs = Pil.E.strctInit (Vector.toListMap (fixedRefs, doOne))
+                  val isRefT = Pil.T.named RT.MD.isRefTyp
+                  val refsvd = Pil.varDec (Pil.T.array isRefT, refsv)
+                  val refsg = Pil.D.staticVariableExpr (refsvd, refs)
+                in addXtrGlb (state, refsg) 
+                end
+              else ()
+          val refsv = Pil.E.variable refsv
+          (* Generate code to register vtable with GC *)
+          val () = 
+              if vtReg env then 
+                let
+                  val fs = Pil.E.int fixedSize
+                  val ag = Pil.E.int alignment
+                  val (vs, vlo, vr) =
+                      case array
+                       of NONE => (Pil.E.int 0, Pil.E.int 0, Pil.E.int 0)
+                        | SOME {size, offset, isRef} =>
+                          (Pil.E.int size, Pil.E.int offset,
+                           Pil.E.int (if isRef then 1 else 0))
+                  val mut = Pil.E.namedConstant (genVtMutability mut)
+                  val pinned = if pinned then Pil.E.int 1 else Pil.E.int 0
+                  val args = [Pil.E.addrOf vt', ag, fs, refsv, vs, vlo, vr, mut, pinned]
+                  val vtr = Pil.E.call (Pil.E.namedConstant RT.MD.register, args)
+                in addReg0 (state, Pil.S.expr vtr) 
+                end 
+              else ()
+        in vt
+        end
+
+    (* Given a vtable information, return a pointer to a vtable for it,
+     * generating the vtable if necessary.
+     *)
+    fun vTableFromInfo (state, env, vti) =
+        let
+          val vt =
+              case getVtable (state, vti)
+               of NONE =>
+                  let
+                    val vt = genMetaDataUnboxed (state, env, vti)
+                    val () = addVtable (state, vti, vt)
+                  in vt
+                  end
+                | SOME v => v
+        in
+          Pil.E.addrOf (genVarE (state, env, vt))
+        end
+
+    fun genMetaData (state, env, no, mdd as M.MDD {pok, ...}, nebi) =
+        if vtTagOnly env then
+          Pil.E.namedConstant (RT.MD.pObjKindMetaData pok)
+        else
+          let
+            val vti = deriveVtInfo (state, env, no, mdd, nebi)
+            val vt = vTableFromInfo (state, env, vti)
+          in vt
+          end
+
+    fun genMetaDataThunk (state, env, no, typ, fks, backpatch, codeO, value) =
+        if vtTagOnly env then
+          Pil.E.namedConstant (RT.Thunk.vTable typ)
+        else if value andalso not backpatch then
+          Pil.E.namedConstant (RT.Thunk.vTable typ)
+        else
+          let
+            val fs = OM.thunkSize (state, env, typ, fks)
+            val padding = OM.thunkPadding (state, env, typ, fks)
+            (* Assumptions: The only refs are the free vars and the result.
+             * XXX: This is highly runtime specific
+             *)
+            val ws = OM.wordSize (state, env)
+            val frefs = Array.new (fs div ws, false)
+            fun doOne (i, fk) =
+                if MU.FieldKind.isRef fk then
+                  let
+                    val off = OM.thunkFvOffset (state, env, typ, fks, i)
+                    val () =
+                        if off mod ws <> 0 then
+                          Fail.unimplemented (modname ^ ".MD", "genMetaDataThunk", "unaligned free variable")
+                        else
+                          ()
+                    val idx = off div ws
+                    val () = Array.update (frefs, idx, true)
+                  in
+                    ()
+                  end
+                else
+                  ()
+            val () = Vector.foreachi (fks, doOne)
+            val off = OM.thunkResultOffset (state, env, typ)
+            val () =
+                if off mod ws <> 0 then
+                  Fail.unimplemented (modname ^ ".MD", "genMetaDataThunk", "unaligned result")
+                else
+                  ()
+            val idx = off div ws
+            val isRef = MU.FieldKind.isRef typ
+            (* Non value lightweight-thunks re-use the code slot for
+             * the result 
+             *)
+            val () = if lightweightThunks (getConfig env) then ()
+                     else Array.update (frefs, idx, isRef)
+            val frefs = Array.toVector frefs
+            val n =
+                case no
+                 of NONE => vtiToName (state, env, M.PokCell, fs, frefs, NONE)
+                  | SOME n => n
+            val mut = 
+                if value then
+                  if backpatch then
+                    VtmCreatedMutable
+                  else
+                    VtmAlwaysImmutable
+                else
+                  VtmCreatedMutable
+            val vti = Vti {code = codeO, name = n, tag = M.PokCell, pinned = false, fixedSize = fs,
+                           fixedRefs = frefs, alignment = 4, padding = padding, array = NONE,
+                           mut = mut}
+            val vt = vTableFromInfo (state, env, vti)
+          in vt
+          end
+
+  end (* structure MD *)
 
   (*** Constants ***)
 
