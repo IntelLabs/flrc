@@ -7,29 +7,33 @@ typedef enum {
 } IhrStoreKey;
 
 static void* ihrStore[ISK_Num] = {NULL, };
-static struct PrtMutex* ihrStoreLock;
+static struct prtMutex* ihrStoreLock;
 
 /* hard code n_capabilities to 1 for now */
 unsigned int n_capabilities_ = 1;
 unsigned int* n_capabilities = &n_capabilities_;
 
+void ihrSetNCapabilities(uint32 n) {
+    *n_capabilities = n;
+}
+
 void ihrGlobalInit()
 {
-    /* XXX NG: PRT mutexes are implemented yet
     ihrStoreLock = prtMutexCreate(NULL);
-    assert(ihrStoreLock);*/
+    assert(!ihrStoreLock);
 }
 
 void* getOrSetKey(IhrStoreKey k, void* p)
 {
     void* ret = ihrStore[k];
     if (!ret) {
-        /* XXX NG: PRT mutexes are implemented yet
-           assert(!prtMutexLock(ihrStoreLock));*/
+        uint32 status;
+        status = prtMutexLock(ihrStoreLock);
+        assert(!status);
         ret = ihrStore[k];
         if (!ret) ihrStore[k] = ret = p;
-        /* XXX NG: PRT mutexes are implemented yet
-           assert(!prtMutexUnlock(ihrStoreLock));*/
+        status = prtMutexUnlock(ihrStoreLock);
+        assert(!status);
     }
     return ret;
 }
