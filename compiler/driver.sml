@@ -213,6 +213,7 @@ struct
         val stackWorker = ref NONE
         val stops       = Passes.stops
         val stop        = ref "exe"
+        val synchThunks = ref false
         val toolset     = ref Config.TsIpc
         val logLev      = ref Config.VSilent
         val warnLev     = ref Config.VSilent
@@ -494,9 +495,9 @@ struct
                     "parallelize with futures",
                     Popt.SpaceString
                       (fn s => case s
-                                of "all"  => futures := Config.PAll
-                                 | "auto" => futures := Config.PAuto
-                                 | "par"  => futures := Config.PPar
+                                of "all"  => (futures := Config.PAll; synchThunks := true)
+                                 | "auto" => (futures := Config.PAuto; synchThunks := true)
+                                 | "par"  => (futures := Config.PPar; synchThunks := true)
                                  | _ => usage ("invalid -futures arg: " ^ s))),
 
                    (Popt.Normal, "gc", " {none|conservative|accurate}",
@@ -626,6 +627,10 @@ struct
                           if SS.member (stops, s)
                           then stop := s
                           else usage ("invalid -stop arg: " ^ s))),
+
+                   (Popt.Normal, "synchThunks", "",
+                    "use synchronized thunks",
+                    Popt.trueRef synchThunks),
 
                    (Popt.Normal, "timeExecution", " string",
                     "time the program",
@@ -834,6 +839,7 @@ struct
               runtime          = runtimei,
               sloppyFp         = !sloppyFp,
               stop             = !stop,
+              synchThunks      = !synchThunks,
               targetWordSize   = !ws,
               timeExecution    = !timeExe,
               toolset          = !toolset,

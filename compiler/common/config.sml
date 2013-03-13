@@ -86,6 +86,7 @@ sig
                      runtime : runtimeConfig,
 		     sloppyFp: bool,
 		     stop: string,
+                     synchThunks : bool,
 		     targetWordSize: wordSize,
 		     timeExecution: string option,
 		     toolset: toolset,
@@ -134,6 +135,7 @@ sig
   val silent: t -> bool
   val sloppyFp: t -> bool
   val stop: t -> string
+  val synchronizeThunks : t -> bool
   val targetWordSize: t -> wordSize
   val targetWordSize': t -> IntArb.size
   val timeExecution: t -> string option
@@ -276,6 +278,7 @@ struct
          runtime          : runtimeConfig,
          stop             : string,
          sloppyFp         : bool,
+         synchThunks      : bool,
          targetWordSize   : wordSize,
          timeExecution    : string option,
          toolset          : toolset,
@@ -305,6 +308,7 @@ struct
     fun runtime c                     = get (c, #runtime)
     fun stop c                        = get (c, #stop)
     fun sloppyFp c                    = get (c, #sloppyFp)
+    fun synchronizeThunks c           = get (c, #synchThunks)
     fun targetWordSize c              = get (c, #targetWordSize)
     fun timeExecution c               = get (c, #timeExecution)
     fun toolset c                     = get (c, #toolset)

@@ -64,6 +64,8 @@ struct
 
   fun multiThreaded (config : Config.t) = useFutures config orelse not(singleThreaded config)
 
+  fun synchronizeThunks (config : Config.t) = useFutures config orelse Config.synchronizeThunks config
+
   fun ifDebug (config, ad, a) = if Config.pilDebug config then ad else a
    
   val (gcWriteBarriersF, gcWriteBarriers) =
@@ -282,6 +284,9 @@ struct
         val futures = 
             if useFutures config then ["P_USE_PARALLEL_FUTURES"] else []
 
+        val synchThunks = 
+            if synchronizeThunks config then ["PLSR_THUNK_SYNCHRONIZE"] else []
+
         val singleThreaded = 
             if singleThreaded config then ["PLSR_SINGLE_THREADED"] else []
 
@@ -379,6 +384,7 @@ struct
                          gc, 
                          futures, 
                          singleThreaded,
+                         synchThunks,
                          stackSize,
                          thunks,
                          debug, 
@@ -726,7 +732,7 @@ struct
   fun futureLibraries (config, ldTag) = 
       let
         val nm =
-            if useFutures config then
+            if synchronizeThunks config then
               ifDebug (config, "paralleld", "parallel")
             else
               ifDebug (config, "sequentiald", "sequential")

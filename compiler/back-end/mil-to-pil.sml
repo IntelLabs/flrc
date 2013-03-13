@@ -56,6 +56,7 @@ struct
 
   fun outputKind env = Config.output (getConfig env)
   fun parStyle env = Config.parStyle (getConfig env)
+  fun synchThunks env = Config.synchronizeThunks (getConfig env)
 
   fun vtTagOnly          env = #tagOnly         (Config.gc (getConfig env))
   fun vtReg              env = #registerVtables (Config.gc (getConfig env))
@@ -564,11 +565,7 @@ struct
                 let
                   val vt = 1
                   val fb = 
-                      case parStyle env
-                       of Config.PNone => 2
-                        | Config.PAll  => 3
-                        | Config.PAuto => 3
-                        | Config.PPar  => 3
+                      if synchThunks env then 3 else 2
                   val co = 
                       if interceptCuts (getConfig env) then 1 else 0
                 in vt + fb + co
@@ -2599,10 +2596,11 @@ struct
         val te = genVarE (state, env, thunk)
         fun getField (i, x) =
             let
-              val d = genVarDec (state, env, x)
               val t = genTyp (state, env, getVarTyp (state, x))
+              val x = genVar (state, env, x)
+              val d = Pil.varDec (t, x)
               val f = genThunkFvProjection (state, env, rfk, fvfks, te, i, t)
-            in (d, SOME f)
+            in ((d, NONE), Pil.S.expr (Pil.E.assign (Pil.E.variable x, f)))
             end
         fun zeroField (i, _) =
             let
@@ -2621,10 +2619,11 @@ struct
             end
         val dec = genVarDec (state, env, thunk)
         val fvsl = Vector.toList fvs
-        val unpacks = List.mapi (fvsl, getField)
+        val (fvdecs, unpacks) = List.unzip (List.mapi (fvsl, getField))
         val zeros = List.concat (List.mapi (fvsl, zeroField))
-        val bh = Pil.S.expr (Pil.E.call (Pil.E.variable (RT.Thunk.blackHole rfk), [te]))
-      in (dec::decs, unpacks, zeros@[bh])
+        val claim = Pil.S.call (Pil.E.variable (RT.Thunk.claim rfk), [te])
+        val unpack = Pil.S.noyield (Pil.S.sequence (unpacks@zeros))
+      in (dec::decs, fvdecs, [claim, unpack])
       end
 
   fun doCallConv (state, env, f, cc, args) = 

@@ -230,6 +230,7 @@ sig
     val resultOffset   : Mil.fieldKind -> Pil.identifier 
     val vTable         : Mil.fieldKind -> Pil.identifier 
     val blackHole      : Mil.fieldKind -> Pil.identifier
+    val claim          : Mil.fieldKind -> Pil.identifier
     val zeroFV         : unit -> Pil.identifier
   end
 
@@ -769,6 +770,7 @@ struct
     fun call            fk = Pil.identifier ("pLsrThunkCall"          ^ typ fk)
     fun callDirect      fk = Pil.identifier ("pLsrThunkCallDirect"    ^ typ fk)
     fun castToObject    fk = Pil.identifier ("pLsrThunkCastToObject"  ^ typ fk)
+    fun claim           fk = Pil.identifier ("pLsrThunkClaim"         ^ typ fk)
     fun cut             fk = Pil.identifier ("pLsrThunkCut"           ^ typ fk)
     fun eval            fk = Pil.identifier ("pLsrThunkEval"          ^ typ fk)
     fun evalDirect      fk = Pil.identifier ("pLsrThunkEvalDirect"    ^ typ fk)
