@@ -17,6 +17,7 @@ sig
   val mapPrimTy : ('a primTy * ('a -> 'b)) -> 'b primTy 
   val eqPrimTy : ('a * 'a -> bool) -> 'a primTy * 'a primTy -> bool
   val hashPrimTy : ('a -> word) -> 'a primTy -> word
+  val isRefTy : 'a primTy -> bool
 end
 
 structure GHCPrimType :> GHC_PRIM_TYPE =
@@ -236,6 +237,22 @@ fun eqPrimTy f (ty1, ty2) =
         |  LiftedKind             => 0w40
         |  EqTy (a, b, c)         => TypeRep.hash4 (0w41, f a, f b, f c))
 
+  fun isRefTy ty =    
+      (case ty 
+        of Int                    => false
+        |  Int64                  => false
+        |  Integer                => false
+        |  Bool                   => false
+        |  Word                   => false
+        |  Word64                 => false
+        |  Char                   => false
+        |  Double                 => false 
+        |  Float                  => false
+        |  ThreadId               => false
+        |  LiftedKind             => false
+        |  EqTy (a, b, c)         => false
+        |  _                      => true)
+
 end
 
 signature GHC_PRIM_TYPE_LAYOUT =
@@ -290,5 +307,4 @@ struct
       |  ThreadId               => L.str "#threadId"
       |  EqTy (a, b, c)         => L.seq [L.str "#eq ", layoutTy a, layoutTy b, layoutTy c]
       |  Tuple tys              => L.seq [L.str "#tuple ", L.sequence ("(", ")", ",") (List.map (tys, layoutTy))]
-
 end 

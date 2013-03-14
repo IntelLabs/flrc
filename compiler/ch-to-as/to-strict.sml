@@ -14,6 +14,7 @@ struct
   structure CU = CoreHsUtils
   structure CL = CoreHsLayout
   structure GP = GHCPrimType
+  structure GPO = GHCPrimOp
   structure AL = ANormLazy
   structure AS = ANormStrict
   structure I  = Identifier
@@ -235,7 +236,18 @@ struct
         of AL.Var v => (case TypeRep.repToBase (lookupEnv (state, env, v))
                          of AS.Thunk _ => AS.Eval v
                           | _          => AS.Return [v])
-         | AL.PrimApp (f, vs) => AS.PrimApp (f, vs)
+         | AL.PrimApp (f, vs) => 
+          (case (f, vs)
+            of (GPO.Touchzh, [v, s]) => 
+              (* ensure touch# only takes primitive reference as argument *)
+              let
+                val isPrimRef = case TypeRep.repToBase (lookupEnv (state, env, v))
+                                  of AS.Prim pty => GP.isRefTy pty
+                                   | _           => false
+              in
+                if isPrimRef then AS.PrimApp (f, vs) else AS.Return [s]
+              end
+            | _ => AS.PrimApp (f, vs))
          | AL.ConApp (c, vs) => 
            let
              val folder = 
