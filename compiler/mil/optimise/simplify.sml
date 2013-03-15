@@ -767,7 +767,7 @@ struct
      struct
 
        val doArith = 
-        fn (dec, con, plus, neg, minus, times, divide) => 
+        fn (dec, con, plus, neg, minus, times, divide, divX, modX) => 
            Try.lift 
              (fn (operator, args) =>
                  let
@@ -779,6 +779,8 @@ struct
                          | P.AMinus  => con (minus (Try.V.doubleton args))
                          | P.ATimes  => con (times (Try.V.doubleton args))
                          | P.ADivide => con (<- divide (Try.V.doubleton args))
+                         | P.ADiv dk => con (<- (divX dk) (Try.V.doubleton args))
+                         | P.AMod dk => con (<- (modX dk) (Try.V.doubleton args))
                          | _         => Try.fail ()
                    val r = RrConstant c
                  in r
@@ -788,15 +790,29 @@ struct
            Try.lift
            (fn(c, {typ, operator}, args, get) => 
               let
+                val mkDM =
+                 fn (dmT, dmF, dmE) => 
+                    fn dk => 
+                       (case dk
+                         of P.DkT => dmT
+                          | P.DkF => dmF
+                          | P.DkE => dmE)
+                    
                 val args = Vector.map (args, <@ O.Dec.oConstant o get)
                 val doIt = 
                     (case typ
                       of P.NtRat                    => doArith (C.Dec.cRat,      C.CRat, 
-                                                                Rat.+, Rat.~, Rat.-, Rat.*, SOME Rat./)
+                                                                Rat.+, Rat.~, Rat.-, Rat.*, SOME Rat./, 
+                                                                    (fn _ => NONE), (fn _ => NONE))
                        | P.NtInteger (P.IpFixed ia) => doArith (decIntegral ia, C.CIntegral,
-                                                                IntArb.+, IntArb.~, IntArb.-, IntArb.*, NONE)
+                                                                IntArb.+, IntArb.~, IntArb.-, IntArb.*, NONE,
+                                                                mkDM (SOME IntArb.divT, SOME IntArb.divF, NONE),
+                                                                mkDM (SOME IntArb.modT, SOME IntArb.modF, NONE)
+                                                               )
                        | P.NtInteger P.IpArbitrary  => doArith (C.Dec.cInteger, C.CInteger,
-                                                                IntInf.+, IntInf.~, IntInf.-, IntInf.*, NONE)
+                                                                IntInf.+, IntInf.~, IntInf.-, IntInf.*, NONE,
+                                                                mkDM (SOME IntInf.quot, SOME IntInf.div, NONE),
+                                                                mkDM (SOME IntInf.rem, SOME IntInf.mod, NONE))
                        | P.NtFloat P.FpSingle       => Try.fail ()
                        | P.NtFloat P.FpDouble       => Try.fail ())
                 val r = <@ doIt (operator, args)

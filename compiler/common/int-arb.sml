@@ -56,6 +56,10 @@ sig
   val * : t * t -> t
   val quot : t * t -> t
   val rem : t * t -> t
+  val divT : t * t -> t
+  val modT : t * t -> t
+  val divF : t * t -> t
+  val modF : t * t -> t
   val maxValue : typ -> IntInf.t
   val minValue : typ -> IntInf.t
   val maxValueT : typ -> t
@@ -282,6 +286,21 @@ struct
         truncResult (t1, IntInf.rem (i1, i2))
       else
         Fail.fail ("IntArb", "rem", "mismatched types")
+
+  val divT = quot
+  val modT = rem
+
+  fun divF (X (t1, i1), X (t2, i2)) =
+      if equalTyps (t1, t2) then
+        truncResult (t1, IntInf.div (i1, i2))
+      else
+        Fail.fail ("IntArb", "divF", "mismatched types")
+
+  fun modF (X (t1, i1), X (t2, i2)) =
+      if equalTyps (t1, t2) then
+        truncResult (t1, IntInf.mod (i1, i2))
+      else
+        Fail.fail ("IntArb", "modF", "mismatched types")
 
   fun bnot (X (t, i)) = X (t, IntInf.notb i)
 
