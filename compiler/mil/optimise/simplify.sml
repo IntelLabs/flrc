@@ -233,6 +233,7 @@ struct
          ("TupleBeta",        "Tuple subscripts reduced"       ),
          ("TupleToField",     "Tuple sub/set -> project"       ),
          ("TupleFieldNorm",   "Tuple fields normalized"        ),
+         ("TupleFieldSimpl",  "Tuple fields simplified"        ),
          ("TupleNormalize",   "Tuple meta-data normalized"     ),
          ("Unreachable",      "Unreachable objects killed"     )
         ]
@@ -328,6 +329,7 @@ struct
     val tupleBeta = clicker "TupleBeta"
     val tupleVariableToField = clicker "TupleToField"
     val tupleFieldNormalize = clicker "TupleFieldNorm"
+    val tupleFieldSimplify = clicker "TupleFieldSimpl"
     val tupleNormalize = clicker "TupleNormalize"
     val unreachable = clicker "Unreachable"
 
@@ -3798,6 +3800,79 @@ struct
 
     val tuple = tupleNormalize
 
+    (* Try to use simpler vector indexing where possible.
+     *)
+    val tupleFieldSimplify = 
+     fn {dec, con} => 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dests, r)) =>
+              let
+                val (tf, remainder) = dec r
+                val field = MU.TupleField.field tf
+                val td = MU.TupleField.tupDesc tf
+                val tup = MU.TupleField.tup tf
+                val {descriptor, base, mask, index, kind} = <@ MU.FieldIdentifier.Dec.fiVectorVariable field
+                val () = <@ MU.VectorIndexKind.Dec.vikVector kind
+                val (a, b) = 
+                    let 
+                      val v = <@ MU.Operand.Dec.sVariable index
+                      val {prim, createThunks, typs, args} = <@ MU.Rhs.Dec.rhsPrim <! Def.toRhs o Def.get @@ (imil, v)
+                      val {descriptor, masked, operator} = <@ PU.Vector.Dec.viPointwise <! PU.T.Dec.vector @@ prim
+                      val () = Try.require (not(masked))
+                      val () = <@ PU.ArithOp.Dec.aPlus o #operator <! PU.Prim.Dec.pNumArith @@ operator
+                    in (<@ MU.Operand.Dec.sVariable o Try.V.sub @@ (args, 0), 
+                        <@ MU.Operand.Dec.sVariable o Try.V.sub @@ (args, 1))
+                    end
+                val (bv, stride) = 
+                    let
+                      val getBase = 
+                          Try.lift 
+                            (fn v => 
+                                let 
+                                  val {prim, args, ...} = <@ MU.Rhs.Dec.rhsPrim <! Def.toRhs o Def.get @@ (imil, v)
+                                  val {descriptor, operator} = <@ PU.Vector.Dec.viData <! PU.T.Dec.vector @@ prim
+                                  val () = <@ PU.DataOp.Dec.dBroadcast operator
+                                  val p = Try.V.singleton args
+                                in p
+                                end)
+                      val getStride = 
+                          Try.lift
+                            (fn v => 
+                                let 
+                                  val {prim, args, ...} = <@ MU.Rhs.Dec.rhsPrim <! Def.toRhs o Def.get @@ (imil, v)
+                                  val {descriptor, operator} = <@ PU.Vector.Dec.viData <! PU.T.Dec.vector @@ prim
+                                  val () = <@ PU.DataOp.Dec.dVector operator
+                                  val out = 
+                                   fn p => <@ MU.Constant.Dec.cIntegral <! MU.Operand.Dec.sConstant @@ p
+                                  val is = Vector.map (args, out)
+                                  val dist = fn (a, b) => IntArb.- (a, b)
+                                  val stride = dist (Try.V.sub (is, 1), Try.V.sub (is, 0))
+                                  val len = Vector.length is
+                                  val stridePair =
+                                   fn (vi, i) => (vi = 0) 
+                                                 orelse IntArb.equalsNumeric(dist (i, Vector.sub (is, vi -1)), stride)
+                                  val () = Try.require (Vector.foralli (is, stridePair))
+                                in <@ IntArb.toInt stride
+                                end)
+                      val get = 
+                          Try.lift (fn (a, b) => (<@ getBase a, <@ getStride b))
+                    in case get (a, b) of SOME r => r | NONE => <@ get (b, a)
+                    end
+                val field = M.FiVectorVariable {descriptor = descriptor,
+                                                base = base,
+                                                mask = mask,
+                                                index = bv,
+                                                kind = M.VikStrided stride}
+                val tf = M.TF {tupDesc = td, tup = tup, field = field}
+                val rhs = con (tf, remainder)
+                val mil = Mil.I {dests = dests, n = 0, rhs = rhs}
+                val () = IInstr.replaceInstruction (imil, i, mil)
+              in []
+              end
+        in try (Click.tupleFieldSimplify, f)
+        end
+
     (* For any tuple subscript or write with a fixed index i,
      * standardize the meta data into a sequence of i+1 fixed
      * fields and no array field.  
@@ -3857,7 +3932,7 @@ struct
         end
 
     val tupleField = 
-     fn r => (tupleVariableToField r) or (tupleFieldNormalize r)
+     fn r => (tupleVariableToField r) or (tupleFieldNormalize r) or (tupleFieldSimplify r)
 
     val tupleBeta = 
         let
