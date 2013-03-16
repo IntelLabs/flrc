@@ -773,15 +773,15 @@ struct
                  let
                    val args = Vector.map (args, <@ dec)
                    val c = 
-                       case operator
-                        of P.APlus   => con (plus (Try.V.doubleton args))
-                         | P.ANegate => con (neg (Try.V.singleton args))
-                         | P.AMinus  => con (minus (Try.V.doubleton args))
-                         | P.ATimes  => con (times (Try.V.doubleton args))
-                         | P.ADivide => con (<- divide (Try.V.doubleton args))
-                         | P.ADiv dk => con (<- (divX dk) (Try.V.doubleton args))
-                         | P.AMod dk => con (<- (modX dk) (Try.V.doubleton args))
-                         | _         => Try.fail ()
+                       (case operator
+                         of P.APlus   => con (plus (Try.V.doubleton args))
+                          | P.ANegate => con (neg (Try.V.singleton args))
+                          | P.AMinus  => con (minus (Try.V.doubleton args))
+                          | P.ATimes  => con (times (Try.V.doubleton args))
+                          | P.ADivide => con (<- divide (Try.V.doubleton args))
+                          | P.ADiv dk => con (<- (divX dk) (Try.V.doubleton args))
+                          | P.AMod dk => con (<- (modX dk) (Try.V.doubleton args))
+                          | _         => Try.fail ()) handle _ => Try.fail ()
                    val r = RrConstant c
                  in r
                  end)
