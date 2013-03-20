@@ -20,7 +20,7 @@ void ihrSetNCapabilities(uint32 n) {
 void ihrGlobalInit()
 {
     ihrStoreLock = prtMutexCreate(NULL);
-    assert(!ihrStoreLock);
+    assert(ihrStoreLock);
 }
 
 void* getOrSetKey(IhrStoreKey k, void* p)
