@@ -24,6 +24,12 @@ struct
 
   val passname = "CoreHsToANormLazy"
 
+  val (decodeNamesF, decodeNames) =
+      Config.Feature.mk (passname ^ ":decodeNames", "decode Z-encoded names")
+
+  fun qNameToString (cfg, s) 
+    = if decodeNames cfg then CL.qNameToStringDecoded s else CL.qNameToString s
+
   fun failMsg (msg0, msg1) = Fail.fail (passname, msg0, msg1)
 
   (* 
@@ -51,7 +57,7 @@ struct
   fun lookupMayFail (dict, v, msg)
     = case QD.lookup (dict, v)
         of SOME t => t 
-        | _       => failMsg (msg, (CL.qNameToString v) ^ " not found")
+        | _       => failMsg (msg, CL.qNameToString v ^ " not found")
 
   fun isUtupleTy t = 
       let
@@ -76,76 +82,8 @@ struct
         TypeRep.newRep (tm, AL.Arr (t1, t2, effect))
       end
 
-
   fun splitTy args (CH.Tapp (t1, t2)) = splitTy (t2 :: args) t1
     | splitTy args t = (t, args)
-
-(*
-  val rec coreTyToName : state * env * (AL.var * CH.ty) SD.t * CH.ty -> I.name
-    = fn (state, env, tyenv, ty) =>
-      let
-        val { im, tm, ... } = state 
-        val { cfg, ... } = env
-      in
-        case ty
-          of CH.Tvar v => (case SD.lookup (tyenv, v)
-                            of SOME (_, t) => 
-                              (case t 
-                                 of CH.Tvar u => if u = v then IM.nameMake (im, v)
-                                                 else coreTyToName (state, env, tyenv, t) 
-                                  | _ => coreTyToName (state, env, tyenv, t))
-                             | NONE => IM.nameMake (im, v) 
-                              (* failMsg ("coreTyToName", "type variable " ^ v ^ " not found in tyenv") *)
-                          )
-           | CH.Tcon c => IM.nameMake (im, CL.qNameToString c)
-           | CH.Tapp _ => 
-            let
-              val (fty, args) = splitTy [] ty
-            in
-              case (fty, args)
-                of (CH.Tcon c, [fty, aty]) =>
-                  if c = CU.tcArrow then coreTyToNameArr (state, env, tyenv, fty, aty) 
-                    else coreTyToNameApp (state, env, tyenv, fty, [aty])
-                 | _ => coreTyToNameApp (state, env, tyenv, fty, args)
-            end
-           | CH.Tforall ((v, _), ty) => 
-            let
-              (* map bounded type name to fresh names, a hack 
-              val _ = print ("got forall '" ^ v ^ "'\n")
-              val tyenv = SD.insert (tyenv, v, (IM.variableFresh (im, v, AL.Data), CH.Tcon (NONE, v)))
-              *)
-              val n = coreTyToName (state, env, tyenv, ty)
-              val s = "%forall " ^ v ^ "." ^ IM.nameString (im, n)
-            in
-              IM.nameMake (im, "(" ^ s ^ ")")
-            end
-           | _ => failMsg ("coreTyToName", "unexpected type coercion")
-      end
-
-  and rec coreTyToNameArr : state * env * (AL.var * CH.ty) SD.t * CH.ty * CH.ty -> I.name
-    = fn (state, env, tyenv, fty, aty) =>
-      let 
-        val { im, tm, ... } = state 
-        val { cfg, ... } = env
-        val m = coreTyToName (state, env, tyenv, fty)
-        val n = coreTyToName (state, env, tyenv, aty)
-        val s = IM.nameString (im, m) ^ " -> " ^ IM.nameString (im, n)
-      in
-        IM.nameMake (im, "(" ^ s ^ ")")
-      end
-
-  and rec coreTyToNameApp : state * env * (AL.var * CH.ty) SD.t * CH.ty * CH.ty list -> I.name
-    = fn (state, env, tyenv, fty, atys) =>
-      let 
-        val { im, tm, ... } = state 
-        val { cfg, ... } = env
-        val m = coreTyToName (state, env, tyenv, fty)
-        val n = List.map (atys, fn aty => coreTyToName (state, env, tyenv, aty))
-        val s = List.fold (n, IM.nameString (im, m), fn (n, s) => s ^ " " ^ IM.nameString (im, n))
-      in
-        IM.nameMake (im, "(" ^ s ^ ")")
-      end
-*)
 
   val tyData = TypeRep.newRep_ AL.Data
 
@@ -233,10 +171,6 @@ struct
                    | CH.Tapp (t1, t2) =>
                     let
                       val (fty, args) = splitTy [] t
-                      (*
-                      val _ = print ("done split fty = " ^ Layout.toString (CL.layoutTy fty) ^ " args = " ^ 
-                                     Layout.toString (Layout.seq (List.map (args, CL.layoutTy))) ^ "\n")
-                      *)
                     in
                       case (fty, args)
                         of (CH.Tcon c, [fty, aty]) =>
@@ -256,7 +190,8 @@ struct
                         | _ => tyData (* TODO: shall we error here? *)
                     end
                   | CH.Tforall (_, ty) => doTy0 (resolved, tyenv, ty) 
-                  | _ => failMsg ("doTy0", "unexcepted coercion type " ^ Layout.toString (CL.layoutTy t)))
+                  | _ => failMsg ("doTy0", "unexcepted coercion type " ^ 
+                                           Layout.toString (CL.layoutTy (#cfg env, t))))
       in
         doTy0 (QD.empty, SD.empty, ty)
       end
@@ -268,8 +203,8 @@ struct
         val { cfg, dict, mname } = env
         val { ndict, tdict, vdict, sdict } = dict
         val s = case v 
-                 of (SOME _, _) => CL.qNameToString v
-                  | (NONE, s)   => CL.qNameToString (mname, s)
+                 of (SOME _, _) => qNameToString (#cfg env, v)
+                  | (NONE, s)   => qNameToString (#cfg env, (mname, s))
         val u  = IM.variableFresh (im, s, ty)
         val vdict = QD.insert (vdict, v, u)
         val dict = { ndict = ndict , tdict = tdict, vdict = vdict, sdict = sdict }
@@ -323,7 +258,8 @@ struct
             | CH.App (f, e) =>
               (case e
                 of CH.Var v => check (lookupMayFail (vdict, v, "isSaturated") :: args) f
-                | _ => failMsg ("isSaturated", "expression not in a-norm form " ^ Layout.toString(CL.layoutExp e)))
+                | _ => failMsg ("isSaturated", "expression not in a-norm form " ^ 
+                                               Layout.toString(CL.layoutExp (#cfg env, e))))
             | CH.Appt (f, t) => check args f
             | _ => NONE
         val r = check [] e
@@ -365,12 +301,13 @@ struct
                    val tys = case TypeRep.repToBase (doTy (state, env, vty))
                               of AL.Prim (GP.Tuple tys) => tys
                                | _ => failMsg ("doExp/case", "expect primitive tuple type for " ^ v)
-                   val vs = List.map (tys, fn ty => IM.variableFresh (im, CL.qNameToString (mname, v), ty))
+                   val vs = List.map (tys, fn ty => IM.variableFresh (im, qNameToString (#cfg env, (mname, v)), ty))
                    val vbs = List.zip (vs, tys)
                  in
                    AL.Let (AL.Nonrec (AL.Vdef (AL.VbMulti (vbs, false), e)), AL.Multi vs)
                  end
-               | (true, _) => failMsg ("doExp", "Bad case on unboxed tuple: " ^ Layout.toString (CL.layoutExp oe))
+               | (true, _) => failMsg ("doExp", "Bad case on unboxed tuple: " ^ 
+                                                Layout.toString (CL.layoutExp (#cfg env, oe)))
                | _ => 
                  let
                    val (v, vty, env) = makeVar (state, env, (NONE, v), vty)
@@ -393,7 +330,7 @@ struct
                     of AL.Prim (GP.EqTy _) => doExp (state, env) e
                      | AL.Prim (GP.Tuple tys) => (* remove unboxed tuple when it's function argument *)
                       let
-                        val vs = List.map (tys, fn ty => IM.variableFresh (im, CL.qNameToString (mname, vstr), ty))
+                        val vs = List.map (tys, fn ty => IM.variableFresh (im, qNameToString (#cfg env, (mname, vstr)), ty))
                         val dict = addSubstitute (dict, (NONE, vstr), AL.Multi vs)
                         val env = updateEnvDict (env, dict)
                       in
@@ -421,8 +358,10 @@ struct
                    of AL.Var v => AL.App (doExp (state, env) f, v)
                     (* remove unboxed tuple when it is function argument *)
                     | AL.Multi vs => List.fold (vs, doExp (state, env) f, fn (v, f) => AL.App (f, v))
-                    | _ => failMsg ("doExp", "expresion not in a-norm form " ^ Layout.toString (CL.layoutExp e)))
-                 | _ => failMsg ("doExp", "cannot handle " ^ Layout.toString (CL.layoutExp e))))
+                    | _ => failMsg ("doExp", "expresion not in a-norm form " ^ 
+                                             Layout.toString (CL.layoutExp (#cfg env, e))))
+                 | _ => failMsg ("doExp", "cannot handle " ^ 
+                                          Layout.toString (CL.layoutExp (#cfg env, e)))))
       end
 
   and rec doAlt : state * env -> CH.alt -> AL.alt
@@ -436,7 +375,7 @@ struct
             val (con, strictness) = 
                 case QD.lookup (#ndict dict, con)
                   of SOME con => con
-                   | NONE => ((IM.nameFromString (im, CL.qNameToString con), 0), [])   (* unboxed tuple *)
+                   | NONE => ((IM.nameFromString (im, qNameToString (#cfg env, con)), 0), [])   (* unboxed tuple *)
             val (vbs, env) = makeVars (state, env, vbs)
             fun annotate ((v, ty)::vbs) [] = (v, ty, false) :: annotate vbs []
               | annotate ((v, ty)::vbs) (strict::xs) = (v, ty, strict) ::annotate vbs xs
@@ -512,15 +451,12 @@ struct
                      | _ => false
                   val tys = List.map (tys, fn (ty, strict) => (ty, strict orelse isPrimTy ty))
                   val strictness = List.map (tys, #2)
-                  val tag = (IM.nameMake (im, CL.qNameToString con), i)
+                  val tag = (IM.nameMake (im, qNameToString (cfg, con)), i)
                 in
                   ((con, (tag, strictness)), (tag, tbinds, tys))
                 end
             val (tags, arms) = List.unzip (List.mapi (cdefs, makeName))
             val ndict = List.fold (tags, ndict, fn ((con, tag), ndict) => QD.insert (ndict, con, tag))
-            (*
-            val _ = print ("remember sumtype for " ^ CL.qNameToString name ^ "\n")
-            *)
             val tdict = QD.insert (tdict, name, Sumtype (tbs, arms)) 
           in
             { ndict = ndict, tdict = tdict, vdict = vdict, sdict = sdict }
@@ -537,7 +473,7 @@ struct
         val cfg  = PassData.getConfig pd
         val im   = IM.new ""
         val tm   = TypeRep.newManager (AL.hashTy_, AL.eqTy_)
-        val name = String.dropLast (CL.qNameToString (SOME name, ""))
+        val name = String.dropLast (qNameToString (cfg, (SOME name, "")))
         val dict = List.fold (tdefs, emptyDict, doTDef (im, cfg))
         val state = { im = im, tm = tm } 
         val env  = { cfg = cfg, mname = NONE, dict = dict }
@@ -554,9 +490,9 @@ struct
         (AL.Module (main, List.rev vdefgs), IM.finish im, tm)
       end
 
-  fun layout  (module, _) = CoreHsLayout.layoutModule module
+  fun layout  (module, cfg) = CoreHsLayout.layoutModule (cfg, module)
 
-  fun layout' (module, _) = ANormLazyLayout.layoutModule module
+  fun layout' (module, cfg) = ANormLazyLayout.layoutModule (cfg, module)
 
   val description = {name        = passname,
                      description = "GHC Core to lazy A-Normal Form",
@@ -567,7 +503,7 @@ struct
                      mustBeAfter = [],
                      stats       = []}
 
-  val associates = {controls = [], debugs = [], features = [], subPasses = []}
+  val associates = {controls = [], debugs = [], features = [decodeNamesF], subPasses = []}
 
   val pass = Pass.mkCompulsoryPass (description, associates, doModule)
 

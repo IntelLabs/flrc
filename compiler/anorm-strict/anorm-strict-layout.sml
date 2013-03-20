@@ -153,7 +153,7 @@ struct
                          L.seq [ L.sequence ("<", ";", ",") (List.map (fvs, fn v => variable (env, v)))
                                , L.sequence (" ", ">", ",") (vBinds (env, vbs))]
 
-  val literal = CL.layoutCoreLit
+  val literal = fn (env, l) => CL.layoutCoreLit (getConfig env, l)
 
   val variableSeq = fn (env, vs) => angleList (List.map (vs, fn v => variable (env, v)))
 
@@ -174,7 +174,7 @@ struct
            L.mayAlign [ L.seq [name (env, con), L.str " ", spaceList (vBinds (env, vbs)), L.str " ->"]
                       , indent (exp (env, e))]
          | ANS.Alit (l, t, e)    =>
-            L.mayAlign [ L.seq [literal l, L.str " :: ", ty (env, t) , L.str " ->"]
+            L.mayAlign [ L.seq [literal (env, l), L.str " :: ", ty (env, t) , L.str " ->"]
                          , indent (exp (env, e))]
          | ANS.Adefault e          => L.mayAlign [ L.str "%_ -> ", indent (exp (env, e))])
 
@@ -185,17 +185,17 @@ struct
    fn (env, ae) =>
       (case ae
         of ANS.PrimApp (f, xs) => 
-           L.seq [CL.layoutQName (CP.pv (GHCPrimOp.toString f)), L.str " ", variableSeq (env, xs)]
+           L.seq [CL.layoutQName (getConfig env, CP.pv (GHCPrimOp.toString f)), L.str " ", variableSeq (env, xs)]
          | ANS.ConApp ((c, _), xs) => L.seq [name (env, c), L.str " " , variableSeq (env, xs)]
          | ANS.Return xs => variableSeq (env, xs)
          | ANS.ExtApp (p, cc, n, t, xs) =>
            L.paren (L.seq [ L.paren (L.seq [ L.str "%external "
-                                           , CL.layoutCC cc
+                                           , CL.layoutCC (getConfig env, cc)
                                            , L.str (" \"" ^ CL.escape p ^ "\" \"" ^ CL.escape n ^ "\"")
                                            , L.str "::", L.paren (ty (env, t)) ])
                           , L.str " ", variableSeq (env, xs)])
          | ANS.App (f, xs, _) => L.seq [variable (env, f), L.str " ", variableSeq (env, xs)]
-         | ANS.Lit (l, t) => L.paren (L.seq [literal l, L.str " :: ", ty (env, t)])
+         | ANS.Lit (l, t) => L.paren (L.seq [literal (env, l), L.str " :: ", ty (env, t)])
          | ANS.Cast (ANS.ToAddr v) => L.paren (L.seq [ L.str "%castToAddr ", variable (env, v)])
          | ANS.Cast (ANS.FromAddr v) => L.paren (L.seq [ L.str "%castFromAddr ", variable (env, v)])
          | ANS.Cast (ANS.NullRef) => L.str "%castNullRef"

@@ -35,7 +35,7 @@ sig
   val setHandler    : state * Mil.operand -> block
   
   val tagToConst  : Config.wordSize * Int.t -> Mil.constant
-  val castLiteral : Config.wordSize -> CoreHs.coreLit * 'a GHCPrimType.primTy -> Mil.constant * Mil.typ 
+  val castLiteral : Config.t -> CoreHs.coreLit * 'a GHCPrimType.primTy -> Mil.constant * Mil.typ 
 
   val primToMilTy : Config.wordSize * ('a -> Mil.typ) -> 'a GHCPrimType.primTy -> Mil.typ
   val primOp      : state * GHCPrimOp.primOp * var Vector.t * argsAndTyps -> block * Mil.effects
@@ -291,27 +291,31 @@ struct
         end*)
          |  _                      => M.TRef)
 
-  fun castLiteral ws =
-    fn (CH.Lint i, GPT.Int)    => (M.CIntegral (IntArb.fromIntInf (intArbTyp ws, i)), intTyp ws)
-     | (CH.Lint i, GPT.Int64)  => (M.CIntegral (IntArb.fromIntInf (int64ArbTyp, i)), int64Typ)
-     | (CH.Lint i, GPT.Char)   => (M.CIntegral (IntArb.fromIntInf (charArbTyp, i)), charTyp)
-     | (CH.Lint i, GPT.Word)   => (M.CIntegral (IntArb.fromIntInf (wordArbTyp ws, i)), wordTyp ws)
-     | (CH.Lint i, GPT.Word64) => (M.CIntegral (IntArb.fromIntInf (word64ArbTyp, i)), word64Typ)
-     | (CH.Lint i, GPT.Integer)=> (M.CInteger i, integerTyp)
-     | (CH.Lint i, GPT.Float)  => (M.CFloat  (Real32.fromIntInf i), floatTyp)
-     | (CH.Lint i, GPT.Double) => (M.CDouble (Real64.fromIntInf i), doubleTyp)
-     | (CH.Lrational r, GPT.Float)  => (M.CFloat  (Rat.toReal32 r), floatTyp)
-     | (CH.Lrational r, GPT.Double) => (M.CDouble (Rat.toReal64 r), doubleTyp)
-     | (CH.Lchar i, GPT.Int)    => (M.CIntegral (IntArb.fromInt (intArbTyp ws, i)), intTyp ws)
-     | (CH.Lchar i, GPT.Int64)  => (M.CIntegral (IntArb.fromInt (int64ArbTyp, i)), int64Typ)
-     | (CH.Lchar i, GPT.Char)   => (M.CIntegral (IntArb.fromInt (charArbTyp, i)), charTyp)
-     | (CH.Lchar i, GPT.Word)   => (M.CIntegral (IntArb.fromInt (wordArbTyp ws, i)), wordTyp ws)
-     | (CH.Lchar i, GPT.Word64) => (M.CIntegral (IntArb.fromInt (word64ArbTyp, i)), word64Typ)
-     | (CH.Lchar i, GPT.Integer) => (M.CInteger (IntInf.fromInt i), integerTyp)
-     | (CH.Lint  i, GPT.Addr)   => (M.CIntegral (IntArb.fromIntInf (intArbTyp ws, i)), addrTyp)
-     | (l, ty) => failMsg("castLiteral", "cannot cast literal " ^
-                    Layout.toString (CoreHsLayout.layoutCoreLit l) ^ " to prim type " ^
-                    Layout.toString (GHCPrimTypeLayout.layoutPrimTy (fn _ => Layout.str "%data") ty))
+  fun castLiteral cfg =
+    let 
+      val ws = Config.targetWordSize cfg
+    in
+      fn (CH.Lint i, GPT.Int)    => (M.CIntegral (IntArb.fromIntInf (intArbTyp ws, i)), intTyp ws)
+       | (CH.Lint i, GPT.Int64)  => (M.CIntegral (IntArb.fromIntInf (int64ArbTyp, i)), int64Typ)
+       | (CH.Lint i, GPT.Char)   => (M.CIntegral (IntArb.fromIntInf (charArbTyp, i)), charTyp)
+       | (CH.Lint i, GPT.Word)   => (M.CIntegral (IntArb.fromIntInf (wordArbTyp ws, i)), wordTyp ws)
+       | (CH.Lint i, GPT.Word64) => (M.CIntegral (IntArb.fromIntInf (word64ArbTyp, i)), word64Typ)
+       | (CH.Lint i, GPT.Integer)=> (M.CInteger i, integerTyp)
+       | (CH.Lint i, GPT.Float)  => (M.CFloat  (Real32.fromIntInf i), floatTyp)
+       | (CH.Lint i, GPT.Double) => (M.CDouble (Real64.fromIntInf i), doubleTyp)
+       | (CH.Lrational r, GPT.Float)  => (M.CFloat  (Rat.toReal32 r), floatTyp)
+       | (CH.Lrational r, GPT.Double) => (M.CDouble (Rat.toReal64 r), doubleTyp)
+       | (CH.Lchar i, GPT.Int)    => (M.CIntegral (IntArb.fromInt (intArbTyp ws, i)), intTyp ws)
+       | (CH.Lchar i, GPT.Int64)  => (M.CIntegral (IntArb.fromInt (int64ArbTyp, i)), int64Typ)
+       | (CH.Lchar i, GPT.Char)   => (M.CIntegral (IntArb.fromInt (charArbTyp, i)), charTyp)
+       | (CH.Lchar i, GPT.Word)   => (M.CIntegral (IntArb.fromInt (wordArbTyp ws, i)), wordTyp ws)
+       | (CH.Lchar i, GPT.Word64) => (M.CIntegral (IntArb.fromInt (word64ArbTyp, i)), word64Typ)
+       | (CH.Lchar i, GPT.Integer) => (M.CInteger (IntInf.fromInt i), integerTyp)
+       | (CH.Lint  i, GPT.Addr)   => (M.CIntegral (IntArb.fromIntInf (intArbTyp ws, i)), addrTyp)
+       | (l, ty) => failMsg("castLiteral", "cannot cast literal " ^
+                      Layout.toString (CoreHsLayout.layoutCoreLit (cfg, l)) ^ " to prim type " ^
+                      Layout.toString (GHCPrimTypeLayout.layoutPrimTy (fn _ => Layout.str "%data") ty))
+      end
 
   fun identity l =
       let

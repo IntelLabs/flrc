@@ -11,7 +11,7 @@ sig
   type t  = module * ANormLazy.ty Identifier.symbolTable
   type t' = module * demand Identifier.symbolTable
   val annotate : t -> t'
-  val layoutDemand : 'a -> demand -> Layout.t
+  val layoutDemand : 'a * demand -> Layout.t
 end
 
 functor AbsCoreEvalF (structure AbsCore : ABS_CORE) :> ABS_CORE_EVAL 
@@ -45,10 +45,12 @@ struct
 
   type 'a env = 'a VD.t
 
-  val rec layoutDemand : 'a -> demand -> L.t = fn im =>
-    fn S => L.str "S"
-     | L => L.str "L"
-     | U ds => L.seq [L.str "U", L.sequence ("[", "]", "") (List.map (ds, layoutDemand im))]
+  val rec layoutDemand : 'a * demand -> L.t 
+    = fn (env, t) =>
+      case t
+        of S => L.str "S"
+         | L => L.str "L"
+         | U ds => L.seq [L.str "U", L.sequence ("[", "]", "") (List.map (ds, fn d => layoutDemand (env, d)))]
 
   structure ADL = AbsCoreLayoutF (struct structure AbsCore = AC 
                                          type ty = demand

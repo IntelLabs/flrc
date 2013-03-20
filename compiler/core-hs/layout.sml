@@ -1,31 +1,34 @@
 (* COPYRIGHT_NOTICE_1 *)
 signature CORE_HS_LAYOUT =
 sig
+  type env = Config.t
+
+  val controls             : Config.Control.control list
   val escape               : string -> string
   val qNameToString        : string CoreHs.qualified -> string
-  val qNameToStringEncoded : string CoreHs.qualified -> string
+  val qNameToStringDecoded : string CoreHs.qualified -> string
 
-  val layoutQName          : string CoreHs.qualified -> Layout.t
-  val layoutPName          : CoreHs.pName            -> Layout.t
-  val layoutAnMName        : CoreHs.anMName          -> Layout.t
-  val layoutMName          : CoreHs.mName            -> Layout.t
-  val layoutCC             : CoreHs.callconv         -> Layout.t
-  val layoutKind           : CoreHs.kind             -> Layout.t
-  val layoutTy             : CoreHs.ty               -> Layout.t
-  val layoutVBind          : CoreHs.vBind            -> Layout.t
-  val layoutTBind          : CoreHs.tBind            -> Layout.t
-  val layoutBind           : CoreHs.bind             -> Layout.t
-  val layoutCoreLit        : CoreHs.coreLit          -> Layout.t
-  val layoutLit            : CoreHs.lit              -> Layout.t
-  val layoutCoercionKind   : CoreHs.coercionKind     -> Layout.t
-  val layoutKindOrCoercion : CoreHs.kindOrCoercion   -> Layout.t
-  val layoutAlt            : CoreHs.alt              -> Layout.t
-  val layoutExp            : CoreHs.exp              -> Layout.t
-  val layoutVDef           : CoreHs.vDef             -> Layout.t
-  val layoutVDefg          : CoreHs.vDefg            -> Layout.t
-  val layoutCDef           : CoreHs.cDef             -> Layout.t
-  val layoutTDef           : CoreHs.tDef             -> Layout.t
-  val layoutModule         : CoreHs.module           -> Layout.t
+  val layoutQName          : env * string CoreHs.qualified -> Layout.t
+  val layoutPName          : env * CoreHs.pName            -> Layout.t
+  val layoutAnMName        : env * CoreHs.anMName          -> Layout.t
+  val layoutMName          : env * CoreHs.mName            -> Layout.t
+  val layoutCC             : env * CoreHs.callconv         -> Layout.t
+  val layoutKind           : env * CoreHs.kind             -> Layout.t
+  val layoutTy             : env * CoreHs.ty               -> Layout.t
+  val layoutVBind          : env * CoreHs.vBind            -> Layout.t
+  val layoutTBind          : env * CoreHs.tBind            -> Layout.t
+  val layoutBind           : env * CoreHs.bind             -> Layout.t
+  val layoutCoreLit        : env * CoreHs.coreLit          -> Layout.t
+  val layoutLit            : env * CoreHs.lit              -> Layout.t
+  val layoutCoercionKind   : env * CoreHs.coercionKind     -> Layout.t
+  val layoutKindOrCoercion : env * CoreHs.kindOrCoercion   -> Layout.t
+  val layoutAlt            : env * CoreHs.alt              -> Layout.t
+  val layoutExp            : env * CoreHs.exp              -> Layout.t
+  val layoutVDef           : env * CoreHs.vDef             -> Layout.t
+  val layoutVDefg          : env * CoreHs.vDefg            -> Layout.t
+  val layoutCDef           : env * CoreHs.cDef             -> Layout.t
+  val layoutTDef           : env * CoreHs.tDef             -> Layout.t
+  val layoutModule         : env * CoreHs.module           -> Layout.t
 end
 
 structure CoreHsLayout :> CORE_HS_LAYOUT =
@@ -34,10 +37,24 @@ struct
   structure CU = CoreHsUtils
   structure U = Utils
   structure L = Layout
+  structure LU = LayoutUtils
+  
+  type env = Config.t
+  
+  val modulename = "CoreHsLayout"
 
-  val useDecodedNames = false
+  val describe = fn () =>
+      L.align [L.str (modulename ^ " control string consists of:"),
+               LU.indent (L.align [L.str "d => show decoded names" ]),
+               L.str "default is nothing"]
+      
+  val parse = fn str =>
+      if String.contains (str, #"d") then SOME true else NONE
 
-  val tabSize = 2
+  val dft = fn _ => false    
+
+  val (control, useDecodedNames) = Config.Control.mk (modulename, describe, parse, dft)
+  val controls = [control]
 
   fun escape s =
       let
@@ -54,17 +71,19 @@ struct
         String.concat (map (enc o ord) (explode s))
       end
 
-  fun semiMap f []  = []
-    | semiMap f [x] = [f x]
-    | semiMap f l   = map (fn v => L.seq [f v, L.str ";"]) l
+  fun semiMap (l, f)
+    = (case l
+        of [] => []
+         | [x] => [f x]
+         | l => List.map (l, fn v => L.seq [f v, L.str ";"]))
 
   val separate = L.sequence ("", "", " ") 
 
   fun layoutNameAux (d, n) = L.str (if d then CU.zDecodeString n else n)
-  fun layoutName n = layoutNameAux (useDecodedNames, n)
+  fun layoutName (env, n) = layoutNameAux (useDecodedNames env, n)
 
   fun layoutPNameAux (d, P n) = layoutNameAux (d, n)
-  fun layoutPName p = layoutPNameAux (useDecodedNames, p)
+  fun layoutPName (env, p) = layoutPNameAux (useDecodedNames env, p)
 
   fun hierModuleSep d = if d then "." else CU.zEncodeString "."
 
@@ -81,193 +100,234 @@ struct
               , parentLayout
               , layoutNameAux (d, name) ]
       end
-  fun layoutAnMName n = layoutAnMNameAux (useDecodedNames, n)
+  fun layoutAnMName (env, n) = layoutAnMNameAux (useDecodedNames env, n)
 
   fun layoutMNameAux (d, NONE)     = L.empty
     | layoutMNameAux (d, (SOME m)) = L.seq [layoutAnMNameAux (d, m), L.str "."]
-  fun layoutMName m = layoutMNameAux (useDecodedNames, m)
+  fun layoutMName (env, m) = layoutMNameAux (useDecodedNames env, m)
 
   fun layoutQNameAux (d, (m, v)) = L.seq [layoutMNameAux (d, m), layoutNameAux (d, v)]
-  fun layoutQName n = layoutQNameAux (useDecodedNames, n)
-  fun qNameToString name = Layout.toString (layoutQName name)
-  fun qNameToStringEncoded name = Layout.toString (layoutQNameAux (false, name))
+  fun layoutQName (env, n) = layoutQNameAux (useDecodedNames env, n)
+  fun qNameToString name = Layout.toString (layoutQNameAux (false, name))
+  fun qNameToStringDecoded name = Layout.toString (layoutQNameAux (true, name))
 
-  val layoutCC 
-    = fn Prim    => L.str "prim"
-      |  CCall   => L.str "ccall"
-      |  StdCall => L.str "stdcall" 
-      |  Dynamic => L.str "dynamic" 
-      |  Label   => L.str "label" 
+  fun layoutCC (env, cc) 
+    = case cc
+        of Prim    => L.str "prim"
+         | CCall   => L.str "ccall"
+         | StdCall => L.str "stdcall" 
+         | Dynamic => L.str "dynamic" 
+         | Label   => L.str "label" 
 
-  fun layoutKind (Karrow (k1, k2)) = L.paren (L.mayAlign [ L.seq [layoutAKind k1, L.str " ->"]
-                                                         , layoutKind k2])
-    | layoutKind (Keq (t1, t2)) = layoutEqKind (t1, t2)
-    | layoutKind k = layoutAKind k
+  fun layoutKind (env, k)
+    = (case k
+        of (Karrow (k1, k2)) => L.paren (L.mayAlign [ L.seq [layoutAKind (env, k1), L.str " ->"]
+                                                    , layoutKind (env, k2)])
+         | (Keq (t1, t2)) => layoutEqKind (env, t1, t2)
+         | k => layoutAKind (env, k))
 
-  and layoutAKind Klifted = L.str "*"
-    | layoutAKind Kunlifted = L.str "#"
-    | layoutAKind Kopen = L.str "?"
-    | layoutAKind k = L.paren (layoutKind k)
+  and layoutAKind (env, k)
+    = (case k
+        of Klifted => L.str "*"
+         | Kunlifted => L.str "#"
+         | Kopen => L.str "?"
+         | k => L.paren (layoutKind (env, k)))
 
-  and layoutEqKind (t1, t2) = L.paren (L.seq [ L.paren (layoutTy t1)
-                                             , L.str " :=: "
-                                             , L.paren (layoutTy t2)])
+  and layoutEqKind (env, t1, t2) 
+    = L.paren (L.seq [ L.paren (layoutTy (env, t1))
+                     , L.str " :=: "
+                     , L.paren (layoutTy (env, t2))])
 
-  and layoutATy (Tvar n) = L.str n
-    | layoutATy (Tcon c) = layoutQName c
-    | layoutATy t = L.paren (layoutTy t)
+  and layoutATy (env, ty)
+    = (case ty
+        of (Tvar n) => L.str n
+         | (Tcon c) => layoutQName (env, c)
+         | t => L.paren (layoutTy (env, t)))
 
-  and layoutATy1 (ty, strict) = 
-    if strict then L.seq [ L.str "!", layoutATy ty ] else layoutATy ty 
+  and layoutATy1 (env, (ty, strict))
+    = if strict then L.seq [ L.str "!", layoutATy (env, ty) ] else layoutATy (env, ty)
 
-  and layoutAppTy (Tapp (t1, t2)) ts = layoutAppTy t1 (t2::ts)
-    | layoutAppTy t ts = separate (map layoutATy (t::ts))
+  and layoutAppTy (env, t, ts) 
+    = (case t
+        of Tapp (t1, t2) => layoutAppTy (env, t1, t2::ts)
+         | t => separate (List.map (t::ts, fn t => layoutATy (env, t))))
 
-  and layoutBTy (Tapp (t1, t2)) =
-      (case t1
-        of Tapp (Tcon tc, t3) => if tc = CU.tcArrow
-                                   then L.paren (L.mayAlign [ L.seq [layoutBTy t3, L.str " ->"]
-                                                            , layoutTy t2])
-                                   else layoutAppTy t1 [t2]
-         | otherwise => layoutAppTy t1 [t2])
-    | layoutBTy t = layoutATy t
+  and layoutBTy (env, t)
+    = (case t
+        of Tapp (t1, t2) =>
+          (case t1
+            of Tapp (Tcon tc, t3) => if tc = CU.tcArrow
+                                       then L.paren (L.mayAlign [ L.seq [layoutBTy (env, t3), L.str " ->"]
+                                                                , layoutTy (env, t2)])
+                                       else layoutAppTy (env, t1, [t2])
+             | _ => layoutAppTy (env, t1, [t2]))
+         | t => layoutATy (env, t))
 
-  and layoutForall tbs (Tforall (tb, t)) = layoutForall (tbs @ [tb]) t
-    | layoutForall tbs t =
-       L.seq [separate (map layoutTBind tbs), L.str " . ", layoutTy t]
+  and layoutForall (env, tbs, t)
+    = (case t 
+        of Tforall (tb, t) => layoutForall (env, tbs @ [tb], t)
+         | t => L.seq [separate (List.map (tbs, fn t => layoutTBind (env, t)))
+                      , L.str " . ", layoutTy (env, t)])
 
-  and layoutTy (Tforall (tb, t)) =
-      L.seq [L.str "%forall ", layoutForall [tb] t]
-    | layoutTy (TransCoercion (t1, t2)) =
-      L.seq [L.str "%trans ", separate [layoutATy t1, layoutATy t2]]
-    | layoutTy (SymCoercion t) =
-      L.seq [L.str "%sym ", layoutATy t]
-    | layoutTy (UnsafeCoercion (t1, t2)) =
-      L.seq [L.str "%unsafe ", separate [layoutATy t1, layoutATy t2]]
-    | layoutTy (LeftCoercion t) =
-      L.seq [L.str "%left ", layoutATy t]
-    | layoutTy (RightCoercion t) =
-      L.seq [L.str "%right ", layoutATy t]
-    | layoutTy (InstCoercion (t1, t2)) =
-      L.seq [L.str "%inst ", separate [layoutATy t1, layoutATy t2]]
-    | layoutTy (NthCoercion (i, t1)) =
-      L.seq [L.str "%nth ", separate [Int.layout i, layoutATy t1]]
-    | layoutTy t = layoutBTy t
+  and layoutTy (env, t)
+    = (case t
+        of Tforall (tb, t) => 
+           L.seq [L.str "%forall ", layoutForall (env, [tb], t)]
+         | TransCoercion (t1, t2) =>
+           L.seq [L.str "%trans ", separate [layoutATy (env, t1), layoutATy (env, t2)]]
+         | SymCoercion t =>
+           L.seq [L.str "%sym ", layoutATy (env, t)]
+         | UnsafeCoercion (t1, t2) =>
+           L.seq [L.str "%unsafe ", separate [layoutATy (env, t1), layoutATy (env, t2)]]
+         | LeftCoercion t =>
+           L.seq [L.str "%left ", layoutATy (env, t)]
+         | RightCoercion t =>
+           L.seq [L.str "%right ", layoutATy (env, t)]
+         | InstCoercion (t1, t2) =>
+           L.seq [L.str "%inst ", separate [layoutATy (env, t1), layoutATy (env, t2)]]
+         | NthCoercion (i, t1) => 
+           L.seq [L.str "%nth ", separate [Int.layout i, layoutATy (env, t1)]]
+         | t => layoutBTy (env, t))
 
-  and layoutTBind (t, Klifted) = L.str t
-    | layoutTBind (t, k) = L.paren (L.seq [L.str t, L.str " :: ", layoutKind k])
+  and layoutTBind (env, (t, k))
+    = (case k 
+        of Klifted => L.str t
+         | _ => L.paren (L.seq [L.str t, L.str " :: ", layoutKind (env, k)]))
 
-  fun layoutAtTBind (t, k) = L.seq [L.str "@ ", layoutTBind (t, k)]
+  fun layoutAtTBind (env, (t, k)) = L.seq [L.str "@ ", layoutTBind (env, (t, k))]
 
-  fun layoutVBind (x, t) = L.paren (L.seq[L.str x, L.str " :: ", layoutTy t])
+  fun layoutVBind (env, (x, t)) = L.paren (L.seq[L.str x, L.str " :: ", layoutTy (env, t)])
 
-  fun layoutBind (Tb tb) = L.seq [L.str "@ ", layoutTBind tb]
-    | layoutBind (Vb vb) = layoutVBind vb
+  fun layoutBind (env, b)
+    = (case b
+        of Tb tb => L.seq [L.str "@ ", layoutTBind (env, tb)]
+         | Vb vb => layoutVBind (env, vb))
 
-  fun layoutCoreLit (Lint v) = IntInf.layout v
-    | layoutCoreLit (Lrational v) =
-      let val (n, d) = Rat.toInts v
-      in L.seq [ IntInf.layout n , L.str "%" , IntInf.layout d]
-      end
-    | layoutCoreLit (Lchar c) =
-      L.str ("'" ^ escape (String.fromChar (Char.chr c)) ^ "'")
-    | layoutCoreLit (Lstring s) =
-      L.str ("\"" ^ escape s ^ "\"")
+  fun layoutCoreLit (env, l)
+    = (case l
+        of Lint v => IntInf.layout v
+         | Lrational v =>
+          let 
+            val (n, d) = Rat.toInts v
+          in
+            L.seq [ IntInf.layout n , L.str "%" , IntInf.layout d]
+          end
+         | Lchar c => L.str ("'" ^ escape (String.fromChar (Char.chr c)) ^ "'")
+         | Lstring s => L.str ("\"" ^ escape s ^ "\""))
 
-  fun layoutLit (Literal (l, t)) =
-      L.paren (L.seq[layoutCoreLit l, L.str " :: ", layoutTy t])
+  fun layoutLit (env, Literal (l, t)) =
+      L.paren (L.seq[layoutCoreLit (env, l), L.str " :: ", layoutTy (env, t)])
 
-  fun layoutCoercionKind (DefinedCoercion (tbs, t1, t2)) =
-      L.sequence ("<C", ">", " ") (map layoutTBind tbs @ [L.paren (layoutKind (Keq (t1, t2)))])
+  fun layoutCoercionKind (env, DefinedCoercion (tbs, t1, t2)) =
+      L.sequence ("<C", ">", " ") 
+        (List.map (tbs, fn b => layoutTBind (env, b)) @ [L.paren (layoutKind (env, Keq (t1, t2)))])
 
-  fun layoutKindOrCoercion (Kind k) =
-      L.sequence ("<K", ">", " ") [layoutKind k]
-    | layoutKindOrCoercion (Coercion ck) = layoutCoercionKind ck
+  fun layoutKindOrCoercion (env, k) 
+    = (case k
+        of Kind k => L.sequence ("<K", ">", " ") [layoutKind (env, k)]
+         | Coercion ck =>  layoutCoercionKind (env, ck))
 
-  fun layoutAlt (Acon (c, tbs, vbs, e)) =
-      L.mayAlign [ L.seq [ layoutQName c, L.str " ", separate (map layoutAtTBind tbs)
-                         , separate (map layoutVBind vbs), L.str " ->"]
-                 , L.indent (layoutExp e, tabSize)]
-    | layoutAlt (Alit (l, e)) =
-      L.mayAlign [ L.seq [layoutLit l, L.str " -> "]
-                 , L.indent (layoutExp e, tabSize)]
-    | layoutAlt (Adefault e) =
-      L.mayAlign [ L.str "%_ -> ", L.indent (layoutExp e, tabSize)]
+  fun layoutAlt (env, alt)
+    = (case alt
+        of Acon (c, tbs, vbs, e) =>
+          L.mayAlign [ L.seq [ layoutQName (env, c), L.str " "
+                             , separate (List.map (tbs, fn t => layoutAtTBind (env, t)))
+                             , separate (List.map (vbs, fn v => layoutVBind (env, v)))
+                             , L.str " ->"]
+                     , LU.indent (layoutExp (env, e))]
+         | Alit (l, e) =>
+          L.mayAlign [ L.seq [layoutLit (env, l), L.str " -> "]
+                     , LU.indent (layoutExp (env, e))]
+         | Adefault e =>
+          L.mayAlign [ L.str "%_ -> ", LU.indent (layoutExp (env, e))])
 
-  and layoutAppExp (App (e1, e2)) s = layoutAppExp e1 (U.Inl e2 :: s)
-    | layoutAppExp (Appt (e, t)) s = layoutAppExp e (U.Inr t :: s)
-    | layoutAppExp e s =
-      let fun pa (U.Inl ex) = layoutAExp ex
-            | pa (U.Inr t) = L.seq [L.str "@ ", layoutATy t]
-      in L.mayAlign (layoutAExp e :: map pa s)
-      end
+  and layoutAppExp (env, e, s) 
+    = (case e
+        of App (e1, e2) => layoutAppExp (env, e1, U.Inl e2 :: s)
+         | Appt (e, t) => layoutAppExp (env, e, U.Inr t :: s)
+         | e =>
+          let fun pa (U.Inl ex) = layoutAExp (env, ex)
+                | pa (U.Inr t) = L.seq [L.str "@ ", layoutATy (env, t)]
+          in L.mayAlign (layoutAExp (env, e) :: List.map (s, pa))
+          end)
 
-  and layoutFExp (App (e1, e2)) = layoutAppExp e1 [U.Inl e2]
-    | layoutFExp (Appt (e, t)) = layoutAppExp e [U.Inr t]
-    | layoutFExp e = layoutAExp e
+  and layoutFExp (env, e)
+    = (case e
+        of App (e1, e2) => layoutAppExp (env, e1, [U.Inl e2])
+         | Appt (e, t) => layoutAppExp (env, e, [U.Inr t])
+         | e => layoutAExp (env, e))
 
-  and layoutAExp (Var x) = layoutQName x
-    | layoutAExp (Dcon x) = layoutQName x
-    | layoutAExp (Lit l) = layoutLit l
-    | layoutAExp e = L.paren (layoutExp e)
+  and layoutAExp (env, e)
+    = (case e
+        of Var x => layoutQName (env, x)
+         | Dcon x => layoutQName (env, x)
+         | Lit l => layoutLit (env, l)
+         | e => L.paren (layoutExp (env, e)))
 
-  and layoutLamExp bs (Lam (b, e)) = layoutLamExp (bs @ [b]) e
-    | layoutLamExp bs e =
-      L.mayAlign [ L.seq [separate (map layoutBind bs),  L.str " ->" ]
-                 , L.indent (layoutExp e, tabSize)]
+  and layoutLamExp (env, bs, e)
+    = (case e
+        of Lam (b, e) => layoutLamExp (env, bs @ [b], e)
+         | e => L.mayAlign [ L.seq [separate (List.map (bs, fn b => layoutBind (env, b))),  L.str " ->" ]
+                           , LU.indent (layoutExp (env, e))])
 
-  and layoutExp (Lam (b, e)) =
-      L.seq [L.str "\\ ", layoutLamExp [b] e]
-    | layoutExp (Let (vd, e)) =
-      L.mayAlign [ L.seq [L.str "%let ", layoutVDefg vd]
-                 , L.seq [L.str "%in ", layoutExp e]]
-    | layoutExp (Case (e, vb, t, alts)) =
-      L.mayAlign [ L.seq [L.str "%case ", separate [layoutATy t, layoutAExp e]]
-                 , L.seq [L.str "%of ", layoutVBind vb]
-                 , L.indent (L.sequence ("{", "}", ";") (map layoutAlt alts), tabSize)]
-    | layoutExp (Cast (e, t)) =
-      L.mayAlign [ L.seq [L.str "%cast ", L.paren (layoutExp e)]
-                 , layoutATy t]
-    | layoutExp (Note (s, e)) =
-      L.mayAlign [ L.str ("%note \"" ^ escape s ^ "\"")
-                 , layoutExp e]
-    | layoutExp (External (p, cc, n, t)) =
-      L.mayAlign [ L.seq [L.str "%external ", layoutCC cc, L.str (" \"" ^ escape n ^ "\"")]
-                 , layoutATy t]
-    | layoutExp e = layoutFExp e
+  and layoutExp (env, e)
+    = (case e
+        of Lam (b, e) =>
+           L.seq [L.str "\\ ", layoutLamExp (env, [b], e)]
+         | Let (vd, e) =>
+           L.mayAlign [ L.seq [L.str "%let ", layoutVDefg (env, vd)]
+                      , L.seq [L.str "%in ", layoutExp (env, e)]]
+         | Case (e, vb, t, alts) =>
+           L.mayAlign [ L.seq [L.str "%case ", separate [layoutATy (env, t), layoutAExp (env, e)]]
+                      , L.seq [L.str "%of ", layoutVBind (env, vb)]
+                      , LU.indent ( L.sequence ("{", "}", ";") (List.map (alts, fn a => layoutAlt (env, a))))]
+         | Cast (e, t) =>
+           L.mayAlign [ L.seq [L.str "%cast ", L.paren (layoutExp (env, e))]
+                      , layoutATy (env, t)]
+         | Note (s, e) =>
+           L.mayAlign [ L.str ("%note \"" ^ escape s ^ "\"")
+                      , layoutExp (env, e)]
+         | External (p, cc, n, t) =>
+           L.mayAlign [ L.seq [L.str "%external ", layoutCC (env, cc), L.str (" \"" ^ escape n ^ "\"")]
+                      , layoutATy (env, t)]
+         | e => layoutFExp (env, e))
 
-  and layoutVDef (Vdef (qv, t, e)) =
-      L.mayAlign [ L.seq [ layoutQName qv, L.str " :: ", layoutTy t, L.str " =" ]
-                 , L.indent (layoutExp e, tabSize)]
+  and layoutVDef (env, Vdef (qv, t, e)) =
+      L.mayAlign [ L.seq [ layoutQName (env, qv), L.str " :: ", layoutTy (env, t), L.str " =" ]
+                 , LU.indent (layoutExp (env, e))]
 
-  and layoutVDefg (Rec vdefs) =
-      L.mayAlign [L.str "%rec",
-                  L.seq [ L.str "{"
-                        , L.indent (L.align (semiMap layoutVDef vdefs), tabSize)]
-                        , L.str "}"]
-    | layoutVDefg (Nonrec vdef) = layoutVDef vdef
+  and layoutVDefg (env, vdefs)
+    = (case vdefs
+        of Rec vdefs =>
+          L.mayAlign [ L.str "%rec {"
+                     , LU.indent (L.align (semiMap (vdefs, fn d => layoutVDef (env, d))))
+                     , L.str "}"]
+         | Nonrec vdef => layoutVDef (env, vdef))
 
-  fun layoutCDef (Constr (qdcon, tbinds, tys)) =
-      L.mayAlign [ L.seq [layoutQName qdcon , L.str " "]
-                 , separate (map layoutAtTBind tbinds)
-                 , separate (map layoutATy1 tys)]
+  fun layoutCDef (env, Constr (qdcon, tbinds, tys)) =
+      L.mayAlign [ L.seq [layoutQName (env, qdcon), L.str " "]
+                 , separate (List.map (tbinds, fn b => layoutAtTBind (env, b)))
+                 , separate (List.map (tys, fn t => layoutATy1 (env, t)))]
 
-  fun layoutTDef (Data (qtcon, tbinds, cdefs)) =
-      L.mayAlign [ L.seq [L.str "%data ", layoutQName qtcon, L.str " ", 
-                          separate (map layoutTBind tbinds), L.str " = "]
-                 , L.indent (L.seq [ L.str "{"
-                                   , L.align (semiMap layoutCDef cdefs)
-                                   , L.str "}"], tabSize)]
-    | layoutTDef (Newtype (qtcon, coercion, tbinds, tyopt)) =
-      L.mayAlign [ L.seq [ L.str "%newtype " 
-                         , separate (layoutQName qtcon :: layoutQName coercion :: map layoutTBind tbinds)]
-                 , L.indent (L.seq [L.str " = ", layoutTy tyopt], tabSize) ]
+  fun layoutTDef (env, td)
+    = (case td
+        of Data (qtcon, tbinds, cdefs) =>
+          L.mayAlign [ L.seq [L.str "%data ", layoutQName (env, qtcon), L.str " ", 
+                              separate (List.map (tbinds, fn b => layoutTBind (env, b))), L.str " = "]
+                     , LU.indent (L.seq [ L.str "{"
+                                        , L.align (semiMap (cdefs, fn d => layoutCDef (env, d)))
+                                        , L.str "}"])]
+         | Newtype (qtcon, coercion, tbinds, tyopt) =>
+          L.mayAlign [ L.seq [ L.str "%newtype " 
+                             , separate (layoutQName (env, qtcon) :: layoutQName (env, coercion) :: 
+                                         List.map (tbinds, fn b => layoutTBind (env, b)))]
+                     , LU.indent (L.seq [L.str " = ", layoutTy (env, tyopt)]) ])
 
 
-  fun layoutModule (Module (mname, tdefs, vdefgs)) =
-      L.align [ L.seq [L.str "%module ", layoutAnMName mname]
-              , L.indent (L.align (semiMap layoutTDef tdefs), tabSize)
-              , L.indent (L.align (semiMap layoutVDefg vdefgs), tabSize)
+  fun layoutModule (env, Module (mname, tdefs, vdefgs)) =
+      L.align [ L.seq [L.str "%module ", layoutAnMName (env, mname)]
+              , LU.indent (L.align (semiMap (tdefs, fn d => layoutTDef (env, d))))
+              , LU.indent (L.align (semiMap (vdefgs, fn d => layoutVDefg (env, d))))
               , L.str "\n"]
 
 end

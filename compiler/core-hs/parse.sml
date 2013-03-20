@@ -5,9 +5,9 @@ signature CORE_HS_PARSE =
 sig
   type options = { dirs : string list, libs : string list, opts : string list }
   type ghcPkg = { version : string, depends : StringSet.t, options : options } 
-  type pkgMap = ghcPkg StringDict.t
-  val getGhcPkgAll : Config.t -> string * pkgMap -> pkgMap
-  val pass : (unit, CoreHs.t * StringSet.t option) Pass.t
+  type pkgMap = ghcPkg StringDict.t 
+  val getGhcPkg : Config.t * pkgMap ref * string -> ghcPkg
+  val pass : (unit, CoreHs.t * StringSet.t * pkgMap ref) Pass.t
   val parseFile : string * Config.t -> CoreHs.t
   val noMainWrapper : Config.t -> bool
 end
@@ -16,8 +16,6 @@ structure CoreHsParse :> CORE_HS_PARSE =
 struct
   val passname = "CoreHsParse"
   fun failMsg (f, m) = Fail.fail (passname, f, m)
-  val desc = {disableable = false,
-              describe = fn () => Layout.str "Parse GHC Core files (.hcr)" }
 
   val (noMainWrapperF, noMainWrapper) =
       Config.Feature.mk (passname ^ ":noMainWrapper", "do not generate the usual GHC main wrapper")
@@ -115,9 +113,6 @@ struct
   type ghcPkg = { version : string, depends : SS.t, options : options } 
   type pkgMap = ghcPkg SD.t
 
-  (* Cache for ghc-pkg information, persistent throughout *)
-  val packages = ref SD.empty
-
   val version = "version"
   val libdirs = "library-dirs"
   val hslibs  = "hs-libraries"
@@ -193,26 +188,23 @@ struct
         pkg
       end
 
-  fun getGhcPkg (cfg, pkgName) = 
-      case SD.lookup (!packages, pkgName)
+  fun getGhcPkg (cfg, cache, pkgName) = 
+      case SD.lookup (!cache, pkgName)
         of SOME pkg => pkg
          | NONE => 
           let
             val pkg = runGhcPkg (cfg, pkgName)
-            val _ = packages := SD.insert (!packages, pkgName, pkg)
+            val version = #version pkg
+            val (short, full) = 
+                 if String.hasSuffix (pkgName, { suffix = version })
+                   then (String.dropSuffix (pkgName, String.length version + 1),
+                         pkgName)
+                   else (pkgName, pkgName ^ "-" ^ version)
+            (* insert both short and full names *)
+            val _ = cache := SD.insert (SD.insert (!cache, short, pkg), full, pkg)
           in
             pkg
           end
-
-  fun getGhcPkgAll (cfg : Config.t) : string * pkgMap -> pkgMap =
-    fn (pkgName, pkgs) => 
-      let
-        val pkg as { depends, ... } = getGhcPkg (cfg, pkgName)
-        val pkgs = SD.insert (pkgs, pkgName, pkg)
-        val depends = SS.keepAll (depends, fn p => not (SD.contains (pkgs, p)))
-      in
-        if SS.isEmpty depends then pkgs else List.fold (SS.toList depends, pkgs, getGhcPkgAll cfg)
-      end
 
   fun foldL (l, m, f) = List.foldr (l, ([], m), fn (x, (xs, m)) => 
                           let val (x, m) = f (x, m) in (x :: xs, m) end)
@@ -570,6 +562,7 @@ struct
 
   fun readModule ((), pd, basename) =
       let
+        val cache = ref SD.empty              (* cache for all pkgMap data *)
         val config = PassData.getConfig pd
         fun debug s = Debug.debug (config, s)
         fun verbose s = Chat.log1 (config, s)
@@ -619,7 +612,7 @@ struct
                   val hcrRoot = 
                       case pname
                         of "main" => opath
-                         | _ => (case #dirs (#options (getGhcPkg (config, pname)))
+                         | _ => (case #dirs (#options (getGhcPkg (config, cache, pname)))
                            of [p] => Path.fromString p
                             | ps => failMsg ("readModule",
                                              "invalid lib path returned by ghc-pkg " ^
@@ -628,7 +621,7 @@ struct
                   (* val f1 = Config.pathToHostString (config, path) ^ ".hcr" *)
                   val path = Path.append (hcrRoot, path)
                   val file = Config.pathToHostString (config, path) ^ ".hcr"
-                  val () = verbose ("parse " ^ Layout.toString (CoreHsLayout.layoutAnMName mname) ^ " from " ^ file)
+                  val () = verbose ("parse " ^ Layout.toString (CoreHsLayout.layoutAnMName (config, mname)) ^ " from " ^ file)
                   fun scan module = 
                       let
                         val defd' = time "scanning" scanModule module
@@ -648,8 +641,8 @@ struct
               of SOME _ => state
                | NONE   => 
                 let
-                  val () = debug ("traceDef: " ^ Layout.toString (CoreHsLayout.layoutQName name) ^ " => " ^ 
-                             QS.fold (depends, "", fn (n, s) => Layout.toString (CoreHsLayout.layoutQName n) ^ " " ^ s))
+                  val () = debug ("traceDef: " ^ CoreHsLayout.qNameToString name ^ " => " ^ 
+                             QS.fold (depends, "", fn (n, s) => CoreHsLayout.qNameToString n ^ " " ^ s))
                   val traced = QD.insert (traced, name, def)
                   fun trace (name as (SOME m, n), state as (defd, traced, scanned)) = 
                       if m = CHU.primMname then state
@@ -666,7 +659,7 @@ struct
                                     (* Some types have no type constructors so they are not in ExtCore *)
                                     if not (String.isEmpty n) andalso (Char.isUpper (String.sub (n, 0)))
                                       then state 
-                                      else failMsg ("traceDef", Layout.toString (CoreHsLayout.layoutQName name) ^ " not found"))
+                                      else failMsg ("traceDef", CoreHsLayout.qNameToString name ^ " not found"))
                           end
                     | trace ((NONE,   _), state) = state
 
@@ -681,14 +674,14 @@ struct
                 let 
                   val (_, traced, _) = traceDef (mainVar, def, (defd, QD.empty, scanned)) 
                   val () = debug ("traced = " ^ Layout.toString (Layout.sequence ("{", "}", ",") 
-                                  (List.map (QD.domain traced, CoreHsLayout.layoutQName))))
+                                  (List.map (QD.domain traced, fn n => CoreHsLayout.layoutQName (config, n)))))
                   val (tdefs, vdefs) = QD.fold (traced, ([], []), fn (_, (TDef d, _), (ts, vs)) => (d :: ts, vs)
                                                                    | (n, (VDef d, s), (ts, vs)) => (ts, (n, (d, s)) :: vs)
                                                                    | (_, _, s) => s)
                   val names = QS.keepAll (List.fold (vdefs, QS.empty, fn ((_, (_, p)), q) => QS.union (p, q)),
                                        fn (m, _) => m = SOME CHU.primMname)
                   val () = debug ("GHCH.Prims needed " ^ QS.fold (names, "", 
-                             fn (n, s) => s ^ "\n    " ^ Layout.toString (CoreHsLayout.layoutQName n)))
+                             fn (n, s) => s ^ "\n    " ^ CoreHsLayout.qNameToString n))
                   val vdefgs = time "linearizing" linearize (QD.fromList vdefs)
                 in
                   CH.Module (mname, tdefs, vdefgs)
@@ -706,19 +699,20 @@ struct
               val mainVar = if noMainWrapper config then CHU.mainVar else CHU.wrapperMainVar
               val m = readAll (mname, defd, scanned, mainVar)
               val () = chatStats ()
-            in (m, SOME (!pkgs))
+            in (m, !pkgs, cache)
             end
       in
         Exn.finally (process, cleanup)
       end
 
-  fun layout (module, config) = CoreHsLayout.layoutModule module
+  fun layout ((module, _, _), cfg) = CoreHsLayout.layoutModule (cfg, module)
 
-  val description = {name        = passname,
+  val description : (unit, CoreHs.t * StringSet.t * pkgMap ref) Pass.description
+    = {name        = passname,
                      description = "Parser for GHC core",
                      inIr        = Pass.unitHelpers,
-                     outIr       = { printer = layout o #1,
-                                     stater  = layout o #1},
+                     outIr       = { printer = layout,
+                                     stater  = layout},
                      mustBeAfter = [],
                      stats       = []}
 

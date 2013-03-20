@@ -596,7 +596,7 @@ struct
         (AS.Module (main, List.rev (List.concat vdefgs)), IM.finish im, tm)
       end
 
-  fun layoutLazy (module, config) = ANormLazyLayout.layoutModule module
+  fun layoutLazy (module, config) = ANormLazyLayout.layoutModule (config, module)
 
   fun layoutStrict (module, config) = ANormStrictLayout.layout (config, module)
 

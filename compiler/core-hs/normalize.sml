@@ -20,16 +20,25 @@ struct
   val passname = "CoreHsNormalize"
   fun failMsg (msg0, msg1) = Fail.fail (passname, msg0, msg1)
 
+  structure Chat = ChatF (struct 
+                            type env = Config.t
+                            val extract = fn a => a
+                            val name = passname
+                            val indent = 2
+                          end)
+
   (* 
    * We remember the definitions from Core in a dictionary
    *)
-  type dict = { vdict : CH.ty   QD.t
-              , tdict : CH.tDef QD.t
-              , wrapper : (CH.vDefg SD.t) ref (* for saturated prims, constructors and externs *)
-              , varCount : int ref
-              }
+  type env = { cfg   : Config.t
+             , vdict : CH.ty   QD.t
+             , tdict : CH.tDef QD.t
+             }
 
-  fun emptyDict () : dict = { vdict = QD.empty, tdict = QD.empty, wrapper = ref SD.empty, varCount = ref 0 }
+  type state = { wrapper : (CH.vDefg SD.t) ref (* for saturated prims, constructors and externs *)
+               , varCount : int ref }
+
+  fun emptyState () : state = { wrapper = ref SD.empty, varCount = ref 0 }
 
   (* make uniform newtype coercion prefix in the name of constructor witness *)
   fun fixCoercionPrefix (con as (mname, str)) = 
@@ -38,11 +47,17 @@ struct
         then (mname, "CoZC" ^ String.dropPrefix (str, 6))
         else con
 
-  fun insertVar ({ vdict, tdict, wrapper, varCount }, v, vty) 
-    = { vdict = QD.insert (vdict, v, vty), tdict = tdict, wrapper = wrapper, varCount = varCount }
-
-  fun freshVar ({ vdict, varCount, ... }, m, v)
+  fun insertVar (env, v, vty) 
     = let
+        val { cfg, vdict, tdict } = env
+      in
+        { cfg = cfg, vdict = QD.insert (vdict, v, vty), tdict = tdict }
+      end
+
+  fun freshVar (env, state, m, v)
+    = let
+        val { vdict, ... } = env
+        val { varCount, ... } = state
         fun try n = 
             let 
               val u = (m, v ^ (Int.toString n))
@@ -65,12 +80,12 @@ struct
   val typPrefix = "t"
   val inlinePrefix = "i"
 
-  fun freshInlineableVar (dict, v) = #2 (freshVar (dict, NONE, inlinePrefix ^ v))
+  fun freshInlineableVar (env, state, v) = #2 (freshVar (env, state, NONE, inlinePrefix ^ v))
   fun isInlineable v = String.hasPrefix (v, { prefix = inlinePrefix })
 
-  fun resultTy ty 
+  fun resultTy (env, ty)
     = let
-        val msg = "expect function type for " ^ Layout.toString (CL.layoutTy ty)
+        val msg = "expect function type for " ^ Layout.toString (CL.layoutTy (#cfg env, ty))
       in
         case ty 
           of CH.Tapp (t1, t2) =>
@@ -80,19 +95,13 @@ struct
            | _ => failMsg ("resultTy/3", msg)
       end
 
-  (* dict lookup that fails when not found *)
-  fun lookupMayFail (dict, v, msg)
-    = case QD.lookup (dict, v)
-        of SOME t => t 
-        | _       => failMsg (msg, (CL.qNameToString v) ^ " not found")
-
-  fun applyTy (fty, vty)
+  fun applyTy (env, fty, vty)
     = case fty
         of CH.Tforall ((v, _), t) => CU.substTy (v, vty, t)
-         | _ => resultTy fty 
+         | _ => resultTy (env, fty)
                 (* failMsg ("applyTy", Layout.toString (CL.layoutTy fty) ^ " doesn't start with forall") *)
 
-  fun castTy (tdict, ty) 
+  fun castTy (env, ty) 
     = let
         fun sep (t, s) = 
             case t 
@@ -118,7 +127,7 @@ struct
                   val con = fixCoercionPrefix con
                   val s  = List.map (s, fn t => cast (false, t))
                 in
-                  case QD.lookup (tdict, con)
+                  case QD.lookup (#tdict env, con)
                     of SOME (CH.Newtype (ncon, _, tbs, ty)) => 
                       if sym then List.fold (s, CH.Tcon ncon, fn (aty, fty) => CH.Tapp (fty, aty))
                         else List.fold (List.zip (List.map (tbs, #1), s), ty, fn ((u, v), ty) => CU.substTy (u, v, ty))
@@ -128,13 +137,13 @@ struct
         cast (false, ty)
       end
 
-  fun saturate (dict, e, ty)
+  fun saturate (env, state, e, ty)
     = let
         fun saturate0 (substTy, e, ty) 
           = case ty
               of CH.Tforall ((t, k), ty) =>
                 let
-                  val v = freshInlineableVar (dict, typPrefix)
+                  val v = freshInlineableVar (env, state, typPrefix)
                   val substTy = fn ty => CU.substTy (t, CH.Tvar v, substTy ty)
                 in
                   CH.Lam (CH.Tb (v, k), saturate0 (substTy, CH.Appt (e, CH.Tvar v), ty))
@@ -144,7 +153,7 @@ struct
                   of CH.Tapp (CH.Tcon a, t3) => 
                     if a = CU.tcArrow 
                       then let 
-                             val v = freshInlineableVar (dict, varPrefix)
+                             val v = freshInlineableVar (env, state, varPrefix)
                              val t3 = substTy t3
                            in
                              CH.Lam (CH.Vb (v, t3), saturate0 (substTy, CH.App (e, CH.Var (NONE, v)), t2))
@@ -156,23 +165,22 @@ struct
         saturate0 (fn ty => ty, e, ty)
       end
 
-  fun saturateWrapper (dict, e, ty)
+  fun saturateWrapper (env, state, e, ty)
     = let
-        val { wrapper, ... } = dict
+        val { wrapper, ... } = state
         val name = case e 
-                     of CH.Var u  => CL.qNameToStringEncoded u
-                      | CH.Dcon c => CL.qNameToStringEncoded c
+                     of CH.Var u  => CL.qNameToString u
+                      | CH.Dcon c => CL.qNameToString c
                       | CH.External (_, _, f, _) => f
                       | _ => failMsg ("saturateWrapper", "impossible")
         fun wrap () = 
             let
-              val v = freshVar (dict, SOME CU.mainMname, name)
-              val def = CH.Nonrec (CH.Vdef (v, ty, saturate (dict, e, ty)))
+              val v = freshVar (env, state, SOME CU.mainMname, name)
+              val def = CH.Nonrec (CH.Vdef (v, ty, saturate (env, state, e, ty)))
               val () = wrapper := SD.insert (!wrapper, name, def)
             in
               CH.Var v
             end
-        (* val _ = print ("saturate " ^ name ^ " with type " ^ Layout.toString * (CL.layoutTy ty) ^ "\n") *)
       in
         case SD.lookup (!wrapper, name)
           of SOME (CH.Nonrec (CH.Vdef (v, _, _))) => CH.Var v
@@ -239,20 +247,20 @@ struct
    * Normalize an expression when its type is not given and return the 
    * result expression and its type. 
    *)
-  fun normExp (cfg, dict as { vdict, tdict, ... }, exp)
+  fun normExp (env, state, exp)
     = case exp 
         of CH.Var (u as (m, v)) =>
-          (case QD.lookup (vdict, u)
+          (case QD.lookup (#vdict env, u)
             of SOME t => (exp, t)
              | NONE => if m = SOME CU.primMname 
                          then 
                            case GP.fromString v
-                             of SOME p => let val ty = GP.getType p in (saturate (dict, exp, ty), ty) end
+                             of SOME p => let val ty = GP.getType p in (saturate (env, state, exp, ty), ty) end
                               | NONE => failMsg ("norm/Var", "primitive " ^ v ^ " not supported")
                          else failMsg ("norm/Var", "variable " ^ v ^ " not found"))
         | CH.Dcon con => 
-          (case QD.lookup (vdict, con)
-            of SOME t => (saturateWrapper (dict, exp, t), t)
+          (case QD.lookup (#vdict env, con)
+            of SOME t => (saturateWrapper (env, state, exp, t), t)
              | NONE => 
               (case CU.isUtupleDc con
                 of SOME n => 
@@ -269,29 +277,26 @@ struct
                      * result in them being partially applied. Note that we don't use saturateWrapper 
                      * here because constructors for unboxed tuple do not have a uniform type.
                      *)
-                    (saturate (dict, exp, ty), ty)
+                    (saturate (env, state, exp, ty), ty)
                   end
                  | NONE => failMsg ("norm/Dcon", "constructor " ^ CL.qNameToString con ^ " not found")))
         | CH.External (p, cc, _, ty) => 
           (case cc
-            of CH.CCall   => (saturateWrapper (dict, exp, ty), ty) 
-             | CH.StdCall => (saturateWrapper (dict, exp, ty), ty) 
-             | _          => (saturate (dict, exp, ty), ty))         (* do not wrap non-function calls *)
+            of CH.CCall   => (saturateWrapper (env, state, exp, ty), ty) 
+             | CH.StdCall => (saturateWrapper (env, state, exp, ty), ty) 
+             | _          => (saturate (env, state, exp, ty), ty))         (* do not wrap non-function calls *)
         | CH.Lit (CH.Literal (lit, ty)) => (exp, ty)
         | CH.App (f, e) =>
           let 
-              (*val _ = print ("doExp " ^ Layout.toString (CL.layoutExp exp) ^ "\n")*)
-              val (f, fty) = normExp (cfg, dict, f)
-              val (e, ety) = normExp (cfg, dict, e)
-              (*val _ = print ("got f   = " ^ Layout.toString (CL.layoutExp f) ^ "\n")*)
-              (*val _ = print ("    fty = " ^ Layout.toString (CL.layoutTy fty) ^ "\n")*)
-              val rty = resultTy fty
+              val (f, fty) = normExp (env, state, f)
+              val (e, ety) = normExp (env, state, e)
+              val rty = resultTy (env, fty)
             in
               case e 
                 of CH.Var v => (tryBeta (f, e), rty)
                 | _ =>
                   let
-                    val v = freshVar (dict, NONE, varPrefix)
+                    val v = freshVar (env, state, NONE, varPrefix)
                     val vdef = CH.Nonrec (CH.Vdef (v, ety, e))
                     (* let floating inward *)
                     val (lets, f') = letExtract f
@@ -301,17 +306,17 @@ struct
             end
         | CH.Case (e, (v, vty), ty, alts) =>
           let
-            val (e, _) = normExp (cfg, dict, e)
-            val dict = insertVar (dict, (NONE, v), vty)
-            val alts = List.map (alts, fn a => normAlt (cfg, dict, a))
+            val (e, _) = normExp (env, state, e)
+            val env = insertVar (env, (NONE, v), vty)
+            val alts = List.map (alts, fn a => normAlt (env, state, a))
           in
             (CH.Case (e, (v, vty), ty, alts), ty)
           end
         | CH.Cast (e, ty) => 
           let
-            val ty = castTy (tdict, ty)
-            val (e, ety) = normExp (cfg, dict, e)
-            val v = freshVar (dict, NONE, varPrefix)
+            val ty = castTy (env, ty)
+            val (e, ety) = normExp (env, state, e)
+            val v = freshVar (env, state, NONE, varPrefix)
           in
             (CH.Cast (CH.Let (CH.Nonrec (CH.Vdef (v, ety, e)), CH.Var v), ty), ty)
           end
@@ -319,76 +324,73 @@ struct
           (case bind 
             of CH.Vb (v, vty) => 
               let
-                val dict = insertVar (dict, (NONE, v), vty)
-                val (e, ety) = normExp (cfg, dict, e)
+                val env = insertVar (env, (NONE, v), vty)
+                val (e, ety) = normExp (env, state, e)
               in
                 (CH.Lam (bind, e), CU.tArrow (vty, ety))
               end
             | CH.Tb (v, vkind) => 
               let
-                val dict = insertVar (dict, (NONE, v), CH.Tvar v) (* dummy type is not used *)
-                val (e, ety) = normExp (cfg, dict, e)
+                val env = insertVar (env, (NONE, v), CH.Tvar v) (* dummy type is not used *)
+                val (e, ety) = normExp (env, state, e)
               in
                 (CH.Lam (bind, e), CH.Tforall ((v, vkind), ety))
               end)
         | CH.Let (vdefg, e) =>
           let
-            val (dict, vdefg) = normVDefg (cfg, dict, vdefg)
-            val (e, ty) = normExp (cfg, dict, e)
+            val (env, vdefg) = normVDefg (env, state, vdefg)
+            val (e, ty) = normExp (env, state, e)
           in 
             (CH.Let (vdefg, e), ty)
           end
        | CH.Appt (e, ty) => 
          let
-           (*val _ = print ("doExp " ^ Layout.toString (CL.layoutExp exp) ^ "\n")*)
-           val (e, ety) = normExp (cfg, dict, e)
-           (*val _ = print ("got e   = " ^ Layout.toString (CL.layoutExp e) ^ "\n")*)
-           (*val _ = print ("    ety = " ^ Layout.toString (CL.layoutTy ety) ^ "\n")*)
-           val ety = applyTy (ety, ty)
+           val (e, ety) = normExp (env, state, e)
+           val ety = applyTy (env, ety, ty)
          in
            (tryBetaTy (e, ty), ety)
          end
        | CH.Note (s, e) => 
          let
-           val (e, ety) = normExp (cfg, dict, e)
+           val (e, ety) = normExp (env, state, e)
          in
            (CH.Note (s, e), ety)
          end
 
-  and normAlt (cfg, dict, alt)
+  and normAlt (env, state, alt)
     = (case alt
         of CH.Acon (con, tbs, vbs, e) =>
           let
             (* ignore tbs since we cannot handle gadt yet *)
-            val dict = List.fold (vbs, dict, fn ((v, vty), dict) => insertVar (dict, (NONE, v), vty))
-            val (e, _) = normExp (cfg, dict, e)
+            val env = List.fold (vbs, env, fn ((v, vty), env) => insertVar (env, (NONE, v), vty))
+            val (e, _) = normExp (env, state, e)
           in 
             if con = CP.dcEq  (* match type on cases over Eq constructor *)
               then CH.Acon (con, List.map (vbs, fn (v, _) => (v, CH.Kopen)), [], e)
               else CH.Acon (con, tbs, vbs, e)
           end
-        | CH.Alit (l, e) => CH.Alit (l, #1 (normExp (cfg, dict, e)))
-        | CH.Adefault e  => CH.Adefault (#1 (normExp (cfg, dict, e))))
+        | CH.Alit (l, e) => CH.Alit (l, #1 (normExp (env, state, e)))
+        | CH.Adefault e  => CH.Adefault (#1 (normExp (env, state, e))))
 
-  and normVDefg (cfg, dict, vdefg)
+  and normVDefg (env, state, vdefg)
     = (case vdefg
         of CH.Rec vdefs =>
           let
-            val dict = List.fold (vdefs, dict, fn (CH.Vdef (v, vty, _), dict) => insertVar (dict, v, vty))
-            val vdefs = List.map (vdefs, fn CH.Vdef (v, vty, e) => CH.Vdef (v, vty, #1 (normExp (cfg, dict, e))))
+            val env = List.fold (vdefs, env, fn (CH.Vdef (v, vty, _), env) => insertVar (env, v, vty))
+            val vdefs = List.map (vdefs, fn CH.Vdef (v, vty, e) => CH.Vdef (v, vty, #1 (normExp (env, state, e))))
           in
-            (dict, CH.Rec vdefs)
+            (env, CH.Rec vdefs)
           end
         | CH.Nonrec (CH.Vdef (v, vty, e)) =>
           let
-            val (e, _) = normExp (cfg, dict, e)
-            val dict = insertVar (dict, v, vty)
+            val (e, _) = normExp (env, state, e)
+            val env = insertVar (env, v, vty)
           in
-            (dict, CH.Nonrec (CH.Vdef (v, vty, e)))
+            (env, CH.Nonrec (CH.Vdef (v, vty, e)))
           end)
 
-  fun doTDef (typ, { vdict, tdict, wrapper, varCount })
-    = (case typ
+  fun doTDef (env, state, def)
+    = (case def
         of CH.Data (name, tbs, cdefs) => 
           let
             val typ = List.fold (tbs, CH.Tcon name, fn ((t, _), ty) => CH.Tapp (ty, CH.Tvar t))
@@ -399,19 +401,19 @@ struct
                 in
                   QD.insert (vdict, con, ty)
                 end
-            val vdict = List.fold (cdefs, vdict, insertCon)
+            val vdict = List.fold (cdefs, #vdict env, insertCon)
             (* val tdict = QD.insert (tdict, name, typ) *)
           in
-            { vdict = vdict, tdict = tdict, wrapper = wrapper, varCount = varCount }
+            { cfg = #cfg env, vdict = vdict, tdict = #tdict env } 
           end
         | CH.Newtype (name, tcon, tbs, ty) => 
           let
             (* val tdict = QD.insert (tdict, name, typ) *)
             (* tcon seems to be only used in casting *)
             val tcon = fixCoercionPrefix tcon
-            val tdict = QD.insert (tdict, tcon, typ)
+            val tdict = QD.insert (#tdict env, tcon, def)
           in
-            { vdict = vdict, tdict = tdict, wrapper = wrapper, varCount = varCount }
+            { cfg = #cfg env, vdict = #vdict env, tdict = tdict }
           end)
 
   fun doModule (cfg, CH.Module (name, tdefs, vdefgs))
@@ -431,21 +433,24 @@ struct
          *)
         val tdefs  = CH.Data (CP.tcEq, List.map (["k","a","b"], fn s => (s, CH.Kopen)),
                        [CH.Constr (CP.dcEq, [("c", CH.Kopen)], [])]) :: tdefs
-        val dict   = List.fold (tdefs, emptyDict (), doTDef)
-        fun oneVDefg (vdefg, (vdefgs, dict))
+        val state  = emptyState ()
+        val env    = { cfg = cfg, vdict = QD.empty, tdict = QD.empty } 
+        val env    = List.fold (tdefs, env, fn (def, env) => doTDef (env, state, def))
+        fun oneVDefg (vdefg, (vdefgs, env))
           = let 
-              val (dict, vdefg) = normVDefg (cfg, dict, vdefg)
+              val (env, vdefg) = normVDefg (env, state, vdefg)
             in
-              (vdefg :: vdefgs, dict)
+              (vdefg :: vdefgs, env)
             end
-        val (vdefgs, { wrapper, ...}) = List.fold (vdefgs, ([], dict), oneVDefg)
+        val (vdefgs, _) = List.fold (vdefgs, ([], env), oneVDefg)
+        val wrapper = #wrapper state
       in 
         CH.Module (name, tdefs, SD.range (!wrapper) @ (List.rev vdefgs))
       end
 
   fun normalize (x, pd) = doModule (PassData.getConfig pd, x)
 
-  fun layout  (module, _) = CoreHsLayout.layoutModule module
+  fun layout  (module, cfg) = CoreHsLayout.layoutModule (cfg, module)
   val helper = { printer = layout, stater = layout }
 
   val description = {name        = passname,

@@ -95,16 +95,17 @@ sig
   type vDef
   type vDefg
   type ty
-  val layoutExp    : ty Identifier.SymbolInfo.t -> exp    -> Layout.t
-  val layoutVDef   : ty Identifier.SymbolInfo.t -> vDef   -> Layout.t
-  val layoutVDefg  : ty Identifier.SymbolInfo.t -> vDefg  -> Layout.t
-  val layout       : module * ty Identifier.symbolTable -> Layout.t
+  type env = Config.t * ty Identifier.SymbolInfo.t
+  val layoutExp    : env * exp    -> Layout.t
+  val layoutVDef   : env * vDef   -> Layout.t
+  val layoutVDefg  : env * vDefg  -> Layout.t
+  val layout       : Config.t * ty Identifier.symbolTable * module -> Layout.t
 end
 
 functor AbsCoreLayoutF 
   (structure AbsCore : ABS_CORE
    type ty
-   val layoutTy     : ty Identifier.SymbolInfo.t -> ty -> Layout.t
+   val layoutTy     : (Config.t * ty Identifier.SymbolInfo.t) * ty -> Layout.t
   ) :> ABS_CORE_LAYOUT 
   where type module = AbsCore.module
     and type exp = AbsCore.exp 
@@ -127,86 +128,95 @@ struct
   structure I = Identifier
   structure IS = Identifier.SymbolInfo
 
+  type env = Config.t * ty Identifier.SymbolInfo.t
+  val getCfg : env -> Config.t = #1
+  val getIM  : env -> ty Identifier.SymbolInfo.t = #2
+
   fun indent t = L.indent (t, 2)
   fun angleList l = L.sequence ("<", ">", ",") l
 
-  fun semiMap f 
-    = fn []  => []
-      |  [x] => [f x]
-      |  l   => map (fn v => L.seq [f v, L.str ";"]) l
+  fun semiMap (l, f)
+    = (case l
+        of [] => []
+         | [x] => [f x]
+         | l => List.map (l, fn v => L.seq [f v, L.str ";"]))
 
-  fun layoutVBind im v = IS.layoutVariable (v, im)
+  fun layoutVBind (env, v) = IS.layoutVariable (v, getIM env)
 
-  fun layoutVBinds im vbs = L.sequence ("", "", " ") (List.map (vbs, layoutVBind im))
+  fun layoutVBinds (env, vbs) = L.sequence ("", "", " ") (List.map (vbs, fn b => layoutVBind (env, b)))
 
-  fun layoutVBinds1 im vbs = 
+  fun layoutVBinds1 (env, vbs) = 
       let
         fun layoutVBind1 (v, t, s) = 
           let
-            val l = layoutVBind im v
+            val l = layoutVBind (env, v)
           in
             if s then L.seq [L.str "!", l] else l
           end
       in L.sequence ("", "", " ") (List.map (vbs, layoutVBind1))
       end
 
-  fun layoutLiteral l = CL.layoutCoreLit l
+  fun layoutVariables (env, vs) = angleList (List.map (vs, fn v => IS.layoutVariable (v, getIM env)))
 
-  fun layoutVariables im vs = angleList (List.map (vs, fn v => IS.layoutVariable (v, im)))
-
-  fun layoutVariables' im vs 
+  fun layoutVariables' (env, vs)
     = angleList (List.map (vs, fn (v, strict) => L.seq [ if strict then L.str "!" else L.empty, 
-                                                         IS.layoutVariable (v, im) ]))
+                                                         IS.layoutVariable (v, getIM env) ]))
   
-  and layoutAExp im 
-    = fn Var x => IS.layoutVariable (x, im)
-      |  Multi xs => layoutVariables im xs
-      |  Con (c, xs) => L.seq [IS.layoutName (c, im), layoutVariables' im xs]
-      |  App (f, x)  => L.seq [layoutAExp im f, L.str " ", IS.layoutVariable (x, im)]
-      |  GLB xs => L.seq [L.str "GLB", layoutVariables im xs]
-      |  LUB xs => L.seq [L.str "LUB", layoutVariables im xs]
-      |  Cond (e1, e2) => L.align [ L.seq [L.str "%ifNotBottom ", layoutExp im e1]
-                                  , indent (L.seq [L.str "%then ", layoutExp im e2])]
-      |  Const p => Dom.layout p
-      |  e       => L.paren (layoutExp im e)
+  and layoutAExp (env, e)
+    = (case e
+        of Var x => IS.layoutVariable (x, getIM env)
+         | Multi xs => layoutVariables (env, xs)
+         | Con (c, xs) => L.seq [IS.layoutName (c, getIM env), layoutVariables' (env, xs)]
+         | App (f, x)  => L.seq [layoutAExp (env, f), L.str " ", IS.layoutVariable (x, getIM env)]
+         | GLB xs => L.seq [L.str "GLB", layoutVariables (env, xs)]
+         | LUB xs => L.seq [L.str "LUB", layoutVariables (env, xs)]
+         | Cond (e1, e2) => L.align [ L.seq [L.str "%ifNotBottom ", layoutExp (env, e1)]
+                                    , indent (L.seq [L.str "%then ", layoutExp (env, e2)])]
+         | Const p => Dom.layout p
+         | e       => L.paren (layoutExp (env, e)))
 
-  and layoutLamExp (im, bs)
-    = fn Lam (b, e) => layoutLamExp (im, b :: bs) e
-      |  e => L.mayAlign [ L.seq [ layoutVBinds im (List.rev bs), L.str " ->" ], layoutExp im e]
+  and layoutLamExp (env, bs, e)
+    = (case e 
+        of Lam (b, e) => layoutLamExp (env, b :: bs, e)
+         | _ => L.mayAlign [ L.seq [ layoutVBinds (env, List.rev bs), L.str " ->" ], layoutExp (env, e)])
 
-  and layoutExp im
-    = fn Lam (b, e)  => L.seq [L.str "\\ ", layoutLamExp (im, [b]) e]
-      |  Let (vd, e) => L.align [ L.seq [L.str "%let ", layoutVDefg im vd ], L.seq [L.str "%in ", layoutExp im e]]
-      |  e => layoutAExp im e
+  and layoutExp (env, e)
+    = (case e
+        of Lam (b, e)  => L.seq [L.str "\\ ", layoutLamExp (env, [b], e)]
+         | Let (vd, e) => L.align [ L.seq [L.str "%let ", layoutVDefg (env, vd)]
+                                  , L.seq [L.str "%in ", layoutExp (env, e)]]
+         | _ => layoutAExp (env, e))
 
-  and layoutVDef im (Vdef (bind, e)) = 
+  and layoutVDef (env, Vdef (bind, e)) = 
       let
         val (vs, header) = 
             case bind
              of VbSingle v => ([v], L.empty)
               | VbMulti (vs, effectful) => (vs, L.str (if effectful then "multi# " else "multi "))
       in
-        L.mayAlign [ L.seq [ header, layoutVariables im vs, L.str " =" ], indent (layoutExp im e)]
+        L.mayAlign [ L.seq [ header, layoutVariables (env, vs), L.str " =" ], indent (layoutExp (env, e))]
       end
 
-  and layoutVDefg im 
-    = fn Rec vdefs   => L.mayAlign [ L.str "%rec {"
-                                 , indent (L.align (semiMap (layoutVDef im) vdefs))
+  and layoutVDefg (env, vdefg)
+    = (case vdefg 
+        of Rec vdefs   => L.mayAlign [ L.str "%rec {"
+                                 , indent (L.align (semiMap (vdefs, fn d => layoutVDef (env, d))))
                                  , L.str "}"]
-      |  Nonrec vdef => layoutVDef im vdef
+         | Nonrec vdef => layoutVDef (env, vdef))
 
-  fun layout (Module (_, vdefgs), im) = 
+  fun layout (cfg, im, Module (_, vdefgs)) = 
       let
         val variables = I.listVariables im
         val im = IS.SiTable im
+        val env = (cfg, im)
       in
       L.align [ L.str "%variables"
               , indent (L.align (List.map (variables,
                                            fn x => L.seq [ IS.layoutVariable (x, im)
                                                          , L.str " : "
-                                                         , layoutTy im (IS.variableInfo (im, x)) ])))
+                                                         , layoutTy (env, IS.variableInfo (im, x)) ])))
               , L.seq [L.str "%module"]
-              , indent (L.align (semiMap (layoutVDefg im) vdefgs))
+              , indent (L.align (semiMap (vdefgs, fn d => layoutVDefg (env, d))))
               , L.str "\n"]
       end
 

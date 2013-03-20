@@ -22,6 +22,14 @@ struct
       then toHexOne i
       else toHexString (Int.div (i, 16)) ^ toHexOne (Int.mod (i, 16))
 
+  fun charToZString (c : int) : string =
+      let
+        val hexStr = toHexString c
+        val hexStr = if Char.isDigit (String.sub (hexStr, 0)) then hexStr else "0" ^ hexStr
+        val s = "z" ^ hexStr ^ "U"
+      in s
+      end
+
   val unencodedChar : char -> bool =
    fn #"Z" => false
     | #"z" => false
@@ -58,13 +66,7 @@ struct
           | #"*" => "zt"
           | #"_" => if u then "zu" else "_"
           | #"%" => "zv"
-          | c    =>
-            let
-              val hexStr = toHexString (ord c)
-              val hexStr = if Char.isDigit (String.sub (hexStr, 0)) then hexStr else "0" ^ hexStr
-              val s = "z" ^ hexStr ^ "U"
-            in s
-            end
+          | c    => charToZString (ord c)
 
   val maybeTuple : string -> string option =
     fn "(# #)" => SOME "Z1H"
@@ -141,10 +143,11 @@ struct
         fun go n (c :: cs) =
             if Char.isHexDigit c then
               go (16 * n + Char.toHexDigit c) cs
-            else if c = #"U" andalso n >= 0 andalso n < 256 then
-              chr n :: decode cs
-            else
-              fail ()
+            else if c = #"U" then
+              (if n >= 0 andalso n < 256 then
+                chr n :: decode cs
+               else explode (charToZString n) @ decode cs)
+            else fail ()
           | go n [] = fail ()
       in
         go (Char.toHexDigit d) rest

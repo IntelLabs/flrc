@@ -75,7 +75,8 @@ struct
       in x
       end
 
-  val controls = ANormStrictLayout.controls
+  val controls = CoreHsLayout.controls @ ANormLazyLayout.controls @ 
+                 ANormStrictLayout.controls  
 
   val debugs = ANormStrictLayout.debugs
 

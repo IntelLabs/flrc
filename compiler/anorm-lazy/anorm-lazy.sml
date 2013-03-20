@@ -125,13 +125,15 @@ end
 
 signature ANORM_LAZY_LAYOUT =
 sig
-  val layoutTy     : ANormLazy.symbolInfo -> ANormLazy.ty     -> Layout.t
-  val layoutAlt    : ANormLazy.symbolInfo -> ANormLazy.alt    -> Layout.t
-  val layoutExp    : ANormLazy.symbolInfo -> ANormLazy.exp    -> Layout.t
-  val layoutVDef   : ANormLazy.symbolInfo -> ANormLazy.vDef   -> Layout.t
-  val layoutVDefg  : ANormLazy.symbolInfo -> ANormLazy.vDefg  -> Layout.t
-  val layoutTDef   : ANormLazy.symbolInfo -> ANormLazy.tDef   -> Layout.t
-  val layoutModule : ANormLazy.t -> Layout.t
+  type env = Config.t * ANormLazy.symbolInfo
+  val controls     : Config.Control.control list
+  val layoutTy     : env * ANormLazy.ty     -> Layout.t
+  val layoutAlt    : env * ANormLazy.alt    -> Layout.t
+  val layoutExp    : env * ANormLazy.exp    -> Layout.t
+  val layoutVDef   : env * ANormLazy.vDef   -> Layout.t
+  val layoutVDefg  : env * ANormLazy.vDefg  -> Layout.t
+  val layoutTDef   : env * ANormLazy.tDef   -> Layout.t
+  val layoutModule : Config.t * ANormLazy.t -> Layout.t
 end
 
 structure ANormLazyLayout :> ANORM_LAZY_LAYOUT =
@@ -142,134 +144,201 @@ struct
   structure CL = CoreHsLayout
   structure U = Utils
   structure L = Layout
+  structure LU = LayoutUtils
   structure I = Identifier
   structure IS = Identifier.SymbolInfo
   structure UO = Utils.Option
 
-  fun indent t = L.indent (t, 2)
+  val modulename = "ANormLazyLayout"
+  val indent = LU.indent 
   fun angleList l = L.sequence ("<", ">", ",") l
 
-  fun semiMap f 
-    = fn []  => []
-      |  [x] => [f x]
-      |  l   => map (fn v => L.seq [f v, L.str ";"]) l
+  type options = {
+       showBinderTypes : bool,
+       showSymbolTable : bool
+  }
+                 
+  val describe =
+   fn () =>
+      L.align [L.str (modulename ^ " control string consists of:"),
+               LU.indent (L.align [L.str "b => show types on variable binders",
+                                   L.str "S => show symbol table",
+                                   L.str "+ => show all of the above"]),
+               L.str "default is nothing"]
+      
+  val parse =
+   fn str =>
+      let
+        val binderTyps = ref false
+        val symbols    = ref false
+        fun doOne c =
+            case c
+             of #"b" => let val () = binderTyps := true in true end
+              | #"S" => let val () = symbols := true in true end
+              | #"+" =>
+                let
+                  val () = binderTyps := true
+                  val () = symbols := true
+                in true
+                end
+              | _    => false
+      in
+        if List.forall (String.explode str, doOne) then
+          SOME ({showBinderTypes = !binderTyps, showSymbolTable = !symbols})
+        else
+          NONE
+      end
+      
+  val dft = fn _ =>({showBinderTypes = false, showSymbolTable = false})
+                   
+  val (control, controlGet) = Config.Control.mk (modulename, describe, parse, dft)
 
-  and layoutTy im 
-    = fn ty =>
-        (case TypeRep.repToBase ty
-          of Data         => L.str "%data"
-          |  Prim ty      => L.seq [L.str "%primtype ", GHCPrimTypeLayout.layoutPrimTy (L.paren o layoutTy im) ty]
-          |  Arr (t1, t2, effect) => L.mayAlign [layoutTy im t1, 
-                                      L.seq [ UO.dispatch (effect, Effect.layout, fn () => L.empty), 
-                                              L.str "-> ", layoutTy im t2 ]]
-          |  Sum cons     =>
-             let 
-               fun layoutTy1 (ty, strict) = 
-                   if strict then L.seq [L.str "!", layoutTy im ty] else layoutTy im ty
-               fun layCon ((con, _), tys) = L.seq [IS.layoutName (con, im), L.str " ", angleList (map layoutTy1 tys)]
-             in
-               L.sequence ("{", "}", ",") (List.map (cons, layCon))
-             end)
+  type env = Config.t * ANormLazy.symbolInfo
 
-  fun layoutTDef im (v, t) = L.seq [L.str "%data ", IS.layoutVariable (v, im), L.str  " = ", layoutTy im t]
+  val getCfg = #1 
+  val getIM  = #2
+  val showBinderTypes = fn env => #showBinderTypes (controlGet (getCfg env))
+  val showSymbolTable = fn env => #showSymbolTable (controlGet (getCfg env))
+
+  fun semiMap (l, f)
+    = (case l
+        of [] => []
+         | [x] => [f x]
+         | l => List.map (l, fn v => L.seq [f v, L.str ";"]))
+
+  and layoutTy (env, ty) 
+    = (case TypeRep.repToBase ty
+        of Data         => L.str "%data"
+         | Prim ty      => L.seq [L.str "%primtype ", 
+                                  GHCPrimTypeLayout.layoutPrimTy (fn t => L.paren (layoutTy (env, t))) ty]
+         | Arr (t1, t2, effect) => L.mayAlign [layoutTy (env, t1), 
+                                     L.seq [ UO.dispatch (effect, Effect.layout, fn () => L.empty), 
+                                             L.str "-> ", layoutTy (env, t2) ]]
+         | Sum cons     =>
+          let 
+            fun layoutTy1 (ty, strict) = 
+                if strict then L.seq [L.str "!", layoutTy (env, ty)] else layoutTy (env, ty)
+            fun layCon ((con, _), tys) = L.seq [IS.layoutName (con, getIM env), L.str " ", angleList (map layoutTy1 tys)]
+          in
+            L.sequence ("{", "}", ",") (List.map (cons, layCon))
+          end)
+
+  fun layoutTDef (env, (v, t)) = L.seq [L.str "%data ", IS.layoutVariable (v, getIM env), L.str  " = ", layoutTy (env, t)]
 
   fun isPrimTy (Prim _) = true
     | isPrimTy _ = false
 
-  fun layoutVBind im (v, ty, strict) = 
-      L.seq [L.str "<", IS.layoutVariable (v, im), L.str " :: ", 
-             if strict then L.seq [L.str "!", layoutTy im ty] else layoutTy im ty, L.str ">"]
+  fun layoutVBind (env, (v, ty, strict)) = 
+      if showBinderTypes env then
+        L.seq [L.str "<", IS.layoutVariable (v, getIM env), L.str " :: ", 
+               if strict then L.seq [L.str "!", layoutTy (env, ty)] else layoutTy (env, ty), L.str ">"]
+      else IS.layoutVariable (v, getIM env)
 
-  fun layoutVBinds im vbs = L.sequence ("", "", " ") (List.map (vbs, layoutVBind im))
+  fun layoutVBinds (env, vbs) 
+    = L.sequence ("", "", " ") (List.map (vbs, fn b => layoutVBind (env, b)))
 
-  fun layoutVBinds1 im vbs = 
+  fun layoutVBinds1 (env, vbs) = 
       let
         fun layoutVBind1 (v, t, s) = 
           let
-            val l = layoutVBind im (v, t, s)
+            val l = layoutVBind (env, (v, t, s))
           in
             if s then L.seq [L.str "!", l] else l
           end
       in L.sequence ("", "", " ") (List.map (vbs, layoutVBind1))
       end
 
-  fun layoutLiteral l = CL.layoutCoreLit l
+  fun layoutLiteral (env, l) = CL.layoutCoreLit (getCfg env, l)
 
-  fun layoutVariables im vs = angleList (List.map (vs, fn v => IS.layoutVariable (v, im)))
+  fun layoutVariables (env, vs) = angleList (List.map (vs, fn v => IS.layoutVariable (v, getIM env)))
   
-  fun layoutVariableTys im vts = angleList (List.map (vts, fn (v, t) => 
-        L.seq [IS.layoutVariable (v, im), L.str " :: ", layoutTy im t]))
+  fun layoutVariableTys (env, vts) = angleList (List.map (vts, fn (v, t) => 
+      if showBinderTypes env then
+        L.seq [IS.layoutVariable (v, getIM env), L.str " :: ", layoutTy (env, t)]
+      else IS.layoutVariable (v, getIM env)))
 
-  fun layoutAlt im 
-    = fn Acon ((con, _), vbs, e) =>
-        L.mayAlign [ L.seq [IS.layoutName (con, im), L.str " ", layoutVBinds1 im vbs, L.str " ->"]
-                   , indent (layoutExp im e)]
-      |  Alit (l, ty, e)    =>
-        L.mayAlign [ L.seq [layoutLiteral l, L.str " :: ", layoutTy im ty, L.str " ->"]
-                   , indent (layoutExp im e)]
-      | Adefault e          => L.mayAlign [ L.str "%_ -> ", indent (layoutExp im e)]
+  fun layoutAlt (env, alt) 
+    = (case alt
+       of Acon ((con, _), vbs, e) =>
+         L.mayAlign [ L.seq [IS.layoutName (con, getIM env), L.str " ", layoutVBinds1 (env, vbs), L.str " ->"]
+                    , indent (layoutExp (env, e))]
+        | Alit (l, ty, e) =>
+         L.mayAlign [ L.seq [layoutLiteral (env, l), L.str " :: ", layoutTy (env, ty), L.str " ->"]
+                    , indent (layoutExp (env, e))]
+        | Adefault e => L.mayAlign [ L.str "%_ -> ", indent (layoutExp (env, e))])
 
-  and layoutAExp im 
-    = fn Var x => IS.layoutVariable (x, im)
-      |  PrimApp (f, xs) => 
-         L.seq [CL.layoutQName (CP.pv (GHCPrimOp.toString f)), L.str " ", layoutVariables im xs]
-      |  ExtApp (p, cc, n, t, xs) =>
-         L.paren (L.seq [ L.paren (L.seq [ L.str "%external "
-                                         , CL.layoutCC cc
-                                         , L.str (" \"" ^ CL.escape p ^ "\" \"" ^ CL.escape n ^ "\"")
-                                         , L.str "::", L.paren (layoutTy im t) ])
-                        , L.str " ", layoutVariables im xs])
-      |  ConApp ((c, _), xs) => L.seq [IS.layoutName (c, im), layoutVariables im (List.map (xs, #1))]
-      |  Multi xs => layoutVariables im xs
-      |  App (f, x)  => L.seq [layoutAExp im f, L.str " ", IS.layoutVariable (x, im)]
-      |  Lit (l, ty) => L.paren (L.seq [layoutLiteral l, L.str " :: ", layoutTy im ty])
-      |  Cast (e, tf, tt) => L.paren (L.seq [ L.str "%cast ", layoutAExp im e, 
-                                              L.str " %from ", layoutTy im tf,
-                                              L.str " %to ", layoutTy im tt])
-      |  e           => L.paren (layoutExp im e)
+  and layoutAExp (env, e) 
+    = (case e
+        of Var x => IS.layoutVariable (x, getIM env)
+         | PrimApp (f, xs) => 
+          L.seq [CL.layoutQName (getCfg env, CP.pv (GHCPrimOp.toString f)), L.str " ", layoutVariables (env, xs)]
+         | ExtApp (p, cc, n, t, xs) =>
+          L.paren (L.seq [ L.paren (L.seq [ L.str "%external "
+                                          , CL.layoutCC (getCfg env, cc)
+                                          , L.str (" \"" ^ CL.escape p ^ "\" \"" ^ CL.escape n ^ "\"")
+                                          , L.str "::", L.paren (layoutTy (env, t)) ])
+                          , L.str " ", layoutVariables (env, xs)])
+         | ConApp ((c, _), xs) => L.seq [IS.layoutName (c, getIM env), layoutVariables (env, List.map (xs, #1))]
+         | Multi xs => layoutVariables (env, xs)
+         | App (f, x)  => L.seq [layoutAExp (env, f), L.str " ", IS.layoutVariable (x, getIM env)]
+         | Lit (l, ty) => L.paren (L.seq [layoutLiteral (env, l), L.str " :: ", layoutTy (env, ty)])
+         | Cast (e, tf, tt) => L.paren (L.seq [ L.str "%cast ", layoutAExp (env, e),
+                                                L.str " %from ", layoutTy (env, tf),
+                                                L.str " %to ", layoutTy (env, tt)])
+         | e           => L.paren (layoutExp (env, e)))
 
-  and layoutLamExp (im, bs)
-    = fn Lam (b, e) => layoutLamExp (im, b :: bs) e
-      |  e => L.mayAlign [ L.seq [ layoutVBinds im (List.rev bs), L.str " ->" ], layoutExp im e]
+  and layoutLamExp (env, bs)
+    = fn Lam (b, e) => layoutLamExp (env, b :: bs) e
+      |  e => L.mayAlign [ L.seq [ layoutVBinds (env, List.rev bs), L.str " ->" ], layoutExp (env, e)]
 
-  and layoutExp im
-    = fn Lam (b, e)  => L.seq [L.str "\\ ", layoutLamExp (im, [b]) e]
-      |  Let (vd, e) => L.align [ L.seq [L.str "%let ", layoutVDefg im vd ], L.seq [L.str "%in ", layoutExp im e]]
-      |  Case (e, (v, vty), ty, alts) =>
-         L.align [ L.seq [L.str "%case ", layoutTy im ty, L.str " ", layoutExp im e, L.str " of "
-                         , layoutVBind im (v, vty, true) ]
-                 , indent (L.sequence ("{", "}", ";") (map (layoutAlt im) alts))]
-      |  e => layoutAExp im e
+  and layoutExp (env, e)
+    = (case e
+        of Lam (b, e)  => L.seq [L.str "\\ ", layoutLamExp (env, [b]) e]
+         | Let (vd, e) => L.align [ L.seq [L.str "%let ", layoutVDefg (env, vd)], 
+                                    L.seq [L.str "%in ", layoutExp (env, e)]]
+         | Case (e, (v, vty), ty, alts) =>
+           L.align [ L.seq [L.str "%case ", layoutTy (env, ty), L.str " ", layoutExp (env, e), 
+                     L.str " of ", layoutVBind (env, (v, vty, true)) ]
+                   , indent (L.sequence ("{", "}", ";") (List.map (alts, fn a => layoutAlt (env, a))))]
+         | e => layoutAExp (env, e))
 
-  and layoutVDef im (Vdef (bind, e)) = 
+  and layoutVDef (env, Vdef (bind, e)) = 
       let
         val (vts, header) = 
             case bind
              of VbSingle (v, t, s) => ([(v, t)], if s then L.str "!" else L.empty)
               | VbMulti (vts, effectful) => (vts, L.str (if effectful then "multi# " else "multi "))
       in
-        L.mayAlign [ L.seq [ header, layoutVariableTys im vts, L.str " =" ], indent (layoutExp im e)]
+        L.mayAlign [ L.seq [ header, layoutVariableTys (env, vts), L.str " =" ], indent (layoutExp (env, e))]
       end
 
-  and layoutVDefg im 
-    = fn Rec vdefs   => L.mayAlign [ L.str "%rec {"
-                                 , indent (L.align (semiMap (layoutVDef im) vdefs))
-                                 , L.str "}"]
-      |  Nonrec vdef => layoutVDef im vdef
+  and layoutVDefg (env, vdef)
+    = (case vdef
+        of Rec vdefs => L.mayAlign [ L.str "%rec {"
+                                   , indent (L.align (semiMap (vdefs, fn d => layoutVDef (env, d))))
+                                   , L.str "}"]
+      |  Nonrec vdef => layoutVDef (env, vdef))
 
-  fun layoutModule (Module (_, vdefgs), im, tm) = 
+  fun layoutModule (cfg, (Module (_, vdefgs), im, tm)) = 
       let
         val variables = I.listVariables im
         val im = IS.SiTable im
+        val env = (cfg, im)
+        val variables = L.align (List.map (variables,
+              if showSymbolTable env then
+                fn x => L.seq [ IS.layoutVariable (x, im)
+                              , L.str " :: "
+                              , layoutTy (env, IS.variableInfo (im, x)) ]
+              else
+                fn x => IS.layoutVariable (x, im)))
       in
       L.align [ L.str "%variables"
-              , indent (L.align (List.map (variables,
-                                           fn x => L.seq [ IS.layoutVariable (x, im)
-                                                         , L.str " : "
-                                                         , layoutTy im (IS.variableInfo (im, x)) ])))
+              , indent variables
               , L.seq [L.str "%module"]
-              , indent (L.align (semiMap (layoutVDefg im) vdefgs))
+              , indent (L.align (semiMap (vdefgs, fn d => layoutVDefg (env, d))))
               , L.str "\n"]
       end
+
+  val controls = [control]
 
 end

@@ -239,7 +239,7 @@ struct
                         MS.seqn (im, cfg, [blk0, blk1, blk2])
                       end
                      *)
-                     | _ => constant (GP.castLiteral ws (l, ty))
+                     | _ => constant (GP.castLiteral cfg (l, ty))
             in
               (blk, Effect.Total)
             end
@@ -331,7 +331,7 @@ struct
               val u = TMU.variablesClone (im, rvar)
               val (eblk, fx) = doExp (state, env, u, e)
               val (c, _) = case TypeRep.repToBase ty 
-                             of AS.Prim ty => GP.castLiteral ws (l, ty) 
+                             of AS.Prim ty => GP.castLiteral cfg (l, ty) 
                               | _ => failMsg ("doLitAlt", "literal not of primitive type")
             in
               (u, c, eblk, fx)

@@ -118,16 +118,16 @@ struct
       let
         val cfg = PassData.getConfig pd
         val opt = showOptGet cfg
-        val q   = LC.doModule p
-        val ()  = if #showBefore opt then LU.printLayout (ACL.layout q) else ()
-        val q' as (_, st) = AE.annotate q
-        val ()  = if #showAfter opt then LU.printLayout (ADL.layout q') else ()
+        val (m, st) = LC.doModule p
+        val ()  = if #showBefore opt then LU.printLayout (ACL.layout (cfg, st, m)) else ()
+        val (m, st) = AE.annotate (m, st)
+        val ()  = if #showAfter opt then LU.printLayout (ADL.layout (cfg, st, m)) else ()
         val vdefgs = List.map (vdefgs, fn vdefg => doVDefg (st, vdefg))
       in
         (AL.Module (main, vdefgs), im, tm)
       end
  
-  fun layout (module, _) = ANormLazyLayout.layoutModule module
+  fun layout (module, cfg) = ANormLazyLayout.layoutModule (cfg, module)
 
   val layout' = ANormLazyStats.layout (ANormLazyStats.O { id = SOME passname })
 
