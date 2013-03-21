@@ -184,6 +184,7 @@ struct
          ("CallInline",       "Calls inlined (inline once)"    ),
          ("CodeTrim",         "Code annotations trimmed"       ),
          ("DCE",              "Dead instrs/globals eliminated" ),
+         ("DependentIVs",     "Dependent IVs eliminated"       ),
          ("EnumToSum",        "Enums to Sums"                  ),
          ("EtaSwitch",        "Cases eta reduced"              ),
          ("FunctionWrap",     "Known functions wrapped"        ),
@@ -281,6 +282,7 @@ struct
     val codeTrim = clicker "CodeTrim"
     val constParameter = clicker "ConstParameter"
     val dce = clicker "DCE"
+    val dependentIVs = clicker "DependentIVs"
     val enumToSum = clicker "EnumToSum"
     val etaSwitch = clicker "EtaSwitch"
     val functionWrap = clicker "FunctionWrap"
@@ -3008,7 +3010,132 @@ struct
           in try (Click.killParameters, f)
           end
 
-      val labelOpts = mergeBlocks or killParameters
+      (* This optimization tries to find loop carried variables that 
+       * are derived from other loop carried variables. 
+       *)
+      val dependentIVs =
+          let
+            val f = 
+             fn ((d, imil, ws), (i, (l, parms))) => 
+                let
+                  val pcount = Vector.length parms
+                  val () = Try.require (pcount > 1)
+                  val preds = IInstr.preds (imil, i)
+                  val () = Try.require (not (List.isEmpty preds))
+                  val ts =  List.map (preds, fn p => IBlock.getTransfer (imil, p))
+                  val tfs = List.map (ts, <@ IInstr.toTransfer)
+                  (* list of vector of targets *)
+                  val tgs = List.map (tfs, <@ MU.Transfer.isIntraProcedural)
+                  (* vector of targets *)
+                  val tgs = Vector.concat tgs
+                  (* Keep only those targeting this block *)
+                  (* inargs is a vector of vectors*)
+                  val inargs = Vector.keepAllMap (tgs, fn (M.T {block, arguments}) => 
+                                                          if block = l then SOME arguments else NONE)
+                  val () = Try.require (Vector.length inargs > 0)
+                  (* If both are integer constants, return c2 - c1*)
+                  val constantCheck =
+                   fn (c1, c2) => 
+                      (case (c1, c2) 
+                        of (M.CIntegral i1, M.CIntegral i2) => 
+                           if (IntArb.equalTyps (IntArb.typOf i1, IntArb.typOf i2)) then
+                             let
+                               val i = IntArb.- (i2, i1)
+                               val t = IntArb.typOf i
+                             in SOME (t, M.SConstant (M.CIntegral i))
+                             end
+                           else NONE
+                         | _                                => NONE)
+                  (* If v1 is defined as v1 + oper, return oper*)
+                  val variableCheck = 
+                      Try.lift 
+                        (fn (v1, v2) => 
+                            let
+                              val {prim, args, ...} = <@ MU.Rhs.Dec.rhsPrim <! Def.toRhs o Def.get @@ (imil, v2)
+                              val {operator, typ}  = <@ PU.Prim.Dec.pNumArith <! PU.T.Dec.prim @@ prim
+                              val nt = <@ PU.IntPrecision.Dec.ipFixed <! PU.NumericTyp.Dec.ntInteger @@ typ
+                              val () = <@ PU.ArithOp.Dec.aPlus operator
+                              val oper1 = Try.V.sub (args, 0)
+                              val oper2 = Try.V.sub (args, 1)
+                              val dist = 
+                                  (case (oper1, oper2)
+                                    of (M.SConstant c1, M.SVariable v11) => if v11 = v1 then 
+                                                                              (nt, oper1)
+                                                                            else
+                                                                              Try.fail ()
+                                     | (M.SVariable v11, M.SConstant c1) => if v11 = v1 then 
+                                                                              (nt, oper2)
+                                                                            else
+                                                                              Try.fail ()
+                                     | _ => Try.fail ())
+                            in dist
+                            end)
+                  (* check whether oper2 is defined from oper1 *)
+                  val opCheck = 
+                   fn (oper1, oper2) => 
+                      (case (oper1, oper2)
+                        of (M.SConstant c1, M.SConstant c2) => constantCheck (c1, c2)
+                         | (M.SVariable v1, M.SVariable v2) => variableCheck (v1, v2)
+                         | _ => NONE)
+                  (* For a given arg list, check whether the jth arg is defined from the ith arg
+                   * and if so return its distance.
+                   *)
+                  val isDependent1 = 
+                   fn (i, j, args) => opCheck (Vector.sub (args, i), Vector.sub (args, j))
+
+                  (* Check whether the jth inarg is defined from the ith inarg on all inedges
+                   * and if so return its distance.
+                   *)
+                  val isDependent = 
+                   Try.lift
+                     (fn (i, j) => 
+                         let
+                           val folder = 
+                               (fn (inargs, distO) => 
+                                   let
+                                     val (nt2, oper2) = <@ isDependent1 (i, j, inargs)
+                                     val (nt1, oper1) = 
+                                         case distO
+                                          of NONE              => (nt2, oper2)
+                                           | SOME (nt1, oper1) => (nt1, oper1)
+                                     val () = Try.require (MU.Operand.eq (oper1, oper2))
+                                     val () = Try.require (IntArb.equalTyps (nt1, nt2))
+                                   in SOME (nt1, oper1)
+                                   end)
+                           val dist = <@ Vector.fold (inargs, NONE, folder)
+                         in dist
+                         end)
+
+                  val parmIdxs = Vector.mapi (parms, fn (i, _) => i)
+                  (* Check whether there exists a j such that the jth inargs is defined from the 
+                   * ith inarg on all inedges, and if so return j and the distance *)
+                  val existsDependent1 = 
+                   fn i => Vector.peekMapi (parmIdxs, fn j => if i <> j then isDependent (i, j) else NONE)
+                  (* Check whether there exists an i and j such that the jth inarg is defined from the 
+                   * ith inarg on all inedges, and if so return i, j and the distance *)
+                  val (idxI, (idxJ, (iaT, dist))) = <@ Vector.peekMapi (parmIdxs, fn i => existsDependent1 i)
+                  val nt = P.NtInteger (P.IpFixed iaT) 
+                  val vi = Vector.sub (parms, idxI)
+                  val vj = Vector.sub (parms, idxJ)
+                  val vjDead = Var.clone (imil, vj)
+                  val parms = Utils.Vector.update (parms, idxJ, vjDead)
+                  val newI = 
+                      let
+                        val prim = P.Prim (P.PNumArith {typ = nt, operator = P.APlus})
+                        val rhs = M.RhsPrim {prim = prim, createThunks = false, typs = Vector.new0(),
+                                             args = Vector.new2 (M.SVariable vi, dist)}
+                        val i = MU.Instruction.new (vj, rhs)
+                      in i
+                      end
+                  val () = IInstr.replaceLabel (imil, i, (l, parms))
+                  val newII = IInstr.insertAfter (imil, i, newI)
+                  val ls = List.map ([i, newII], I.ItemInstr)
+                in ls
+                end
+          in try (Click.dependentIVs, f)
+          end
+
+      val labelOpts = mergeBlocks or killParameters or dependentIVs
 
     end (* structure LabelOpts *)
 
