@@ -964,6 +964,46 @@ struct
                  in res
                  end)
 
+       (* TODO: make this more than a one off hack *)
+       val doReAssocHack = 
+           Try.lift 
+             (fn (operator1, typ1, args1, get) =>
+                 let
+                   val res = 
+                       (case operator1
+                         of P.APlus   => 
+                            let
+                              val (b1, b2) = Try.V.doubleton args1
+                              val c1 = <@ MU.Constant.Dec.cIntegral <! MU.Operand.Dec.sConstant @@ b2
+                              val p1 = get b1
+                              val (p, args2) = <@ Operation.Dec.oPrim p1
+                              val {typ = typ2, operator = operator2} = <@ PU.Prim.Dec.pNumArith p
+                              val () = <@ PU.ArithOp.Dec.aPlus operator2
+                              val (b3, b4) = Try.V.doubleton args2
+                              val c2 = <@ MU.Constant.Dec.cIntegral <! MU.Operand.Dec.sConstant @@ b4
+                              val c = M.SConstant (M.CIntegral (IntArb.+ (c1, c2)))
+                              val new = RrPrim (P.PNumArith {typ = typ1, operator = P.APlus}, Vector.new2 (b3, c))
+                            in new
+                            end
+                          | _         => Try.fail ())
+                 in res
+                 end)
+
+       val reassoc = 
+           Try.lift
+             (fn(c, {typ, operator}, args, get) => 
+                 let
+                   val doIt = 
+                       (case typ
+                         of P.NtRat                    => Try.fail ()
+                          | P.NtInteger (P.IpFixed ia) => doReAssocHack
+                          | P.NtInteger P.IpArbitrary  => Try.fail ()
+                          | P.NtFloat P.FpSingle       => Try.fail ()
+                          | P.NtFloat P.FpDouble       => Try.fail ())
+                   val r = <@ doIt (operator, typ, args, get)
+                 in r
+                 end)
+
        val simplify = 
            Try.lift
            (fn(c, {typ, operator}, args, get) => 
@@ -982,7 +1022,7 @@ struct
        val reduce : Config.t * {typ : P.numericTyp, operator : P.arithOp} 
                     * Mil.operand Vector.t * (Mil.operand -> Operation.t) 
                     -> reduction option =
-           fold or doUnitL or doUnitR or simplify
+           fold or doUnitL or doUnitR or simplify or reassoc
 
      end (* structure NumArith *)
 
