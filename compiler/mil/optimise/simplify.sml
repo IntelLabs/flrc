@@ -194,6 +194,7 @@ struct
          ("KillInterProc",    "Calls/Evals killed"             ),
          ("KillParameters",   "Block parameter lists trimmed"  ),
          ("LoopFlatten",      "Loop arguments flattened"       ),
+         ("LowerStrided",     "Strided loads lowered"          ),
          ("MakeDirect",       "Calls/Evals made direct"        ),
          ("MergeBlocks",      "Blocks merged"                  ),
          ("NonRecursive",     "Functions marked non-recursive" ),
@@ -208,6 +209,7 @@ struct
          ("PSetGet",          "SetGet ops reduced"             ),
          ("PSetNewEta",       "SetNew ops eta reduced"         ),
          ("PSetQuery",        "SetQuery ops reduced"           ),
+         ("Reassoc",          "Prims reassociated"             ),
          ("SumEta",           "Sum injections eta reduced"     ),
          ("SumGetTagBeta",    "Sum tag projections reduced"    ),
          ("SumProjBeta",      "Sum projections reduced"        ),
@@ -292,6 +294,7 @@ struct
     val killInterProc = clicker "KillInterProc"
     val killParameters = clicker "KillParameters"
     val loopFlatten = clicker "LoopFlatten"
+    val lowerStrided = clicker "LowerStrided"
     val makeDirect = clicker "MakeDirect"
     val mergeBlocks = clicker "MergeBlocks"
     val nonRecursive = clicker "NonRecursive"
@@ -305,6 +308,7 @@ struct
     val pSetGet = clicker  "PSetGet"
     val pSetNewEta = clicker "PSetNewEta"
     val pSetQuery = clicker  "PSetQuery"
+    val reassoc = clicker  "Reassoc"
     val sumEta = clicker  "SumEta"
     val sumGetTagBeta = clicker  "SumGetTagBeta"
     val sumProjBeta = clicker  "SumProjBeta"
@@ -1004,6 +1008,18 @@ struct
                  in r
                  end)
 
+       val commute = 
+           Try.lift
+             (fn(c, {typ, operator}, args, get) => 
+                 let
+                   val () = Try.require (PU.Properties.Commutativity.arithOp (c, typ, operator))
+                   val (b1, b2) = Try.V.doubleton args
+                   val _ = <@ MU.Operand.Dec.sConstant @@ b1
+                   val _ = <@ MU.Operand.Dec.sVariable @@ b2
+                   val new = RrPrim (P.PNumArith {typ = typ, operator = operator}, Vector.new2 (b2, b1))
+                 in new
+                 end)
+
        val simplify = 
            Try.lift
            (fn(c, {typ, operator}, args, get) => 
@@ -1022,7 +1038,7 @@ struct
        val reduce : Config.t * {typ : P.numericTyp, operator : P.arithOp} 
                     * Mil.operand Vector.t * (Mil.operand -> Operation.t) 
                     -> reduction option =
-           fold or doUnitL or doUnitR or simplify or reassoc
+           fold or doUnitL or doUnitR or simplify or reassoc or commute
 
      end (* structure NumArith *)
 
@@ -3956,7 +3972,62 @@ struct
         in try (Click.primPrim, f)
         end
 
-    val prim = primPrim or primToLen or primRuntime
+    val primReAssocHack = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dests, {prim, createThunks, typs, args})) =>
+              let
+                val config = PD.getConfig d
+                val {operator, typ}  = <@ PU.Prim.Dec.pNumArith <! PU.T.Dec.prim @@ prim
+                val () = Try.require (PU.Properties.Commutativity.arithOp (config, typ, operator))
+                val () = Try.require (PU.Properties.Associativity.arithOp (config, typ, operator))
+                val () = Try.require (Vector.isEmpty typs)
+                val (b0, b1) = Try.V.doubleton args
+                val _ = <@ MU.Operand.Dec.sVariable @@ b1
+                val v0 = <@ MU.Operand.Dec.sVariable @@ b0
+                val {prim=prim2, args=args2, typs=typs2, ...} = 
+                    <@ MU.Rhs.Dec.rhsPrim <! Def.toRhs o Def.get @@ (imil, v0)
+                val () = Try.require (Vector.isEmpty typs2)
+                val {operator=operator2, typ=typ2}  = <@ PU.Prim.Dec.pNumArith <! PU.T.Dec.prim @@ prim2
+                val () = Try.require (PU.ArithOp.eq (operator, operator2))
+                val () = Try.require (PU.NumericTyp.eq (typ, typ2))
+                val (b00, b01) = Try.V.doubleton args2
+                val _ = <@ MU.Operand.Dec.sVariable @@ b00
+                val _ = <@ MU.Operand.Dec.sConstant @@ b01
+
+                val vnew = Var.clone (imil, v0)
+                val inew = 
+                    let
+                      val p1 = P.PNumArith {typ = typ, operator = operator}
+                      val args1 = Vector.new2 (b00, b1)
+                      val rhs1 = M.RhsPrim {prim = P.Prim p1, 
+                                            createThunks = createThunks,
+                                            typs = typs,
+                                            args = args1}
+                      val ni = MU.Instruction.new (vnew, rhs1)
+                    in ni
+                    end
+
+                val i2 = 
+                    let
+                      val p2 = P.PNumArith {typ = typ, operator = operator}
+                      val args2 = Vector.new2 (M.SVariable vnew, b01)
+                      val rhs2 = M.RhsPrim {prim = P.Prim p2, 
+                                            createThunks = createThunks,
+                                            typs = typs,
+                                            args = args2}
+                      val ni = MU.Instruction.new' (dests, rhs2)
+                    in ni
+                    end
+                      
+                val iinew = IInstr.insertBefore (imil, inew, i)
+                val () = IInstr.replaceInstruction (imil, i, i2)
+              in [I.ItemInstr iinew, I.ItemInstr i]
+              end
+        in try (Click.reassoc, f)
+        end
+
+    val prim = primPrim or primToLen or primRuntime or primReAssocHack
 
     val tupleNormalize = 
         let
@@ -4147,12 +4218,78 @@ struct
         in try (Click.tupleBeta, f)
         end
 
+    val tupleLowerStrided = 
+        let
+          val f = 
+           fn ((d, imil, ws), (i, dests, tf)) =>
+              let
+                val dv = Try.V.singleton dests
+                val fi = MU.TupleField.field tf
+                val tup = MU.TupleField.tup tf
+                val tupDesc = MU.TupleField.tupDesc tf
+                val {descriptor, base, mask, index, kind} = 
+                    <@ MU.FieldIdentifier.Dec.fiVectorVariable fi
+                val () = Try.require (base = M.TbScalar)
+                val () = Try.require (not (isSome mask))
+                val stride = <@ MU.VectorIndexKind.Dec.vikStrided kind
+                val () = Try.require (stride <> 1)
+                val {vectorSize, elementSize} = <@ PU.VectorDescriptor.Dec.vd descriptor
+                val elementCount = PU.VectorDescriptor.elementCount descriptor
+                val {elementTyp, ...} = <@ MU.Typ.Dec.tViVector (Var.typ (imil, dv))
+                val idxVar = <@ MU.Operand.Dec.sVariable index
+                val idxTyp = Var.typ (imil, idxVar)
+                val idxNt = <@ MU.Typ.Dec.tNumeric idxTyp
+                val idxIAT = <@ PU.IntPrecision.Dec.ipFixed <! PU.NumericTyp.Dec.ntInteger @@ idxNt
+                val mkIdx = 
+                 fn i => 
+                    let
+                      val idxVari = Var.clone (imil, idxVar)
+                      val p = P.PNumArith {typ = idxNt, operator = P.APlus}
+                      val prim = P.Prim p
+                      val offset = IntArb.fromInt (idxIAT, stride * i)
+                      val c = M.SConstant (M.CIntegral offset)
+                      val args = Vector.new2 (index, c)
+                      val rhs = M.RhsPrim {prim = prim, createThunks = false, 
+                                           typs = Vector.new0 (), args = args}
+                      val i = MU.Instruction.new (idxVari, rhs)
+                    in (idxVari, i)
+                    end
+                val doOne = 
+                 fn i => 
+                    let
+                      val (idxVari, idxInstr) = mkIdx i
+                      val fi = M.FiVariable (M.SVariable idxVari)
+                      val tf = M.TF {tupDesc = tupDesc, tup = tup, field = fi}
+                      val rhs = M.RhsTupleSub tf
+                      val newv = Var.related (imil, dv, "lwr", elementTyp, M.VkLocal)
+                      val newi = MU.Instruction.new (newv, rhs)
+                    in (newv, [idxInstr, newi])
+                    end
+                val (vs, instrsL) = List.unzip (List.tabulate (elementCount, doOne))
+                val instrs = List.concat instrsL
+                val iis = List.map (instrs, fn newi => IInstr.insertBefore (imil, newi, i))
+                val mkVec = 
+                    let
+                      val p = P.ViData {descriptor = descriptor, operator = P.DVector}
+                      val prim = P.Vector p
+                      val args = Vector.fromListMap (vs, M.SVariable)
+                      val rhs = M.RhsPrim {prim = prim, createThunks = false, 
+                                           typs = Vector.new1 elementTyp, args = args}
+                      val newi = MU.Instruction.new (dv, rhs)
+                      val () = IInstr.replaceInstruction (imil, i, newi)
+                    in i
+                    end
+              in List.map (i::iis, I.ItemInstr)
+              end
+        in try (Click.lowerStrided, f)
+        end
+
     val tupleSub = 
         let
           val tupleField = 
               tupleField {dec = fn (tupField) => (tupField, ()),
                           con = fn (tupField, ()) => M.RhsTupleSub tupField}
-        in tupleBeta or tupleField
+        in tupleBeta or tupleField or tupleLowerStrided
         end
 
     val tupleSet = 
