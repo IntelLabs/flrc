@@ -372,7 +372,7 @@ struct
         * and padding specifies the padding to be inserted at the end of the fixed 
         * fields.
         *)
-       val fieldPadding : state * env * M.tupleDescriptor -> int * int * (int Vector.t) * int
+       val objectPadding : state * env * M.tupleDescriptor -> int * int * (int Vector.t) * int
        (* Given a tuple descriptor, return the offset of
         * the given field (indexed from zero).
         *)
@@ -387,8 +387,8 @@ struct
         * type
         *)
        val extraSize : state * env * M.tupleDescriptor -> int
-       (* Return the size for a thunk *)
-       val thunkSize : state * env * M.fieldKind * M.fieldKind Vector.t -> int
+       (* Return the size and alignment for a thunk *)
+       val thunkSize : state * env * M.fieldKind * M.fieldKind Vector.t -> int * int
        (* Return the padding for a thunk *)
        val thunkPadding : state * env * M.fieldKind * M.fieldKind Vector.t -> int
        (* Return the offset of the result in a thunk *)
@@ -421,19 +421,25 @@ struct
 
     fun fieldBaseInfo (state, env) = (fieldBase (state, env), fieldBaseAlignment (state, env))
 
-    (* Compute size and padding for an object. Returns (size, algn, paddings, padding)
-     * where size is the total size of the object in bytes, algn is the alignment
-     * required of the object, paddings is a vector
-     * where element i specifies the padding to be inserted before fixed field i,
-     * and padding specifies the padding to be inserted at the end of the fixed 
-     * fields.
+    (* Given the end of a previous field and an alignment for the next field,
+     * compute the start of the next field and the padding to be inserted
+     * between the fields.
+     *)
+    fun computePadding (fieldEnd, alignment) = 
+        let
+          val fieldStart = align (fieldEnd, alignment)
+          val padding = fieldStart - fieldEnd
+        in (fieldStart, padding)
+        end
+
+    (* Compute padding for the fields of an object. Returns (fieldEnd, algn, paddings)
+     * where fieldEnd is the offset of the end of last field (in bytes),
+     * algn is the alignment required of the object, 
+     * paddings is a vector where element i specifies the padding to be 
+     * inserted before fixed field i,
      * 
      * Each field is padded to its natural alignment or the specified
-     * alignment, whichever is greater.  The entire object is padded
-     * such that the end of the fixed portion is aligned to the maximum of the
-     * natural and specified alignment of the fixed elements and the array 
-     * portion (if any).  The object is aligned to the maximum of the natural 
-     * and specified alignments of the fixed and array fields (minimum 4 byte aligned).
+     * alignment, whichever is greater.  
      *)
     fun fieldPaddingG (state, env, 
                        nb    : Config.t * 'a -> int, (* number of bytes in field *)
@@ -448,19 +454,44 @@ struct
               let
                 val fsz = nb (config, fd)
                 val alignment = Int.max (fsz, algn fd)
-                val fieldStart = align (off, alignment)
+                val (fieldStart, padding) = computePadding (off, alignment)
                 val fieldEnd = fieldStart + fsz
                 val max = Int.max (alignment, max)
-              in (fieldStart - off, (fieldEnd, max))
+              in (padding, (fieldEnd, max))
               end
           val (paddings, (fieldEnd, max)) = Vector.mapAndFold (fds, start, doOne)
           val max = 
               case fdo
                of NONE    => max
                 | SOME fd => Int.max (nb (config, fd), algn fd)
-          val size = align (fieldEnd, max)
-          val padding = size - fieldEnd
-        in (size, max, paddings, padding)
+        in (fieldEnd, max, paddings)
+        end
+
+    (* Compute size and padding for an object. Returns (size, algn, paddings, padding)
+     * where size is the total size of the object in bytes, algn is the alignment
+     * required of the object, paddings is a vector
+     * where element i specifies the padding to be inserted before fixed field i,
+     * and padding specifies the padding to be inserted at the end of the fixed 
+     * fields.
+     * 
+     * Each field is padded to its natural alignment or the specified
+     * alignment, whichever is greater.  The entire object is padded
+     * such that the end of the fixed portion is aligned to the maximum of the
+     * natural and specified alignment of the fixed elements and the array 
+     * portion (if any).  The object is aligned to the maximum of the natural 
+     * and specified alignments of the fixed and array fields (minimum 4 byte aligned).
+     *)
+    fun objectPaddingG (state, env, 
+                        nb    : Config.t * 'a -> int, (* number of bytes in field *)
+                        algn  : 'a -> int,            (* specified alignment of field *)
+                        fds   : 'a Vector.t, 
+                        fdo   : 'a Option.t, 
+                        start : (int * int) (* starting offset and alignment *)
+                       ) =
+        let
+          val (fieldEnd, alignment, paddings) = fieldPaddingG (state, env, nb, algn, fds, fdo, start)
+          val (size, padding) = computePadding (fieldEnd, alignment)
+        in (size, alignment, paddings, padding)
         end
 
     (* Size of the fixed portion of the object, accounting for padding.
@@ -477,8 +508,26 @@ struct
                      start : int * int   (* starting offset and alignment *)
                     ) =
         let
-          val (size, _, _, _) = fieldPaddingG (state, env, nb, algn, fds, fdo, start)
+          val (size, _, _, _) = objectPaddingG (state, env, nb, algn, fds, fdo, start)
         in size
+        end
+
+    (* Compute the appropriate size and alignment for a union of different object types where
+     * the space allocated must be sufficient for any of them.  No array portions
+     * supported.
+     *)
+    fun objectsSizeG (state, env, 
+                      nb    : Config.t * 'a -> int, (* number of bytes in field *)
+                      algn  : 'a -> int,            (* specified alignment of field *)
+                      fdsV  : 'a Vector.t Vector.t, 
+                      start : int * int   (* starting offset and alignment *)
+                     ) =
+        let
+          val descs = Vector.map (fdsV, fn fds => objectPaddingG (state, env, nb, algn, fds, NONE, start))
+          val size = Vector.fold (descs, 0, fn ((size, _, _, _), max) => Int.max (size, max))
+          val alignment = Vector.fold (descs, 0, fn ((_, alignment, _, _), max) => Int.max (alignment, max))
+          (* Choose the maximum size and the maximum alignment.   *)
+        in (size, alignment)
         end
 
     fun get (fds, fdo, i) =
@@ -515,10 +564,10 @@ struct
         in loop (0, start)
         end
 
-    fun fieldPadding (state, env, M.TD {fixed, array, ...}) =
-        fieldPaddingG (state, env, 
-                      MU.FieldDescriptor.numBytes, MU.FieldDescriptor.alignmentBytes,
-                      fixed, array, fieldBaseInfo (state, env))
+    fun objectPadding (state, env, M.TD {fixed, array, ...}) =
+        objectPaddingG (state, env, 
+                        MU.FieldDescriptor.numBytes, MU.FieldDescriptor.alignmentBytes,
+                        fixed, array, fieldBaseInfo (state, env))
 
     fun fieldOffset (state, env, M.TD {fixed, array, ...}, i) =
         fieldOffsetG (state, env, 
@@ -539,9 +588,9 @@ struct
     fun objectAlignment (state, env, M.TD {fixed, array, ...}) = 
         let
           val (_, alignment, _, _) = 
-              fieldPaddingG (state, env, 
-                             MU.FieldDescriptor.numBytes, MU.FieldDescriptor.alignmentBytes,
-                             fixed, array, fieldBaseInfo (state, env))
+              objectPaddingG (state, env, 
+                              MU.FieldDescriptor.numBytes, MU.FieldDescriptor.alignmentBytes,
+                              fixed, array, fieldBaseInfo (state, env))
         in alignment
         end
 
@@ -550,92 +599,117 @@ struct
          of NONE => Fail.fail (modname ^ ".OM", "extraSize", "no array portion")
           | SOME fd => MU.FieldDescriptor.numBytes (getConfig env, fd)
 
-    (* Highly runtime specific assumptions:
-     *  A thunk is a vtable, a sequence of word sized fields, followed by the results field, 
-     *  followed by free variables.  For the lightweight thunks, the free variables overlap
-     *  with the results field.
-     *)
 
-    (* Fieldkinds for the vtable + sequence of word sized fields *)
-    fun thunkBaseElements (state, env) =
+    (* This code is highly runtime specific.  It encodes the underlying representation
+     * of thunks by returning a vector of vectors of field kinds.  Thunks are represented
+     * as a union, where each element of the union correspond to one of the vectors
+     * of field kinds.
+     * For the heavyweight thunks, there is only one members in the union, and the 
+     * representation looks like:
+     *   A thunk is a vtable, a sequence of word sized fields, followed by the results field, 
+     *   followed by free variables.  
+     * For the lightweight thunks, there are three members in the union, corresponding to the
+     * three states of being unevaluated, evaluated to a value, or evaluated to an exception.
+     * The representation looks like:
+     *   Delay:  A vtable, followed by the free variables
+     *   Value:  A vtable, followed by the value
+     *   Exn:    A vtable, followed by the exception
+     * The allocated space for a thunk must be sufficient for any of the members of the union.
+     *)
+    fun thunkBaseElements (state, env) = 
+        if lightweightThunks (getConfig env) then 1
+        else
+          let
+            val vt = 1
+            val fb = 
+                if synchThunks env then 3 else 2
+            val co = 
+                if interceptCuts (getConfig env) then 1 else 0
+            val count = vt + fb + co
+          in count
+          end
+
+    fun ptkThunkFieldKinds (state, env, fk, fks) = 
         let
-          val count = 
-              if lightweightThunks (getConfig env) then 1
-              else
-                let
-                  val vt = 1
-                  val fb = 
-                      if synchThunks env then 3 else 2
-                  val co = 
-                      if interceptCuts (getConfig env) then 1 else 0
-                in vt + fb + co
-                end
-        in Vector.new (count, M.FkBits (MU.FieldSize.ptrSize (getConfig env)))
+          val bitsW = M.FkBits (MU.FieldSize.ptrSize (getConfig env))
+          val base = 
+              Vector.new (thunkBaseElements (state, env), bitsW)
+        in Vector.concat [base, Vector.new1 fk, fks]
         end
- 
+
+    fun thunkValueFieldKinds (state, env, fk) = 
+        if lightweightThunks (getConfig env) then
+          Vector.new2 (M.FkBits (MU.FieldSize.ptrSize (getConfig env)), fk)
+        else
+          ptkThunkFieldKinds (state, env, fk, Vector.new0 ())
+
+    fun thunkDelayFieldKinds (state, env, fk, fks) = 
+        if lightweightThunks (getConfig env) then
+          Utils.Vector.cons (M.FkBits (MU.FieldSize.ptrSize (getConfig env)), fks)
+        else
+          ptkThunkFieldKinds (state, env, fk, fks)
+            
+    fun thunkExnFieldKinds (state, env, fk) = 
+        if lightweightThunks (getConfig env) then
+          Vector.new2 (M.FkBits (MU.FieldSize.ptrSize (getConfig env)), M.FkRef)
+        else
+          ptkThunkFieldKinds (state, env, fk, Vector.new0 ())
+
+    fun thunkFieldKinds (state, env, fk, fks) = 
+        if lightweightThunks (getConfig env) then
+          let
+            val delay = thunkDelayFieldKinds (state, env, fk, fks)
+            val value = thunkValueFieldKinds (state, env, fk)
+            val exn   = thunkExnFieldKinds (state, env, fk)
+          in Vector.new3 (delay, value, exn)
+          end
+        else
+          Vector.new1 (ptkThunkFieldKinds (state, env, fk, fks))
+
+    fun thunkResultField (state, env) = thunkBaseElements (state, env)
+
+    fun thunkFvFieldStart (state, env) = 
+        if lightweightThunks (getConfig env) then
+          thunkBaseElements (state, env)
+        else
+          thunkBaseElements (state, env) + 1
+
     (* Size of the thunk struct (with no free variables included) *)
     fun thunkFixedSize (state, env, fk) =
         let
-          val fks = thunkBaseElements (state, env)
-          val fks = Utils.Vector.snoc (fks, fk)
-          val sz = objectSizeG (state, env, MU.FieldKind.numBytes, fn _ => 1,
-                                fks, NONE, (0, 1))
+          val fksV = thunkFieldKinds (state, env, fk, Vector.new0 ())
+          val (sz, _) = objectsSizeG (state, env, MU.FieldKind.numBytes, fn _ => 1,
+                                      fksV, (0, 1))
         in sz
         end
 
     (* Padding for a basic thunk value.  *)
     fun thunkFixedPadding (state, env, fk) =
         let
-          val fks = thunkBaseElements (state, env)
-          val fks = Utils.Vector.snoc (fks, fk)
-          val (_, _, paddings, padding) = fieldPaddingG (state, env, MU.FieldKind.numBytes, fn _ => 1,
-                                                         fks, NONE, (0, 1))
+          val fks = thunkValueFieldKinds (state, env, fk)
+          val (_, _, paddings, padding) = objectPaddingG (state, env, MU.FieldKind.numBytes, fn _ => 1,
+                                                          fks, NONE, (0, 1))
         in Vector.fold (paddings, padding, op +)
         end
 
-    (* Size of the thunk including free variables.  The initial part of the
-     * object imposes no alignment restrictions on the rest of the object. 
-     * For the lightweight thunks, we compute the size in bytes assuming no
-     * overlap.  If the free variable size is larger than the result size,
-     * we subtract the result size from the total to account for overlap.
-     * If the free variable size is smaller than the result size, we 
-     * simply use original object size.
-     *)
     fun thunkSize (state, env, typ, fks) =
-        if lightweightThunks (getConfig env) then 
-          let
-            val sz1 = thunkFixedSize (state, env, typ)
-            val sz2 = objectSizeG (state, env, MU.FieldKind.numBytes, fn _ => 1,
-                                   fks, NONE, (sz1, 1))
-            val rsz = MU.FieldKind.numBytes (getConfig env, typ)
-            val fvsz = sz2 - sz1
-            val sz = if fvsz >  rsz then
-                       sz2 - rsz
-                     else
-                       sz1
-          in sz
-          end
-        else
-          objectSizeG (state, env, MU.FieldKind.numBytes, fn _ => 1,
-                       fks, NONE, (thunkFixedSize (state, env, typ), 1))
+        objectsSizeG (state, env, MU.FieldKind.numBytes, fn _ => 1,
+                      thunkFieldKinds (state, env, typ, fks), (0, 1))
 
-    (* Padding of the thunk including free variables.  *)
+    (* Padding of a delayed thunk including free variables.  *)
     fun thunkPadding (state, env, typ, fks) =
         let
-          val fp = thunkFixedPadding (state, env, typ)
-          val size = thunkFixedSize (state, env, typ)
           val (_, _, paddings, padding) = 
-              fieldPaddingG (state, env, MU.FieldKind.numBytes, fn _ => 1,
-                             fks, NONE, (size, 1))
-        in Vector.fold (paddings, fp + padding, op +)
+              objectPaddingG (state, env, MU.FieldKind.numBytes, fn _ => 1,
+                              thunkDelayFieldKinds (state, env, typ, fks), NONE, (0, 1))
+        in Vector.fold (paddings, padding, op +)
         end
 
     (* Offset of the thunk result field *)
     fun thunkResultOffset (state, env, typ) = 
         let
-          val fks = thunkBaseElements (state, env)
-          val idx = Vector.length fks
-          val fks = Utils.Vector.snoc (fks, typ)
+          val idx = thunkResultField (state, env)
+          val fks = thunkValueFieldKinds (state, env, typ)
           val off = fieldOffsetG (state, env, MU.FieldKind.numBytes, fn _ => 1,
                                   fks, NONE, idx, 0)
         in off
@@ -643,14 +717,11 @@ struct
 
     fun thunkFvOffset (state, env, typ, fks, i) =
         let
-          val config = getConfig env
+          val start = thunkFvFieldStart (state, env)
+          val fks = thunkDelayFieldKinds (state, env, typ, fks)
           val off = fieldOffsetG (state, env, MU.FieldKind.numBytes, fn _ => 1,
-                                 fks, NONE, i, thunkFixedSize (state, env, typ))
-        in
-          if lightweightThunks config then 
-            off - (MU.FieldKind.numBytes (config, typ))
-          else
-            off
+                                  fks, NONE, start + i, 0)
+        in off
         end
 
     fun genDefs (state, env) =
@@ -659,7 +730,7 @@ struct
           fun mk (id, n) = Pil.D.constantMacro (id, Pil.E.int n)
           fun mkPad (id, td) =
               let
-                val (_, _, paddings, padding) = fieldPadding (state, env, td)
+                val (_, _, paddings, padding) = objectPadding (state, env, td)
                 val n = Vector.fold (paddings, padding, op +)
               in mk (id, n)
               end
@@ -1043,7 +1114,7 @@ struct
   fun tupleUnboxedTyp (state, env, mdd, ts) =
       let
         val td = MU.MetaDataDescriptor.toTupleDescriptor mdd
-        val (size, alignment, paddings, padding) = OM.fieldPadding (state, env, td)
+        val (size, alignment, paddings, padding) = OM.objectPadding (state, env, td)
         fun pad (i, n) = 
             (RT.Tuple.paddingField i, Pil.T.arrayConstant (Pil.T.char, n))
         fun doOne (i, t) = 
@@ -1122,7 +1193,7 @@ struct
           val td = MU.MetaDataDescriptor.toTupleDescriptor mdd
           val config = getConfig env
           val ws = OM.wordSize (state, env)
-          val (fs, alignment, paddings, padding) = OM.fieldPadding (state, env, td)
+          val (fs, alignment, paddings, padding) = OM.objectPadding (state, env, td)
           val totalPadding = Vector.fold (paddings, padding, op +)
           val frefs = Array.new (fs div ws, false)
           fun doOne (padding, fd, off) =
@@ -1288,11 +1359,11 @@ struct
     fun genMetaDataThunk (state, env, no, typ, fks, backpatch, codeO, value) =
         if vtTagOnly env then
           Pil.E.namedConstant (RT.Thunk.vTable typ)
-        else if value andalso not backpatch then
+        else if value then
           Pil.E.namedConstant (RT.Thunk.vTable typ)
         else
           let
-            val fs = OM.thunkSize (state, env, typ, fks)
+            val (fs, alignment) = OM.thunkSize (state, env, typ, fks)
             val padding = OM.thunkPadding (state, env, typ, fks)
             (* Assumptions: The only refs are the free vars and the result.
              * XXX: This is highly runtime specific
@@ -1343,7 +1414,7 @@ struct
                 else
                   VtmCreatedMutable
             val vti = Vti {code = codeO, name = n, tag = M.PokCell, pinned = false, fixedSize = fs,
-                           fixedRefs = frefs, alignment = 4, padding = padding, array = NONE,
+                           fixedRefs = frefs, alignment = alignment, padding = padding, array = NONE,
                            mut = mut}
             val vt = vTableFromInfo (state, env, vti)
           in vt
@@ -1460,7 +1531,7 @@ struct
              of NONE => (NONE, 0, true)
               | SOME (li, fd) => (SOME fd, li, false)
         val nebi = nebi andalso Vector.length inits = Vector.length fixed
-        val (fixedSize, alignment, _, _) = OM.fieldPadding (state, env, td)
+        val (fixedSize, alignment, _, _) = OM.objectPadding (state, env, td)
         val dest = genVarE (state, env, dest)
         val vtable = MD.genMetaData (state, env, no, mdd, nebi)
         val newTuple =
@@ -1728,25 +1799,28 @@ struct
       let
         val no = mkAllocSiteName (state, env, SOME dest)
         val vt = MD.genMetaDataThunk (state, env, no, typ, fvs, backpatch, codeO, value)
-        val sz = Pil.E.int (OM.thunkSize (state, env, typ, fvs))
-      in (vt, sz)
+        val (sz, algn) = OM.thunkSize (state, env, typ, fvs)
+        val sz = Pil.E.int sz
+        val algn = Pil.E.int algn
+      in (vt, sz, algn)
       end
 
   fun mkThunk (state, env, dest, typ, codeO, fvs) =
       let
-        val (vt, sz) = mkThunk0 (state, env, dest, typ, fvs, true, codeO, false)
+        val (vt, sz, algn) = mkThunk0 (state, env, dest, typ, fvs, true, codeO, false)
         val new = Pil.E.namedConstant (RT.Thunk.new typ)
         val v = genVarE (state, env, dest)
-        val mk = Pil.E.call (new, [v, vt, sz])
+        val mk = Pil.E.call (new, [v, vt, sz, algn])
       in Pil.S.expr mk
       end
 
-  fun mkThunkValue (state, env, dest, typ, fvs, value) =
+  fun mkThunkValue (state, env, dest, typ, value) =
       let
-        val (vt, sz) = mkThunk0 (state, env, dest, typ, fvs, false, NONE, true)
+        val fvs = Vector.new0 ()
+        val (vt, sz, algn) = mkThunk0 (state, env, dest, typ, fvs, false, NONE, true)
         val new = Pil.E.namedConstant (RT.Thunk.newValue typ)
         val v = genVarE (state, env, dest)
-        val mk = Pil.E.call (new, [v, vt, sz, value])
+        val mk = Pil.E.call (new, [v, vt, sz, algn, value])
       in Pil.S.expr mk
       end
 
@@ -1844,12 +1918,7 @@ struct
         val s =
             case (thunk, dest)
              of (NONE, NONE) => fail "expecting dest"
-              | (NONE, SOME v) =>
-                let
-                  val fvfks = Vector.new0 ()
-                  val mk = mkThunkValue (state, env, v, typ, fvfks, value)
-                in mk
-                end
+              | (NONE, SOME v) => mkThunkValue (state, env, v, typ, value)
               | (SOME v, SOME _) => fail "returns no value"
               | (SOME v, NONE)   => 
                 let
@@ -2901,7 +2970,7 @@ struct
                       else NONE
                   val vtable = MD.genMetaData (state, env, no, mdDesc, true)
                   val td = MU.MetaDataDescriptor.toTupleDescriptor mdDesc
-                  val (_, alignment, paddings, padding) = OM.fieldPadding (state, env, td)
+                  val (_, alignment, paddings, padding) = OM.objectPadding (state, env, td)
                   fun pad p = 
                       let
                         val elts = List.duplicate (p, fn () => Pil.E.char #"\000")
