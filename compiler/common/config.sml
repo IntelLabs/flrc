@@ -35,6 +35,7 @@ sig
   datatype wordSize = Ws32 | Ws64
   datatype vectorISA = ViANY            (* unconstrained *)
                      | ViAVX            (* AVX *)
+                     | ViMIC            (* MIC *)
                      | ViEMU            (* emulated *)
                      | ViSSE of int*int (* SSE x.y *)
   (* isa: The target ISA
@@ -225,7 +226,7 @@ struct
 
     datatype wordSize = Ws32 | Ws64
 
-    datatype vectorISA = ViEMU | ViSSE of int*int | ViAVX | ViANY
+    datatype vectorISA = ViEMU | ViSSE of int*int | ViAVX | ViMIC | ViANY
 
     datatype vectorConfig = VC of {isa          : vectorISA,
                                    instructions : {disabled : string List.t, 

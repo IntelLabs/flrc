@@ -3081,6 +3081,7 @@ struct
         in case isa
             of Config.ViEMU   => VSD.fromList (List.map (allSizes, fn sz => (sz, Emulated)))
              | Config.ViANY   => VSD.fromList (List.map (allSizes, fn sz => (sz, Enabled)))
+             | Config.ViMIC   => VSD.fromList [(Prims.Vs512, Enabled)]
              | Config.ViAVX   => VSD.fromList [(Prims.Vs256, Enabled)]
              | Config.ViSSE _ => VSD.fromList [(Prims.Vs128, Enabled)]
         end
@@ -3109,10 +3110,48 @@ struct
         in instructions
         end
 
+    val micInstructions = 
+     fn config => 
+        let
+          val float32 = Prims.NtFloat (Prims.FpSingle)
+          val float64 = Prims.NtFloat (Prims.FpDouble)
+          val uint32  = Prims.NtInteger (Prims.IpFixed (IntArb.T (IntArb.S32, IntArb.Unsigned)))
+          val sint64  = Prims.NtInteger (Prims.IpFixed (IntArb.T (IntArb.S64, IntArb.Signed)))
+          val arith   = fn (nt, arith) => Prims.PNumArith {typ = nt, operator = arith}
+          val pointwise =
+           fn (pmk, vs, fs, t) => 
+           fn opers => 
+              List.map (opers, fn oper => Prims.ViPointwise {descriptor = Prims.Vd {vectorSize = vs, elementSize = fs},
+                                                             masked = false,
+                                                             operator = pmk (t, oper)})
+          val instrs = List.concat
+              [ 
+               pointwise (arith, Prims.Vs512, NumericTyp.fieldSize (config, float32), float32) 
+                         [Prims.APlus, Prims.AMinus, Prims.ATimes, Prims.ADivide, Prims.ANegate, Prims.AMax, Prims.AMin],
+               pointwise (arith, Prims.Vs512, NumericTyp.fieldSize (config, float64), float64) 
+                         [Prims.APlus, Prims.AMinus, Prims.ATimes, Prims.ADivide, Prims.ANegate, Prims.AMax, Prims.AMin],
+               pointwise (arith, Prims.Vs512, NumericTyp.fieldSize (config, uint32), uint32)
+                         [Prims.APlus, Prims.AMinus],
+               pointwise (arith, Prims.Vs512, NumericTyp.fieldSize (config, sint64), sint64)
+                         [Prims.APlus]
+              ]
+
+          val disabled_instrs = List.concat
+              [
+               pointwise (arith, Prims.Vs512, NumericTyp.fieldSize (config, sint64), sint64)
+                         [Prims.ATimes]
+              ]
+
+          val instructions = List.fold (instrs, VD.empty, fn (v, d) => VD.insert (d, v, Enabled))
+          val instructions = List.fold (disabled_instrs, instructions, fn (v, d) => VD.insert (d, v, Disabled))
+        in instructions
+        end
+
     val ISAInstructions = 
      fn (config, isa) => 
         (case isa
           of Config.ViAVX => avxInstructions config
+           | Config.ViMIC => micInstructions config
            | _            => VD.empty)
 
     val build' = 
