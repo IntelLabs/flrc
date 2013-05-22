@@ -323,6 +323,7 @@ struct
             in
               case isa
                of Config.ViAVX   => ["P_USE_VI_AVX"]
+                | Config.ViMIC   => ["P_USE_VI_MIC"]
                 | Config.ViSSE _ => ["P_USE_VI_SSE"]
                 | _              => []
             end

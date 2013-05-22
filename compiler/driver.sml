@@ -648,7 +648,7 @@ struct
                            | "icc" => Config.TsIcc
                            | _ => usage ("invalid -toolset arg: " ^ s)))),
 
-                   (Popt.Normal, "Varch", " {ViANY|ViAVX|ViEMU|ViSSE}",
+                   (Popt.Normal, "Varch", " {ViANY|ViAVX|ViEMU|ViSSE|ViMIC}",
                     "target vector ISA arch",
                     Popt.SpaceString 
                       (fn s => 
@@ -656,6 +656,7 @@ struct
                           (case s 
                             of "ViANY" => Config.ViANY
                              | "ViAVX" => Config.ViAVX
+                             | "ViMIC" => Config.ViMIC
                              | "ViEMU" => Config.ViEMU
                              | "ViSSE" => Config.ViSSE (4, 2)
                              | _ => 
