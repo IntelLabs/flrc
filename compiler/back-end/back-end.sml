@@ -126,6 +126,10 @@ struct
       Config.Feature.mk ("Plsr:instrument-vtb-alc",
                          "gather allocation statistics per vtable")
 
+  val (p2cUseTryF, p2cUseTry) =
+      Config.Feature.mk ("IFLC:p2c-use-try",
+                         "Use try/except for continuations")
+
   val (vtableChangeF, vtableChange) =
       Config.Feature.mk ("Plsr:change-vtables",
                          "do vtable changing for immutability etc.")
@@ -443,14 +447,7 @@ struct
           of CcGCC    => ["-msse3"] (* without -msse, we should use -ffloat-store in float*)
            | CcICC    => ["-QxT"]
            | CcOpc    => ["-QxB"]
-           | CcIpc    => 
-             let
-               val Config.VC {isa, ...} = Config.vectorConfig config
-             in case isa
-                 of Config.ViAVX        => ["-QxAVX"]
-                  | Config.ViSSE (a, b) => ["-QxSSE"^Int.toString a^"."^Int.toString b]
-                  | _                   => ["-QxHost"]
-             end)
+           | CcIpc    => ["-QxHost"])
 
     fun opt (config, compiler) =
         let
@@ -524,7 +521,7 @@ struct
                  | (CcICC,    false) => ["-fp:source", "-Qftz-", "-Qprec-div", "-Qprec-sqrt", "-Qvec-"]
                  | (CcOpc,    true)  => ["-fp:fast"]
                  | (CcOpc,    false) => ["-fp:source", "-Qprec-div", "-Qprec-sqrt", "-Qvec-"]
-                 | (CcIpc,    true)  => ["-fp:fast", "-Qftz"]
+                 | (CcIpc,    true)  => ["-fp:fast", "-Qftz", "-Qprec-div-", "-Qprec-sqrt-"]
                  | (CcIpc,    false) => ["-fp:source", "-Qftz-", "-Qprec-div", "-Qprec-sqrt", "-Qvec-"]
               )
         in os
@@ -558,6 +555,11 @@ struct
            | CcIpc    => ["-TC", "-Qc99"]
         )
 
+    fun contImp (config, compiler) = 
+        (case (compiler, p2cUseTry config)
+          of (CcIpc, false) => ["-p2c-no-use-try"]
+          | _               => [])
+
     fun runtime (config, compiler) = 
         (case (compiler, backendYields config)
           of (CcOpc,    false) => ["-Qnoyield"]
@@ -590,6 +592,7 @@ struct
              CcOptions.float cfg,
              CcOptions.warn cfg,
              CcOptions.lang cfg,
+             CcOptions.contImp cfg,
              CcOptions.align cfg,
              CcOptions.runtime cfg,
              CcOptions.mt cfg
@@ -891,6 +894,7 @@ struct
                                   instrumentVtbAllocationF,
                                   noTaggedIntRecoverF,
                                   noThunkSubsumptionF,
+                                  p2cUseTryF,
                                   vtableChangeF,
                                   usePortableTaggedIntsF],
                       subPasses = []}
