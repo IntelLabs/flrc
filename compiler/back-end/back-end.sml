@@ -438,16 +438,16 @@ struct
     fun debug (config, compiler) =
         (case compiler
           of CcGCC    => ifDebug (config, ["-g"], [])
-           | CcICC    => ["-Zi", "-debug"]
-           | CcOpc    => ["-Zi", "-debug"]
-           | CcIpc    => ["-Zi", "-debug"])
+           | CcICC    => ifDebug (config, ["-Zi", "-debug"], ["-Zi"])
+           | CcOpc    => ifDebug (config, ["-Zi", "-debug"], ["-Zi"])
+           | CcIpc    => ifDebug (config, ["-Zi", "-debug"], ["-Zi"]))
 
     fun arch (config, compiler) = 
         (case compiler
           of CcGCC    => ["-msse3"] (* without -msse, we should use -ffloat-store in float*)
            | CcICC    => ["-QxT"]
            | CcOpc    => ["-QxB"]
-           | CcIpc    => ["-QxHost"])
+           | CcIpc    => ["-QxAVX"])
 
     fun opt (config, compiler) =
         let
