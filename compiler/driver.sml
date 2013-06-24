@@ -332,7 +332,7 @@ struct
             case String.sub (s, 0)
              of #"-" =>
                 let
-                  val name = rest (s, 2)
+                  val name = rest (s, 1)
                   val {disabled, emulated, enabled} = !r
                   val () = r := {disabled = name :: disabled, 
                                  emulated = emulated, 
@@ -341,7 +341,7 @@ struct
                 end
               | #"+" =>
                 let
-                  val name = rest (s, 2)
+                  val name = rest (s, 1)
                   val {disabled, emulated, enabled} = !r
                   val () = r := {disabled = disabled, 
                                  emulated = emulated, 
@@ -350,7 +350,7 @@ struct
                 end
               | #"=" =>
                 let
-                  val name = rest (s, 2)
+                  val name = rest (s, 1)
                   val {disabled, emulated, enabled} = !r
                   val () = r := {disabled = disabled, 
                                  emulated = name :: emulated, 
