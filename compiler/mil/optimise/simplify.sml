@@ -172,8 +172,11 @@ struct
   val (skipRecursiveF, skipRecursive) = 
       mkFeature ("skip-recursive", "Skip recursive analysis")
 
+  val (useBackendStridedF, useBackendStrided) = 
+      mkFeature ("backend-strided-loads", "Use backend strided loads")
+
   val features = [statPhasesF, noIterateF, 
-                  skipCodeSimplifyF, skipUnreachableF, skipSimplifyF, skipCfgF, skipEscapeF, skipRecursiveF]
+                  skipCodeSimplifyF, skipUnreachableF, skipSimplifyF, skipCfgF, skipEscapeF, skipRecursiveF, useBackendStridedF]
 
   structure Click = 
   struct
@@ -4223,6 +4226,7 @@ struct
           val f = 
            fn ((d, imil, ws), (i, dests, tf)) =>
               let
+                val () = Try.require (not (useBackendStrided d))
                 val dv = Try.V.singleton dests
                 val fi = MU.TupleField.field tf
                 val tup = MU.TupleField.tup tf
