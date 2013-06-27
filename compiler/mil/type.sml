@@ -661,6 +661,7 @@ struct
      val mk10 = fn a1 => (unary a1, nullary ())
      val mk01 = fn r1 => (nullary (), unary r1)
      val mk11 = fn (a1, r1) => (unary a1, unary r1)
+     val mk12 = fn (a1, r1, r2) => (unary a1, binary (r1, r2))
      val mk20 = fn (a1, a2) => (binary (a1, a2), nullary ())
      val mk21 = fn (a1, a2, r1) => (binary (a1, a2), unary r1)
      val mk22 = fn (a1, a2, r1, r2) => (binary (a1, a2), binary (r1, r2))
@@ -790,7 +791,7 @@ struct
                            of SOME size => size
                             | NONE => fail ("dataOp", "Vector size can't be split"))
                      val tv2 = tVector (size, t)
-                   in mk11 (tv, tv2)
+                   in mk12 (tv, tv2, tv2)
                    end
 	         | MP.DConcat       => 
                    let
@@ -799,7 +800,7 @@ struct
                            of SOME size => size
                             | NONE => fail ("dataOp", "Vector size can't be doubled"))
                      val tv2 = tVector (size, t)
-                   in mk11 (tv, tv2)
+                   in mk21 (tv, tv, tv2)
                    end
          in
            res

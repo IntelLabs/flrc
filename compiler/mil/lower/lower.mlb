@@ -7,8 +7,10 @@ local
         ../mil.mlb
         ../imil/imil.mlb
         mil-to-core-mil.sml
+        vector.sml
 in
         structure MilLowerClosures
         structure MilLowerPSums
         structure MilLowerPTypes
+        structure MilLowerVector
 end

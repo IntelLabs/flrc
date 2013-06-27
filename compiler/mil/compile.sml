@@ -37,7 +37,8 @@ struct
        (#"V", MilCse.pass             ),
        (#"X", MilFxAnalysis.pass      ),
        (#"Y", MilLoopInvert.pass      ),
-       (#"Z", MilVectorize.pass       )
+       (#"Z", MilVectorize.pass       ),
+       (#"z", MilLowerVector.pass     )
       ]
 
   val subPasses = List.map (passes, #2)
