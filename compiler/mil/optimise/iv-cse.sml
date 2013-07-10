@@ -157,10 +157,10 @@ struct
           (* For each parameter in the loop header's parameters that is a BIV, see if there is an earlier parameter
            * that is a BIV with the same step, if so, CSE in favour of the earlier parameter.
            *)
-          fun chkOne (i, p, init', step', j) =
+          fun chkOne (i, init', step', j) =
               if j<i then
                 case VD.lookup (bivs, Vector.sub (parameters, j))
-                 of NONE => NONE
+                 of NONE => chkOne (i, init', step', j + 1)
                   | SOME (BIV {variable, init, step}) =>
                     if Rat.equals (step, step') then
                       let
@@ -169,13 +169,13 @@ struct
                         SOME (PI {idx = i, variable = variable, initO = init, initS = init'})
                       end
                     else
-                      chkOne (i, p, init', step', j + 1)
+                      chkOne (i, init', step', j + 1)
               else
                 NONE
           fun doOne (i, p) =
               case VD.lookup (bivs, p)
                of NONE => NONE
-                | SOME (BIV {variable, init, step}) => chkOne (i, p, init, step, 0)
+                | SOME (BIV {variable, init, step}) => chkOne (i, init, step, 0)
           val () = debugPrint (env, fn () => "computing parameter information")
           val psi = Vector.mapi (parameters, doOne)
           fun layout () = LayoutUtils.toString (LayoutUtils.indent (layoutPsInfo (state, env, psi)))
