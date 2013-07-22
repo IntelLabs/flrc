@@ -328,6 +328,15 @@ struct
       in ()
       end
 
+  fun doLineCount (config, msg, l) =
+      let
+        val () = Chat.log0 (config, bold msg)
+        val () = LayoutUtils.printLayout (Layout.seq [
+                   Layout.str "Total Line Count is ",
+                   Int.layout (LayoutUtils.countLines l)])
+      in ()
+      end
+
   fun doPass p =
    fn (pd, basename, arg) =>
      let
@@ -357,6 +366,11 @@ struct
        val () =
            if Config.passShowPost (config, name) then
              doLayout (config, "After Pass " ^ name ^ " IR",
+                       (#printer outIr) (output, config))
+           else ()
+       val () = 
+           if Config.passShowLineCount (config, name) then
+             doLineCount (config, "After Pass " ^ name ^ " IR Line Count",
                        (#printer outIr) (output, config))
            else ()
        val () =

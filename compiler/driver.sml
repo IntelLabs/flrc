@@ -156,13 +156,14 @@ struct
       showPre : bool ref,
       statPre : bool ref,
       showPost : bool ref,
-      statPost : bool ref
+      statPost : bool ref,
+      showLineCount : bool ref
     }
 
     fun mk (name, {description, optional}) =
         PD {description = description, optional = optional, enabled = ref true,
             showPre = ref false, statPre = ref false, showPost = ref false,
-            statPost = ref false}
+            statPost = ref false, showLineCount = ref false}
 
     fun getDescription (PD {description, ...}) = description
     fun isOptional (PD {optional, ...}) = optional
@@ -171,10 +172,11 @@ struct
     fun setStatPre (PD {statPre, ...}, s) = statPre := s
     fun setShowPost (PD {showPost, ...}, s) = showPost := s
     fun setStatPost (PD {statPost, ...}, s) = statPost := s
+    fun setShowLineCount (PD {showLineCount, ...}, s) = showLineCount := s
 
-    fun out (PD {enabled, showPre, statPre, showPost, statPost, ...}) =
+    fun out (PD {enabled, showPre, statPre, showPost, statPost, showLineCount, ...}) =
         {enable = !enabled, showPre = !showPre, statPre = !statPre,
-         showPost = !showPost, statPost = !statPost}
+         showPost = !showPost, statPost = !statPost, showLineCount = !showLineCount}
 
   end (* PassData *)
 
@@ -267,6 +269,8 @@ struct
             liftPassF (usage, name, fn pd => PassData.setShowPost (pd, b))
         fun setStatPost (usage, name, b) =
             liftPassF (usage, name, fn pd => PassData.setStatPost (pd, b))
+        fun setShowLineCount (usage, name, b) = 
+            liftPassF (usage, name, fn pd => PassData.setShowLineCount (pd, b))
 
         fun rest (s, i) = String.substring (s, i, String.size s - i)
 
@@ -292,6 +296,8 @@ struct
                   end
                 else
                   setShowPost (usage, rest (s, 1), true)
+              | #"%" => 
+                setShowLineCount (usage, rest (s, 1), true)
               | #"*" =>
                 let
                   fun doOne (_, pd) = PassData.setShowPost (pd, true)

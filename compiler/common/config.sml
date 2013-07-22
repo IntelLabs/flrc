@@ -36,6 +36,7 @@ sig
   type passInfo = {enable: bool,
 		   showPost: bool,
 		   showPre: bool,
+                   showLineCount: bool,
 		   statPost: bool,
 		   statPre: bool}
   type runtimeConfig = {stackWorker    : int option,
@@ -87,6 +88,7 @@ sig
 		     passes: {enable: bool,
 			      showPost: bool,
 			      showPre: bool,
+                              showLineCount: bool,
 			      statPost: bool,
 			      statPre: bool} StringDict.t,
 		     pilcStr: string list,
@@ -127,11 +129,13 @@ sig
 	       -> {enable: bool,
 		   showPost: bool,
 		   showPre: bool,
+                   showLineCount: bool,
 		   statPost: bool,
 		   statPre: bool}
   val passIs: t * string -> bool
   val passShowPost: t * string -> bool
   val passShowPre: t * string -> bool
+  val passShowLineCount: t * string -> bool
   val passStatPost: t * string -> bool
   val passStatPre: t * string -> bool
   val pathToHostString : t * Path.t -> string
@@ -242,7 +246,8 @@ struct
          showPre  : bool,
          statPre  : bool,
          showPost : bool,
-         statPost : bool
+         statPost : bool,
+         showLineCount : bool
     }
     (* stackWorker is the default stack size to use for the worker threads
      * stackMain is the default stack size to use for the main thread
@@ -370,6 +375,7 @@ struct
     fun passStatPre (cfg, name)  = #statPre (passGet (cfg, name))
     fun passShowPost (cfg, name)  = #showPost (passGet (cfg, name))
     fun passStatPost (cfg, name)  = #statPost (passGet (cfg, name))
+    fun passShowLineCount (cfg, name)  = #showLineCount (passGet (cfg, name))
 
     fun pathToHostString (cfg, path) =
         (case host cfg

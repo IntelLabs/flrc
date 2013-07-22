@@ -588,6 +588,16 @@ structure LayoutUtils = struct
           String.concat (List.rev (!ss))
         end
 
+    fun countLines l =
+        let
+          val lineCount = ref 0
+          fun isLn (c, s) = if c = #"\n" then s + 1 else s
+          fun prn s = lineCount := !lineCount + String.fold (s, 0, isLn)
+          val () = Layout.print (l, prn)
+        in
+          !lineCount
+        end
+
 end;
 
 signature ORD = sig

@@ -340,15 +340,11 @@ struct
         val im = IS.SiTable im
         val env = (cfg, im)
         val variables = L.align (List.map (variables,
-              if showSymbolTable env then
                 fn x => L.seq [ IS.layoutVariable (x, im)
                               , L.str " :: "
-                              , layoutTy (env, IS.variableInfo (im, x)) ]
-              else
-                fn x => IS.layoutVariable (x, im)))
+                              , layoutTy (env, IS.variableInfo (im, x)) ]))
       in
-      L.align [ L.str "%variables"
-              , indent variables
+      L.align [ if showSymbolTable env then L.align [ L.str "%variables", indent variables ] else L.empty
               , L.seq [L.str "%module"]
               , indent (L.align (semiMap (vdefgs, fn d => layoutVDefg (env, d))))
               , L.str "\n"]
