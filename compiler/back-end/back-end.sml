@@ -86,6 +86,8 @@ struct
 
   val noGMP = MilToPil.noGMP
 
+  val zeroRefs = MilToPil.zeroRefs
+
   val (gcIndirectionsF, gcIndirections) = 
       Config.Feature.mk ("Plsr:gc-indirections",
                          "GC cleans up thunk indirections")
@@ -134,8 +136,8 @@ struct
       Config.Feature.mk ("Plsr:change-vtables",
                          "do vtable changing for immutability etc.")
 
-   val (noThunkSubsumptionF, noThunkSubsumption) = 
-       Config.Feature.mk ("Plsr:no-thunk-subsumption", "don't use thunk/value subsumption")
+  val (noThunkSubsumptionF, noThunkSubsumption) = 
+      Config.Feature.mk ("Plsr:no-thunk-subsumption", "don't use thunk/value subsumption")
 
   val (usePortableTaggedIntsF, usePortableTaggedInts) = 
       Config.Feature.mk ("Plsr:tagged-ints-portable",
@@ -318,6 +320,9 @@ struct
         val tailcall = 
             if disableTailCall config then ["PLSR_DISABLE_TAILCALL"] else []
 
+        val zeroRefDefine =
+            if zeroRefs config then ["PLSR_ZERO_REFS"] else []
+
         val vtbChg =
             if vtableChange config then ["P_DO_VTABLE_CHANGE"] else []
 
@@ -396,6 +401,7 @@ struct
                          pbase, 
                          instr, 
                          tailcall,
+                         zeroRefDefine,
                          vtbChg,
                          va,
                          numericDefines, 

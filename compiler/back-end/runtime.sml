@@ -249,6 +249,7 @@ sig
   val pmain     : Pil.identifier 
   val gErrorVal : Pil.identifier 
   val runtimeError : Pil.identifier
+  val memzero   : Pil.identifier
 
 end
 
@@ -808,5 +809,6 @@ struct
   val pmain = Pil.identifier "__pmain"
   val gErrorVal = Pil.identifier "pLsrErrorVal"
   val runtimeError = Pil.identifier "pLsrRuntimeError"
+  val memzero = Pil.identifier "pLsrMemzeroArray"
 
 end;

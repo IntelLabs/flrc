@@ -13,6 +13,7 @@ sig
   val noGMP : Config.t -> bool
   val features : Config.Feature.feature list
   val program : PassData.t * string * Mil.t -> Layout.t
+  val zeroRefs : Config.t -> bool
 end;
 
 structure MilToPil :> MIL_TO_PIL =
@@ -343,6 +344,9 @@ struct
   fun getCont (S {conts, ...}, cl) = LD.lookup (!conts, cl)
   fun getConts (S {conts, ...}) = !conts
   fun addCont (S {conts, ...}, cl, cv) = conts := LD.insert (!conts, cl, cv)
+
+  val (zeroRefsF, zeroRefs) =
+      Config.Feature.mk ("Plsr:zero-refs", "emit code to zero refs that could be uninitialized at a GC")
 
   val (lightweightThunksF, lightweightThunks) =
       Config.Feature.mk ("Plsr:lightweight-thunks",
@@ -1534,6 +1538,18 @@ struct
         val (fixedSize, alignment, _, _) = OM.objectPadding (state, env, td)
         val dest = genVarE (state, env, dest)
         val vtable = MD.genMetaData (state, env, no, mdd, nebi)
+        fun isUninitRef (i, field, uninitList) =
+            if i < Vector.length inits then
+                uninitList
+            else let
+              val fk = MU.FieldDescriptor.kind field
+              val fieldIsRef = MU.FieldKind.isRef fk 
+              in
+                  if fieldIsRef then
+                      i :: uninitList
+                  else uninitList
+              end
+        val uninitFixedRefs = Vector.foldi (fixed, nil, isUninitRef)
         val newTuple =
             case array
              of SOME (i, _) =>
@@ -1581,8 +1597,30 @@ struct
             in
               af (off, fk, t, oper)
             end
-        val fixedInit = Vector.toList (Vector.mapi (inits, doFixedField))
-        val code = Pil.S.noyield (Pil.S.sequence (newTuple :: fixedInit))
+        val fixedInit = Vector.toList (Vector.mapi (inits, doFixedField)) 
+        fun genRefZero (i) =
+            doFixedField (i, M.SConstant (M.CRef (MU.HeapModel.null (getConfig env))))
+        val zeroArrayPortion =
+            case array
+             of SOME (i, fd) =>
+                if MU.FieldDescriptor.isRef fd then
+                  let
+                    val func = Pil.E.namedConstant RT.memzero
+                    val arg0 = dest
+                    val arg1 = Pil.E.int fixedSize
+                    val arg2 = Pil.E.int (OM.extraSize (state, env, td))
+                    val arg3 = genOperand (state, env, Vector.sub (inits, i))
+                    val args = [arg0, arg1, arg2, arg3]
+                  in 
+                    Pil.S.expr (Pil.E.call (func,args)) :: nil
+                  end
+                else nil
+              | NONE => nil
+        val zeroRefList = 
+            if zeroRefs (getConfig env) then
+                List.concat [zeroArrayPortion, List.map (uninitFixedRefs, genRefZero)]
+            else nil
+        val code = Pil.S.noyield (Pil.S.sequence (newTuple :: (List.concat [zeroRefList,fixedInit])))
       in code
       end
 
@@ -2812,6 +2850,7 @@ struct
    val (assertSmallIntsF, assertSmallInts) = 
        Config.Feature.mk ("Plsr:tagged-ints-assert-small",
                           "use 32 bit ints for rats (checked)")
+
    val (noGMPF, noGMP') = 
        Config.Feature.mk ("Plsr:no-gmp", "don't use gmp library for integers")
 
@@ -3318,6 +3357,7 @@ struct
        interceptCutsF,
        lightweightThunksF,
        noGMPF,
-       oldVarEncodingF]
+       oldVarEncodingF,
+       zeroRefsF]
 
 end;
