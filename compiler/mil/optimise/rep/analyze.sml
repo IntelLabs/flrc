@@ -633,7 +633,16 @@ struct
         val (op ==, op <==, op <--, op -->) = symbols se
         val args = operands (se, args)
         val rts = typOfPrimPrimResult (se, prim)
-        val () = Vector.foreach2 (dests, rts, fn (v, rt) => variable (se, v) <-- Build.base rt)
+        val () = case prim
+                   of P.PCondMov => Try.exec (fn _ =>
+                       let 
+                         val w = variable (se, Try.V.singleton dests)
+                         val (_, u, v) = Try.V.tripleton args
+                         val () = w <== u
+                         val () = w <== v
+                       in ()
+                       end)
+                    | _ => Vector.foreach2 (dests, rts, fn (v, rt) => variable (se, v) <-- Build.base rt)
       in ()
       end
 

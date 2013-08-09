@@ -357,9 +357,9 @@ struct
         val tagFalse = 0 (* hard coded tag value *)
         val ws = Config.targetWordSize cfg
         val rtyp  = TMU.variableTyp (im, rvar)
-        val fkind = FK.fromTyp (cfg, rtyp)
         val uvar = IM.variableClone (im, rvar)
         val vvar = IM.variableClone (im, rvar)
+        (*
         fun blk1 (lt, lf) = 
           ( MS.empty
           , M.TCase { select = M.SeConstant
@@ -367,15 +367,21 @@ struct
                     , cases = Vector.new2 ( (M.CBoolean true,  M.T { block = lt, arguments = Vector.new0 () })
                                           , (M.CBoolean false, M.T { block = lf, arguments = Vector.new0 () }))
                     , default = NONE })
+        *)
         val blk2 = MS.bindRhs (uvar, M.RhsSum { tag = tagToConst (ws, tagTrue)
                                               , typs = Vector.new0 ()
                                               , ofVals = Vector.new0 () })
         val blk3 = MS.bindRhs (vvar, M.RhsSum { tag = tagToConst (ws, tagFalse)
                                               , typs = Vector.new0 ()
                                               , ofVals = Vector.new0 () })
+        (*
         val blk' = MU.join (im, cfg, blk1, 
                        (blk2, Vector.new1 (M.SVariable uvar)),
                        (blk3, Vector.new1 (M.SVariable vvar)), Vector.new1 rvar)
+        *)
+        val blk4 = MS.bindRhs (rvar, rhsPrim (MP.Prim MP.PCondMov) 
+                     [ (bval, M.TBoolean), (M.SVariable uvar, rtyp), (M.SVariable vvar, rtyp) ])
+        val blk' = MS.seqn [blk2, blk3, blk4]
       in
         blk'
       end

@@ -666,6 +666,7 @@ struct
      val mk21 = fn (a1, a2, r1) => (binary (a1, a2), unary r1)
      val mk22 = fn (a1, a2, r1, r2) => (binary (a1, a2), binary (r1, r2))
      val mk30 = fn (a1, a2, a3) => (trinary (a1, a2, a3), nullary ())
+     val mk31 = fn (a1, a2, a3, r1) => (trinary (a1, a2, a3), unary r1)
 
 
      val rec stringOp = 
@@ -760,6 +761,7 @@ struct
                  | MP.PName r1       => nameOp (c, r1)
 	         | MP.PCString r1    => stringOp (c, r1)
                  | MP.PPtrEq => mk21 (M.TRef, M.TRef, M.TBoolean)
+                 | MP.PCondMov => mk31 (M.TBoolean, M.TAny, M.TAny, M.TAny)
          in
            res
          end

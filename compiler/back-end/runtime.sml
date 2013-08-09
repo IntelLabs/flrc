@@ -589,7 +589,8 @@ struct
            | P.PBoolean r             => getBooleanName(config, r)
            | P.PName r                => getNameName(config, r)
            | P.PCString r             => getCStringName(config, r)
-           | P.PPtrEq                 => "PtrEq")
+           | P.PPtrEq                 => "PtrEq"
+           | P.PCondMov               => "CondMov")
 
     val getRuntimeName = 
      fn (config, rt, t) => PU.ToString.runtime (config, rt) ^ thnk t

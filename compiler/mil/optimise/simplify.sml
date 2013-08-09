@@ -223,6 +223,10 @@ struct
          ("Simple",           "Simple moves eliminated"        ),
          ("SimpleBoolOp",     "Case to simple bool op"         ),
          ("SwitchToSetCond",  "Cases converted to SetCond"     ),
+         ("SwitchToCondMov",  "Cases converted to CondMov"     ),
+         ("SwitchOnCondMov",  "Cases on values defined by condMov converted to cases on boolean"),
+         ("SwitchConstantToBool", "Cases on constants converted to cases on boolean"),
+         ("SwitchMergeBranches", "Merge branches for certain switches on boolean"),
          ("TCut",             "Cuts eliminated"                ),
          ("TGoto",            "Gotos eliminated"               ),
          ("ThunkEta",         "Thunks eta reduced"             ),
@@ -322,6 +326,10 @@ struct
     val simple = clicker "Simple"
     val simpleBoolOp = clicker "SimpleBoolOp"
     val switchToSetCond = clicker "SwitchToSetCond"
+    val switchConstantToBool = clicker "SwitchConstantToBool"
+    val switchToCondMov = clicker "SwitchToCondMov"
+    val switchOnCondMov = clicker "SwitchOnCondMov"
+    val switchMergeBranches = clicker "SwitchMergeBranches"
     val tCut = clicker "TCut"
     val tGoto = clicker "TGoto"
     val thunkEta = clicker "ThunkEta"
@@ -1168,6 +1176,23 @@ struct
                in RrConstant (C.CBool true)
                end)
 
+       fun condMov (c : Config.t, args : Mil.operand Vector.t, get : Mil.operand -> Operation.t) : t option =
+           Try.try
+           (fn () =>
+               let
+                 val (b0, u, v) = Try.V.tripleton args
+               in
+                 if MU.Simple.eq (u, v)
+                   then RrBase u
+                   else
+                     let 
+                       val b1 = Try.<@ MU.Simple.Dec.sConstant b0
+                       val b2 = Try.<@ MU.Constant.Dec.cBoolean b1
+                     in 
+                       RrBase (if b2 then u else v)
+                     end
+               end)
+
        val prim : Config.t * Mil.Prims.prim * Mil.operand Vector.t * (Mil.operand -> Operation.t) -> t = 
         fn (c, p, args, get) => 
            (case p
@@ -1180,7 +1205,8 @@ struct
               | P.PBoolean r1    => out Boolean.reduce (c, r1, args, get)
               | P.PName r1       => RrUnchanged
               | P.PCString r1    => RrUnchanged
-              | P.PPtrEq         => out ptrEq (c, args, get))
+              | P.PPtrEq         => out ptrEq (c, args, get)
+              | P.PCondMov       => out condMov (c, args, get))
 
 
      end (* structure Reduce *)
@@ -2478,6 +2504,184 @@ struct
           in try (Click.etaSwitch, f)
           end
 
+     (* Turn a switch over constant into a switch over bool:
+      * case b of c => target1
+      *        |  _ => target2
+      *   ==  a = b == c;
+      *       case a of true  => target1
+      *               | false => target2
+      *)
+      val switchConstantToBool = 
+          let
+            val f = 
+             fn ((d, imil, ws), (i, {select, on, cases, default})) =>
+                let
+                  val () = Try.require (select = M.SeConstant)
+                  val config = PD.getConfig d
+                  val (c, target) = Try.V.singleton cases
+                  val default = Try.<- default
+                  val v = IMil.Var.new (imil, "eq_#", M.TBoolean, M.VkLocal)
+                  val t  = MilType.Typer.operand (config, IMil.T.getSi imil, on)
+                  val nt = Try.<@ MU.Typ.Dec.tNumeric t
+                  val prim = P.Prim (P.PNumCompare {typ = nt, operator = P.CEq})
+                  val rhs = M.RhsPrim {prim = prim, createThunks = false, typs = Vector.new0(),
+                                       args = Vector.new2 (on, M.SConstant c)}
+                  val ni = MU.Instruction.new (v, rhs)
+                  val mv = IInstr.insertBefore (imil, ni, i)
+                  val tr = MU.Bool.ifT (config, M.SVariable v, { trueT = target, falseT = default })
+                  val () = IInstr.replaceTransfer (imil, i, tr)
+                in [I.ItemInstr i, I.ItemInstr mv]
+                end
+          in try (Click.switchConstantToBool, f)
+          end
+
+     (* Turn a switch into a CondMov:
+      * case b of true => goto L1 (u) 
+      *        | false => goto L1 (v)
+      *   ==  x = condMov(b, u, v);
+      *       goto L1(x);
+      *)
+      val switchToCondMov = 
+          let
+            val f = 
+             fn ((d, imil, ws), (i, r)) =>
+                let
+                  val config = PD.getConfig d
+                  val {on, trueBranch, falseBranch} = <@ MU.Transfer.isBoolIf (M.TCase r)
+                  val M.T {block = l1, arguments = args1} = trueBranch
+                  val M.T {block = l2, arguments = args2} = falseBranch
+                  val () = Try.require (l1 = l2)
+                  val arg1 = Try.V.singleton args1
+                  val arg2 = Try.V.singleton args2
+                  val t = MilType.Typer.operand (config, IMil.T.getSi imil, arg1)
+                  val v = IMil.Var.new (imil, "sset_#", t, M.VkLocal)
+                  val ni = MU.Instruction.new (v, 
+                             M.RhsPrim {prim = P.Prim P.PCondMov, createThunks = false, typs = Vector.new0(),
+                                        args = Vector.new3 (on, arg1, arg2)})
+                  val mv = IInstr.insertBefore (imil, ni, i)
+                  val tg = 
+                      M.T {block = l1, 
+                           arguments = Vector.new1 (M.SVariable v)}
+                  val goto = M.TGoto tg
+                  val () = IInstr.replaceTransfer (imil, i, goto)
+                in [I.ItemInstr i, I.ItemInstr mv]
+                end
+          in try (Click.switchToCondMov, f)
+          end
+
+     (* Inline a variable defined through CondMov when it is used in a switch:
+      * x = condMov (b, u, v);
+      * case x of tag1 => target1
+      *         | tag2 => target2
+      *   ==  x = condMov(b, u, v);
+      *       case b of true  => case u of tag1 => target1
+      *                                  | tag2 => target2
+      *               | false => case v of tag1 => target1 
+      *                                  | tag2 => target2 
+      *)
+      val switchOnCondMov = 
+          let
+            val f = 
+             fn ((d, imil, ws), (i, {select, on, cases, default})) =>
+                let
+                  val config = PD.getConfig d
+                  val func = IInstr.getIFunc (imil, i)
+                  val v = <@ MU.Simple.Dec.sVariable on
+                  val { cond, trueVal, falseVal } = <@ MU.Def.Out.condMov <! Def.toMilDef o Def.get @@ (imil, v) 
+                  val l1 = Var.labelFresh imil
+                  val l2 = Var.labelFresh imil
+                  val tr1 = M.TCase { select = select, on = trueVal, cases = cases, default = default } 
+                  val tr2 = M.TCase { select = select, on = falseVal, cases = cases, default = default } 
+                  val b1 = M.B { parameters = Vector.new0 (),
+                                 instructions = Vector.new0 (),
+                                 transfer = tr1 }
+                  val b2 = M.B { parameters = Vector.new0 (),
+                                 instructions = Vector.new0 (),
+                                 transfer = tr2 }
+                  val bi1 = IBlock.build (imil, func, (l1, b1))
+                  val bi2 = IBlock.build (imil, func, (l2, b2))
+                  val tri1 = IBlock.getTransfer (imil, bi1)
+                  val tri2 = IBlock.getTransfer (imil, bi2)
+                  val t1 = M.T {block = l1, arguments = Vector.new0 ()}
+                  val t2 = M.T {block = l2, arguments = Vector.new0 ()}
+                  val tr = MU.Bool.ifT (config, cond, { trueT = t1, falseT = t2 })
+                  val () = IInstr.replaceTransfer (imil, i, tr)
+                in List.map ([i, tri1, tri2], I.ItemInstr)
+                end
+          in try (Click.switchOnCondMov, f)
+          end
+
+     (* Merge the two branches of a boolean switch: 
+      *
+      *  case b of true  => goto L1;
+      *          | false => goto L2;
+      *  L1: B1; goto L3(X);
+      *  L2: B2; goto L3(Y);
+      *
+      *  == goto L1;
+      *     L1: B1; goto L2;
+      *     L2: B2; case b of true  => goto L3(X);
+      *                     | false => goto L3(Y);
+      *
+      * Under the following conditions:
+      * 1. the case block is the only predecessor of L1 and L2.
+      * 2. both B1 and B2 have no side effects;
+      * 3. both X and Y are single variable.
+      *)
+      val switchMergeBranches =
+          let
+            val f = 
+             fn ((d, imil, ws), (i, r)) =>
+                let
+                  val config = PD.getConfig d
+                  val func = IInstr.getIFunc (imil, i)
+                  val b0   = IInstr.getIBlock (imil, i)
+                  val {on, trueBranch, falseBranch} = <@ MU.Transfer.isBoolIf (M.TCase r)
+                  val M.T {block = l1, arguments = args1} = trueBranch
+                  val M.T {block = l2, arguments = args2} = falseBranch
+
+                  val () = Try.require (Vector.length args1 = 0)
+                  val () = Try.require (Vector.length args2 = 0)
+                  val () = Try.require (l1 <> l2)
+                
+                  val b1 = IFunc.getBlockByLabel (imil, func, l1)
+                  val b1pd = IBlock.preds (imil, b1)
+                  val () = Try.require ((List.length b1pd = 1) andalso (hd b1pd = b0))
+                  val M.T {block = l3, arguments = args1} = <@ MU.Transfer.Dec.tGoto (IBlock.getTransfer' (imil, b1))
+                  val arg1 = Try.V.singleton args1
+
+                  val b2 = IFunc.getBlockByLabel (imil, func, l2)
+                  val b2pd = IBlock.preds (imil, b2)
+                  val () = Try.require ((List.length b2pd = 1) andalso (hd b2pd = b0))
+                  val M.T {block = l3', arguments = args2} = <@ MU.Transfer.Dec.tGoto (IBlock.getTransfer' (imil, b2))
+                  val arg2 = Try.V.singleton args2
+
+                  val () = Try.require (l3 = l3')
+
+                  val effects = Effect.fromList [Effect.InitRead, Effect.HeapRead]
+                  val rec effectOk =
+                    fn NONE => true
+                     | SOME i => 
+                        (case IInstr.getMil (imil, i)
+                          of I.MInstr instr => Effect.subset (MU.Instruction.fx (config, instr), effects)
+                           | _ => true) andalso (effectOk (IInstr.next (imil, i)))
+
+                  val () = Try.require (effectOk (IBlock.getFirst (imil, b1)))
+                  val () = Try.require (effectOk (IBlock.getFirst (imil, b2)))
+
+                  val () = IBlock.replaceTransfer (imil, b0, M.TGoto (M.T { block = l1, arguments = Vector.new0 () }))
+                  val () = IBlock.replaceTransfer (imil, b1, M.TGoto (M.T { block = l2, arguments = Vector.new0 () }))
+
+                  val t1 = M.T {block = l3, arguments = args1 }
+                  val t2 = M.T {block = l3, arguments = args2 }
+                  val tr = MU.Bool.ifT (config, on, { trueT = t1, falseT = t2 })
+                  val () = IBlock.replaceTransfer (imil, b2, tr)
+
+                in List.map ([b0, b1, b2], fn b => I.ItemInstr (IBlock.getTransfer (imil, b)))
+                end
+          in try (Click.switchMergeBranches, f)
+          end
+
      (* Turn a switch into a setCond:
       * case b of true => goto L1 ({}) 
       *        | false => goto L1 {a}
@@ -2533,7 +2737,8 @@ struct
           in try (Click.trivialSwitch, f)
           end
 
-      val reduce = simpleBoolOp or betaSwitch or etaSwitch or switchToSetCond or trivialSwitch
+      val reduce = simpleBoolOp or betaSwitch or etaSwitch or switchToSetCond or trivialSwitch or 
+                   switchToCondMov or switchOnCondMov or switchConstantToBool or switchMergeBranches
     end (* structure TCase *)
 
     val tCase = TCase.reduce

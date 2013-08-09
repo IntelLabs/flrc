@@ -66,6 +66,7 @@ sig
     val sub : 'a Vector.t * int -> 'a t
     val singleton : 'a Vector.t -> 'a t
     val doubleton : 'a Vector.t -> ('a * 'a) t
+    val tripleton : 'a Vector.t -> ('a * 'a * 'a) t
     val lenEq : 'a Vector.t * int -> unit t
     val isEmpty : 'a Vector.t -> unit t
   end
@@ -163,6 +164,15 @@ struct
           val r1 = Vector.sub (v, 0)
           val r2 = Vector.sub (v, 1)
         in (r1, r2)
+        end
+
+    fun tripleton v = 
+        let
+          val () = require (Vector.length v = 3)
+          val r1 = Vector.sub (v, 0)
+          val r2 = Vector.sub (v, 1)
+          val r3 = Vector.sub (v, 2)
+        in (r1, r2, r3)
         end
 
     fun lenEq (v, i) = require (Vector.length v = i)

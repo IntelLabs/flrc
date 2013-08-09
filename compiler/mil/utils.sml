@@ -1180,6 +1180,7 @@ sig
       val sum : t -> {tag : Mil.constant, ofVals : Mil.operand Vector.t, typs : Mil.fieldKind Vector.t} option
       val sumOrEnum : t -> {tag : Mil.simple, ofVals : Mil.operand Vector.t, typs : Mil.fieldKind Vector.t} option
       val pSet : t -> Mil.simple option
+      val condMov : t -> { cond : Mil.simple, trueVal : Mil.simple, falseVal : Mil.simple } option
     end (* structure Out *)
   end (* structure Def *)
 
@@ -5086,6 +5087,19 @@ struct
           (case d
             of DefGlobal (M.GPSet op1) => SOME op1
              | DefRhs (M.RhsPSetNew op1) => SOME op1
+             | _ => NONE)
+      val condMov =
+       fn d =>
+          (case d
+            of DefRhs (M.RhsPrim {prim, createThunks, typs, args}) =>
+              (case prim
+                of Mil.Prims.Prim Mil.Prims.PCondMov => Try.try (fn () => 
+                  let
+                    val (c, t, f) = Try.V.tripleton args
+                  in
+                    { cond = c, trueVal = t, falseVal = f }
+                  end)
+                 | _ => NONE)
              | _ => NONE)
 
     end (* structure Out *)
