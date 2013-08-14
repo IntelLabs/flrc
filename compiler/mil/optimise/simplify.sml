@@ -2836,11 +2836,10 @@ struct
                         fun checkIInstrs (state, mismatched, i1, i2) = 
                             let
                               val (vMap, aMap, blk) = state
-                              val numAssumptions = VD.size aMap
                             in
                               if mismatched > 3 then NONE
                               else case (i1, i2)
-                                of (NONE, NONE) => SOME (numAssumptions, blk)
+                                of (NONE, NONE) => SOME (mismatched, blk)
                                  | _ =>  
                                   let
                                     val mi1 = UO.bind (i1, checkEffect)
