@@ -144,6 +144,10 @@ sig
     val vectorStoreVI  : Config.t * Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
     val vectorStoreVVS : Config.t * Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
     val vectorStoreVVI : Config.t * Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorLoadVI64 : Config.t * Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorLoadVVI64  : Config.t * Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorStoreVI64  : Config.t * Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
+    val vectorStoreVVI64 : Config.t * Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier
 
   end
 
@@ -686,6 +690,10 @@ struct
     val vectorStoreVVS = vectorLoadStoreHelp "StoreVVS"
     val vectorStoreVVI = vectorLoadStoreHelp "StoreVVI"
 
+    val vectorLoadVI64 = vectorLoadStoreHelp "LoadVI64"
+    val vectorLoadVVI64 = vectorLoadStoreHelp "LoadVVI64"
+    val vectorStoreVI64 = vectorLoadStoreHelp "StoreVI64"
+    val vectorStoreVVI64 = vectorLoadStoreHelp "StoreVVI64"
   end
 
   structure Object =
