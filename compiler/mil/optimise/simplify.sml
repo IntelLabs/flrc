@@ -2669,10 +2669,8 @@ struct
                       let 
                         val effects = Effect.fromList [Effect.InitRead, Effect.HeapRead]
 
-                        fun checkEffect iInstr = 
-                            UO.bind (IInstr.toInstruction iInstr, fn i => 
-                              if Effect.subset (MU.Instruction.fx (config, i), effects) 
-                                then SOME i else Try.fail ())
+                        fun checkEffect i = if Effect.subset (MU.Instruction.fx (config, i), effects) 
+                                              then SOME i else NONE
 
                         fun emptyBlk () = []
                         fun pushInstr (blk, instr) = instr :: blk
@@ -2693,11 +2691,10 @@ struct
                               type 'a opt = (unit -> 'a) option
 
                               val when : (bool * ('a -> 'b) * 'a opt) -> 'b opt = 
-                                fn (b, f, x) => if b then Option.map (x, fn g => f o g ) else NONE
+                                fn (b, f, x) => if b then Option.map (x, fn g => f o g) else NONE
 
-                              val when2 : (bool * ('a * 'b -> 'c) * 'a opt * 'b opt) -> 'c opt =
-                                fn (b, f, x, y) =>
-                                  if b then UO.map2 (x, y, fn (g, h) => fn () => f (g (), h ())) else NONE
+                              val both : ('a opt * 'b opt) -> ('a * 'b) opt = 
+                                fn (x, y) => UO.map2 (x, y, fn (x, y) => fn () => (x (), y ()))
 
                               val checkVariable =
                                 fn (v1, v2) => if v1 = v2 then SOME (fn () => v1) else 
@@ -2757,14 +2754,27 @@ struct
                                         fun rhs (tup, field) = M.RhsTupleSub (M.TF 
                                             { tup = tup, field = field, tupDesc = d1 })
                                       in      
-                                        when2 (eqD, rhs, checkVariable (v1, v2), checkField (f1, f2))
+                                        when (eqD, rhs, both (checkVariable (v1, v2), checkField (f1, f2)))
+                                      end
+                                     | (M.RhsTupleSet { tupField = M.TF { tup = v1, field = f1, tupDesc = d1 }, 
+                                                        ofVal = o1 }, 
+                                        M.RhsTupleSet { tupField = M.TF { tup = v2, field = f2, tupDesc = d2 },
+                                                        ofVal = o2 }) => 
+                                      let
+                                        val eqD = MU.TupleDescriptor.eq (d1, d2)
+                                        fun rhs (tup, (field, ofVal)) = M.RhsTupleSet 
+                                            { tupField = M.TF { tup = tup, field = field, tupDesc = d1 }, 
+                                              ofVal = ofVal }
+                                      in      
+                                        when (eqD, rhs, both (checkVariable (v1, v2), 
+                                              both (checkField (f1, f2), checkOperand (o1, o2))))
                                       end
                                      | (M.RhsIdxGet { idx = v1, ofVal = o1 },
                                         M.RhsIdxGet { idx = v2, ofVal = o2 }) =>
                                       let
                                         fun rhs (idx, ofVal) = M.RhsIdxGet { idx = idx, ofVal = ofVal }
                                       in
-                                        when2 (true, rhs, checkVariable (v1, v2), checkOperand (o1, o2))
+                                        when (true, rhs, both (checkVariable (v1, v2), checkOperand (o1, o2)))
                                       end
                                      | (M.RhsCont l1, M.RhsCont l2) => 
                                       when (l1 = l2, M.RhsCont, SOME (fn () => l1))
@@ -2842,8 +2852,8 @@ struct
                                 of (NONE, NONE) => SOME (mismatched, blk)
                                  | _ =>  
                                   let
-                                    val mi1 = UO.bind (i1, checkEffect)
-                                    val mi2 = UO.bind (i2, checkEffect)
+                                    val mi1 = UO.bind (i1, IInstr.toInstruction)
+                                    val mi2 = UO.bind (i2, IInstr.toInstruction)
                                     val i1' = UO.bind (i1, fn i => IInstr.next (imil, i))
                                     val i2' = UO.bind (i2, fn i => IInstr.next (imil, i))
                                   in 
@@ -2854,8 +2864,8 @@ struct
                                           val mismatched = mismatched + 1
                                           fun nextInstrs (i1, i2) = fn instr =>
                                               checkIInstrs ((vMap, aMap, pushInstr (blk, instr)), mismatched, i1, i2)
-                                          val l = UO.bind (mi1, nextInstrs (i1', i2))
-                                          val r = UO.bind (mi2, nextInstrs (i1, i2'))
+                                          val l = UO.bind (UO.bind (mi1, checkEffect), nextInstrs (i1', i2))
+                                          val r = UO.bind (UO.bind (mi2, checkEffect), nextInstrs (i1, i2'))
                                         in
                                           case (l, r)
                                             of (SOME (m, _), SOME (n, _)) => if m < n then l else r
