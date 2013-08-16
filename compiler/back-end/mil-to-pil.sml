@@ -1510,6 +1510,15 @@ struct
 
   (*** Operands ***)
 
+  fun fkOperand (state, env, s) =
+      let
+        val config = getConfig env
+      in 
+      case s
+       of M.SVariable v => MU.FieldKind.fromTyp (config, getVarTyp (state, v))
+        | M.SConstant c => MU.Constant.fkOf (config, c)
+      end
+
   val genOperand = genSimple
 
   fun genOperands (state, env, os) =
@@ -1629,9 +1638,9 @@ struct
     | SskScalarVariable of Pil.E.t
     | SskVectorFixed of Mil.Prims.vectorDescriptor
     | SskVectorVariableStrided of Mil.Prims.vectorDescriptor * Pil.E.t * Pil.E.t
-    | SskVectorVariableIndexed of Mil.Prims.vectorDescriptor * Pil.E.t
+    | SskVectorVariableIndexed of Mil.Prims.vectorDescriptor * Pil.E.t * int
     | SskVectorVariableVectorStrided of Mil.Prims.vectorDescriptor * Pil.E.t * Pil.E.t
-    | SskVectorVariableVectorIndexed of Mil.Prims.vectorDescriptor * Pil.E.t
+    | SskVectorVariableVectorIndexed of Mil.Prims.vectorDescriptor * Pil.E.t * int
 
   fun getFieldDescriptor (M.TD {fixed, array, ...}, i) =
       if i < Vector.length fixed
@@ -1675,12 +1684,15 @@ struct
                   | NONE   => ()
             val off = OM.arrayOffset (state, env, tupDesc)
             val ext = genOperand (state, env, index)
+            val eType = fkOperand (state, env, index)
+            val config = getConfig env
+            val numBits = MU.FieldKind.numBits (config, eType)
             val ssk = 
                 (case (base, kind)
                   of (M.TbScalar, M.VikStrided i) => SskVectorVariableStrided (descriptor, Pil.E.int i, ext)
-                   | (M.TbScalar, M.VikVector)    => SskVectorVariableIndexed (descriptor, ext)
+                   | (M.TbScalar, M.VikVector)    => SskVectorVariableIndexed (descriptor, ext, numBits)
                    | (M.TbVector, M.VikStrided i) => SskVectorVariableVectorStrided (descriptor, Pil.E.int i, ext)
-                   | (M.TbVector, M.VikVector)    => SskVectorVariableVectorIndexed (descriptor, ext))
+                   | (M.TbVector, M.VikVector)    => SskVectorVariableVectorIndexed (descriptor, ext, numBits))
             val fd = getArrayDescriptor tupDesc
           in (off, ssk, fd)
           end
@@ -1707,12 +1719,18 @@ struct
                                                                    [v, off])
               | SskVectorVariableStrided (et, i, e)       => call (RT.Prims.vectorLoadVS  (config, et, kind), 
                                                                    [v, off, e, i])
-              | SskVectorVariableIndexed (et, e)          => call (RT.Prims.vectorLoadVI  (config, et, kind), 
-                                                                   [v, off, e])
+              | SskVectorVariableIndexed (et, e, numBits) => 
+                if numBits = 64 then
+                  call (RT.Prims.vectorLoadVI64 (config, et, kind), [v, off, e])
+                else
+                  call (RT.Prims.vectorLoadVI   (config, et, kind), [v, off, e])
               | SskVectorVariableVectorStrided (et, i, e) => call (RT.Prims.vectorLoadVVS (config, et, kind), 
                                                                    [v, off, e, i])
-              | SskVectorVariableVectorIndexed (et, e)    => call (RT.Prims.vectorLoadVVI (config, et, kind), 
-                                                                   [v, off, e])
+              | SskVectorVariableVectorIndexed (et, e, numBits) => 
+                if numBits = 64 then
+                  call (RT.Prims.vectorLoadVVI64 (config, et, kind), [v, off, e])
+                else
+                  call (RT.Prims.vectorLoadVVI (config, et, kind), [v, off, e])
       in Pil.S.expr a
       end
 
@@ -1739,12 +1757,18 @@ struct
                                                                      [v, off, nv])
               | SskVectorVariableStrided (et, i, e)       => vector (RT.Prims.vectorStoreVS (config, et, kind), 
                                                                      [v, off, e, i, nv])
-              | SskVectorVariableIndexed (et, e)          => vector (RT.Prims.vectorStoreVI (config, et, kind), 
-                                                                     [v, off, e, nv])
+              | SskVectorVariableIndexed (et, e, numBits) => 
+                if numBits = 64 then
+                  vector (RT.Prims.vectorStoreVI64 (config, et, kind), [v, off, e, nv])
+                else
+                  vector (RT.Prims.vectorStoreVI (config, et, kind), [v, off, e, nv])
               | SskVectorVariableVectorStrided (et, i, e) => vector (RT.Prims.vectorStoreVVS (config, et, kind), 
                                                                      [v, off, e, i, nv])
-              | SskVectorVariableVectorIndexed (et, e)    => vector (RT.Prims.vectorStoreVVI (config, et, kind), 
-                                                                     [v, off, e, nv])
+              | SskVectorVariableVectorIndexed (et, e, numBits) => 
+                if numBits = 64 then
+                  vector (RT.Prims.vectorStoreVVI64 (config, et, kind), [v, off, e, nv])
+                else
+                  vector (RT.Prims.vectorStoreVVI (config, et, kind), [v, off, e, nv])
       in set
       end
 
@@ -1784,9 +1808,9 @@ struct
               | SskScalarVariable e                       => scalar (RT.Object.extra, [v, off, ft, es, e])
               | SskVectorFixed et                         => vector ()
               | SskVectorVariableStrided (et, i, e)       => vector ()
-              | SskVectorVariableIndexed (et, e)          => vector ()
+              | SskVectorVariableIndexed (et, e, _)       => vector ()
               | SskVectorVariableVectorStrided (et, i, e) => vector ()
-              | SskVectorVariableVectorIndexed (et, e)    => vector ()
+              | SskVectorVariableVectorIndexed (et, e, _) => vector ()
       in Pil.S.expr a
       end
 
