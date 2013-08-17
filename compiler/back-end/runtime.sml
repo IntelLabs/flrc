@@ -463,6 +463,9 @@ struct
     val getVectorTypName : Config.t * Mil.Prims.vectorSize -> string = 
         fn (config, vs) => "PlsrVector" ^ getVectorSizeName (config, vs)
 
+    val getVectorMaskName : Config.t * int -> string = 
+        fn (config, ms) => "PlsrVectorMask" ^ (Int.toString ms)
+
     val vectorTyp : Config.t * Mil.Prims.vectorSize * Mil.fieldKind -> Pil.T.t = 
      fn (config, vs, fk) => Pil.T.named (Pil.identifier (getVectorTypName (config, vs) ^ getFieldKindName (config, fk)))
 
