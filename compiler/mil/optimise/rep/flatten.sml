@@ -10,7 +10,6 @@ struct
    fn (fname, msg) => Fail.fail ("flatten.sml", fname, msg)
 
   structure M = Mil
-  structure P = Mil.Prims
   structure MU = MilUtils
   structure MSTM = MU.SymbolTableManager
   structure MFV = MilFreeVars
@@ -156,13 +155,7 @@ struct
                                   (case s
                                     of M.SVariable _    => ()
                                      | _                => noFlatten ())
-                                | M.RhsPrim p           => 
-                                  (case p
-                                    of { prim = P.Prim P.PCondMov, args = args, ... } =>
-                                      (case Try.try (fn () => Try.V.tripleton args)
-                                        of SOME (_, M.SVariable _, M.SVariable _) => ()
-                                         | _ => noFlatten ())
-                                     | _ => noFlatten ())
+                                | M.RhsPrim _           => noFlatten ()
                                 | M.RhsTuple r          => flattenTuple (s, e, noFlatten, dests, r)
                                 | M.RhsTupleSub _       => noFlatten ()
                                 | M.RhsTupleSet _       => noFlatten ()
@@ -329,13 +322,6 @@ struct
                          val () = 
                              (case rhs
                                of M.RhsSimple (M.SVariable _) => () 
-                                | M.RhsPrim p           => 
-                                  (case p
-                                    of { prim = P.Prim P.PCondMov, args = args, ... } =>
-                                      (case Try.try (fn () => Try.V.tripleton args)
-                                        of SOME (_, M.SVariable _, M.SVariable _) => ()
-                                         | _ => noFlattenRhs rhs)
-                                     | _ => noFlattenRhs rhs)
                                 | M.RhsTupleSub tf            => if MU.TupleField.isFixed tf then 
                                                                    ()
                                                                  else
@@ -544,41 +530,12 @@ struct
                 in s
                 end)
 
-      val flattenCondMov = 
-       fn (state, env, dests, args) => 
-          Try.try 
-            (fn () => 
-                let
-                  val dv = Try.V.singleton dests
-                  val (on, u, v) = Try.V.tripleton args
-val () = print ("flattenCondMov: dest = " ^ Identifier.variableString' dv ^ "\n")
-                  val dvs = <@ splitVariable (state, env, dv)
-val () = print ("flattenCondMov: split " ^ Identifier.variableString' dv ^ "\n")
-                  val us = <@ splitOperand (state, env, u)
-                  val vs = <@ splitOperand (state, env, v)
-                  val n = Vector.size dvs
-                  val () = Try.require (n = Vector.size us)
-                  val () = Try.require (n = Vector.size vs)
-                  val fold = 
-                   fn (dv, u, v, s) =>
-                      let
-                        val s0 = MS.bindRhs (dv, M.RhsPrim { prim = P.Prim P.PCondMov, 
-                                 createThunks = false, typs = Vector.new0 (), args = Vector.new3 (on, u, v) })
-                        val s1 = MS.seq (s, s0)
-                      in s1
-                      end
-                  val s = Vector.fold3 (dvs, us, vs, MS.empty, fold)
-                in s
-                end)
-
       val instr = 
        fn (state, env, i as M.I {dests, n, rhs}) => 
           let
             val so = 
                 (case rhs
                   of M.RhsSimple (M.SVariable v) => flattenMove (state, env, dests, v)
-                   | M.RhsPrim { prim = P.Prim P.PCondMov, args = args, ... } =>
-                     flattenCondMov (state, env, dests, args)
                    | M.RhsTuple r => flattenTuple (state, env, dests, r)
                    | M.RhsTupleSub tf => 
                      let

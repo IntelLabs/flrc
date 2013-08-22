@@ -11,7 +11,6 @@ struct
 
   structure I = Identifier
   structure M = Mil
-  structure P = Mil.Prims
   structure MU = MilUtils
   structure MRS = MilRepSummary
   structure MRN = MilRepNode
@@ -411,9 +410,6 @@ struct
                                   let
                                     val () = fixed ()
                                     val () = boxedOV (#args r)
-                                    val () = case #prim r 
-                                               of P.Prim P.PCondMov => boxedV dests
-                                                | _ => ()
                                   in ()
                                   end
                                 | M.RhsTuple r          => if noTupleUnbox pd then
