@@ -1515,7 +1515,15 @@ struct
         val config = getConfig env
       in 
       case s
-       of M.SVariable v => MU.FieldKind.fromTyp (config, getVarTyp (state, v))
+       of M.SVariable v => 
+         let
+           val typ = case getVarTyp (state, v)
+                       of M.TViVector { elementTyp, ... } => elementTyp
+                        | typ => typ
+         in case MU.FieldKind.fromTyp' (config, typ)
+             of SOME f => f
+              | NONE => fail ("fkOperand ", Identifier.variableString' v ^ " has no fieldkind")
+         end
         | M.SConstant c => MU.Constant.fkOf (config, c)
       end
 
