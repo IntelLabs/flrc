@@ -159,9 +159,6 @@ struct
   val (skipUnreachableF, skipUnreachable) = 
       mkFeature ("skip-unreachable", "Skip unreachable object elimination")
 
-  val (skipBranchMergeF, skipBranchMerge) = 
-      mkFeature ("skip-branch-merge", "Skip merging branches of boolean switch")
-
   val (skipSimplifyF, skipSimplify) = 
       mkFeature ("skip-simplify", "Skip simplification")
 
@@ -180,7 +177,7 @@ struct
   val (useBackendStridedF, useBackendStrided) = 
       mkFeature ("backend-strided-loads", "Use backend strided loads")
 
-  val features = [statPhasesF, noIterateF, skipBranchMergeF,
+  val features = [statPhasesF, noIterateF, 
                   skipCodeSimplifyF, skipUnreachableF, skipSimplifyF, skipCfgF, skipEscapeF, skipRecursiveF, useBackendStridedF]
 
   structure Click = 
@@ -231,7 +228,6 @@ struct
          ("SwitchToCondMov",  "Cases converted to CondMov"     ),
          ("SwitchOnCondMov",  "Cases on values defined by condMov converted to cases on boolean"),
          ("SwitchConstantToBool", "Cases on constants converted to cases on boolean"),
-         ("SwitchMergeBranches", "Merge branches for certain switches on boolean"),
          ("TCut",             "Cuts eliminated"                ),
          ("TGoto",            "Gotos eliminated"               ),
          ("ThunkEta",         "Thunks eta reduced"             ),
@@ -334,7 +330,6 @@ struct
     val switchConstantToBool = clicker "SwitchConstantToBool"
     val switchToCondMov = clicker "SwitchToCondMov"
     val switchOnCondMov = clicker "SwitchOnCondMov"
-    val switchMergeBranches = clicker "SwitchMergeBranches"
     val tCut = clicker "TCut"
     val tGoto = clicker "TGoto"
     val thunkEta = clicker "ThunkEta"
@@ -2616,284 +2611,6 @@ struct
           in try (Click.switchOnCondMov, f)
           end
 
-     (* Merge both branches of a boolean switch: 
-      *
-      *  case b of true  => goto L1;
-      *          | false => goto L2;
-      *  L1: B1; goto L3(X);
-      *  L2: B2; goto L3(Y);
-      *
-      *  == goto L1;
-      *     L1: B1; goto L2;
-      *     L2: B2; case b of true  => goto L3(X);
-      *                     | false => goto L3(Y);
-      *
-      * Under the following conditions:
-      * 1. the case block is the only predecessor of L1 and L2.
-      * 2. both B1 and B2 have no side effects;
-      * 3. both X and Y are single variable.
-      * 4. B1 and B2 are similar enough (with at most 3 mismatches, modulo alpha renaming).
-      *)
-      val switchMergeBranches =
-          let
-            val f = 
-             fn ((d, imil, ws), (i, r)) =>
-                let
-                  val () = Try.require (not (skipBranchMerge d))
-                  val config = PD.getConfig d
-                  val func = IInstr.getIFunc (imil, i)
-                  val b0   = IInstr.getIBlock (imil, i)
-                  val {on, trueBranch, falseBranch} = <@ MU.Transfer.isBoolIf (M.TCase r)
-                  val M.T {block = l1, arguments = args1} = trueBranch
-                  val M.T {block = l2, arguments = args2} = falseBranch
-
-                  val () = Try.require (Vector.length args1 = 0)
-                  val () = Try.require (Vector.length args2 = 0)
-                  val () = Try.require (l1 <> l2)
-                
-                  val b1 = IFunc.getBlockByLabel (imil, func, l1)
-                  val b1pd = IBlock.preds (imil, b1)
-                  val () = Try.require ((List.length b1pd = 1) andalso (hd b1pd = b0))
-                  val M.T {block = l3, arguments = args1} = <@ MU.Transfer.Dec.tGoto (IBlock.getTransfer' (imil, b1))
-                  val arg1 = Try.V.singleton args1
-
-                  val b2 = IFunc.getBlockByLabel (imil, func, l2)
-                  val b2pd = IBlock.preds (imil, b2)
-                  val () = Try.require ((List.length b2pd = 1) andalso (hd b2pd = b0))
-                  val M.T {block = l3', arguments = args2} = <@ MU.Transfer.Dec.tGoto (IBlock.getTransfer' (imil, b2))
-                  val arg2 = Try.V.singleton args2
-
-                  val () = Try.require (l3 = l3')
-
-                  fun checkBlock (b1, b2) =
-                      let 
-                        val effects = Effect.fromList [Effect.InitRead, Effect.HeapRead]
-
-                        fun checkEffect i = if Effect.subset (MU.Instruction.fx (config, i), effects) 
-                                              then SOME i else NONE
-
-                        fun emptyBlk () = []
-                        fun pushInstr (blk, instr) = instr :: blk
-
-                        fun checkInstr state =
-                          fn (SOME (M.I {dests = d1, rhs = rhs1, ... }), 
-                              SOME (M.I {dests = d2, rhs = rhs2, ... })) =>
-                            let 
-                              val (vMap, aMap, blk) = state
-                              val vMap = ref vMap (* vMap keeps track of variable equivalance *)
-                              val aMap = ref aMap (* aMap keeps track of assumptions *)
-                              val blk  = ref blk
-
-                              fun newCondMov (u, v1, v2) = MU.Instruction.new (u, M.RhsPrim { 
-                                  prim = P.Prim P.PCondMov, createThunks = false, typs = Vector.new0 (), 
-                                  args = Vector.new3 (on, v1, v2) })
-
-                              type 'a opt = (unit -> 'a) option
-
-                              val when : (bool * ('a -> 'b) * 'a opt) -> 'b opt = 
-                                fn (b, f, x) => if b then Option.map (x, fn g => f o g) else NONE
-
-                              val both : ('a opt * 'b opt) -> ('a * 'b) opt = 
-                                fn (x, y) => UO.map2 (x, y, fn (x, y) => fn () => (x (), y ()))
-
-                              val checkVariable =
-                                fn (v1, v2) => if v1 = v2 then SOME (fn () => v1) else 
-                                  (case (VD.lookup (!vMap, v1), VD.lookup (!vMap, v2))
-                                    of (SOME i, SOME j) => if i = j then SOME (fn () => i) else NONE
-                                     | (NONE, NONE) => 
-                                      let
-                                        fun f () = 
-                                          let
-                                            val t = Var.typ (imil, v1)
-                                            val u = Var.new (imil, "cm_#", t, M.VkLocal)
-                                            val () = aMap := VD.insert (!aMap, u, (v1, v2))
-                                            val () = vMap := VD.insert (VD.insert (!vMap, v1, u), v2, u)
-                                            val () = blk  := pushInstr (!blk, newCondMov (u, M.SVariable v1, M.SVariable v2))
-                                          in
-                                            u
-                                          end
-                                      in SOME f
-                                          end
-                                     | _ => NONE)
-
-                              val checkOperand =
-                                fn (M.SVariable v1, M.SVariable v2) => 
-                                  Option.map (checkVariable (v1, v2), fn f => M.SVariable o f)
-                                 | (M.SConstant c1, M.SConstant c2) => 
-                                    if MU.Constant.eq (c1, c2) then SOME (fn () => M.SConstant c1) else NONE
-                                 | _ => NONE
-
-                              val checkOperands = fn (a1, a2) => 
-                                  if Vector.length a1 = Vector.length a2 
-                                    then Option.map (UO.distributeV (Vector.map2 (a1, a2, checkOperand)),
-                                                     fn ops => fn () => Vector.map (ops, fn f => f ()))
-                                    else NONE
-
-                              val checkField =
-                                fn (M.FiVariable o1, M.FiVariable o2) => 
-                                  Option.map (checkOperand (o1, o2), fn f => M.FiVariable o f)
-                                 | (f1, f2) => 
-                                  if MU.FieldIdentifier.eq (f1, f2) then SOME (fn () => f1) else NONE
-
-                              val rhs : M.rhs opt = 
-                                  (case (rhs1, rhs2) 
-                                    of (M.RhsSimple o1, M.RhsSimple o2) => 
-                                      when (true, M.RhsSimple, checkOperand (o1, o2))
-                                     | (M.RhsPrim { prim = p1, args = a1, createThunks = c1, typs = t1 }, 
-                                        M.RhsPrim { prim = p2, args = a2, ... }) => 
-                                      let
-                                        fun rhs args = M.RhsPrim 
-                                            { prim = p1, args = args, createThunks = c1, typs = t1 }
-                                      in
-                                        when (p1 = p2, rhs, checkOperands (a1, a2))
-                                      end
-                                     | (M.RhsTupleSub (M.TF { tup = v1, field = f1, tupDesc = d1 }), 
-                                        M.RhsTupleSub (M.TF { tup = v2, field = f2, tupDesc = d2 })) => 
-                                      let
-                                        val eqD = MU.TupleDescriptor.eq (d1, d2)
-                                        fun rhs (tup, field) = M.RhsTupleSub (M.TF 
-                                            { tup = tup, field = field, tupDesc = d1 })
-                                      in      
-                                        when (eqD, rhs, both (checkVariable (v1, v2), checkField (f1, f2)))
-                                      end
-                                     | (M.RhsTupleSet { tupField = M.TF { tup = v1, field = f1, tupDesc = d1 }, 
-                                                        ofVal = o1 }, 
-                                        M.RhsTupleSet { tupField = M.TF { tup = v2, field = f2, tupDesc = d2 },
-                                                        ofVal = o2 }) => 
-                                      let
-                                        val eqD = MU.TupleDescriptor.eq (d1, d2)
-                                        fun rhs (tup, (field, ofVal)) = M.RhsTupleSet 
-                                            { tupField = M.TF { tup = tup, field = field, tupDesc = d1 }, 
-                                              ofVal = ofVal }
-                                      in      
-                                        when (eqD, rhs, both (checkVariable (v1, v2), 
-                                              both (checkField (f1, f2), checkOperand (o1, o2))))
-                                      end
-                                     | (M.RhsIdxGet { idx = v1, ofVal = o1 },
-                                        M.RhsIdxGet { idx = v2, ofVal = o2 }) =>
-                                      let
-                                        fun rhs (idx, ofVal) = M.RhsIdxGet { idx = idx, ofVal = ofVal }
-                                      in
-                                        when (true, rhs, both (checkVariable (v1, v2), checkOperand (o1, o2)))
-                                      end
-                                     | (M.RhsCont l1, M.RhsCont l2) => 
-                                      when (l1 = l2, M.RhsCont, SOME (fn () => l1))
-                                     | (M.RhsObjectGetKind v1, M.RhsObjectGetKind v2) => 
-                                      when (true, M.RhsObjectGetKind, checkVariable (v1, v2))
-                                     | (M.RhsThunkGetFv { thunk = v1, idx = i1, typ = t1, fvs = fk1 },
-                                        M.RhsThunkGetFv { thunk = v2, idx = i2, typ = t2, fvs = fk2 }) => 
-                                      let
-                                        val eqFK = Vector.forall2 (fk1, fk2, MU.FieldKind.eq)
-                                        fun rhs v = M.RhsThunkGetFv { thunk = v, idx = i1, typ = t1, fvs = fk1 }
-                                      in
-                                        when (i1 = i2 andalso eqFK, rhs, checkVariable (v1, v2))
-                                      end
-                                     | (M.RhsClosureGetFv { cls = v1, idx = i1, fvs = fk1 },
-                                        M.RhsClosureGetFv { cls = v2, idx = i2, fvs = fk2 }) => 
-                                      let
-                                        val eqFK = Vector.forall2 (fk1, fk2, MU.FieldKind.eq)
-                                        fun rhs v = M.RhsClosureGetFv { cls = v, idx = i1, fvs = fk1 }
-                                      in
-                                        when (i1 = i2 andalso eqFK, rhs, checkVariable (v1, v2))
-                                      end
-                                     | (M.RhsEnum { tag = o1, typ = fk1 }, M.RhsEnum { tag = o2, typ = fk2 }) => 
-                                      let
-                                        fun rhs tag = M.RhsEnum { tag = tag, typ = fk1 }
-                                      in
-                                        when (MU.FieldKind.eq (fk1, fk2), rhs, checkOperand (o1, o2))
-                                      end
-                                     | (M.RhsSumProj { sum = v1, tag = t1, idx = i1, typs = fk1 },
-                                        M.RhsSumProj { sum = v2, tag = t2, idx = i2, typs = fk2 }) =>
-                                      let
-                                        val eqC = MU.Constant.eq (t1, t2)
-                                        val eqFK = Vector.forall2 (fk1, fk2, MU.FieldKind.eq)
-                                        fun rhs v = M.RhsSumProj { sum = v, tag = t1, idx = i1, typs = fk1 }
-                                      in
-                                        when (i1 = i2 andalso eqC andalso eqFK, rhs, checkVariable (v1, v2))
-                                      end
-                                     | (M.RhsSumGetTag { sum = v1, typ = fk1 }, 
-                                        M.RhsSumGetTag { sum = v2, typ = fk2 }) =>
-                                      let
-                                        fun rhs v = M.RhsSumGetTag { sum = v, typ = fk1 }
-                                      in
-                                        when (MU.FieldKind.eq (fk1, fk2), rhs, checkVariable (v1, v2))
-                                      end
-                                     | _ => NONE)
-
-                              fun match rhs = 
-                                  let
-                                    fun updateMap (v1, v2) =
-                                        let 
-                                          val u  = Var.clone (imil, v1)
-                                          val () = vMap := VD.insert (VD.insert (!vMap, v1, u), v2, u) 
-                                        in
-                                          u
-                                        end
-                                    val dest = Vector.map2 (d1, d2, updateMap)
-                                    val () = blk := pushInstr (!blk, MU.Instruction.new' (dest, rhs))
-                                    fun reassign (u, v) = 
-                                        blk := pushInstr (!blk, MU.Instruction.new (u, M.RhsSimple (M.SVariable v)))
-                                    val () = Vector.foreach2 (d1, dest, reassign)
-                                    val () = Vector.foreach2 (d2, dest, reassign)
-                                  in
-                                    (rhs, (!vMap, !aMap, !blk))
-                                  end
-                            in
-                              Option.map (when (Vector.length d1 = Vector.length d2, match, rhs), fn f => f ())
-                            end
-                           | _ => NONE
-
-                        fun checkIInstrs (state, mismatched, i1, i2) = 
-                            let
-                              val (vMap, aMap, blk) = state
-                            in
-                              if mismatched > 3 then NONE
-                              else case (i1, i2)
-                                of (NONE, NONE) => SOME (mismatched, blk)
-                                 | _ =>  
-                                  let
-                                    val mi1 = UO.bind (i1, IInstr.toInstruction)
-                                    val mi2 = UO.bind (i2, IInstr.toInstruction)
-                                    val i1' = UO.bind (i1, fn i => IInstr.next (imil, i))
-                                    val i2' = UO.bind (i2, fn i => IInstr.next (imil, i))
-                                  in 
-                                    case checkInstr state (mi1, mi2)
-                                      of SOME (x, state) => checkIInstrs (state, mismatched, i1', i2')
-                                       | NONE => 
-                                        let
-                                          val mismatched = mismatched + 1
-                                          fun nextInstrs (i1, i2) = fn instr =>
-                                              checkIInstrs ((vMap, aMap, pushInstr (blk, instr)), mismatched, i1, i2)
-                                          val l = UO.bind (UO.bind (mi1, checkEffect), nextInstrs (i1', i2))
-                                          val r = UO.bind (UO.bind (mi2, checkEffect), nextInstrs (i1, i2'))
-                                        in
-                                          case (l, r)
-                                            of (SOME (m, _), SOME (n, _)) => if m < n then l else r
-                                             | (SOME _, _) => l
-                                             | (_, SOME _) => r
-                                             | _ => NONE
-                                        end
-                                  end
-                            end
-
-                        val initState = (VD.empty, VD.empty, [])
-                      in
-                        checkIInstrs (initState, 0, IBlock.getFirst (imil, b1), IBlock.getFirst (imil, b2)) 
-                      end
-
-                  val (_, blk) = <@ checkBlock (b1, b2)
-                  val _ = List.fold (blk, i, fn (j, i) => IInstr.insertBefore (imil, j, i))
-                  val t1 = M.T {block = l3, arguments = args1 }
-                  val t2 = M.T {block = l3, arguments = args2 }
-                  val tr = MU.Bool.ifT (config, on, { trueT = t1, falseT = t2 })
-                  val () = IBlock.replaceTransfer (imil, b0, tr)
-                  val () = IBlock.delete (imil, b1)
-                  val () = IBlock.delete (imil, b2)
-                in [I.ItemInstr (IBlock.getTransfer (imil, b0))]
-                end
-          in try (Click.switchMergeBranches, f)
-          end
-
      (* Turn a switch into a setCond:
       * case b of true => goto L1 ({}) 
       *        | false => goto L1 {a}
@@ -2950,7 +2667,7 @@ struct
           end
 
       val reduce = simpleBoolOp or betaSwitch or etaSwitch or switchToSetCond or trivialSwitch or 
-                   switchToCondMov or switchOnCondMov or switchConstantToBool or switchMergeBranches
+                   switchToCondMov or switchOnCondMov or switchConstantToBool 
     end (* structure TCase *)
 
     val tCase = TCase.reduce
