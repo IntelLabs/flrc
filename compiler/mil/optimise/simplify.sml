@@ -979,29 +979,34 @@ struct
                  in res
                  end)
 
-       (* TODO: make this more than a one off hack *)
-       val doReAssocHack = 
+       val doReAssoc = 
            Try.lift 
              (fn (operator1, typ1, args1, get) =>
                  let
-                   val res = 
-                       (case operator1
-                         of P.APlus   => 
-                            let
-                              val (b1, b2) = Try.V.doubleton args1
-                              val c1 = <@ MU.Constant.Dec.cIntegral <! MU.Operand.Dec.sConstant @@ b2
-                              val p1 = get b1
-                              val (p, args2) = <@ Operation.Dec.oPrim p1
-                              val {typ = typ2, operator = operator2} = <@ PU.Prim.Dec.pNumArith p
-                              val () = <@ PU.ArithOp.Dec.aPlus operator2
-                              val (b3, b4) = Try.V.doubleton args2
-                              val c2 = <@ MU.Constant.Dec.cIntegral <! MU.Operand.Dec.sConstant @@ b4
-                              val c = M.SConstant (M.CIntegral (IntArb.+ (c1, c2)))
-                              val new = RrPrim (P.PNumArith {typ = typ1, operator = P.APlus}, Vector.new2 (b3, c))
-                            in new
-                            end
-                          | _         => Try.fail ())
-                 in res
+                   val plus  = PU.ArithOp.Dec.aPlus
+                   val minus = PU.ArithOp.Dec.aMinus
+                   val times = PU.ArithOp.Dec.aTimes
+                   (* y = (x + c2) + c1  ==> y = x + (c1 + c2)) *)
+                   fun plusPlus   (o1, o2) = UO.map2 (plus o1,  plus o2,  fn _ => (P.APlus, IntArb.+))
+                   (* y = (x + c2) - c1  ==> y = x - (c1 - c2)) *)
+                   fun minusPlus  (o1, o2) = UO.map2 (minus o1, plus o2,  fn _ => (P.AMinus, IntArb.-)) 
+                   (* y = (x - c2) + c1  ==> y = x + (c1 - c2)) *)
+                   fun plusMinus  (o1, o2) = UO.map2 (plus o1,  minus o2, fn _ => (P.APlus, IntArb.-))
+                   (* y = (x - c2) - c1  ==> y = x - (c1 + c2)) *)
+                   fun minusMinus (o1, o2) = UO.map2 (minus o1, minus o2, fn _ => (P.AMinus, IntArb.+))
+                   (* y = (x * c2) * c1  ==> y = x * (c1 * c2)) *)
+                   fun timesTimes (o1, o2) = UO.map2 (times o1, times o2, fn _ => (P.ATimes, IntArb.*))
+                   val (b1, b2) = Try.V.doubleton args1
+                   val c1 = <@ MU.Constant.Dec.cIntegral <! MU.Operand.Dec.sConstant @@ b2
+                   val p1 = get b1
+                   val (p, args2) = <@ Operation.Dec.oPrim p1
+                   val {typ = typ2, operator = operator2} = <@ PU.Prim.Dec.pNumArith p
+                   val (b3, b4) = Try.V.doubleton args2
+                   val c2 = <@ MU.Constant.Dec.cIntegral <! MU.Operand.Dec.sConstant @@ b4
+                   val (op1, op2) = <@ (plusPlus or minusPlus or plusMinus or minusMinus or timesTimes) (operator1, operator2)
+                   val c = M.SConstant (M.CIntegral (op2 (c1, c2)))
+                   val new = RrPrim (P.PNumArith {typ = typ1, operator = op1}, Vector.new2 (b3, c))
+                 in new
                  end)
 
        val reassoc = 
@@ -1011,7 +1016,7 @@ struct
                    val doIt = 
                        (case typ
                          of P.NtRat                    => Try.fail ()
-                          | P.NtInteger (P.IpFixed ia) => doReAssocHack
+                          | P.NtInteger (P.IpFixed ia) => doReAssoc
                           | P.NtInteger P.IpArbitrary  => Try.fail ()
                           | P.NtFloat P.FpSingle       => Try.fail ()
                           | P.NtFloat P.FpDouble       => Try.fail ())
