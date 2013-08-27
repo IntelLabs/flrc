@@ -799,8 +799,7 @@ struct
    *
    * Under the following conditions:
    * 1. the case block is the only predecessor of L1 and L2.
-   * 2. both X and Y are single variable.
-   * 3. B1 and B2 are similar enough (with at most 3 mismatches, modulo alpha renaming).
+   * 2. B1 and B2 are similar enough (with at most 3 mismatches, modulo alpha renaming).
    *)
   val mergeBranches =
     fn (d, imil, ifunc) =>
@@ -817,18 +816,15 @@ struct
               val () = Try.require (Vector.length args1 = 0)
               val () = Try.require (Vector.length args2 = 0)
               val () = Try.require (l1 <> l2)
-            
               val b1 = IFunc.getBlockByLabel (imil, func, l1)
               val b1pd = IBlock.preds (imil, b1)
               val () = Try.require ((List.length b1pd = 1) andalso (hd b1pd = b0))
               val M.T {block = l3, arguments = args1} = Try.<@ MU.Transfer.Dec.tGoto (IBlock.getTransfer' (imil, b1))
-              val arg1 = Try.V.singleton args1
 
               val b2 = IFunc.getBlockByLabel (imil, func, l2)
               val b2pd = IBlock.preds (imil, b2)
               val () = Try.require ((List.length b2pd = 1) andalso (hd b2pd = b0))
               val M.T {block = l3', arguments = args2} = Try.<@ MU.Transfer.Dec.tGoto (IBlock.getTransfer' (imil, b2))
-              val arg2 = Try.V.singleton args2
 
               val () = Try.require (l3 = l3')
 
@@ -873,22 +869,41 @@ struct
                                       let
                                         val t = IMil.Var.typ (imil, v1)
                                         val u = IMil.Var.new (imil, "cm_#", t, M.VkLocal)
-                                        val () = aMap := VD.insert (!aMap, u, (v1, v2))
+                                        val () = aMap := VD.insert (!aMap, u, (M.SVariable v1, M.SVariable v2))
                                         val () = vMap := VD.insert (VD.insert (!vMap, v1, u), v2, u)
                                         val () = blk  := pushInstr (!blk, newCondMov (u, M.SVariable v1, M.SVariable v2))
                                       in
                                         u
                                       end
                                   in SOME f
-                                      end
+                                  end
                                  | _ => NONE)
 
-                          val checkOperand =
-                            fn (M.SVariable v1, M.SVariable v2) => 
-                              Option.map (checkVariable (v1, v2), fn f => M.SVariable o f)
-                             | (M.SConstant c1, M.SConstant c2) => 
-                                if MU.Constant.eq (c1, c2) then SOME (fn () => M.SConstant c1) else NONE
+                          val checkVariable' =
+                            fn (NONE, NONE) => SOME (fn () => NONE)
+                             | (SOME v1, SOME v2) => Option.map (checkVariable (v1, v2), fn f => fn () => SOME (f ()))
                              | _ => NONE
+
+                          val checkOperand = 
+                            fn (o1, o2) =>
+                              (case (o1, o2)
+                                of (M.SVariable v1, M.SVariable v2) => 
+                                  Option.map (checkVariable (v1, v2), fn f => M.SVariable o f)
+                                 | (M.SConstant c1, M.SConstant c2) => 
+                                  if MU.Constant.eq (c1, c2) then SOME (fn () => M.SConstant c1) else 
+                                    let
+                                      fun f () = 
+                                        let
+                                          val t = MU.Constant.typOf (config, c1)
+                                          val u = IMil.Var.new (imil, "cm_#", t, M.VkLocal)
+                                          val () = aMap := VD.insert (!aMap, u, (o1, o2))
+                                          val () = blk  := pushInstr (!blk, newCondMov (u, o1, o2))
+                                        in
+                                          M.SVariable u
+                                        end
+                                    in SOME f
+                                    end
+                                | _ => NONE)
 
                           val checkOperands = fn (a1, a2) => 
                               if Vector.length a1 = Vector.length a2 
@@ -954,6 +969,22 @@ struct
                                     fun rhs v = M.RhsThunkGetFv { thunk = v, idx = i1, typ = t1, fvs = fk1 }
                                   in
                                     when (i1 = i2 andalso eqFK, rhs, checkVariable (v1, v2))
+                                  end
+                                 | (M.RhsThunkGetValue { thunk = v1, typ = fk1},
+                                    M.RhsThunkGetValue { thunk = v2, typ = fk2}) => 
+                                  let
+                                    val eqFK = MU.FieldKind.eq(fk1, fk2)
+                                    fun rhs v = M.RhsThunkGetValue { thunk = v, typ = fk1 }
+                                  in
+                                    when (eqFK, rhs, checkVariable (v1, v2))
+                                  end
+                                 | (M.RhsThunkValue { thunk = v1, typ = fk1, ofVal = o1},
+                                    M.RhsThunkValue { thunk = v2, typ = fk2, ofVal = o2}) => 
+                                  let
+                                    val eqFK = MU.FieldKind.eq(fk1, fk2)
+                                    fun rhs (v, ofVal) = M.RhsThunkValue { thunk = v, typ = fk1, ofVal = ofVal }
+                                  in
+                                    when (eqFK, rhs, both (checkVariable' (v1, v2), checkOperand (o1, o2)))
                                   end
                                  | (M.RhsClosureGetFv { cls = v1, idx = i1, fvs = fk1 },
                                     M.RhsClosureGetFv { cls = v2, idx = i2, fvs = fk2 }) => 
@@ -1023,8 +1054,9 @@ struct
                                 val mi2 = UO.bind (i2, IMil.IInstr.toInstruction)
                                 val i1' = UO.bind (i1, fn i => IMil.IInstr.next (imil, i))
                                 val i2' = UO.bind (i2, fn i => IMil.IInstr.next (imil, i))
+                                val ins = checkInstr state (mi1, mi2)
                               in 
-                                case checkInstr state (mi1, mi2)
+                                case ins
                                   of SOME (x, state) => checkIInstrs (state, mismatched, i1', i2')
                                    | NONE => 
                                     let
@@ -1045,8 +1077,7 @@ struct
 
                     val initState = (VD.empty, VD.empty, [])
                   in
-                    checkIInstrs (initState, 0, IBlock.getFirst (imil, b1),
-                    IBlock.getFirst (imil, b2)) 
+                    checkIInstrs (initState, 0, IBlock.getFirst (imil, b1), IBlock.getFirst (imil, b2)) 
                   end
 
               val (_, blk) = Try.<@ checkBlock (b1, b2)
@@ -1058,7 +1089,7 @@ struct
               val () = IBlock.delete (imil, b1)
               val () = IBlock.delete (imil, b2)
             in 
-              Click.mergeBranch d
+              Click.mergeBranches d
             end
 
         fun doBlock b =
