@@ -80,6 +80,7 @@ struct
     | PName           of nameOp
     | PCString        of stringOp
     | PPtrEq
+    | PCondMov
 
   datatype assoc = ALeft | ARight | AAny
 
