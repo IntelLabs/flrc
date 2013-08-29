@@ -52,6 +52,8 @@ struct
   structure L = Layout
   structure MEL = MilExtendedLayout
   structure MTT = MilType.Typer
+  structure VD = Identifier.VariableDict
+  structure UO = Utils.Option
 
   structure Chat = ChatF (struct 
                             type env = PD.t
@@ -223,6 +225,9 @@ struct
          ("Simple",           "Simple moves eliminated"        ),
          ("SimpleBoolOp",     "Case to simple bool op"         ),
          ("SwitchToSetCond",  "Cases converted to SetCond"     ),
+         ("SwitchToCondMov",  "Cases converted to CondMov"     ),
+         ("SwitchOnCondMov",  "Cases on values defined by condMov converted to cases on boolean"),
+         ("SwitchConstantToBool", "Cases on constants converted to cases on boolean"),
          ("TCut",             "Cuts eliminated"                ),
          ("TGoto",            "Gotos eliminated"               ),
          ("ThunkEta",         "Thunks eta reduced"             ),
@@ -322,6 +327,9 @@ struct
     val simple = clicker "Simple"
     val simpleBoolOp = clicker "SimpleBoolOp"
     val switchToSetCond = clicker "SwitchToSetCond"
+    val switchConstantToBool = clicker "SwitchConstantToBool"
+    val switchToCondMov = clicker "SwitchToCondMov"
+    val switchOnCondMov = clicker "SwitchOnCondMov"
     val tCut = clicker "TCut"
     val tGoto = clicker "TGoto"
     val thunkEta = clicker "ThunkEta"
@@ -971,29 +979,34 @@ struct
                  in res
                  end)
 
-       (* TODO: make this more than a one off hack *)
-       val doReAssocHack = 
+       val doReAssoc = 
            Try.lift 
              (fn (operator1, typ1, args1, get) =>
                  let
-                   val res = 
-                       (case operator1
-                         of P.APlus   => 
-                            let
-                              val (b1, b2) = Try.V.doubleton args1
-                              val c1 = <@ MU.Constant.Dec.cIntegral <! MU.Operand.Dec.sConstant @@ b2
-                              val p1 = get b1
-                              val (p, args2) = <@ Operation.Dec.oPrim p1
-                              val {typ = typ2, operator = operator2} = <@ PU.Prim.Dec.pNumArith p
-                              val () = <@ PU.ArithOp.Dec.aPlus operator2
-                              val (b3, b4) = Try.V.doubleton args2
-                              val c2 = <@ MU.Constant.Dec.cIntegral <! MU.Operand.Dec.sConstant @@ b4
-                              val c = M.SConstant (M.CIntegral (IntArb.+ (c1, c2)))
-                              val new = RrPrim (P.PNumArith {typ = typ1, operator = P.APlus}, Vector.new2 (b3, c))
-                            in new
-                            end
-                          | _         => Try.fail ())
-                 in res
+                   val plus  = PU.ArithOp.Dec.aPlus
+                   val minus = PU.ArithOp.Dec.aMinus
+                   val times = PU.ArithOp.Dec.aTimes
+                   (* y = (x + c2) + c1  ==> y = x + (c1 + c2)) *)
+                   fun plusPlus   (o1, o2) = UO.map2 (plus o1,  plus o2,  fn _ => (P.APlus, IntArb.+))
+                   (* y = (x + c2) - c1  ==> y = x - (c1 - c2)) *)
+                   fun minusPlus  (o1, o2) = UO.map2 (minus o1, plus o2,  fn _ => (P.AMinus, IntArb.-)) 
+                   (* y = (x - c2) + c1  ==> y = x + (c1 - c2)) *)
+                   fun plusMinus  (o1, o2) = UO.map2 (plus o1,  minus o2, fn _ => (P.APlus, IntArb.-))
+                   (* y = (x - c2) - c1  ==> y = x - (c1 + c2)) *)
+                   fun minusMinus (o1, o2) = UO.map2 (minus o1, minus o2, fn _ => (P.AMinus, IntArb.+))
+                   (* y = (x * c2) * c1  ==> y = x * (c1 * c2)) *)
+                   fun timesTimes (o1, o2) = UO.map2 (times o1, times o2, fn _ => (P.ATimes, IntArb.*))
+                   val (b1, b2) = Try.V.doubleton args1
+                   val c1 = <@ MU.Constant.Dec.cIntegral <! MU.Operand.Dec.sConstant @@ b2
+                   val p1 = get b1
+                   val (p, args2) = <@ Operation.Dec.oPrim p1
+                   val {typ = typ2, operator = operator2} = <@ PU.Prim.Dec.pNumArith p
+                   val (b3, b4) = Try.V.doubleton args2
+                   val c2 = <@ MU.Constant.Dec.cIntegral <! MU.Operand.Dec.sConstant @@ b4
+                   val (op1, op2) = <@ (plusPlus or minusPlus or plusMinus or minusMinus or timesTimes) (operator1, operator2)
+                   val c = M.SConstant (M.CIntegral (op2 (c1, c2)))
+                   val new = RrPrim (P.PNumArith {typ = typ1, operator = op1}, Vector.new2 (b3, c))
+                 in new
                  end)
 
        val reassoc = 
@@ -1003,7 +1016,7 @@ struct
                    val doIt = 
                        (case typ
                          of P.NtRat                    => Try.fail ()
-                          | P.NtInteger (P.IpFixed ia) => doReAssocHack
+                          | P.NtInteger (P.IpFixed ia) => doReAssoc
                           | P.NtInteger P.IpArbitrary  => Try.fail ()
                           | P.NtFloat P.FpSingle       => Try.fail ()
                           | P.NtFloat P.FpDouble       => Try.fail ())
@@ -1168,6 +1181,23 @@ struct
                in RrConstant (C.CBool true)
                end)
 
+       fun condMov (c : Config.t, args : Mil.operand Vector.t, get : Mil.operand -> Operation.t) : t option =
+           Try.try
+           (fn () =>
+               let
+                 val (b0, u, v) = Try.V.tripleton args
+               in
+                 if MU.Simple.eq (u, v)
+                   then RrBase u
+                   else
+                     let 
+                       val b1 = Try.<@ MU.Simple.Dec.sConstant b0
+                       val b2 = Try.<@ MU.Constant.Dec.cBoolean b1
+                     in 
+                       RrBase (if b2 then u else v)
+                     end
+               end)
+
        val prim : Config.t * Mil.Prims.prim * Mil.operand Vector.t * (Mil.operand -> Operation.t) -> t = 
         fn (c, p, args, get) => 
            (case p
@@ -1180,7 +1210,8 @@ struct
               | P.PBoolean r1    => out Boolean.reduce (c, r1, args, get)
               | P.PName r1       => RrUnchanged
               | P.PCString r1    => RrUnchanged
-              | P.PPtrEq         => out ptrEq (c, args, get))
+              | P.PPtrEq         => out ptrEq (c, args, get)
+              | P.PCondMov       => out condMov (c, args, get))
 
 
      end (* structure Reduce *)
@@ -2353,7 +2384,7 @@ struct
                   val nbp = 
                    fn (lop, args) => 
                       let
-                        val v = IMil.Var.new (imil, "bln", MU.Bool.t config, M.VkLocal)
+                        val v = Var.new (imil, "bln", MU.Bool.t config, M.VkLocal)
                         val rhs = M.RhsPrim {prim = P.Prim (P.PBoolean lop), 
                                              createThunks = false,
                                              typs = Vector.new0 (),
@@ -2478,6 +2509,113 @@ struct
           in try (Click.etaSwitch, f)
           end
 
+     (* Turn a switch over constant into a switch over bool:
+      * case b of c => target1
+      *        |  _ => target2
+      *   ==  a = b == c;
+      *       case a of true  => target1
+      *               | false => target2
+      *)
+      val switchConstantToBool = 
+          let
+            val f = 
+             fn ((d, imil, ws), (i, {select, on, cases, default})) =>
+                let
+                  val () = Try.require (select = M.SeConstant)
+                  val config = PD.getConfig d
+                  val (c, target) = Try.V.singleton cases
+                  val default = Try.<- default
+                  val v = Var.new (imil, "eq_#", M.TBoolean, M.VkLocal)
+                  val t  = MilType.Typer.operand (config, IMil.T.getSi imil, on)
+                  val nt = Try.<@ MU.Typ.Dec.tNumeric t
+                  val prim = P.Prim (P.PNumCompare {typ = nt, operator = P.CEq})
+                  val rhs = M.RhsPrim {prim = prim, createThunks = false, typs = Vector.new0(),
+                                       args = Vector.new2 (on, M.SConstant c)}
+                  val ni = MU.Instruction.new (v, rhs)
+                  val mv = IInstr.insertBefore (imil, ni, i)
+                  val tr = MU.Bool.ifT (config, M.SVariable v, { trueT = target, falseT = default })
+                  val () = IInstr.replaceTransfer (imil, i, tr)
+                in [I.ItemInstr i, I.ItemInstr mv]
+                end
+          in try (Click.switchConstantToBool, f)
+          end
+
+     (* Turn a switch into a CondMov:
+      * case b of true => goto L1 (u) 
+      *        | false => goto L1 (v)
+      *   ==  x = condMov(b, u, v);
+      *       goto L1(x);
+      *)
+      val switchToCondMov = 
+          let
+            val f = 
+             fn ((d, imil, ws), (i, r)) =>
+                let
+                  val config = PD.getConfig d
+                  val {on, trueBranch, falseBranch} = <@ MU.Transfer.isBoolIf (M.TCase r)
+                  val M.T {block = l1, arguments = args1} = trueBranch
+                  val M.T {block = l2, arguments = args2} = falseBranch
+                  val () = Try.require (l1 = l2)
+                  val arg1 = Try.V.singleton args1
+                  val arg2 = Try.V.singleton args2
+                  val t = MilType.Typer.operand (config, IMil.T.getSi imil, arg1)
+                  val v = Var.new (imil, "sset_#", t, M.VkLocal)
+                  val ni = MU.Instruction.new (v, 
+                             M.RhsPrim {prim = P.Prim P.PCondMov, createThunks = false, typs = Vector.new0(),
+                                        args = Vector.new3 (on, arg1, arg2)})
+                  val mv = IInstr.insertBefore (imil, ni, i)
+                  val tg = 
+                      M.T {block = l1, 
+                           arguments = Vector.new1 (M.SVariable v)}
+                  val goto = M.TGoto tg
+                  val () = IInstr.replaceTransfer (imil, i, goto)
+                in [I.ItemInstr i, I.ItemInstr mv]
+                end
+          in try (Click.switchToCondMov, f)
+          end
+
+     (* Inline a variable defined through CondMov when it is used in a switch:
+      * x = condMov (b, u, v);
+      * case x of tag1 => target1
+      *         | tag2 => target2
+      *   ==  x = condMov(b, u, v);
+      *       case b of true  => case u of tag1 => target1
+      *                                  | tag2 => target2
+      *               | false => case v of tag1 => target1 
+      *                                  | tag2 => target2 
+      *)
+      val switchOnCondMov = 
+          let
+            val f = 
+             fn ((d, imil, ws), (i, {select, on, cases, default})) =>
+                let
+                  val config = PD.getConfig d
+                  val func = IInstr.getIFunc (imil, i)
+                  val v = <@ MU.Simple.Dec.sVariable on
+                  val { cond, trueVal, falseVal } = <@ MU.Def.Out.condMov <! Def.toMilDef o Def.get @@ (imil, v) 
+                  val l1 = Var.labelFresh imil
+                  val l2 = Var.labelFresh imil
+                  val tr1 = M.TCase { select = select, on = trueVal, cases = cases, default = default } 
+                  val tr2 = M.TCase { select = select, on = falseVal, cases = cases, default = default } 
+                  val b1 = M.B { parameters = Vector.new0 (),
+                                 instructions = Vector.new0 (),
+                                 transfer = tr1 }
+                  val b2 = M.B { parameters = Vector.new0 (),
+                                 instructions = Vector.new0 (),
+                                 transfer = tr2 }
+                  val bi1 = IBlock.build (imil, func, (l1, b1))
+                  val bi2 = IBlock.build (imil, func, (l2, b2))
+                  val tri1 = IBlock.getTransfer (imil, bi1)
+                  val tri2 = IBlock.getTransfer (imil, bi2)
+                  val t1 = M.T {block = l1, arguments = Vector.new0 ()}
+                  val t2 = M.T {block = l2, arguments = Vector.new0 ()}
+                  val tr = MU.Bool.ifT (config, cond, { trueT = t1, falseT = t2 })
+                  val () = IInstr.replaceTransfer (imil, i, tr)
+                in List.map ([i, tri1, tri2], I.ItemInstr)
+                end
+          in try (Click.switchOnCondMov, f)
+          end
+
      (* Turn a switch into a setCond:
       * case b of true => goto L1 ({}) 
       *        | false => goto L1 {a}
@@ -2499,7 +2637,7 @@ struct
                   val () = <@ MU.Constant.Dec.cOptionSetEmpty <! MU.Simple.Dec.sConstant @@ arg2
                   val contents = <@ MU.Def.Out.pSet <! Def.toMilDef o Def.get @@ (imil, <@ MU.Simple.Dec.sVariable arg1)
                   val t = MilType.Typer.operand (config, IMil.T.getSi imil, contents)
-                  val v = IMil.Var.new (imil, "sset_#", t, M.VkLocal)
+                  val v = Var.new (imil, "sset_#", t, M.VkLocal)
                   val ni = MU.Instruction.new (v, M.RhsPSetCond {bool = on, ofVal = contents})
                   val mv = IInstr.insertBefore (imil, ni, i)
                   val tg = 
@@ -2533,7 +2671,8 @@ struct
           in try (Click.trivialSwitch, f)
           end
 
-      val reduce = simpleBoolOp or betaSwitch or etaSwitch or switchToSetCond or trivialSwitch
+      val reduce = simpleBoolOp or betaSwitch or etaSwitch or switchToSetCond or trivialSwitch or 
+                   switchToCondMov or switchOnCondMov or switchConstantToBool 
     end (* structure TCase *)
 
     val tCase = TCase.reduce
@@ -3779,7 +3918,7 @@ struct
                 val () = Try.require (p = P.RtDom)
                 val arrv = <@ MU.Simple.Dec.sVariable o Try.V.singleton @@ args
                 val config = PD.getConfig d
-                val uintv = IMil.Var.related (imil, dv, "uint", MU.Uintp.t config, M.VkLocal)
+                val uintv = Var.related (imil, dv, "uint", MU.Uintp.t config, M.VkLocal)
                 val ni = 
                     let
                       val rhs = POM.OrdinalArray.length (config, arrv)
@@ -4951,18 +5090,18 @@ struct
             case (stop c, WS.chooseWork ws)
              of (false, SOME i) => 
                 let
-                  val () = if sEach then LayoutUtils.printLayout (layout ("Trying: ", i)) else ()
+                  val () = if sEach then LU.printLayout (layout ("Trying: ", i)) else ()
                   val l1 = layout ("R: ", i)
                   val uses = Item.getUses (imil, i)
                   val reduced = deadItem (d, imil, ws, i, uses) orelse ItemR.reduce (d, imil, ws, i, uses)
                   val () = 
                       if (sReductions andalso reduced) then
-                        LayoutUtils.printLayout l1
+                        LU.printLayout l1
                       else ()
                   val c = 
                       if reduced then
                         let
-                          val () = if sReductions then LayoutUtils.printLayout (layout ("==> ", i)) else ()
+                          val () = if sReductions then LU.printLayout (layout ("==> ", i)) else ()
                           val () = postReduction (d, imil)
                           val c = step c
                         in c

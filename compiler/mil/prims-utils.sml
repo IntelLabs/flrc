@@ -225,6 +225,7 @@ signature PRIMS_DEC =
       val pName       : t -> Mil.Prims.nameOp option
       val pCString    : t -> Mil.Prims.stringOp option
       val pPtrEq      : t -> unit option
+      val pCondMov    : t -> unit option
     end (* structure Prim *)
 
     structure Assoc : 
@@ -773,6 +774,7 @@ sig
       val pName       : t -> Mil.Prims.nameOp option
       val pCString    : t -> Mil.Prims.stringOp option
       val pPtrEq      : t -> unit option
+      val pCondMov    : t -> unit option
     end (* structure Dec *)
   end (* structure Prim *)
 
@@ -1372,9 +1374,10 @@ struct
         val pName       = unary (Mil.Prims.PName,     Dec.Prim.pName,     literal "Name" -&& nameOp)
         val pCString    = unary (Mil.Prims.PCString,  Dec.Prim.pCString,  literal "CString" -&& stringOp)
         val pPtrEq      = base  (Mil.Prims.PPtrEq,    Dec.Prim.pPtrEq,    "PtrEq")
+        val pCondMov    = base  (Mil.Prims.PCondMov,  Dec.Prim.pCondMov,  "CondMov")
         val res =
             pNumArith || pFloatOp || pNumCompare || pNumConvert || pNumCast || pBitwise || pBoolean || pName ||
-            pCString || pPtrEq
+            pCString || pPtrEq || pCondMov
       in
         res
       end
@@ -1825,6 +1828,7 @@ struct
       val pName       = fn pr => (case pr of Prims.PName r => SOME r | _ => NONE)
       val pCString    = fn pr => (case pr of Prims.PCString r => SOME r | _ => NONE)
       val pPtrEq      = fn pr => (case pr of Prims.PPtrEq => SOME () | _ => NONE)
+      val pCondMov    = fn pr => (case pr of Prims.PCondMov => SOME () | _ => NONE)
     end (* structure Prim *)
 
     structure Assoc = 
@@ -2153,7 +2157,8 @@ struct
                  | Prims.PBoolean l                  => IFO.shift (6, logicOp l)
                  | Prims.PName n                     => IFO.shift (7, nameOp n)
                  | Prims.PCString s                  => IFO.shift (8, stringOp s)
-                 | Prims.PPtrEq                      => IFO.base 9)
+                 | Prims.PPtrEq                      => IFO.base 9
+                 | Prims.PCondMov                    => IFO.base 10)
         in inject
         end
 
@@ -2426,7 +2431,8 @@ struct
                      | Prims.PBoolean l                  => total
                      | Prims.PName n                     => total
                      | Prims.PCString s                  => stringOp s
-                     | Prims.PPtrEq                      => total)
+                     | Prims.PPtrEq                      => total
+                     | Prims.PCondMov                    => total)
             in fx
             end)
 
@@ -2865,7 +2871,8 @@ struct
                | Prims.PBoolean l                  => logicOp l
                | Prims.PName n                     => nameOp n
                | Prims.PCString s                  => stringOp s
-               | Prims.PPtrEq                      => ArAAtoB))
+               | Prims.PPtrEq                      => ArAAtoB
+               | Prims.PCondMov                    => ArOther (3, 1)))
 
     val vector           : Prims.vector t =
         (fn v =>
@@ -3003,7 +3010,8 @@ struct
            | Prims.PBoolean operator         => logicOp operator
            | Prims.PName operator            => none
            | Prims.PCString operator         => none
-           | Prims.PPtrEq                    => commutative)
+           | Prims.PPtrEq                    => commutative
+           | Prims.PCondMov                  => none)
 
     val vector : Config.t * Prims.vector -> t = 
      fn (config, v) =>
