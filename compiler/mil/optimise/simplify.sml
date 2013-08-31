@@ -861,121 +861,99 @@ struct
                      end
                    | _ => Try.fail ())
 
-       val doUnitL =
-           Try.lift
-             (fn (_, {typ, operator}, args, get) =>
-                 (case operator
-                   of P.APlus =>
-                      let
-                        val (b1, b2) = Try.V.doubleton args
-                        val c1 = <@ O.Dec.oConstant (get b1)
-                        val () = <@ (decUnitT (typ, Rat.zero)) c1
-                      in RrBase b2
-                      end
-                    | P.APlusSat =>
-                      let
-                        val (b1, b2) = Try.V.doubleton args
-                        val c1 = <@ O.Dec.oConstant (get b1)
-                        val () = <@ (decUnitT (typ, Rat.zero)) c1
-                      in RrBase b2
-                      end
-                    | P.ATimes =>
-                      let
-                        val (b1, b2) = Try.V.doubleton args
-                        val c1 = <@ O.Dec.oConstant (get b1)
-                        val () = <@ (decUnitT (typ, Rat.one)) c1
-                      in RrBase b2
-                      end
-                    | P.ATimesSat =>
-                      let
-                        val (b1, b2) = Try.V.doubleton args
-                        val c1 = <@ O.Dec.oConstant (get b1)
-                        val () = <@ (decUnitT (typ, Rat.one)) c1
-                      in RrBase b2
-                      end
-                    | _ => Try.fail ()))
-
-       val doUnitR =
-           Try.lift
-             (fn (_, {typ, operator}, args, get) =>
-                 (case operator
-                   of P.APlus =>
-                      let
-                        val (b1, b2) = Try.V.doubleton args
-                        val c2 = <@ O.Dec.oConstant (get b2)
-                        val () = <@ (decUnitT (typ, Rat.zero)) c2
-                      in RrBase b1
-                      end
-                    | P.APlusSat =>
-                      let
-                        val (b1, b2) = Try.V.doubleton args
-                        val c2 = <@ O.Dec.oConstant (get b2)
-                        val () = <@ (decUnitT (typ, Rat.zero)) c2
-                      in RrBase b1
-                      end
-                    | P.AMinus =>
-                      let
-                        val (b1, b2) = Try.V.doubleton args
-                        val c2 = <@ O.Dec.oConstant (get b2)
-                        val () = <@ (decUnitT (typ, Rat.zero)) c2
-                      in RrBase b1
-                      end
-                    | P.AMinusSat =>
-                      let
-                        val (b1, b2) = Try.V.doubleton args
-                        val c2 = <@ O.Dec.oConstant (get b2)
-                        val () = <@ (decUnitT (typ, Rat.zero)) c2
-                      in RrBase b1
-                      end
-                    | P.ATimes =>
-                      let
-                        val (b1, b2) = Try.V.doubleton args
-                        val c2 = <@ O.Dec.oConstant (get b2)
-                        val () = <@ (decUnitT (typ, Rat.one)) c2
-                      in RrBase b1
-                      end
-                    | P.ATimesSat =>
-                      let
-                        val (b1, b2) = Try.V.doubleton args
-                        val c2 = <@ O.Dec.oConstant (get b2)
-                        val () = <@ (decUnitT (typ, Rat.one)) c2
-                      in RrBase b1
-                      end
-                    | P.ADivide =>
-                      let
-                        val (b1, b2) = Try.V.doubleton args
-                        val c2 = <@ O.Dec.oConstant (get b2)
-                        val () = <@ (decUnitT (typ, Rat.one)) c2
-                      in RrBase b1
-                      end
-                    | P.ADiv _ =>
-                      let
-                        val (b1, b2) = Try.V.doubleton args
-                        val c2 = <@ O.Dec.oConstant (get b2)
-                        val () = <@ (decUnitT (typ, Rat.one)) c2
-                      in RrBase b1
-                      end
-                    | _ => Try.fail ()))
+       val constRed =
+           fn (_, {typ, operator}, args, get) =>
+             let
+               val (b1, b2) = Try.V.doubleton args
+               fun id (b1, b2, c) = 
+                 fn () =>
+                   let
+                     val c1 = <@ O.Dec.oConstant (get b1)
+                     val () = <@ (decUnitT (typ, c)) c1
+                   in
+                     RrBase b2
+                   end
+               fun negate (b1, b2, c) =
+                 fn () =>
+                   let
+                     val c1 = <@ O.Dec.oConstant (get b1)
+                     val () = <@ (decUnitT (typ, c)) c1
+                   in
+                     RrPrim (P.PNumArith {typ = typ, operator = P.ANegate}, Vector.new1 b2)
+                   end
+               val zero = Rat.zero
+               val one  = Rat.one
+               val negOne = Rat.~ Rat.one
+               val f = case operator
+                         of P.APlus     => id (b1, b2, zero) || id (b2, b1, zero)
+                          | P.APlusSat  => id (b1, b2, zero) || id (b2, b1, zero)
+                          | P.AMinus    => id (b2, b1, zero) || negate (b1, b2, zero)
+                          | P.AMinusSat => id (b2, b1, zero) || negate (b1, b2, zero)
+                          | P.ATimes    => (id (b1, b2, one) || negate (b1, b2, negOne)) or
+                                           (id (b2, b1, one) || negate (b2, b1, negOne))
+                          | P.ATimesSat => (id (b1, b2, one) || negate (b1, b2, negOne)) or
+                                           (id (b2, b1, one) || negate (b2, b1, negOne))
+                          | P.ADivide   => Try.lift (id (b2, b1, one))
+                          | P.ADiv _    => Try.lift (id (b2, b1, one))
+                          | _           => fn () => NONE
+             in
+               f ()
+             end
 
        val doSimplify = 
            Try.lift 
              (fn (operator1, typ1, args1, get) =>
                  let
+                   fun check (b1, b2) = 
+                       let           
+                         val p1 = get b2
+                         val (p, args2) = <@ Operation.Dec.oPrim p1
+                         val {typ = typ2, operator = operator2} = <@ PU.Prim.Dec.pNumArith p
+                         fun negate () = 
+                             let
+                               val () = <@ PU.ArithOp.Dec.aNegate operator2
+                               val b3 = Try.V.singleton args2
+                               val () = Try.require (PU.NumericTyp.eq (typ1, typ2))
+                               val new = RrPrim (P.PNumArith {typ = typ1, operator = P.AMinus}, Vector.new2 (b1, b3))
+                             in
+                               new
+                             end
+                         fun minus () = 
+                             let
+                               val () = <@ PU.ArithOp.Dec.aMinus operator2
+                               val (b3, b4) = Try.V.doubleton args2
+                               val () = Try.require (PU.NumericTyp.eq (typ1, typ2))
+                               val () = Try.require (MU.Operand.eq(b1, b4))
+                               val new = RrPrim (P.PNumArith {typ = typ1, operator = P.APlus}, Vector.new2 (b2, b3))
+                             in
+                               new
+                             end
+                       in
+                         negate || minus
+                       end
                    val res = 
                        (case operator1
-                         of P.APlus   => 
-                            let
-                              val (b1, b2) = Try.V.doubleton args1
-                              val p1 = get b2
-                              val (p, args2) = <@ Operation.Dec.oPrim p1
-                              val {typ = typ2, operator = operator2} = <@ PU.Prim.Dec.pNumArith p
-                              val () = <@ PU.ArithOp.Dec.aNegate operator2
-                              val b3 = Try.V.singleton args2
-                              val () = Try.require (PU.NumericTyp.eq (typ1, typ2))
-                              val new = RrPrim (P.PNumArith {typ = typ1, operator = P.AMinus}, Vector.new2 (b1, b3))
-                            in new
-                            end
-                          | _         => Try.fail ())
+                         of P.APlus => 
+                           let
+                             val (b1, b2) = Try.V.doubleton args1
+                           in
+                             <@ (check (b1, b2) or check (b2, b1)) ()
+                           end
+                          | P.AMinus => 
+                           let
+                             val (b1, b2) = Try.V.doubleton args1
+                             val p1 = get b1
+                             val (p, args2) = <@ Operation.Dec.oPrim p1
+                             val {typ = typ2, operator = operator2} = <@ PU.Prim.Dec.pNumArith p
+                             val () = <@ PU.ArithOp.Dec.aPlus operator2
+                             val (b3, b4) = Try.V.doubleton args2
+                             val () = Try.require (PU.NumericTyp.eq (typ1, typ2))
+                           in
+                             if MU.Operand.eq(b2, b3) then RrBase b4
+                             else if MU.Operand.eq(b2, b4) then RrBase b3
+                             else Try.fail ()
+                           end
+                          | _ => Try.fail ())
                  in res
                  end)
 
@@ -1054,7 +1032,7 @@ struct
        val reduce : Config.t * {typ : P.numericTyp, operator : P.arithOp} 
                     * Mil.operand Vector.t * (Mil.operand -> Operation.t) 
                     -> reduction option =
-           fold or doUnitL or doUnitR or simplify or reassoc or commute
+           fold or constRed or simplify or reassoc or commute
 
      end (* structure NumArith *)
 
