@@ -371,7 +371,10 @@ struct
             case on
              of M.SVariable v => v
               | _ => fail ("doSwitch", "Arg is not a variable")
-        val t = MU.FieldKind.toTyp fk
+        val t = getVarTyp (state, v)
+        val t = case t 
+                  of Mil.TSum { tag, ... } => tag
+                   | _ => MU.FieldKind.toTyp fk
         val tgv = relatedVar (state, v, "_tag", t, M.VkLocal)
         val r = POM.Sum.getTag (envGetConfig env, v, fk)
         val s = MS.bindRhs (tgv, r)

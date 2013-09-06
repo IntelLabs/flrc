@@ -2501,8 +2501,15 @@ struct
                 let
                   val () = Try.require (select = M.SeConstant)
                   val config = PD.getConfig d
-                  val (c, target) = Try.V.singleton cases
-                  val default = Try.<- default
+                  val ((c, target), default) = 
+                      case default 
+                        of SOME def => (Try.V.singleton cases, def)
+                         | NONE =>
+                          let
+                            val ((c, target), (_, def)) = Try.V.doubleton cases
+                          in
+                            ((c, target), def)
+                          end
                   val v = Var.new (imil, "eq_#", M.TBoolean, M.VkLocal)
                   val t  = MilType.Typer.operand (config, IMil.T.getSi imil, on)
                   val nt = Try.<@ MU.Typ.Dec.tNumeric t
