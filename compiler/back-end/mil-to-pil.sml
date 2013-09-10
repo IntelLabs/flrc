@@ -36,6 +36,7 @@ struct
   structure LS = I.LabelSet
   structure M = Mil
   structure MU = MilUtils
+  structure PU = MilUtils.Prims.Utils
   structure MSTM = MU.SymbolTableManager
   structure MTT = MilType.Typer
   structure MFV = MilFreeVars
@@ -1090,7 +1091,13 @@ struct
             val t = RT.Prims.vectorTyp (getConfig env, vectorSize, fk)
           in t
           end
-        | M.TViMask et => fail ("genTyp", "TViMask")
+        | M.TViMask vd => 
+          let
+            val vectorSize = PU.VectorDescriptor.vectorSize vd 
+            val elementSize = PU.VectorDescriptor.elementSize vd 
+            val t = RT.Prims.maskTyp (getConfig env, vectorSize, elementSize)
+          in t
+          end
         | M.TCode {cc, args, ress} =>
           Pil.T.ptr (genCodeType (state, env, (cc, args, ress)))
         | M.TTuple _ => Pil.T.named RT.T.pAny

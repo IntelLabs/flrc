@@ -131,6 +131,7 @@ sig
   structure Prims :
   sig
     val vectorTyp      : Config.t * Mil.Prims.vectorSize * Mil.fieldKind -> Pil.T.t
+    val maskTyp        : Config.t * Mil.Prims.vectorSize * Mil.fieldSize -> Pil.T.t
     val numericTyp     : Config.t * Mil.Prims.numericTyp -> Pil.T.t
     (*                    dests              prim          thnk?  typs                     args            call  *)
     val call : Config.t * Pil.E.t Vector.t * Mil.Prims.t * bool * Mil.fieldKind Vector.t * Pil.E.t list -> Pil.S.t
@@ -459,12 +460,23 @@ struct
               | M.FkFloat       => "F32"
               | M.FkDouble      => "F64")
 
+    val getFieldSizeName = 
+        fn (config, fs) =>
+           (case fs
+             of M.Fs8  => "Fs8"
+              | M.Fs16 => "Fs16"
+              | M.Fs32 => "Fs32"
+              | M.Fs64 => "Fs64")
+
     val getVectorSizeName : Config.t * Mil.Prims.vectorSize -> string = PU.ToString.vectorSize 
     val getVectorTypName : Config.t * Mil.Prims.vectorSize -> string = 
         fn (config, vs) => "PlsrVector" ^ getVectorSizeName (config, vs)
 
-    val getVectorMaskName : Config.t * int -> string = 
-        fn (config, ms) => "PlsrVectorMask" ^ (Int.toString ms)
+    val getMaskTypName : Config.t * Mil.Prims.vectorSize -> string = 
+        fn (config, vs) => "PlsrVectorMask" ^ getVectorSizeName (config, vs)
+
+    val maskTyp : Config.t * Mil.Prims.vectorSize * Mil.fieldSize -> Pil.T.t = 
+     fn (config, vs, fs) => Pil.T.named (Pil.identifier (getMaskTypName (config, vs) ^ getFieldSizeName (config, fs)))
 
     val vectorTyp : Config.t * Mil.Prims.vectorSize * Mil.fieldKind -> Pil.T.t = 
      fn (config, vs, fk) => Pil.T.named (Pil.identifier (getVectorTypName (config, vs) ^ getFieldKindName (config, fk)))

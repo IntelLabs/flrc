@@ -819,14 +819,49 @@ struct
               val b1 = IFunc.getBlockByLabel (imil, func, l1)
               val b1pd = IBlock.preds (imil, b1)
               val () = Try.require ((List.length b1pd = 1) andalso (hd b1pd = b0))
-              val M.T {block = l3, arguments = args1} = Try.<@ MU.Transfer.Dec.tGoto (IBlock.getTransfer' (imil, b1))
-
               val b2 = IFunc.getBlockByLabel (imil, func, l2)
               val b2pd = IBlock.preds (imil, b2)
               val () = Try.require ((List.length b2pd = 1) andalso (hd b2pd = b0))
-              val M.T {block = l3', arguments = args2} = Try.<@ MU.Transfer.Dec.tGoto (IBlock.getTransfer' (imil, b2))
 
-              val () = Try.require (l3 = l3')
+              fun checkGoto (b1, b2) = 
+                  let
+                    val M.T {block = l3, arguments = args1} = Try.<@ MU.Transfer.Dec.tGoto (IBlock.getTransfer' (imil, b1))
+                    val M.T {block = l3', arguments = args2} = Try.<@ MU.Transfer.Dec.tGoto (IBlock.getTransfer' (imil, b2))
+                    val () = Try.require (l3 = l3')
+                  in
+                    fn () =>
+                      let
+                        val t1 = M.T {block = l3, arguments = args1 }
+                        val t2 = M.T {block = l3, arguments = args2 }
+                        val tr = MU.Bool.ifT (config, on, { trueT = t1, falseT = t2 })
+                      in tr
+                      end
+                  end
+
+              fun checkReturn (b1, b2) = 
+                  let
+                    val args1 = Try.<@ MU.Transfer.Dec.tReturn (IBlock.getTransfer' (imil, b1))
+                    val args2 = Try.<@ MU.Transfer.Dec.tReturn (IBlock.getTransfer' (imil, b2))
+                    val () = Try.require (Vector.length args1 = Vector.length args2)
+                  in
+                    fn () =>
+                      let
+                        val l3 = IMil.Var.labelFresh imil
+                        val typs = Vector.map (args1, fn x => MilType.Typer.operand (config, IMil.T.getSi imil, x)) 
+                        val args = Vector.map (typs, fn t => IMil.Var.new (imil, "rv_#", t, M.VkLocal))
+                        val b3 = M.B { parameters = args,
+                                       instructions = Vector.new0 (),
+                                       transfer = M.TReturn (Vector.map (args, M.SVariable)) }
+                        val _ = IBlock.build (imil, func, (l3, b3))
+                        val t1 = M.T {block = l3, arguments = args1 }
+                        val t2 = M.T {block = l3, arguments = args2 }
+                        val tr = MU.Bool.ifT (config, on, { trueT = t1, falseT = t2 })
+                      in
+                        tr
+                      end
+                  end
+
+              val trF = Try.<@ (Try.|| (checkGoto, checkReturn)) (b1, b2)
 
               fun checkBlock (b1, b2) =
                   let 
@@ -1082,9 +1117,7 @@ struct
 
               val (_, blk) = Try.<@ checkBlock (b1, b2)
               val _ = List.fold (blk, i, fn (j, i) => IMil.IInstr.insertBefore (imil, j, i))
-              val t1 = M.T {block = l3, arguments = args1 }
-              val t2 = M.T {block = l3, arguments = args2 }
-              val tr = MU.Bool.ifT (config, on, { trueT = t1, falseT = t2 })
+              val tr = trF ()
               val () = IBlock.replaceTransfer (imil, b0, tr)
               val () = IBlock.delete (imil, b1)
               val () = IBlock.delete (imil, b2)
