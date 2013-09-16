@@ -773,10 +773,39 @@ struct
                 in RrConstant r
                 end)
 
+       (* 
+        * Re-associate integral constants in a comparison. 
+        *
+        * (b1 + c2) op c1   ==>   b1 op (c1 - c2)
+        * (b1 - c2) op c1   ==>   b1 op (c1 + c2)
+        *)
+       val reassoc = 
+           Try.lift
+             (fn(c, cmp, args, get) => 
+                let
+                  fun doIt (b, c, mkArgs) = fn () =>
+                    let
+                      val c1 = <@ MU.Constant.Dec.cIntegral <!  MU.Operand.Dec.sConstant @@ c
+                      val (p, args) = <@ Operation.Dec.oPrim (get b)
+                      val { operator = operator1, ... } = <@ PU.Prim.Dec.pNumArith p 
+                      val (b1, b2) = Try.V.doubleton args
+                      val c2 = <@ MU.Constant.Dec.cIntegral <!  MU.Operand.Dec.sConstant @@ b2
+                      fun plus  op1 = Option.map (PU.ArithOp.Dec.aPlus  op1, fn _ => IntArb.-)
+                      fun minus op1 = Option.map (PU.ArithOp.Dec.aMinus op1, fn _ => IntArb.+)
+                      val op2 = <@ (plus or minus) operator1
+                      val c = M.SConstant (M.CIntegral (op2 (c1, c2)))
+                      val new = RrPrim (P.PNumCompare cmp, mkArgs (b1, c))
+                    in new
+                    end
+                  val (r1, r2) = Try.V.doubleton args
+                  val new = <@ (doIt (r1, r2, Vector.new2) || doIt (r2, r1, Vector.new2 o Utils.flip2)) ()
+                in new
+                end)
+
        val reduce : Config.t * {typ : P.numericTyp, operator : P.compareOp} 
                     * Mil.operand Vector.t * (Mil.operand -> Operation.t) 
                     -> reduction option =
-           identity or fold
+           identity or fold or reassoc
 
      end (* structure NumCompare *)
 
