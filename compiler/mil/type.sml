@@ -785,7 +785,7 @@ struct
                    end
 	         | MP.DSub r1       => mk11 (tv, t)
 	         | MP.DPermute r1   => mk11 (tv, tv)
-	         | MP.DBlend        => mk21 (tv, tv, tv)
+	         | MP.DBlend        => mk31 (tMask desc, tv, tv, tv)
 	         | MP.DSplit        => 
                    let
                      val size2 = 
