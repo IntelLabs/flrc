@@ -493,8 +493,8 @@ struct
                   then "-vec-report0" 
                   else "-Qvec-report0")
           val disableCpuDispatch = (if Config.host config = Config.OsLinux
-                  then "-diag-disable cpu-dispatch" 
-                  else "-Qdiag-disable:cpu-dispatch")
+                  then ["-diag-disable", "cpu-dispatch"] 
+                  else ["-Qdiag-disable:cpu-dispatch"])
           val ps = 
               (case compiler
                 of CcGCC  =>
@@ -510,7 +510,7 @@ struct
                       | 1 => ["-O1"]
                       | 2 => ["-O2"]
                       | 3 => ["-O3", iccIp,
-                              vecRep0, disableCpuDispatch]
+                              vecRep0] @ disableCpuDispatch
                       | _ => fail ("icc", "Bad opt level"))
                  | CcOpc => 
                    let
@@ -542,7 +542,7 @@ struct
                             | 1 => ["-O1"]
                             | 2 => ["-O2"]
                             | 3 => ["-O3", iccIp,
-                                    vecRep0, disableCpuDispatch]
+                                    vecRep0] @ disableCpuDispatch
                             | _ => fail ("picc", "Bad opt level"))
                    in opts
                    end
@@ -554,11 +554,11 @@ struct
         let
           val sloppy = Config.sloppyFp config
           val fastModel = (if Config.host config = Config.OsLinux
-                  then "-fp-model fast"
-                  else "-fp:fast")
+                  then ["-fp-model", "fast"]
+                  else ["-fp:fast"])
           val sourceModel = (if Config.host config = Config.OsLinux
-                  then "-fp-model source"
-                  else "-fp:source")
+                  then ["-fp-model", "source"]
+                  else ["-fp:source"])
           val ftzYes = (if Config.host config = Config.OsLinux
                   then "-ftz"
                   else "-Qftz")
@@ -587,12 +587,12 @@ struct
                                        (* without -msse, we should use -ffloat-store*)
                  | (CcGCC,    false) => ["-mieee-fp", "-mfpmath=sse"] 
                                        (* Pillar doesn't have -Qftz *)
-                 | (CcICC,    true)  => [fastModel, ftzYes]
-                 | (CcICC,    false) => [sourceModel, ftzNo, precDivYes, precSqrtYes, vecNo]
-                 | (CcOpc,    true)  => [fastModel]
-                 | (CcOpc,    false) => [sourceModel, precDivYes, precSqrtYes, vecNo]
-                 | (CcIpc,    true)  => [fastModel, ftzYes, precDivNo, precSqrtNo]
-                 | (CcIpc,    false) => [sourceModel, ftzNo, precDivYes, precSqrtYes, vecNo]
+                 | (CcICC,    true)  => fastModel @ [ftzYes]
+                 | (CcICC,    false) => sourceModel @ [ftzNo, precDivYes, precSqrtYes, vecNo]
+                 | (CcOpc,    true)  => fastModel
+                 | (CcOpc,    false) => sourceModel @ [precDivYes, precSqrtYes, vecNo]
+                 | (CcIpc,    true)  => fastModel @ [ftzYes, precDivNo, precSqrtNo]
+                 | (CcIpc,    false) => sourceModel @ [ftzNo, precDivYes, precSqrtYes, vecNo]
               )
         in os
         end
