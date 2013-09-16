@@ -205,11 +205,20 @@ struct
   fun sourceFile (config, compiler, fname) = fname^".c"
 
   fun objectFile (config, compiler, fname) = 
+      let
+        val linuxObjFile = fname^".o"
+        val windowsObjFile = fname^".obj"
+      in
       (case compiler 
-        of CcGCC    => fname^".o"
-         | CcICC    => fname^".obj"
-         | CcOpc    => fname^".obj"
-         | CcIpc    => fname^".obj")
+        of CcGCC    => linuxObjFile
+         | CcICC    => (if Config.host config = Config.OsLinux
+                  then linuxObjFile
+                  else windowsObjFile)
+         | CcOpc    => windowsObjFile
+         | CcIpc    => (if Config.host config = Config.OsLinux
+                  then linuxObjFile
+                  else windowsObjFile))
+      end
 
   fun exeFile (config, compiler, fname) = fname^".exe"
 
@@ -435,29 +444,57 @@ struct
     fun out (config, compiler) = ["-c"]
 
     fun obj ((config, compiler), fname) = 
+        let
+          val linuxStyle = "-o"^fname
+          val windowsStyle = "-Fo"^fname
+        in
         (case compiler 
-          of CcGCC    => ["-o"^fname]
-           | CcICC    => ["-Fo"^fname]
-           | CcOpc    => ["-Fo"^fname]
-           | CcIpc    => ["-Fo"^fname])
+          of CcGCC    => [linuxStyle]
+           | CcICC    => (if Config.host config = Config.OsLinux
+                    then [linuxStyle]
+                    else [windowsStyle])
+           | CcOpc    => [windowsStyle]
+           | CcIpc    => (if Config.host config = Config.OsLinux
+                    then [linuxStyle]
+                    else [windowsStyle]))
+        end
 
     fun debug (config, compiler) =
+        let
+          val iccSymbolStr = (if Config.host config = Config.OsLinux
+                              then "-g"
+                              else "-Zi")
+        in 
         (case compiler
           of CcGCC    => ifDebug (config, ["-g"], [])
-           | CcICC    => ifDebug (config, ["-Zi", "-debug"], ["-Zi"])
+           | CcICC    => ifDebug (config, [iccSymbolStr, "-debug"], [iccSymbolStr])
            | CcOpc    => ifDebug (config, ["-Zi", "-debug"], ["-Zi"])
-           | CcIpc    => ifDebug (config, ["-Zi", "-debug"], ["-Zi"]))
+           | CcIpc    => ifDebug (config, [iccSymbolStr, "-debug"], [iccSymbolStr]))
+        end
 
     fun arch (config, compiler) = 
         (case compiler
           of CcGCC    => ["-msse3"] (* without -msse, we should use -ffloat-store in float*)
-           | CcICC    => ["-QxT"]
+           | CcICC    => (if Config.host config = Config.OsLinux
+                    then ["-xT"] 
+                    else ["-QxT"])
            | CcOpc    => ["-QxB"]
-           | CcIpc    => ["-QxAVX"])
+           | CcIpc    => (if Config.host config = Config.OsLinux
+                    then ["-xAVX"]
+                    else ["-QxAVX"]))
 
     fun opt (config, compiler) =
         let
           val level = Config.pilOpt config
+          val iccIp = (if Config.host config = Config.OsLinux
+                  then "-ip" 
+                  else "-Qip")
+          val vecRep0 = (if Config.host config = Config.OsLinux
+                  then "-vec-report0" 
+                  else "-Qvec-report0")
+          val disableCpuDispatch = (if Config.host config = Config.OsLinux
+                  then "-diag-disable cpu-dispatch" 
+                  else "-Qdiag-disable:cpu-dispatch")
           val ps = 
               (case compiler
                 of CcGCC  =>
@@ -472,8 +509,8 @@ struct
                      of 0 => ["-Od"]
                       | 1 => ["-O1"]
                       | 2 => ["-O2"]
-                      | 3 => ["-O3", "-Qip",
-                              "-Qvec-report0", "-Qdiag-disable:cpu-dispatch"]
+                      | 3 => ["-O3", iccIp,
+                              vecRep0, disableCpuDispatch]
                       | _ => fail ("icc", "Bad opt level"))
                  | CcOpc => 
                    let
@@ -504,8 +541,8 @@ struct
                            of 0 => ["-Od"]
                             | 1 => ["-O1"]
                             | 2 => ["-O2"]
-                            | 3 => ["-O3", "-Qip",
-                                    "-Qvec-report0", "-Qdiag-disable:cpu-dispatch"]
+                            | 3 => ["-O3", iccIp,
+                                    vecRep0, disableCpuDispatch]
                             | _ => fail ("picc", "Bad opt level"))
                    in opts
                    end
@@ -516,6 +553,33 @@ struct
     fun float (config, compiler) =
         let
           val sloppy = Config.sloppyFp config
+          val fastModel = (if Config.host config = Config.OsLinux
+                  then "-fp-model fast"
+                  else "-fp:fast")
+          val sourceModel = (if Config.host config = Config.OsLinux
+                  then "-fp-model source"
+                  else "-fp:source")
+          val ftzYes = (if Config.host config = Config.OsLinux
+                  then "-ftz"
+                  else "-Qftz")
+          val ftzNo = (if Config.host config = Config.OsLinux
+                  then "-no-ftz"
+                  else "-Qftz-")
+          val precDivYes = (if Config.host config = Config.OsLinux
+                  then "-prec-div"
+                  else "-Qprec-div")
+          val precDivNo = (if Config.host config = Config.OsLinux
+                  then "-no-prec-div"
+                  else "-Qprec-div-")
+          val precSqrtYes = (if Config.host config = Config.OsLinux
+                  then "-prec-sqrt"
+                  else "-Qprec-sqrt")
+          val precSqrtNo = (if Config.host config = Config.OsLinux
+                  then "-no-prec-sqrt"
+                  else "-Qprec-sqrt-")
+          val vecNo = (if Config.host config = Config.OsLinux
+                  then "-no-vec"
+                  else "-Qvec-")
           val os = 
               (case (compiler, sloppy)
                 of (CcGCC,    true)  => ["-ffast-math"]
@@ -523,12 +587,12 @@ struct
                                        (* without -msse, we should use -ffloat-store*)
                  | (CcGCC,    false) => ["-mieee-fp", "-mfpmath=sse"] 
                                        (* Pillar doesn't have -Qftz *)
-                 | (CcICC,    true)  => ["-fp:fast", "-Qftz"]
-                 | (CcICC,    false) => ["-fp:source", "-Qftz-", "-Qprec-div", "-Qprec-sqrt", "-Qvec-"]
-                 | (CcOpc,    true)  => ["-fp:fast"]
-                 | (CcOpc,    false) => ["-fp:source", "-Qprec-div", "-Qprec-sqrt", "-Qvec-"]
-                 | (CcIpc,    true)  => ["-fp:fast", "-Qftz", "-Qprec-div-", "-Qprec-sqrt-"]
-                 | (CcIpc,    false) => ["-fp:source", "-Qftz-", "-Qprec-div", "-Qprec-sqrt", "-Qvec-"]
+                 | (CcICC,    true)  => [fastModel, ftzYes]
+                 | (CcICC,    false) => [sourceModel, ftzNo, precDivYes, precSqrtYes, vecNo]
+                 | (CcOpc,    true)  => [fastModel]
+                 | (CcOpc,    false) => [sourceModel, precDivYes, precSqrtYes, vecNo]
+                 | (CcIpc,    true)  => [fastModel, ftzYes, precDivNo, precSqrtNo]
+                 | (CcIpc,    false) => [sourceModel, ftzNo, precDivYes, precSqrtYes, vecNo]
               )
         in os
         end
@@ -550,16 +614,22 @@ struct
            | _     => [])
 
     fun lang (config, compiler) =
+        let
+          val iclC99 = (if Config.host config = Config.OsLinux
+                  then "-c99"
+                  else "-Qc99")
+        in
         (case compiler
           of CcGCC    => ["-std=c99"]
-           | CcICC    => ["-TC", "-Qc99"]
+           | CcICC    => ["-TC", iclC99]
            | CcOpc    => ["-TC", "-Qc99",
                           "-Qtlsregister:ebx",
                           "-Qoffsetvsh:0", 
                           "-Qoffsetusertls:4", 
                           "-Qoffsetstacklimit:16"]
-           | CcIpc    => ["-TC", "-Qc99"]
+           | CcIpc    => ["-TC", iclC99]
         )
+        end
 
     fun contImp (config, compiler) = 
         (case (compiler, p2cUseTry config)
@@ -573,11 +643,14 @@ struct
            | _                 => [])
 
     fun mt (config, compiler) =
-        (case compiler
-          of CcGCC    => []
-           | CcICC    => [ifDebug (config, "-MTd", "-MT")] 
-           | CcOpc    => [ifDebug (config, "-MTd", "-MT")]
-           | CcIpc    => [ifDebug (config, "-MTd", "-MT")])
+        (if Config.host config = Config.OsLinux
+                  then [] 
+                  else 
+          (case compiler
+            of CcGCC    => []
+             | CcICC    => [ifDebug (config, "-MTd", "-MT")] 
+             | CcOpc    => [ifDebug (config, "-MTd", "-MT")]
+             | CcIpc    => [ifDebug (config, "-MTd", "-MT")]))
 
   end (* structure CcOptions *)
 
@@ -650,8 +723,8 @@ struct
         (case ld
           of LdGCC   => fixGCCLibName lname
            | LdICC   => lname
-           | LdOpc    => lname
-           | LdIpc    => lname
+           | LdOpc   => lname
+           | LdIpc   => lname
         )
 
     fun start (config, ld) = 
