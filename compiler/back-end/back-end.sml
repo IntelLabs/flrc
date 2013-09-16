@@ -616,8 +616,8 @@ struct
     fun lang (config, compiler) =
         let
           val iclC99 = (if Config.host config = Config.OsLinux
-                  then "-c99"
-                  else "-Qc99")
+                  then "-std=c99"
+                  else "-Qstd=c99")
         in
         (case compiler
           of CcGCC    => ["-std=c99"]
