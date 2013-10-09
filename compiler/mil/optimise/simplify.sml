@@ -781,7 +781,7 @@ struct
         *)
        val reassoc = 
            Try.lift
-             (fn(c, cmp, args, get) => 
+             (fn(cfg, cmp, args, get) => 
                 let
                   fun doIt (b, c, mkArgs) = fn () =>
                     let
@@ -789,9 +789,21 @@ struct
                       val (p, args) = <@ Operation.Dec.oPrim (get b)
                       val { operator = operator1, ... } = <@ PU.Prim.Dec.pNumArith p 
                       val (b1, b2) = Try.V.doubleton args
+                      (* We require b1 not equal to b, which could happen in dead code *)
+                      val circular = case (b1, b) 
+                                       of (M.SVariable u, M.SVariable v) => u = v
+                                        | _ => false
+                      val () = assert ("NumCompare/reassoc", "circular definition", not circular)
+
                       val c2 = <@ MU.Constant.Dec.cIntegral <!  MU.Operand.Dec.sConstant @@ b2
-                      fun plus  op1 = Option.map (PU.ArithOp.Dec.aPlus  op1, fn _ => IntArb.-)
-                      fun minus op1 = Option.map (PU.ArithOp.Dec.aMinus op1, fn _ => IntArb.+)
+                      fun safeOp (f, g) = fn (x, y) =>
+                          let 
+                            val u = f (x, y)
+                            val v = g (IntArb.toIntInf x, IntArb.toIntInf y)
+                          in if IntArb.toIntInf u = v then u else Try.fail ()
+                          end
+                      fun plus  op1 = Option.map (PU.ArithOp.Dec.aPlus  op1, fn _ => safeOp (IntArb.-, IntInf.-))
+                      fun minus op1 = Option.map (PU.ArithOp.Dec.aMinus op1, fn _ => safeOp (IntArb.+, IntInf.+))
                       val op2 = <@ (plus or minus) operator1
                       val c = M.SConstant (M.CIntegral (op2 (c1, c2)))
                       val new = RrPrim (P.PNumCompare cmp, mkArgs (b1, c))
@@ -3131,6 +3143,16 @@ struct
                   val () = Try.require (pcount > 0)
                   val preds = IInstr.preds (imil, i)
                   val () = Try.require (not (List.isEmpty preds))
+                  (*
+                   * TODO: need to avoid going into dead code, where we may unintentionally
+                   * create circular definitions for variables.
+                   * 
+                   * We temporarily fix it by avoiding only a simple case where all preds 
+                   * (only 1, actually) are in fact the same as the current block.
+                   *) 
+                  val blk = IInstr.getIBlock (imil, i)
+                  val () = Try.require (not (List.forall (preds, fn p => p = blk)))
+
                   val ts =  List.map (preds, fn p => IBlock.getTransfer (imil, p))
                   val tfs = List.map (ts, <@ IInstr.toTransfer)
                   (* list of vector of targets *)
