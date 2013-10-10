@@ -793,7 +793,11 @@ struct
                       val circular = case (b1, b) 
                                        of (M.SVariable u, M.SVariable v) => u = v
                                         | _ => false
-                      val () = assert ("NumCompare/reassoc", "circular definition", not circular)
+                      (* 
+                       * TODO: Ideally we should throw an error, but it's non-trivial to 
+                       * completely avoid creating circular def (in dead code to be removed).
+                       *)
+                      val () = Try.require (not circular) 
 
                       val c2 = <@ MU.Constant.Dec.cIntegral <!  MU.Operand.Dec.sConstant @@ b2
                       fun safeOp (f, g) = fn (x, y) =>
