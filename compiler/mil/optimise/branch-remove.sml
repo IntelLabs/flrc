@@ -1021,10 +1021,31 @@ struct
                                   in
                                     when (eqFK, rhs, both (checkVariable' (v1, v2), checkOperand (o1, o2)))
                                   end
+                                 | (M.RhsClosureMk { fvs = fk1 },
+                                    M.RhsClosureMk { fvs = fk2 }) => 
+                                  let
+                                    val eqFK = Vector.length fk1 = Vector.length fk2 andalso 
+                                               Vector.forall2 (fk1, fk2, MU.FieldKind.eq)
+                                    fun rhs fk = M.RhsClosureMk { fvs = fk }
+                                  in
+                                    when (eqFK, rhs, SOME (fn () => fk1))
+                                  end
+                                 | (M.RhsClosureInit { cls = v1, code = c1, fvs = fv1 },
+                                    M.RhsClosureInit { cls = v2, code = c2, fvs = fv2 }) => 
+                                  let
+                                    val (fk1, o1) = Vector.unzip fv1
+                                    val (fk2, o2) = Vector.unzip fv2
+                                    val eqCFK = c1 = c2 andalso Vector.length fk1 = Vector.length fk2 andalso 
+                                                Vector.forall2 (fk1, fk2, MU.FieldKind.eq)
+                                    fun rhs (v, os) = M.RhsClosureInit { cls = v, code = c1, fvs = Vector.zip (fk1, os) }
+                                  in
+                                    when (eqCFK, rhs, both (checkVariable' (v1, v2), checkOperands (o1, o2)))
+                                  end
                                  | (M.RhsClosureGetFv { cls = v1, idx = i1, fvs = fk1 },
                                     M.RhsClosureGetFv { cls = v2, idx = i2, fvs = fk2 }) => 
                                   let
-                                    val eqFK = Vector.forall2 (fk1, fk2, MU.FieldKind.eq)
+                                    val eqFK = Vector.length fk1 = Vector.length fk2 andalso 
+                                               Vector.forall2 (fk1, fk2, MU.FieldKind.eq)
                                     fun rhs v = M.RhsClosureGetFv { cls = v, idx = i1, fvs = fk1 }
                                   in
                                     when (i1 = i2 andalso eqFK, rhs, checkVariable (v1, v2))
