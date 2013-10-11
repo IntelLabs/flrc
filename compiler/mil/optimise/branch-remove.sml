@@ -898,21 +898,22 @@ struct
                             fn (v1, v2) => if v1 = v2 then SOME (fn () => v1) else 
                               (case (VD.lookup (!vMap, v1), VD.lookup (!vMap, v2))
                                 of (SOME i, SOME j) => if i = j then SOME (fn () => i) else NONE
-                                 | (NONE, NONE) => 
+                                 | (vi, vj) => 
                                   let
                                     fun f () = 
                                       let
-                                        val t = IMil.Var.typ (imil, v1)
+                                        val i = UO.out (vi, fn () => v1)
+                                        val j = UO.out (vj, fn () => v2)
+                                        val t = IMil.Var.typ (imil, i)
                                         val u = IMil.Var.new (imil, "cm_#", t, M.VkLocal)
-                                        val () = aMap := VD.insert (!aMap, u, (M.SVariable v1, M.SVariable v2))
-                                        val () = vMap := VD.insert (VD.insert (!vMap, v1, u), v2, u)
-                                        val () = blk  := pushInstr (!blk, newCondMov (u, M.SVariable v1, M.SVariable v2))
+                                        val () = aMap := VD.insert (!aMap, u, (M.SVariable i, M.SVariable j))
+                                        val () = vMap := VD.insert (VD.insert (!vMap, i, u), j, u)
+                                        val () = blk  := pushInstr (!blk, newCondMov (u, M.SVariable i, M.SVariable j))
                                       in
                                         u
                                       end
                                   in SOME f
-                                  end
-                                 | _ => NONE)
+                                  end)
 
                           val checkVariable' =
                             fn (NONE, NONE) => SOME (fn () => NONE)
