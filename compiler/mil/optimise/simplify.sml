@@ -969,7 +969,7 @@ struct
                                val (b3, b4) = Try.V.doubleton args2
                                val () = Try.require (PU.NumericTyp.eq (typ1, typ2))
                                val () = Try.require (MU.Operand.eq(b1, b4))
-                               val new = RrPrim (P.PNumArith {typ = typ1, operator = P.APlus}, Vector.new2 (b2, b3))
+                               val new = RrBase b3
                              in
                                new
                              end
