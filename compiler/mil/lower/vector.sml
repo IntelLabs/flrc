@@ -70,49 +70,6 @@ struct
       in v
       end
 
-  val bindSplitVar = 
-   fn (s, e, v) =>
-      let
-        val targetBits = MPU.VectorSize.numBits (envGetTargetSize e)
-        val t = getVarTyp (s, v)
-        val mkVars = 
-         fn (vectorSize, et, count) => 
-            let
-              val typs = 
-                  List.tabulate (count, fn _ => M.TViVector {vectorSize = vectorSize, elementTyp = et})
-              val vars = List.map (typs, fn t => relatedSplitVar (s, v, t))
-              val d = envGetVars e
-              val d = VD.insert (d, v, vars)
-              val en = envSetVars (e, d)
-            in (en, vars)
-            end
-        val rec split = 
-         fn (vectorSize, et, count) => 
-             let 
-               val bits = MPU.VectorSize.numBits vectorSize
-             in 
-               if bits <= targetBits then 
-                 mkVars (vectorSize, et, count) 
-               else 
-                 case MPU.VectorSize.halfSize vectorSize
-                  of SOME vs => split (vs, et, 2*count)
-                   | NONE    => fail ("bindSplitVar", "Can't divide vectorSize")
-             end
-      in case MU.Typ.Dec.tViVector t
-          of SOME {vectorSize, elementTyp} => 
-             let val bits = MPU.VectorSize.numBits vectorSize
-             in if bits <= targetBits then (e, [v]) else split (vectorSize, elementTyp, 1)
-             end
-           | NONE => (e, [v])
-      end
-
-        
-  val splitVar = 
-   fn (state, env, v) => 
-      (case VD.lookup (envGetVars env, v)
-        of SOME l => l
-         | NONE   => [v])
-
   val splitVectorDescriptor = 
    fn (s, e, MP.Vd {vectorSize, elementSize}) =>
       let
@@ -135,6 +92,59 @@ struct
              end
       in MP.Vd {vectorSize = split vectorSize, elementSize = elementSize}
       end
+
+  val bindSplitVar = 
+   fn (s, e, v) =>
+      let
+        val targetBits = MPU.VectorSize.numBits (envGetTargetSize e)
+        val t = getVarTyp (s, v)
+        val mkVars = 
+         fn (vectorSize, count, mker) => 
+            let
+              val typs = 
+                  List.tabulate (count, fn _ => mker vectorSize)
+              val vars = List.map (typs, fn t => relatedSplitVar (s, v, t))
+              val d = envGetVars e
+              val d = VD.insert (d, v, vars)
+              val en = envSetVars (e, d)
+            in (en, vars)
+            end
+        val rec split = 
+         fn (vectorSize, count, mker) => 
+             let 
+               val bits = MPU.VectorSize.numBits vectorSize
+             in 
+               if bits <= targetBits then 
+                 mkVars (vectorSize, count, mker) 
+               else 
+                 case MPU.VectorSize.halfSize vectorSize
+                  of SOME vs => split (vs, 2*count, mker)
+                   | NONE    => fail ("bindSplitVar", "Can't divide vectorSize")
+             end
+      in case MU.Typ.Dec.tViVector t
+          of SOME {vectorSize, elementTyp} => 
+             let val bits = MPU.VectorSize.numBits vectorSize
+                 val mker  = fn vectorSize => M.TViVector {vectorSize = vectorSize, elementTyp = elementTyp}
+             in if bits <= targetBits then (e, [v]) else split (vectorSize, 1, mker)
+             end
+           | NONE => 
+             (case MU.Typ.Dec.tViMask t
+               of SOME (MP.Vd {vectorSize, elementSize}) => 
+                  let val bits = MPU.VectorSize.numBits vectorSize
+                      val mker = 
+                       fn vectorSize => M.TViMask (MP.Vd {vectorSize = vectorSize, elementSize = elementSize})
+                  in if bits <= targetBits then (e, [v]) else split (vectorSize, 1, mker)
+                  end
+                | NONE  => (e, [v]))
+      end
+
+        
+  val splitVar = 
+   fn (state, env, v) => 
+      (case VD.lookup (envGetVars env, v)
+        of SOME l => l
+         | NONE   => [v])
+
 
   structure Chat = ChatF(struct type env = env
                                 val extract = envGetConfig
@@ -298,7 +308,25 @@ struct
                                                                 checkDesc (#descriptor from, "ViConvert", (env, [i])))
                          | MP.ViCast {to, from} => checkDesc(#descriptor to, "ViCast", 
                                                              checkDesc (#descriptor from, "ViCast", (env, [i])))
-                         | MP.ViCompare r => checkDesc(#descriptor r, "ViCompare", (env, [i]))
+                         | MP.ViCompare {descriptor, typ, operator} => 
+                           let
+                             val desc = splitVectorDescriptor (state, env, descriptor)
+                             val dest = Vector.sub (dests, 0)
+                             val argsL = doOperandsPointwise (state, env, args)
+                             val (env, dests) = bindSplitVar (state, env, dest)
+                             val pairs = List.zip (dests, argsL)
+                             val p = MP.ViCompare {descriptor = desc, typ = typ, operator = operator}
+                             val mkRhs = fn args => M.RhsPrim {prim = MP.Vector p, 
+                                                               createThunks = createThunks, 
+                                                               typs = typs, 
+                                                               args = args}
+                             val mk1 = fn (v, args) => M.I {dests = Vector.new1 v,
+                                                            n = 0,
+                                                            rhs = mkRhs args}
+                             val is = List.map (pairs, mk1)
+                           in (env, is)
+                           end
+
                          | MP.ViReduction r => checkDesc(#descriptor r, "ViReduction", (env, [i]))
                          | MP.ViData {descriptor, operator} => 
                            let
