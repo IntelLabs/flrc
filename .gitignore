@@ -32,3 +32,19 @@ regressions.log
 tests/tmp
 
 runtime/hil.mil
+
+# Autotools
+aclocal.m4
+autom4te.cache
+config.guess
+config.log
+config.status
+config.sub
+configure
+depcomp
+install-sh
+Makefile.in
+missing
+stamp-h
+stamp-h1
+ylwrap
