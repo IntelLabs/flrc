@@ -48,3 +48,6 @@ missing
 stamp-h
 stamp-h1
 ylwrap
+
+# /runtime
+/runtime/Makefile
