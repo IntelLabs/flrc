@@ -9,6 +9,7 @@
 
 version=$1
 out=$2
+prefix=$3
 # Windows hostname outputs a final carriage return
 build="`date '+%F %R'` on `hostname | tr -d '\r'`"
 
@@ -18,4 +19,5 @@ echo "structure Version =" >> $out
 echo "struct" >> $out
 echo "  val iflcVersion = \"$version\"" >> $out
 echo "  val build = \"$build\"" >> $out
+echo "  val prefix = \"$prefix\"" >> $out
 echo "end" >> $out
