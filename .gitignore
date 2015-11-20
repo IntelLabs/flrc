@@ -54,7 +54,16 @@ ylwrap
 # /
 /Makefile
 
+# /
+/bin/frontend-new
+/bin/iflc
+/bin/ihc
+
 # /compiler
+compiler/core-hs/core-hs.grm.desc
+compiler/core-hs/core-hs.grm.sig
+compiler/core-hs/core-hs.grm.sml
+compiler/core-hs/core-hs.lex.sml
 compiler/version.sml
 
 # /runtime
