@@ -44,7 +44,7 @@ struct
 
   (*** The pass environment ***)
 
-  datatype env = E of {config: Config.t, gdefs : M.globals, func: M.code option, 
+  datatype env = E of {config: Config.t, gdefs : M.globals, func: M.code option,
                        rvars : M.variable List.t option, backEdges : LLS.t option}
 
   fun newEnv (config, gdefs) = E {config = config, func = NONE, rvars = NONE, gdefs = gdefs, backEdges = NONE}
@@ -162,7 +162,7 @@ struct
   fun vtInfoCompare (Vti x1, Vti x2) =
       rec10 (#code, option Identifier.variableCompare,
              #name, String.compare,
-             #tag, MU.PObjKind.compare, 
+             #tag, MU.PObjKind.compare,
              #pinned, Bool.compare,
              #fixedSize, Int.compare,
              #fixedRefs, vector Bool.compare,
@@ -201,7 +201,7 @@ struct
    *
    * For registering stuff in the init function, we keep two list of statements
    * in regs0 and regs1.  Everything in regs0 will preceed the reporting of
-   * the global objects, and hence cannot put (ppiler generated) globals on 
+   * the global objects, and hence cannot put (ppiler generated) globals on
    * the stack. Everthing in regs1 will follow the reporting of the globals
    * and hence can refer to them.
    *
@@ -329,13 +329,13 @@ struct
   fun clearLocals (S {locals,...}) = locals := VD.empty
   fun addLocal (S {locals,...}, x) = locals := VD.insert(!locals, x, NONE)
   fun addLocalWInit (S {locals,...}, x, eo) = locals := VD.insert(!locals, x, eo)
-  fun addLocals (S {locals,...}, xs) = 
+  fun addLocals (S {locals,...}, xs) =
        let
          val s = !locals
          val s = Vector.fold(xs, s, fn (x, s) => VD.insert (s, x, NONE))
        in locals := s
        end
-  fun addLocalsWInits (S {locals,...}, xs) = 
+  fun addLocalsWInits (S {locals,...}, xs) =
        let
          val s = !locals
          val s = Vector.fold(xs, s, fn ((x, eo), s) => VD.insert (s, x, eo))
@@ -374,7 +374,7 @@ struct
         * where size is the total size of the object in bytes, algn is the alignment
         * requirement for the object, paddings is a vector
         * where element i specifies the padding to be inserted before fixed field i,
-        * and padding specifies the padding to be inserted at the end of the fixed 
+        * and padding specifies the padding to be inserted at the end of the fixed
         * fields.
         *)
        val objectPadding : state * env * M.tupleDescriptor -> int * int * (int Vector.t) * int
@@ -430,7 +430,7 @@ struct
      * compute the start of the next field and the padding to be inserted
      * between the fields.
      *)
-    fun computePadding (fieldEnd, alignment) = 
+    fun computePadding (fieldEnd, alignment) =
         let
           val fieldStart = align (fieldEnd, alignment)
           val padding = fieldStart - fieldEnd
@@ -439,23 +439,23 @@ struct
 
     (* Compute padding for the fields of an object. Returns (fieldEnd, algn, paddings)
      * where fieldEnd is the offset of the end of last field (in bytes),
-     * algn is the alignment required of the object, 
-     * paddings is a vector where element i specifies the padding to be 
+     * algn is the alignment required of the object,
+     * paddings is a vector where element i specifies the padding to be
      * inserted before fixed field i,
-     * 
+     *
      * Each field is padded to its natural alignment or the specified
-     * alignment, whichever is greater.  
+     * alignment, whichever is greater.
      *)
-    fun fieldPaddingG (state, env, 
+    fun fieldPaddingG (state, env,
                        nb    : Config.t * 'a -> int, (* number of bytes in field *)
                        algn  : 'a -> int,            (* specified alignment of field *)
-                       fds   : 'a Vector.t, 
-                       fdo   : 'a Option.t, 
+                       fds   : 'a Vector.t,
+                       fdo   : 'a Option.t,
                        start : (int * int) (* starting offset and alignment *)
                       ) =
         let
           val config = getConfig env
-          fun doOne (fd, (off, max)) = 
+          fun doOne (fd, (off, max)) =
               let
                 val fsz = nb (config, fd)
                 val alignment = Int.max (fsz, algn fd)
@@ -465,7 +465,7 @@ struct
               in (padding, (fieldEnd, max))
               end
           val (paddings, (fieldEnd, max)) = Vector.mapAndFold (fds, start, doOne)
-          val max = 
+          val max =
               case fdo
                of NONE    => max
                 | SOME fd => Int.max (nb (config, fd), algn fd)
@@ -476,21 +476,21 @@ struct
      * where size is the total size of the object in bytes, algn is the alignment
      * required of the object, paddings is a vector
      * where element i specifies the padding to be inserted before fixed field i,
-     * and padding specifies the padding to be inserted at the end of the fixed 
+     * and padding specifies the padding to be inserted at the end of the fixed
      * fields.
-     * 
+     *
      * Each field is padded to its natural alignment or the specified
      * alignment, whichever is greater.  The entire object is padded
      * such that the end of the fixed portion is aligned to the maximum of the
-     * natural and specified alignment of the fixed elements and the array 
-     * portion (if any).  The object is aligned to the maximum of the natural 
+     * natural and specified alignment of the fixed elements and the array
+     * portion (if any).  The object is aligned to the maximum of the natural
      * and specified alignments of the fixed and array fields (minimum 4 byte aligned).
      *)
-    fun objectPaddingG (state, env, 
+    fun objectPaddingG (state, env,
                         nb    : Config.t * 'a -> int, (* number of bytes in field *)
                         algn  : 'a -> int,            (* specified alignment of field *)
-                        fds   : 'a Vector.t, 
-                        fdo   : 'a Option.t, 
+                        fds   : 'a Vector.t,
+                        fdo   : 'a Option.t,
                         start : (int * int) (* starting offset and alignment *)
                        ) =
         let
@@ -502,14 +502,14 @@ struct
     (* Size of the fixed portion of the object, accounting for padding.
      * Each field is padded to its natural alignment or the specified
      * alignment, whichever is greater.  The entire object is padded
-     * to the maximum of the natural and specified alignments of the 
+     * to the maximum of the natural and specified alignments of the
      * array portion (if any)
      *)
-    fun objectSizeG (state, env, 
+    fun objectSizeG (state, env,
                      nb    : Config.t * 'a -> int, (* number of bytes in field *)
                      algn  : 'a -> int,            (* specified alignment of field *)
-                     fds   : 'a Vector.t, 
-                     fdo   : 'a Option.t, 
+                     fds   : 'a Vector.t,
+                     fdo   : 'a Option.t,
                      start : int * int   (* starting offset and alignment *)
                     ) =
         let
@@ -521,10 +521,10 @@ struct
      * the space allocated must be sufficient for any of them.  No array portions
      * supported.
      *)
-    fun objectsSizeG (state, env, 
+    fun objectsSizeG (state, env,
                       nb    : Config.t * 'a -> int, (* number of bytes in field *)
                       algn  : 'a -> int,            (* specified alignment of field *)
-                      fdsV  : 'a Vector.t Vector.t, 
+                      fdsV  : 'a Vector.t Vector.t,
                       start : int * int   (* starting offset and alignment *)
                      ) =
         let
@@ -544,17 +544,17 @@ struct
              | SOME fd => fd)
 
     (* Offset of field, accounting for padding *)
-    fun fieldOffsetG (state, env, 
+    fun fieldOffsetG (state, env,
                       nb    : Config.t * 'a -> int, (* number of bytes in field *)
                       algn  : 'a -> int,            (* specified alignment of field *)
-                      fds   : 'a Vector.t, 
-                      fdo   : 'a Option.t, 
+                      fds   : 'a Vector.t,
+                      fdo   : 'a Option.t,
                       j     : int,  (* target field *)
                       start : int   (* starting offset *)
                      ) =
         let
           val config = getConfig env
-          fun loop (i, off) = 
+          fun loop (i, off) =
               let
                 val fd = get (fds, fdo, i)
                 val fsz = nb (config, fd)
@@ -570,30 +570,30 @@ struct
         end
 
     fun objectPadding (state, env, M.TD {fixed, array, ...}) =
-        objectPaddingG (state, env, 
+        objectPaddingG (state, env,
                         MU.FieldDescriptor.numBytes, MU.FieldDescriptor.alignmentBytes,
                         fixed, array, fieldBaseInfo (state, env))
 
     fun fieldOffset (state, env, M.TD {fixed, array, ...}, i) =
-        fieldOffsetG (state, env, 
+        fieldOffsetG (state, env,
                       MU.FieldDescriptor.numBytes, MU.FieldDescriptor.alignmentBytes,
                       fixed, array, i, fieldBase (state, env))
 
     fun arrayOffset (state, env, M.TD {fixed, array, ...}) =
-        fieldOffsetG (state, env, 
+        fieldOffsetG (state, env,
                       MU.FieldDescriptor.numBytes, MU.FieldDescriptor.alignmentBytes,
-                      fixed, array, Vector.length fixed, 
+                      fixed, array, Vector.length fixed,
                       fieldBase (state, env))
 
     fun fixedSize (state, env, M.TD {fixed, array, ...}) =
-        objectSizeG (state, env, 
+        objectSizeG (state, env,
                      MU.FieldDescriptor.numBytes, MU.FieldDescriptor.alignmentBytes,
                      fixed, array, fieldBaseInfo (state, env))
 
-    fun objectAlignment (state, env, M.TD {fixed, array, ...}) = 
+    fun objectAlignment (state, env, M.TD {fixed, array, ...}) =
         let
-          val (_, alignment, _, _) = 
-              objectPaddingG (state, env, 
+          val (_, alignment, _, _) =
+              objectPaddingG (state, env,
                               MU.FieldDescriptor.numBytes, MU.FieldDescriptor.alignmentBytes,
                               fixed, array, fieldBaseInfo (state, env))
         in alignment
@@ -609,10 +609,10 @@ struct
      * of thunks by returning a vector of vectors of field kinds.  Thunks are represented
      * as a union, where each element of the union correspond to one of the vectors
      * of field kinds.
-     * For the heavyweight thunks, there is only one members in the union, and the 
+     * For the heavyweight thunks, there is only one members in the union, and the
      * representation looks like:
-     *   A thunk is a vtable, a sequence of word sized fields, followed by the results field, 
-     *   followed by free variables.  
+     *   A thunk is a vtable, a sequence of word sized fields, followed by the results field,
+     *   followed by free variables.
      * For the lightweight thunks, there are three members in the union, corresponding to the
      * three states of being unevaluated, evaluated to a value, or evaluated to an exception.
      * The representation looks like:
@@ -621,46 +621,46 @@ struct
      *   Exn:    A vtable, followed by the exception
      * The allocated space for a thunk must be sufficient for any of the members of the union.
      *)
-    fun thunkBaseElements (state, env) = 
+    fun thunkBaseElements (state, env) =
         if lightweightThunks (getConfig env) then 1
         else
           let
             val vt = 1
-            val fb = 
+            val fb =
                 if synchThunks env then 3 else 2
-            val co = 
+            val co =
                 if interceptCuts (getConfig env) then 1 else 0
             val count = vt + fb + co
           in count
           end
 
-    fun ptkThunkFieldKinds (state, env, fk, fks) = 
+    fun ptkThunkFieldKinds (state, env, fk, fks) =
         let
           val bitsW = M.FkBits (MU.FieldSize.ptrSize (getConfig env))
-          val base = 
+          val base =
               Vector.new (thunkBaseElements (state, env), bitsW)
         in Vector.concat [base, Vector.new1 fk, fks]
         end
 
-    fun thunkValueFieldKinds (state, env, fk) = 
+    fun thunkValueFieldKinds (state, env, fk) =
         if lightweightThunks (getConfig env) then
           Vector.new2 (M.FkBits (MU.FieldSize.ptrSize (getConfig env)), fk)
         else
           ptkThunkFieldKinds (state, env, fk, Vector.new0 ())
 
-    fun thunkDelayFieldKinds (state, env, fk, fks) = 
+    fun thunkDelayFieldKinds (state, env, fk, fks) =
         if lightweightThunks (getConfig env) then
           Utils.Vector.cons (M.FkBits (MU.FieldSize.ptrSize (getConfig env)), fks)
         else
           ptkThunkFieldKinds (state, env, fk, fks)
-            
-    fun thunkExnFieldKinds (state, env, fk) = 
+
+    fun thunkExnFieldKinds (state, env, fk) =
         if lightweightThunks (getConfig env) then
           Vector.new2 (M.FkBits (MU.FieldSize.ptrSize (getConfig env)), M.FkRef)
         else
           ptkThunkFieldKinds (state, env, fk, Vector.new0 ())
 
-    fun thunkFieldKinds (state, env, fk, fks) = 
+    fun thunkFieldKinds (state, env, fk, fks) =
         if lightweightThunks (getConfig env) then
           let
             val delay = thunkDelayFieldKinds (state, env, fk, fks)
@@ -673,7 +673,7 @@ struct
 
     fun thunkResultField (state, env) = thunkBaseElements (state, env)
 
-    fun thunkFvFieldStart (state, env) = 
+    fun thunkFvFieldStart (state, env) =
         if lightweightThunks (getConfig env) then
           thunkBaseElements (state, env)
         else
@@ -704,14 +704,14 @@ struct
     (* Padding of a delayed thunk including free variables.  *)
     fun thunkPadding (state, env, typ, fks) =
         let
-          val (_, _, paddings, padding) = 
+          val (_, _, paddings, padding) =
               objectPaddingG (state, env, MU.FieldKind.numBytes, fn _ => 1,
                               thunkDelayFieldKinds (state, env, typ, fks), NONE, (0, 1))
         in Vector.fold (paddings, padding, op +)
         end
 
     (* Offset of the thunk result field *)
-    fun thunkResultOffset (state, env, typ) = 
+    fun thunkResultOffset (state, env, typ) =
         let
           val idx = thunkResultField (state, env)
           val fks = thunkValueFieldKinds (state, env, typ)
@@ -807,23 +807,23 @@ struct
           val sumPadding = mkPad (RT.Object.sumPadding, sumTD)
           val tfsRef = thunkFixedSize (state, env, M.FkRef)
           val thunkSizeRef = mk (RT.Thunk.fixedSize M.FkRef, tfsRef)
-          val thunkPaddingRef = 
+          val thunkPaddingRef =
               mk (RT.Thunk.fixedPadding M.FkRef, thunkFixedPadding (state, env, M.FkRef))
           val tfs32 = thunkFixedSize (state, env, M.FkBits M.Fs32)
           val thunkSize32 = mk (RT.Thunk.fixedSize (M.FkBits M.Fs32), tfs32)
-          val thunkPadding32 = 
+          val thunkPadding32 =
               mk (RT.Thunk.fixedPadding (M.FkBits M.Fs32), thunkFixedPadding (state, env, (M.FkBits M.Fs32)))
           val tfs64 = thunkFixedSize (state, env, M.FkBits M.Fs64)
           val thunkSize64 = mk (RT.Thunk.fixedSize (M.FkBits M.Fs64), tfs64)
-          val thunkPadding64 = 
+          val thunkPadding64 =
               mk (RT.Thunk.fixedPadding (M.FkBits M.Fs64), thunkFixedPadding (state, env, (M.FkBits M.Fs64)))
           val tfsFloat = thunkFixedSize (state, env, M.FkFloat)
           val thunkSizeFloat = mk (RT.Thunk.fixedSize M.FkFloat, tfsFloat)
-          val thunkPaddingFloat = 
+          val thunkPaddingFloat =
               mk (RT.Thunk.fixedPadding M.FkFloat, thunkFixedPadding (state, env, M.FkFloat))
           val tfsDouble = thunkFixedSize (state, env, M.FkDouble)
           val thunkSizeDouble = mk (RT.Thunk.fixedSize M.FkDouble, tfsDouble)
-          val thunkPaddingDouble = 
+          val thunkPaddingDouble =
               mk (RT.Thunk.fixedPadding M.FkDouble, thunkFixedPadding (state, env, M.FkDouble))
           val troRef = thunkResultOffset (state, env, M.FkRef)
           val thunkResultOffsetRef = mk (RT.Thunk.resultOffset M.FkRef, troRef)
@@ -835,26 +835,26 @@ struct
           val thunkResultOffsetFloat = mk (RT.Thunk.resultOffset M.FkFloat, troFloat)
           val troDouble = thunkResultOffset (state, env, M.FkDouble)
           val thunkResultOffsetDouble = mk (RT.Thunk.resultOffset M.FkDouble, troDouble)
-          val smallRationalMin = mk (RT.Rat.smallMin, 
+          val smallRationalMin = mk (RT.Rat.smallMin,
                                      IntInf.toInt RT.Rat.optMin)
-          val smallRationalMax = mk (RT.Rat.smallMax, 
+          val smallRationalMax = mk (RT.Rat.smallMax,
                                      IntInf.toInt RT.Rat.optMax)
-          val smallIntegerMin = mk (RT.Integer.smallMin, 
+          val smallIntegerMin = mk (RT.Integer.smallMin,
                                     IntInf.toInt RT.Integer.optMin)
-          val smallIntegerMax = mk (RT.Integer.smallMax, 
+          val smallIntegerMax = mk (RT.Integer.smallMax,
                                     IntInf.toInt RT.Integer.optMax)
         in
           Pil.D.sequence [fieldsBase, setOffset, setSize, setPadding, typeSize, typePadding,
-                          ratOffset, ratSize, ratPadding, 
+                          ratOffset, ratSize, ratPadding,
                           floatOffset, floatSize, floatPadding,
                           doubleOffset, doubleSize, doublePadding,
-                          arrayOLenOffset, arrayOEltOffset, arrayOBaseSize, arrayOPadding, 
-                          arrayILenOffset, arrayIEltOffset, arrayIIdxOffset, arrayIBaseSize, arrayIPadding, 
+                          arrayOLenOffset, arrayOEltOffset, arrayOBaseSize, arrayOPadding,
+                          arrayILenOffset, arrayIEltOffset, arrayIIdxOffset, arrayIBaseSize, arrayIPadding,
                           funCodeOffset, funSize, funPadding,
                           sumTagOffset, sumValOffset, sumSize, sumPadding,
                           thunkSizeRef, thunkSize32, thunkSize64, thunkSizeFloat, thunkSizeDouble,
                           thunkPaddingRef, thunkPadding32, thunkPadding64, thunkPaddingFloat, thunkPaddingDouble,
-                          thunkResultOffsetRef, thunkResultOffset32, thunkResultOffset64, 
+                          thunkResultOffsetRef, thunkResultOffset32, thunkResultOffset64,
                           thunkResultOffsetFloat, thunkResultOffsetDouble,
                           smallRationalMax, smallRationalMin, smallIntegerMax, smallIntegerMin]
         end
@@ -870,7 +870,7 @@ struct
         MSTM.variableFresh (getStm state, hint, t, g)
       end
 
-  fun printVar (state, env, v)  = 
+  fun printVar (state, env, v)  =
       LayoutUtils.printLayout (IM.layoutVariable (v, getStm state))
 
   val (oldVarEncodingF, oldVarEncoding) =
@@ -912,14 +912,14 @@ struct
 	      (#"?",  "_QM"),
 	      (#"~",  "_TWIDDLE")
 	      ]
-    fun expand c = 
+    fun expand c =
 	case CharDict.lookup (map, c)
 	 of SOME s => s
 	  | NONE => String.fromChar c
     fun oldEncoding s = String.translate (s, expand)
     fun newEncoding s = ZCoding.encodeExceptUnderscore s
   in
-  fun stringOfVar (state, env, v) = 
+  fun stringOfVar (state, env, v) =
       let
 	val s = IM.variableString (getStm state, v)
 	val s = (if oldVarEncoding (getConfig env) then oldEncoding else newEncoding) s
@@ -936,15 +936,15 @@ struct
       end
 
   (* Given a variable, derive a separate internal variable in a predictable
-   * known fashion.  
+   * known fashion.
    *)
-  fun deriveInternalVar (state, env, str, var) = 
+  fun deriveInternalVar (state, env, str, var) =
       stringOfVar (state, env, var) ^ "_" ^ str
 
   fun derivedVar' (state, env, v, hint, t) =
       MSTM.variableRelated (getStm state, v, hint, t, M.VkLocal)
 
-  fun derivedVar args = 
+  fun derivedVar args =
        let
          val v = derivedVar' args
          val () = addLocal (#1 args, v)
@@ -1027,17 +1027,17 @@ struct
 
   (* Return the C type for various Mil types *)
 
-  fun genReturnType (state, env, conv, rts) = 
+  fun genReturnType (state, env, conv, rts) =
       case rewriteThunks (env, conv)
-       of SOME _ => 
+       of SOME _ =>
           (case Vector.length rts
             of 1 => (Pil.T.named (RT.Thunk.returnTyp (typToFieldKind (env, Vector.sub (rts, 0)))), [])
              | _ => fail ("genReturnType", "Thunk code requires exactly 1 return type"))
-        | NONE   => 
+        | NONE   =>
           (case Vector.length rts
             of 0 => (Pil.T.void, [])
              | 1 => (genTyp (state, env, Vector.sub (rts,0)), [])
-             | n => 
+             | n =>
                let
                  val rts = genTyps (state, env, rts)
                in
@@ -1056,7 +1056,7 @@ struct
             case abi
              of M.AbiCdecl => "__cdecl"
               | M.AbiStdcall => "__stdcall"
-        val (cc, ats) = 
+        val (cc, ats) =
             case conv
              of M.CcCode => ("", ats)
               | M.CcUnmanaged abi => (abiToCc abi, ats)
@@ -1065,7 +1065,7 @@ struct
       in
         Pil.T.codeCC (rt, cc, ats)
       end
-  and genTyp (state, env, t) = 
+  and genTyp (state, env, t) =
       case t
        of M.TAny => fail ("genTyp", "TAny")
         | M.TAnyS _ => fail ("genTyp", "TAnyS")
@@ -1085,16 +1085,16 @@ struct
         | M.TNumeric t => RT.Prims.numericTyp (getConfig env, t)
         | M.TBoolean   => Pil.T.named RT.T.boolean
         | M.TName => Pil.T.named RT.T.pAny
-        | M.TViVector {vectorSize, elementTyp} => 
+        | M.TViVector {vectorSize, elementTyp} =>
           let
             val fk = typToFieldKind (env, elementTyp)
             val t = RT.Prims.vectorTyp (getConfig env, vectorSize, fk)
           in t
           end
-        | M.TViMask vd => 
+        | M.TViMask vd =>
           let
-            val vectorSize = PU.VectorDescriptor.vectorSize vd 
-            val elementSize = PU.VectorDescriptor.elementSize vd 
+            val vectorSize = PU.VectorDescriptor.vectorSize vd
+            val elementSize = PU.VectorDescriptor.elementSize vd
             val t = RT.Prims.maskTyp (getConfig env, vectorSize, elementSize)
           in t
           end
@@ -1126,14 +1126,14 @@ struct
       let
         val td = MU.MetaDataDescriptor.toTupleDescriptor mdd
         val (size, alignment, paddings, padding) = OM.objectPadding (state, env, td)
-        fun pad (i, n) = 
+        fun pad (i, n) =
             (RT.Tuple.paddingField i, Pil.T.arrayConstant (Pil.T.char, n))
-        fun doOne (i, t) = 
+        fun doOne (i, t) =
             if i < Vector.length paddings then
               let
                 val p = Vector.sub (paddings, i)
-              in 
-                if p = 0 then 
+              in
+                if p = 0 then
                   [(RT.Tuple.fixedField i, t)]
                 else
                   [pad (i, p), (RT.Tuple.fixedField i, t)]
@@ -1142,7 +1142,7 @@ struct
               fail ("tupleUnboxedTyp", "meta-data/init mismatched lengths")
 
         val fts = (RT.Tuple.vtable, Pil.T.named RT.T.vtable)::List.concat (List.mapi (ts, doOne))
-        val fts = 
+        val fts =
             if padding = 0 then fts else fts @ [pad (List.length ts, padding)]
       in
         Pil.T.strct (NONE, fts)
@@ -1150,14 +1150,14 @@ struct
 
   (*** Variable Binders ***)
 
-  fun genVarDec (state, env, x) = 
+  fun genVarDec (state, env, x) =
       Pil.varDec (genTyp (state, env, getVarTyp (state, x)),
                   genVar (state, env, x))
 
-  fun genVarsDec (state, env, xs) = 
+  fun genVarsDec (state, env, xs) =
       List.map (xs, fn x => genVarDec (state, env, x))
 
-  fun genVarsDecInits (state, env, xs) = 
+  fun genVarsDecInits (state, env, xs) =
       List.map (xs, fn (x, eo) => (genVarDec (state, env, x), eo))
 
 
@@ -1210,7 +1210,7 @@ struct
           fun doOne (padding, fd, off) =
               let
                 val off = off + padding
-                val () = 
+                val () =
                     if MU.FieldDescriptor.isRef fd then
                       let
                         val () =
@@ -1248,15 +1248,15 @@ struct
           val vtm =
               if mut then
                 VtmAlwaysMutable
-              else if nebi then 
+              else if nebi then
                 VtmAlwaysImmutable
               else
                 VtmCreatedMutable
         in
           Vti {code = NONE,
-               name = n, tag = pok, pinned = pinned, 
-               fixedSize = fs, fixedRefs = frefs, 
-               alignment = alignment, padding = totalPadding, 
+               name = n, tag = pok, pinned = pinned,
+               fixedSize = fs, fixedRefs = frefs,
+               alignment = alignment, padding = totalPadding,
                array = a, mut = vtm}
         end
 
@@ -1276,20 +1276,20 @@ struct
           (* Generate the actual vtable, with a forward dec of the code variable if present *)
           val vt = freshVariableDT (state, env, "vtable", M.VkGlobal)
           val vt' = genVarE (state, env, vt)
-          val () = 
+          val () =
               let
                 val tag = Pil.E.namedConstant (RT.MD.pObjKindTag tag)
-                val vtg = 
+                val vtg =
                     case code
-                     of NONE => 
+                     of NONE =>
                         let
                           val args = [vt', tag, Pil.E.string name, Pil.E.int padding]
                           val vtg = Pil.D.macroCall (RT.MD.static, args)
                         in vtg
                         end
-                      | SOME cv => 
+                      | SOME cv =>
                         let
-                          val ubt = 
+                          val ubt =
                               (case getVarTyp (state, cv)
                                 of M.TCode {cc, args, ress} => genCodeType (state, env, (cc, args, ress))
                                  | _ => fail ("genMetaDataUnboxed", "Code pointer not of code type"))
@@ -1305,21 +1305,21 @@ struct
           (* Generate an array of the fixed reference information *)
           val refsv = freshVariableDT (state, env, "vtrefs", M.VkGlobal)
           val refsv = genVar (state, env, refsv)
-          val () = 
-              if vtReg env then 
+          val () =
+              if vtReg env then
                 let
                   fun doOne b = Pil.E.int (if b then 1 else 0)
                   val refs = Pil.E.strctInit (Vector.toListMap (fixedRefs, doOne))
                   val isRefT = Pil.T.named RT.MD.isRefTyp
                   val refsvd = Pil.varDec (Pil.T.array isRefT, refsv)
                   val refsg = Pil.D.staticVariableExpr (refsvd, refs)
-                in addXtrGlb (state, refsg) 
+                in addXtrGlb (state, refsg)
                 end
               else ()
           val refsv = Pil.E.variable refsv
           (* Generate code to register vtable with GC *)
-          val () = 
-              if vtReg env then 
+          val () =
+              if vtReg env then
                 let
                   val fs = Pil.E.int fixedSize
                   val ag = Pil.E.int alignment
@@ -1333,8 +1333,8 @@ struct
                   val pinned = if pinned then Pil.E.int 1 else Pil.E.int 0
                   val args = [Pil.E.addrOf vt', ag, fs, refsv, vs, vlo, vr, mut, pinned]
                   val vtr = Pil.E.call (Pil.E.namedConstant RT.MD.register, args)
-                in addReg0 (state, Pil.S.expr vtr) 
-                end 
+                in addReg0 (state, Pil.S.expr vtr)
+                end
               else ()
         in vt
         end
@@ -1407,7 +1407,7 @@ struct
             val idx = off div ws
             val isRef = MU.FieldKind.isRef typ
             (* Non value lightweight-thunks re-use the code slot for
-             * the result 
+             * the result
              *)
             val () = if lightweightThunks (getConfig env) then ()
                      else Array.update (frefs, idx, isRef)
@@ -1416,7 +1416,7 @@ struct
                 case no
                  of NONE => vtiToName (state, env, M.PokCell, fs, frefs, NONE)
                   | SOME n => n
-            val mut = 
+            val mut =
                 if value then
                   if backpatch then
                     VtmCreatedMutable
@@ -1435,8 +1435,8 @@ struct
 
   (*** Constants ***)
 
-  fun genConstant (state, env, constant) = 
-      case constant    
+  fun genConstant (state, env, constant) =
+      case constant
        of M.CRat i =>
           Pil.E.call (Pil.E.namedConstant RT.Rat.optFromSInt32,
                       [Pil.E.int32 (IntInf.toInt i)])
@@ -1448,15 +1448,15 @@ struct
          * changed it to raise an error.  At some point
          * we should figure out how to make it do the right
          * thing.  -leaf *)
-        | M.CIntegral i => 
+        | M.CIntegral i =>
           (case IntArb.toInt i
             of SOME i => Pil.E.int i
-             | NONE   => 
+             | NONE   =>
                let
                  val iif = IntArb.toIntInf i
                in
                  (*
-                 if iif < 0 then 
+                 if iif < 0 then
                    fail ("genConstant", "Can't produce integer constant" ^ (IntArb.stringOf i))
                  else *)
                  Pil.E.intInf iif
@@ -1466,9 +1466,9 @@ struct
         | M.CDouble r => Pil.E.double r
         (* FIXME: WL: add runtime routine *)
         | M.CViMask _ => fail ("genConstant", "CViMask")
-(*          (if VI.numMaskBytes (targetVectorSize env, typ) > 4 then 
+(*          (if VI.numMaskBytes (targetVectorSize env, typ) > 4 then
              fail ("genConstant", "Unspported mask size > 32")
-           else  
+           else
              let
                fun shiftBool (b, w) =
                    let
@@ -1477,7 +1477,7 @@ struct
                      if b then Word32.orb (w, Word32.fromInt 1) else w
                    end
                val m = Vector.foldr (elts, Word32.fromInt 0, shiftBool)
-             in 
+             in
                Pil.E.word32 m
              end) *)
         | M.CPok pok => Pil.E.namedConstant (RT.MD.pObjKindTag pok)
@@ -1489,7 +1489,7 @@ struct
 
   (*** Simples ***)
 
-  (* Global variables that occur in other globals cannot simply 
+  (* Global variables that occur in other globals cannot simply
    * be referenced, since the resulting reference is not itself
    * constant.  Consequently, we must split globals into two parts:
    * an internal variable containing the actual global, and the actual
@@ -1498,7 +1498,7 @@ struct
    * However, all code globals are bound to C functions, which in a
    * sense are the unboxed versions of the variable.
    *)
-  fun unboxedVar (state, env, v) = 
+  fun unboxedVar (state, env, v) =
       case getGlobalDef (env, v)
        of M.GCode _ => genVar (state, env, v)
         | _ => Pil.identifier (deriveInternalVar (state, env, "unboxed", v))
@@ -1520,9 +1520,9 @@ struct
   fun fkOperand (state, env, s) =
       let
         val config = getConfig env
-      in 
+      in
       case s
-       of M.SVariable v => 
+       of M.SVariable v =>
          let
            val typ = case getVarTyp (state, v)
                        of M.TViVector { elementTyp, ... } => elementTyp
@@ -1538,7 +1538,7 @@ struct
 
   fun genOperands (state, env, os) =
       Vector.toListMap (os, fn opnd => genOperand (state, env, opnd))
-       
+
   (*** Right-hand side ***)
 
   fun writeBarrier (state, env, base, trg, src, fk, opt) =
@@ -1550,7 +1550,7 @@ struct
       else
         Pil.E.assign (trg, src)
 
-  fun genTuple (state, env, no, dest, mdd, inits) = 
+  fun genTuple (state, env, no, dest, mdd, inits) =
       let
         val M.MDD {pok, pinned, fixed, array} = mdd
         val td = MU.MetaDataDescriptor.toTupleDescriptor mdd
@@ -1567,7 +1567,7 @@ struct
                 uninitList
             else let
               val fk = MU.FieldDescriptor.kind field
-              val fieldIsRef = MU.FieldKind.isRef fk 
+              val fieldIsRef = MU.FieldKind.isRef fk
               in
                   if fieldIsRef then
                       i :: uninitList
@@ -1621,7 +1621,7 @@ struct
             in
               af (off, fk, t, oper)
             end
-        val fixedInit = Vector.toList (Vector.mapi (inits, doFixedField)) 
+        val fixedInit = Vector.toList (Vector.mapi (inits, doFixedField))
         fun genRefZero (i) =
             doFixedField (i, M.SConstant (M.CRef (MU.HeapModel.null (getConfig env))))
         val zeroArrayPortion =
@@ -1635,12 +1635,12 @@ struct
                     val arg2 = Pil.E.int (OM.extraSize (state, env, td))
                     val arg3 = genOperand (state, env, Vector.sub (inits, i))
                     val args = [arg0, arg1, arg2, arg3]
-                  in 
+                  in
                     Pil.S.expr (Pil.E.call (func,args)) :: nil
                   end
                 else nil
               | NONE => nil
-        val zeroRefList = 
+        val zeroRefList =
             if zeroRefs (getConfig env) then
                 List.concat [zeroArrayPortion, List.map (uninitFixedRefs, genRefZero)]
             else nil
@@ -1680,10 +1680,10 @@ struct
             val fd = getArrayDescriptor tupDesc
           in (off, ssk, fd)
           end
-        | M.FiVectorFixed {descriptor, mask, index} => 
+        | M.FiVectorFixed {descriptor, mask, index} =>
           let
             val () =
-                case mask 
+                case mask
                  of SOME _ => fail ("doTupleField", "FiVectorFixed: masking unimplimented")
                   | NONE   => ()
             val off = OM.fieldOffset (state, env, tupDesc, index)
@@ -1694,7 +1694,7 @@ struct
         | M.FiVectorVariable {descriptor, base, mask, index, kind} =>
           let
             val () =
-                case mask 
+                case mask
                  of SOME _ => fail ("doTupleField", "FiVectorVariable: masking unimplimented")
                   | NONE   => ()
             val off = OM.arrayOffset (state, env, tupDesc)
@@ -1702,7 +1702,7 @@ struct
             val eType = fkOperand (state, env, index)
             val config = getConfig env
             val numBits = MU.FieldKind.numBits (config, eType)
-            val ssk = 
+            val ssk =
                 (case (base, kind)
                   of (M.TbScalar, M.VikStrided i) => SskVectorVariableStrided (descriptor, Pil.E.int i, ext)
                    | (M.TbScalar, M.VikVector)    => SskVectorVariableIndexed (descriptor, ext, numBits)
@@ -1730,18 +1730,18 @@ struct
             case ssk
              of SskScalarFixed                            => assign (RT.Object.field, [v, off, fte])
               | SskScalarVariable e                       => assign (RT.Object.extra, [v, off, fte, es, e])
-              | SskVectorFixed et                         => call (RT.Prims.vectorLoadF   (config, et, kind), 
+              | SskVectorFixed et                         => call (RT.Prims.vectorLoadF   (config, et, kind),
                                                                    [v, off])
-              | SskVectorVariableStrided (et, i, e)       => call (RT.Prims.vectorLoadVS  (config, et, kind), 
+              | SskVectorVariableStrided (et, i, e)       => call (RT.Prims.vectorLoadVS  (config, et, kind),
                                                                    [v, off, e, i])
-              | SskVectorVariableIndexed (et, e, numBits) => 
+              | SskVectorVariableIndexed (et, e, numBits) =>
                 if numBits = 64 then
                   call (RT.Prims.vectorLoadVI64 (config, et, kind), [v, off, e])
                 else
                   call (RT.Prims.vectorLoadVI   (config, et, kind), [v, off, e])
-              | SskVectorVariableVectorStrided (et, i, e) => call (RT.Prims.vectorLoadVVS (config, et, kind), 
+              | SskVectorVariableVectorStrided (et, i, e) => call (RT.Prims.vectorLoadVVS (config, et, kind),
                                                                    [v, off, e, i])
-              | SskVectorVariableVectorIndexed (et, e, numBits) => 
+              | SskVectorVariableVectorIndexed (et, e, numBits) =>
                 if numBits = 64 then
                   call (RT.Prims.vectorLoadVVI64 (config, et, kind), [v, off, e])
                 else
@@ -1768,18 +1768,18 @@ struct
             case ssk
              of SskScalarFixed                            => scalar (RT.Object.field, [v, off, ft])
               | SskScalarVariable e                       => scalar (RT.Object.extra, [v, off, ft, es, e])
-              | SskVectorFixed et                         => vector (RT.Prims.vectorStoreF (config, et, kind), 
+              | SskVectorFixed et                         => vector (RT.Prims.vectorStoreF (config, et, kind),
                                                                      [v, off, nv])
-              | SskVectorVariableStrided (et, i, e)       => vector (RT.Prims.vectorStoreVS (config, et, kind), 
+              | SskVectorVariableStrided (et, i, e)       => vector (RT.Prims.vectorStoreVS (config, et, kind),
                                                                      [v, off, e, i, nv])
-              | SskVectorVariableIndexed (et, e, numBits) => 
+              | SskVectorVariableIndexed (et, e, numBits) =>
                 if numBits = 64 then
                   vector (RT.Prims.vectorStoreVI64 (config, et, kind), [v, off, e, nv])
                 else
                   vector (RT.Prims.vectorStoreVI (config, et, kind), [v, off, e, nv])
-              | SskVectorVariableVectorStrided (et, i, e) => vector (RT.Prims.vectorStoreVVS (config, et, kind), 
+              | SskVectorVariableVectorStrided (et, i, e) => vector (RT.Prims.vectorStoreVVS (config, et, kind),
                                                                      [v, off, e, i, nv])
-              | SskVectorVariableVectorIndexed (et, e, numBits) => 
+              | SskVectorVariableVectorIndexed (et, e, numBits) =>
                 if numBits = 64 then
                   vector (RT.Prims.vectorStoreVVI64 (config, et, kind), [v, off, e, nv])
                 else
@@ -1865,14 +1865,14 @@ struct
 
   (* Make optional name for allocation site *)
   fun mkAllocSiteName (state, env, dest) =
-      if instrumentAllocationSites (getConfig env) then 
+      if instrumentAllocationSites (getConfig env) then
         case dest
          of NONE => NONE
           | SOME v => SOME (I.variableString' v)
       else
         NONE
 
-  fun mkThunk0 (state, env, dest, typ, fvs, backpatch, codeO, value) = 
+  fun mkThunk0 (state, env, dest, typ, fvs, backpatch, codeO, value) =
       let
         val no = mkAllocSiteName (state, env, SOME dest)
         val vt = MD.genMetaDataThunk (state, env, no, typ, fvs, backpatch, codeO, value)
@@ -1909,10 +1909,10 @@ struct
         val fvfks = Vector.map (fvs, #1)
         val (mk, thunk, markInit) =
             let
-              val mkCodeInit = 
-               fn thunk => 
+              val mkCodeInit =
+               fn thunk =>
                   (case code
-                    of SOME cv => 
+                    of SOME cv =>
                        Pil.S.expr (Pil.E.call (Pil.E.variable (RT.Thunk.init typ),
                                                [thunk, genVarE (state, env, cv)]))
                      | NONE    => Pil.S.empty)
@@ -1924,33 +1924,33 @@ struct
                     val codeO = if vtThunkCode c then code else NONE
                     val mk = mkThunk (state, env, v, typ, codeO, fvfks)
                     val thunk = genVarE (state, env, v)
-                    val init = if vtThunkCode c then 
+                    val init = if vtThunkCode c then
                                  Pil.S.empty
                                else
                                  mkCodeInit thunk
-                                            
+
                   in (mk, thunk, init)
                   end
                 | (SOME v, SOME _) => fail "returns no value"
-                | (SOME v, NONE) => 
+                | (SOME v, NONE) =>
                   let
                     val thunk = genVarE (state, env, v)
-                    val init = 
+                    val init =
                         if vtThunkCode c then
                           (case code
-                            of SOME cv => 
+                            of SOME cv =>
                                let
                                  val vt = MD.genMetaDataThunk (state, env, NONE, typ, fvfks, true, code, false)
-                                 val init = 
+                                 val init =
                                      Pil.S.expr (Pil.E.call (Pil.E.variable (RT.Thunk.init typ),
                                                              [thunk, vt]))
                                in init
                                end
-                             | NONE => 
+                             | NONE =>
                                Pil.S.empty)
                         else
                           mkCodeInit thunk
-                  in 
+                  in
                     (Pil.S.empty, thunk, init)
                   end
             end
@@ -1997,7 +1997,7 @@ struct
              of (NONE, NONE) => fail "expecting dest"
               | (NONE, SOME v) => mkThunkValue (state, env, v, typ, value)
               | (SOME v, SOME _) => fail "returns no value"
-              | (SOME v, NONE)   => 
+              | (SOME v, NONE)   =>
                 let
                   val t = genVarE (state, env, v)
                   val set = Pil.E.call (Pil.E.variable (RT.Thunk.initValue typ), [t, value])
@@ -2025,14 +2025,14 @@ struct
       in Pil.S.expr set
       end
 
-  fun genThunkGetValue (state, env, dest, typ, thunk) = 
+  fun genThunkGetValue (state, env, dest, typ, thunk) =
       let
         val read = genThunkReadResult (state, env, dest, typ, thunk)
         val thunk = genVarE (state, env, thunk)
         val cast = Pil.E.namedConstant (RT.Thunk.castToObject typ)
         val castpath = Pil.E.call (cast, [thunk])
         val castpath = Pil.S.expr (Pil.E.assign (genVarE (state, env, dest), castpath))
-        val control = 
+        val control =
             Pil.E.call (Pil.E.namedConstant (RT.Thunk.isUnboxed typ), [thunk])
         val res = Pil.S.ifThenElse (control, castpath, read)
       in res
@@ -2041,8 +2041,8 @@ struct
   fun genRhs (state, env, dests, rhs) =
       let
 
-        val zeroOneDest = 
-         fn dests => 
+        val zeroOneDest =
+         fn dests =>
             (case Utils.Option.fromVector dests
               of SOME opt => opt
                | NONE => fail ("genRhs", "Don't know how to generate multiple destinations"))
@@ -2056,7 +2056,7 @@ struct
 
         (* Assign pure *)
         fun assignP rhs =
-            case zeroOneDest dests 
+            case zeroOneDest dests
              of SOME v =>
                 Pil.S.expr (Pil.E.assign (genVarE (state, env, v), rhs))
               | NONE   => Pil.S.empty
@@ -2076,8 +2076,8 @@ struct
               | NONE => Pil.S.empty
 
         (* Pass in dest, drop if no dest. *)
-        fun bind f = 
-            case zeroOneDest dests 
+        fun bind f =
+            case zeroOneDest dests
              of SOME v => f v
               | NONE   => Pil.S.empty
 
@@ -2103,7 +2103,7 @@ struct
             end
           | M.RhsTupleSub tf =>
             bind (fn v => genTupleSub (state, env, v, tf))
-          | M.RhsTupleSet {tupField, ofVal} => 
+          | M.RhsTupleSet {tupField, ofVal} =>
             assign (genTupleSet (state, env, tupField, ofVal))
           | M.RhsTupleCAS {tupField, cmpVal, newVal} =>
             bind (fn v => genTupleCAS (state, env, v, tupField, cmpVal, newVal))
@@ -2118,7 +2118,7 @@ struct
             in Pil.S.expr finalise
             end
           | M.RhsIdxGet {idx, ofVal} =>
-            assignP (Pil.E.call (Pil.E.variable RT.Idx.get, 
+            assignP (Pil.E.call (Pil.E.variable RT.Idx.get,
                                  [genVarE (state, env, idx),
                                   genOperand (state, env, ofVal)]))
           | M.RhsCont l =>
@@ -2177,7 +2177,7 @@ struct
 
   (*** Instructions ***)
 
-  fun genInstr (state, env, (M.I {dests, n, rhs})) = 
+  fun genInstr (state, env, (M.I {dests, n, rhs})) =
       let
         val () = addLocals (state, dests)
         val code = genRhs (state, env, dests, rhs)
@@ -2185,16 +2185,16 @@ struct
         code
       end
 
-  fun genInstrs (state, env, is) = 
+  fun genInstrs (state, env, is) =
       Pil.S.sequence (Vector.toListMap (is, fn i => genInstr(state, env, i)))
-       
+
   (*** Transfers ***)
 
-  fun doSsaMoves (state, env, cb, block, arguments) = 
+  fun doSsaMoves (state, env, cb, block, arguments) =
       let
         val M.B {parameters, ...} = MU.CodeBody.block (cb, block)
         val () = Fail.assert (modname, "doSsaMoves", "mismatch in phi args",
-                              (fn () => (Vector.length parameters = 
+                              (fn () => (Vector.length parameters =
                                          Vector.length arguments)))
         val parametersl = Vector.toList parameters
         val pi = List.mapi (parametersl, Utils.flip2)
@@ -2206,7 +2206,7 @@ struct
               | _              => VS.empty
         (* Topo sort such that things that parameter i reads from don't follow it,
          * then emit SSA moves in reverse order such that parameter i gets written
-         * before anything that it reads from does.  For parameters involved in 
+         * before anything that it reads from does.  For parameters involved in
          * a strongly connected component, add temporaries.
          *)
         val scc = I.variableTopoSort (pi, depsOf)
@@ -2249,12 +2249,12 @@ struct
       Config.Feature.mk ("IFLC:use-iflc-yields",
                          "IFLC inserts yields")
 
-  val isBackEdge = 
+  val isBackEdge =
    fn (state, env, e) => LLS.member (getBackEdges env, e)
 
   fun genGoto (state, env, cb, src, M.T {block, arguments}) =
       let
-        val pre = 
+        val pre =
             if iflcYields (getConfig env) andalso isBackEdge (state, env, (src, block)) then
               Pil.S.yield
             else
@@ -2265,7 +2265,7 @@ struct
         Pil.S.sequence [pre, Pil.S.sequence moves, Pil.S.goto succ]
       end
 
-  fun genHalt (state, env, opnd) = 
+  fun genHalt (state, env, opnd) =
       let
         val M.F {rtyps, ...} = getFunc env
         val i = Vector.length rtyps
@@ -2277,7 +2277,7 @@ struct
 
   fun genCase (state, env, cb, src, {select, on, cases, default}) =
       let
-        val () = 
+        val () =
             case select
              of M.SeSum fk   => notCoreMil (env, "genCase", "SeSum")
               | M.SeConstant => ()
@@ -2374,9 +2374,9 @@ struct
                           in
                             Pil.E.assign (rv, c)
                           end
-                        | n => 
+                        | n =>
                           let
-                            val init = 
+                            val init =
                              fn v => if MU.Typ.isRef (getVarTyp (state, v)) then SOME Pil.E.null else NONE
                             val () = Vector.foreach (rets, fn v => addLocalWInit (state, v, init v))
                             val rvs = Vector.toListMap (rets, fn v => genVarE (state, env, v))
@@ -2416,12 +2416,12 @@ struct
                      end
                    | NONE =>
                      (case getRVars env
-                       of SOME rvars => 
+                       of SOME rvars =>
                           let
                             val args = args @ (List.map (rvars, fn v => genVarE (state, env, v)))
                           in Pil.S.tailCall (getConfig env, true, f, args)
                           end
-                        | NONE => 
+                        | NONE =>
                           let
                             val M.F {rtyps, ...} = getFunc env
                             val void = Vector.length rtyps = 0
@@ -2470,9 +2470,9 @@ struct
                 let
                   val rtyp = MU.Code.thunkTyp (getFunc env)
                   val t = genTyp (state, env, rtyp)
-                  val (castpath, fastpath, slowpath) = 
+                  val (castpath, fastpath, slowpath) =
                       case rewriteThunks (env, cc)
-                       of SOME tvar => 
+                       of SOME tvar =>
                           let
                             val (slowf, slowargs) =
                                 case e
@@ -2489,11 +2489,11 @@ struct
                             val vret = MSTM.variableFresh (stm, "ret", rtyp, M.VkLocal)
                             val () = addLocal (state, vret)
                             val vret = genVarE (state, env, vret)
-                            val cont = 
-                             fn e => 
+                            val cont =
+                             fn e =>
                                 let
                                   val evals = Pil.S.expr (Pil.E.assign (vret, e))
-                                  val rets = 
+                                  val rets =
                                       Pil.S.call (Pil.E.namedConstant (RT.Thunk.return fk),
                                                   [genVarE (state, env, tvar), vret])
                                 in Pil.S.sequence [evals, rets]
@@ -2503,7 +2503,7 @@ struct
                             val castpath = Pil.E.call (cast, [thunk])
                           in (cont castpath, cont fastpath, cont slowpath)
                           end
-                        | NONE => 
+                        | NONE =>
                           let
                             val (slowf, slowargs) =
                                 case e
@@ -2525,7 +2525,7 @@ struct
         val control =
             Pil.E.call (Pil.E.namedConstant (RT.Thunk.isEvaled fk), [thunk])
         val res = Pil.S.ifThenElse (control, fastpath, slowpath)
-        val control = 
+        val control =
             Pil.E.call (Pil.E.namedConstant (RT.Thunk.isUnboxed fk), [thunk])
         val res = Pil.S.ifThenElse (control, castpath, res)
       in Pil.S.sequence [res, g]
@@ -2536,7 +2536,7 @@ struct
        of M.IpCall {call, args} => genCall (state, env, cc, call, args, ret)
         | M.IpEval {typ, eval} => genEval (state, env, cc, typ, eval, ret)
 
-  fun genTransfer (state, env, src, t) = 
+  fun genTransfer (state, env, src, t) =
       let
         val M.F {cc, body = cb, rtyps, ...} = getFunc env
       in
@@ -2563,22 +2563,22 @@ struct
                        end
                      | NONE => Pil.S.returnExpr opnd
                  end
-               | n => 
+               | n =>
                  let
                    val opers = Vector.toListMap (os, fn oper => genOperand (state, env, oper))
-                 in 
+                 in
                    (case getRVars env
-                     of SOME rvars => 
+                     of SOME rvars =>
                         let
                           val rvars = List.map (rvars, fn v => genVarE (state, env, v))
-                          val doOne = 
-                           fn (v, oper) => 
+                          val doOne =
+                           fn (v, oper) =>
                               Pil.S.expr (Pil.E.assign (Pil.E.contentsOf v, oper))
                           val ss = Pil.S.sequence (List.map2 (rvars, opers, doOne))
                           val r = Pil.S.return
                         in Pil.S.sequence [ss, r]
                         end
-                      | NONE => 
+                      | NONE =>
                         if doMultiReturn (getConfig env) then
                           Pil.S.returnMultiExpr opers
                         else
@@ -2607,11 +2607,11 @@ struct
       Config.Feature.mk ("Pil:instrument-blocks",
                          "every block prints its label")
 
-  fun genBlock (state, env, bid, block) = 
+  fun genBlock (state, env, bid, block) =
       let
         val label = Pil.S.label (genLabel (state, env, bid))
         val label =
-            if instrumentBlocks (getConfig env) then 
+            if instrumentBlocks (getConfig env) then
               Pil.S.sequence [label, genPrintLabel (state, env, bid)]
             else
               label
@@ -2660,20 +2660,20 @@ struct
         (* static vut vu;
          * #define v ((vt)&vu)
          *)
-        val declareAndDefine = 
+        val declareAndDefine =
          fn (v, vuT) =>
             let
               val vT = genTyp (state, env, getVarTyp (state, v))
               val vu = unboxedVar (state, env, v)
               val v = genVar (state, env, v)
               val dec1 = Pil.D.staticVariable (Pil.varDec (vuT, vu))
-              val dec2 = 
+              val dec2 =
                   Pil.D.constantMacro (v, Pil.E.cast (vT, Pil.E.addrOf (Pil.E.variable vu)))
             in Pil.D.sequence [dec1, dec2]
             end
         val error =
          fn s => fail ("genForward", s^" shouldn't be in a connect component")
-        val d = 
+        val d =
             case g
              of M.GCode (M.F {cc, args, rtyps, ...}) =>
                 let
@@ -2700,7 +2700,7 @@ struct
                 end
               | M.GRat t => error "GRat"
               | M.GInteger t => error "GInteger"
-              | M.GThunkValue {typ, ofVal} => 
+              | M.GThunkValue {typ, ofVal} =>
                 let
                   val ut = Pil.T.named (RT.Thunk.unboxedTyp typ)
                   val dec = declareAndDefine (v, ut)
@@ -2731,7 +2731,7 @@ struct
           [Pil.D.constantMacro (genVar (state, env, v), genSimple (state, env, s))]
         | _ => []
 
-  (*** Globals ***)       
+  (*** Globals ***)
 
   fun doThunkCallConv (state, env, f, thunk, fvs, decs) =
       let
@@ -2772,10 +2772,10 @@ struct
       in (dec::decs, fvdecs, [claim, unpack])
       end
 
-  fun doCallConv (state, env, f, cc, args) = 
+  fun doCallConv (state, env, f, cc, args) =
       let
         val decs = Vector.toListMap (args, fn x => genVarDec (state, env, x))
-        val res = 
+        val res =
             case cc
              of M.CcCode => (decs, [], [])
               | M.CcUnmanaged abi => unimplemented ("doCallConv", "CcUnmanaged")
@@ -2785,7 +2785,7 @@ struct
                 doThunkCallConv (state, env, f, thunk, fvs, decs)
       in res
       end
-  
+
   fun genPrintFunction (state, env, f) =
       Pil.S.expr
         (Pil.E.call (Pil.E.variable (Pil.identifier "printf"),
@@ -2800,8 +2800,8 @@ struct
    fn (state, env, cb as M.CB {entry, blocks}) =>
       let
         (* By invariant, l has not been visited *)
-        val rec visit = 
-            fn (src, (path, done, be)) => 
+        val rec visit =
+            fn (src, (path, done, be)) =>
                let
                  val path = LS.insert (path, src)
                  val b = MU.CodeBody.block (cb, src)
@@ -2811,7 +2811,7 @@ struct
                  val done = LS.insert (done, src)
                in (done, be)
                end
-        and rec visitEdge = 
+        and rec visitEdge =
          fn (e as (src, tgt), s as (path, done, be)) =>
             if LS.member (path, tgt) then
               (done, LLS.insert (be, e))
@@ -2826,7 +2826,7 @@ struct
   fun genFunction (state, env, f, func) =
       let
         val M.F {fx, cc, args, rtyps, body, ...} = func
-        val outvs = 
+        val outvs =
             if Vector.length rtyps <= 1 orelse doMultiReturn (getConfig env) then
               NONE
             else
@@ -2841,11 +2841,11 @@ struct
         val (decs, ls1, ss) = doCallConv (state, env, func, cc, args)
         val tcc = MU.CallConv.map (cc, fn v => getVarTyp (state, v))
         val (rt, outts) = genReturnType (state, env, tcc, rtyps)
-        val outDecs = 
+        val outDecs =
             (case outvs
               of SOME vs =>
                  let
-                   val doOne = 
+                   val doOne =
                     fn (v, t) => Pil.varDec (t, genVar (state, env, v))
                  in List.map2 (vs, outts, doOne)
                  end
@@ -2874,7 +2874,7 @@ struct
                   in (ls, b)
                   end
                 else
-                  ([], b) 
+                  ([], b)
               | NONE => ([], b)
         val ls = ls0 @ ls1 @ ls @ ls2
         val i =
@@ -2882,30 +2882,30 @@ struct
             then [genPrintFunction (state, env, f)]
             else []
         val b = i @ ss @ b
-      in 
+      in
         Pil.D.staticFunction (rt, genVar (state, env, f), decs, ls, b)
       end
 
-   val (assertSmallIntsF, assertSmallInts) = 
+   val (assertSmallIntsF, assertSmallInts) =
        Config.Feature.mk ("Plsr:tagged-ints-assert-small",
                           "use 32 bit ints for rats (checked)")
 
-   val (noGMPF, noGMP') = 
+   val (noGMPF, noGMP') =
        Config.Feature.mk ("Plsr:no-gmp", "don't use gmp library for integers")
 
-   val noGMP = 
-    fn c => 
+   val noGMP =
+    fn c =>
        case Config.toolset c
         of Config.TsGcc => true
          | Config.TsIcc => true
          | _ => noGMP' c
 
-  fun genStaticIntInfNative (state, env, i) = 
+  fun genStaticIntInfNative (state, env, i) =
       let
         (* Just used to create unique variables for the
          * structure components.  These variables are needed
          * to work around a pillar bug.  -leaf *)
-        val v_dummy = 
+        val v_dummy =
             let
               val stm = getStm state
               val v = MSTM.variableFresh (stm, "integer", M.TPAny, M.VkLocal)
@@ -2916,15 +2916,15 @@ struct
               val v = deriveInternalVar (state, env, s, v_dummy)
             in Pil.E.variable (Pil.identifier v)
             end
-        val sign = 
-            Pil.E.variable (if i < 0 then 
+        val sign =
+            Pil.E.variable (if i < 0 then
                               RT.Integer.signNeg
-                            else if i > 0 then 
+                            else if i > 0 then
                               RT.Integer.signPos
                             else
                               RT.Integer.signZero)
         val digits = Utils.intInfAbsDigits32 i (*msd first*)
-        val folder = 
+        val folder =
             let
               val defUnboxed = RT.Integer.staticConsUnboxedDef
               val refUnboxed = Pil.E.variable RT.Integer.staticConsRef
@@ -2948,9 +2948,9 @@ struct
       in (code, e)
       end
 
-  fun genStaticIntInfGMP (state, env, i) = 
+  fun genStaticIntInfGMP (state, env, i) =
       let
-        val vi = 
+        val vi =
             let
               val stm = getStm state
               val v = MSTM.variableFresh (stm, "integer_ubx", M.TPAny, M.VkLocal)
@@ -2965,7 +2965,7 @@ struct
       in (code, e)
       end
 
-  fun genStaticIntInf (state, env, i) = 
+  fun genStaticIntInf (state, env, i) =
       let
         val () = if assertSmallInts (getConfig env)
                  then fail ("genStaticIntInf", "Failed small int assertion")
@@ -2978,19 +2978,19 @@ struct
       end
 
 
-  fun genGlobal (state, env, var, global, preDefined) = 
+  fun genGlobal (state, env, var, global, preDefined) =
       let
         val define = fn (v, g) => Pil.D.constantMacro (genVar (state, env, v), g)
-        val addGlobalReg = 
-         fn vu => 
+        val addGlobalReg =
+         fn vu =>
             let
               val vr = Pil.E.addrOf vu
               val () = addGlobal (state, vr)
             in ()
             end
 
-        val mkGlobalDef = 
-         fn (v, vu, s) => 
+        val mkGlobalDef =
+         fn (v, vu, s) =>
             if preDefined then
               Pil.D.comment (s ^ " forward defined above")
             else
@@ -3002,10 +3002,10 @@ struct
               in d
               end
 
-        val res = 
+        val res =
             case global
              of M.GCode code  => genFunction (state, env, var, code)
-              | M.GErrorVal t => 
+              | M.GErrorVal t =>
                 let
                   val t = getVarTyp (state, var)
                   val g = Pil.E.call (Pil.E.variable RT.gErrorVal, [Pil.E.hackTyp (genTyp (state, env, t))])
@@ -3019,10 +3019,10 @@ struct
                 let
                   val elts = ND.toList dict
                   val newv  = Pil.E.variable (unboxedVar (state, env, var))
-                  val idx = 
+                  val idx =
                       case List.length elts
                        of 0 => Pil.D.macroCall (RT.Idx.staticEmpty, [newv])
-                        | n => 
+                        | n =>
                           let
                             val len = RT.Idx.chooseLen n
                             val len' = Pil.E.int len
@@ -3049,13 +3049,13 @@ struct
                   val vtable = MD.genMetaData (state, env, no, mdDesc, true)
                   val td = MU.MetaDataDescriptor.toTupleDescriptor mdDesc
                   val (_, alignment, paddings, padding) = OM.objectPadding (state, env, td)
-                  fun pad p = 
+                  fun pad p =
                       let
                         val elts = List.duplicate (p, fn () => Pil.E.char #"\000")
                       in
                         Pil.E.strctInit elts
                       end
-                  fun doOne (i, s) = 
+                  fun doOne (i, s) =
                       let
                         val p = Vector.sub (paddings, i)
                         val s = genSimple (state, env, s)
@@ -3063,8 +3063,8 @@ struct
                       end
                   val fields = Vector.mapi (inits, doOne)
                   val fields = List.concat (Vector.toList fields)
-                  val fields = 
-                      if padding = 0 then 
+                  val fields =
+                      if padding = 0 then
                         fields
                       else
                         fields @ [pad padding]
@@ -3113,7 +3113,7 @@ struct
               | M.GClosure code => notCoreMil (env, "genGlobal", "GClosure")
               | M.GSum _  => notCoreMil (env, "genGlobal", "GSum")
               | M.GPSet _ => notCoreMil (env, "genGlobal", "GPSet")
-      in 
+      in
         res
       end
 
@@ -3195,7 +3195,7 @@ struct
 
   fun genReportRoots (state, env) =
       if gcGRoots env then
-        let            
+        let
           val a1 = Pil.identifier "er"
           val a2 = Pil.identifier "env"
           val vd1 = Pil.varDec (Pil.T.named RT.GC.rseCallBack, a1)
@@ -3217,16 +3217,16 @@ struct
 
   (*** Initialisation ***)
 
-  fun genInitGlobal (state, env, v, g) = 
+  fun genInitGlobal (state, env, v, g) =
       let
-        fun infString w = 
-            if IntInf.>= (w, 0) 
+        fun infString w =
+            if IntInf.>= (w, 0)
             then Pil.E.string ("0x" ^ (IntInf.format (w, StringCvt.HEX)))
             else Pil.E.string ("-0x" ^ (IntInf.format (~w, StringCvt.HEX)))
-                 
-        val code = 
+
+        val code =
             case g
-             of M.GIdx d => 
+             of M.GIdx d =>
                 let
                   val dest = genVarE (state, env, v)
                   val elts = ND.toList d
@@ -3234,7 +3234,7 @@ struct
                   fun cf ((n1, _), (n2, _)) =
                       IM.nameString (stm, n1) <= IM.nameString (stm, n2)
                   val elts = QuickSort.sortList (elts, cf)
-                  fun genIndices (n, i) = 
+                  fun genIndices (n, i) =
                       let
                         val n = genName (state, env, n)
                         val res = Pil.E.call (Pil.E.namedConstant RT.Idx.set,
@@ -3244,7 +3244,7 @@ struct
                   val inits = List.map (elts, genIndices)
                 in Pil.S.sequence inits
                 end
-              | M.GInteger i => 
+              | M.GInteger i =>
                 if noGMP (getConfig env) then Pil.S.empty else
                 let
                   val dest = genVarE (state, env, v)
@@ -3252,7 +3252,7 @@ struct
                   val code = Pil.S.call (Pil.E.namedConstant RT.Integer.staticInit, [dest, s])
                 in code
                 end
-              | M.GRat r => 
+              | M.GRat r =>
                 let
                   val dest = genVarE (state, env, v)
                   val (num, den) = Rat.toInts r
@@ -3265,7 +3265,7 @@ struct
       in code
       end
 
-  fun genInit (state, env, entry, globals) = 
+  fun genInit (state, env, entry, globals) =
       let
         (* The runtime needs to know the \core\char\ord name *)
         val ord = IM.nameMake (getStm state, Prims.ordString)
@@ -3284,9 +3284,9 @@ struct
             end
         val idxs = VD.fold (globals, [], initGlobals)
         (* Report globals *)
-        val (xtras1, globals) = 
+        val (xtras1, globals) =
             if gcGlobals env then genReportGlobals (state, env) else ([], [])
-        val (xtras2, globalRefs) = 
+        val (xtras2, globalRefs) =
             if gcGlobals env then genReportGlobalRefs (state, env) else ([], [])
         (* Run the program *)
         val run = Pil.S.expr (Pil.E.call (genVarE (state, env, entry), []))
@@ -3306,7 +3306,7 @@ struct
         val env = newEnv (config, globals)
         val () = Chat.log2 (env, "Starting CodeGen")
 
-        fun doGroup (getKind, doIt, group) = 
+        fun doGroup (getKind, doIt, group) =
             let
               fun doOne (g, m) =
                   let
@@ -3326,14 +3326,14 @@ struct
 
         val incs = doGroup (MU.IncludeFile.kind, Pil.D.includeLocalFile o MU.IncludeFile.name, includes)
 
-        val exts = 
+        val exts =
             let
-              fun doIt g = 
+              fun doIt g =
                   let
                     fun doOne extern =
                         let
                           val t = getVarTyp (state, extern)
-                          val t = case t 
+                          val t = case t
                                     of M.TCode {cc, args, ress} => genCodeType (state, env, (cc, args, ress))
                                      | _ => genTyp (state, env, t)
                           val d = Pil.D.externVariable (Pil.varDec (t, genVar (state, env, extern)))
@@ -3361,8 +3361,8 @@ struct
                Pil.D.blank,
                omDefs,
                Pil.D.blank,
-               Pil.D.includeLocalFile "pil",
-               Pil.D.includeLocalFile "plsr",
+               Pil.D.includeLocalFile "ihc/pil",
+               Pil.D.includeLocalFile "ihc/plsr",
                Pil.D.blank,
                incs,
                exts,
@@ -3387,8 +3387,8 @@ struct
 
   val features =
       [doMultiReturnF,
-       instrumentAllocationSitesF, 
-       instrumentBlocksF, 
+       instrumentAllocationSitesF,
+       instrumentBlocksF,
        instrumentFunctionsF,
        assertSmallIntsF,
        backendYieldsF,

@@ -14,7 +14,7 @@ sig
 
   type state = HsToMilUtils.state
   type var   = Mil.variable
-  type argsAndTyps = (Mil.simple * Mil.typ) list 
+  type argsAndTyps = (Mil.simple * Mil.typ) list
   type block = HsToMilUtils.MS.t
 
   val pkgName : string
@@ -33,9 +33,9 @@ sig
   val exnHandlerTyp : Mil.typ
   val wrapThread    : state * block -> block
   val setHandler    : state * Mil.operand -> block
-  
+
   val tagToConst  : Config.wordSize * Int.t -> Mil.constant
-  val castLiteral : Config.t -> CoreHs.coreLit * 'a GHCPrimType.primTy -> Mil.constant * Mil.typ 
+  val castLiteral : Config.t -> CoreHs.coreLit * 'a GHCPrimType.primTy -> Mil.constant * Mil.typ
 
   val primToMilTy : Config.wordSize * ('a -> Mil.typ) -> 'a GHCPrimType.primTy -> Mil.typ
   val primOp      : state * GHCPrimOp.primOp * var Vector.t * argsAndTyps -> block * Mil.effects
@@ -46,7 +46,7 @@ sig
 
   val initStableRoot   : Mil.symbolTableManager * Config.t -> var * Mil.global
 
-end 
+end
 
 structure GHCPrim : GHC_PRIM =
 struct
@@ -71,7 +71,7 @@ struct
   structure GPO = GHCPrimOp
 
   fun failMsg (f, s) = Fail.fail ("GHCPrim", f, s)
-  fun assertSingleton (f, rvar) = 
+  fun assertSingleton (f, rvar) =
       let
         val () = if Vector.length rvar <> 1 then failMsg (f, "expect only one return value") else ()
       in
@@ -80,10 +80,10 @@ struct
 
   type state = HsToMilUtils.state
   type var   = Mil.variable
-  type argsAndTyps = (Mil.simple * Mil.typ) list 
+  type argsAndTyps = (Mil.simple * Mil.typ) list
   type block = HsToMilUtils.MS.t
 
-  val pkgName = "plsr-prims-ghc"
+  val pkgName = "ihc/plsr-prims-ghc"
   (* mil types *)
   val boolTyp      = M.TBoolean
   val int64ArbTyp  = IntArb.T (IntArb.S64, IntArb.Signed)
@@ -96,8 +96,8 @@ struct
   val word8ArbTyp  = IntArb.T (IntArb.S8, IntArb.Unsigned)
   val byteArbTyp   = word8ArbTyp
   val charArbTyp   = word32ArbTyp
-  val intArbTyp    = fn ws => case ws of Config.Ws32 => int32ArbTyp  | Config.Ws64 => int64ArbTyp 
-  val wordArbTyp   = fn ws => case ws of Config.Ws32 => word32ArbTyp | Config.Ws64 => word64ArbTyp 
+  val intArbTyp    = fn ws => case ws of Config.Ws32 => int32ArbTyp  | Config.Ws64 => int64ArbTyp
+  val wordArbTyp   = fn ws => case ws of Config.Ws32 => word32ArbTyp | Config.Ws64 => word64ArbTyp
   val int64Typ     = MUP.NumericTyp.tIntegerFixed int64ArbTyp
   val int32Typ     = MUP.NumericTyp.tIntegerFixed int32ArbTyp
   val int16Typ     = MUP.NumericTyp.tIntegerFixed int16ArbTyp
@@ -171,7 +171,7 @@ struct
       in
         Vector.new3 (tvPtr, tvVal, tvPtr)
       end
-  
+
   val weakPtrTyp = M.TRef (* use non-reference pointer? *)
 
   val stableBoxTD = M.TD { fixed = stableBoxFD, array = NONE }
@@ -279,11 +279,11 @@ struct
          | GPT.StablePtr _            => stablePtrTyp
          | GPT.Tuple _                => failMsg ("primToMilTy", "Got unboxed tuple type")
          (*      |  (Tuple [])              => M.TNone           (* unboxed tuple of () *)
-      (* 
-       * NOTE: The following tuple conversion is only used by ToMil, 
+      (*
+       * NOTE: The following tuple conversion is only used by ToMil,
        *       and only when multiReturn is enabled.
        *)
-      |  (Tuple tys)            => 
+      |  (Tuple tys)            =>
         let (* use default alignment, which is Vs8 *)
            val fixed = Vector.fromListMap (tys, fn ty => (toMilTy ty, M.Vs8, M.FvReadOnly))
         in
@@ -292,7 +292,7 @@ struct
          |  _                      => M.TRef)
 
   fun castLiteral cfg =
-    let 
+    let
       val ws = Config.targetWordSize cfg
     in
       fn (CH.Lint i, GPT.Int)    => (M.CIntegral (IntArb.fromIntInf (intArbTyp ws, i)), intTyp ws)
@@ -345,7 +345,7 @@ struct
   fun bitwise (ty, opr) = rhsPrim (MP.Prim (MP.PBitwise    { typ = ty,   operator = opr}))
   fun convert (frm, to) = rhsPrim (MP.Prim (MP.PNumConvert { from = frm, to = to }))
   fun cast (frm, to) = rhsPrim (MP.Prim (MP.PNumCast { from = frm, to = to }))
-  fun bitwiseWith (ty, opr, operand) argstyps 
+  fun bitwiseWith (ty, opr, operand) argstyps
     = rhsPrim (MP.Prim (MP.PBitwise    { typ = ty,   operator = opr})) (argstyps @ [operand])
 
   (* wrap M.TBool in a sum type *)
@@ -360,7 +360,7 @@ struct
         val uvar = IM.variableClone (im, rvar)
         val vvar = IM.variableClone (im, rvar)
         (*
-        fun blk1 (lt, lf) = 
+        fun blk1 (lt, lf) =
           ( MS.empty
           , M.TCase { select = M.SeConstant
                     , on = bval
@@ -375,11 +375,11 @@ struct
                                               , typs = Vector.new0 ()
                                               , ofVals = Vector.new0 () })
         (*
-        val blk' = MU.join (im, cfg, blk1, 
+        val blk' = MU.join (im, cfg, blk1,
                        (blk2, Vector.new1 (M.SVariable uvar)),
                        (blk3, Vector.new1 (M.SVariable vvar)), Vector.new1 rvar)
         *)
-        val blk4 = MS.bindRhs (rvar, rhsPrim (MP.Prim MP.PCondMov) 
+        val blk4 = MS.bindRhs (rvar, rhsPrim (MP.Prim MP.PCondMov)
                      [ (bval, M.TBoolean), (M.SVariable uvar, rtyp), (M.SVariable vvar, rtyp) ])
         val blk' = MS.seqn [blk2, blk3, blk4]
       in
@@ -404,7 +404,7 @@ struct
         val { im, cfg, ... } = state
         val ws = Config.targetWordSize cfg
         val () = if Vector.length rvar = List.length argstyps then ()
-                 else failMsg ("tupleSimple", "expect " ^ Int.toString (Vector.length rvar) ^ 
+                 else failMsg ("tupleSimple", "expect " ^ Int.toString (Vector.length rvar) ^
                                               " return value, but got " ^ Int.toString (List.length argstyps))
         val blks = List.map (List.zip (Vector.toList rvar, argstyps),
                           fn (u, (arg, _)) => MS.bindRhs (u, M.RhsSimple arg))
@@ -424,7 +424,7 @@ struct
         MS.seqn (blks @ [blk])
       end
 
-  (* We do not use multi-return for extern calls; 
+  (* We do not use multi-return for extern calls;
    * externs always return a sum for multi-return values *)
   fun extern fx fname ((state, rvar), argstyps) =
       let
@@ -432,8 +432,8 @@ struct
         val ws = Config.targetWordSize cfg
         val (args, typs) = List.unzip argstyps
       in
-        if Vector.length rvar = 1 
-          then 
+        if Vector.length rvar = 1
+          then
             let
               val rtyp = Vector.map (rvar, fn v => TMU.variableTyp (im, v))
               val (fvar, _) = TMU.externVariable (state, pkgName, fname,
@@ -443,7 +443,7 @@ struct
                            Vector.fromList args, TMU.noCut, fx, rvar), fx)
             end
           else
-            let 
+            let
               val rtyps = Vector.map (rvar, fn v => TMU.variableTyp (im, v))
               val fks   = Vector.map (rtyps, fn t => FK.fromTyp (cfg, t))
               val rtyp0 = M.TSum { tag = tagTyp ws
@@ -453,7 +453,7 @@ struct
                           fn () => M.TCode { cc = M.CcCode, args = Vector.fromList typs, ress = Vector.new1 rtyp0 })
               val blk = MU.call (im, cfg, M.CCode { ptr = fvar, code = TMU.noCode },
                            Vector.fromList args, TMU.noCut, fx, Vector.new1 rvar0)
-              fun sub (i, v, blk) = MS.seq (blk, MS.bindRhs (v, 
+              fun sub (i, v, blk) = MS.seq (blk, MS.bindRhs (v,
                                       M.RhsSumProj { typs = fks, sum = rvar0, tag = defaultTag ws, idx = i }))
               val blk = Vector.foldi (rvar, blk, sub)
             in
@@ -520,7 +520,7 @@ struct
             val blk2 = MS.bindsRhs (rvar, cast (toTyp, fromTyp) [(M.SVariable nvar, toT)])
             val blk = MS.seq (blk1, blk2)
           in blk
-          end 
+          end
         | _ => failMsg("narrow", "argument number mismatch")
 
   fun withCast (fromMP, toMP, typ, toRhs) ((state, rvar), argstyps) =
@@ -580,7 +580,7 @@ struct
         val (argstyps, (v, t)) = List.splitLast argstyps
         val (rhs, ty) = toRhsAndTy (cfg, argstyps)
       in
-        tupleRhs ((state, rvar), (M.RhsSimple v, t) :: [(rhs, ty)]) 
+        tupleRhs ((state, rvar), (M.RhsSimple v, t) :: [(rhs, ty)])
       end
 
   fun withStateAndTy (toRhs, ty) = withState (fn x => (toRhs x, ty))
@@ -632,7 +632,7 @@ struct
             val (trhs, ttyp) = newMutableArray (cfg, false, M.SVariable siz, atyp)
             val tvar = TMU.localVariableFresh0 (im, ttyp)
             val blk1 = MS.bindRhs (tvar, trhs)
-            fun body idx = 
+            fun body idx =
                 let
                   val td = M.TD { fixed = Vector.new1 (immutableFD wordTyp cfg), array = SOME (mkFD cfg) }
                   val tf = M.TF { tupDesc = td, tup = tvar, field = M.FiVariable (M.SVariable idx) }
@@ -755,7 +755,7 @@ struct
   fun sizeOfStrictImmutableArray (cfg, argstypes) = sizeOfStrictImmutableArray (cfg, argstypes)
 
   fun sizeOfUnboxedArray (cfg, argstypes) = sizeOfStrictImmutableArray (cfg, argstypes)
- 
+
   (* return array size in bytes *)
   fun sizeOfByteArray mkFD ((state, rvar), argstyps) =
       case argstyps
@@ -799,7 +799,7 @@ struct
                            val toMP = MP.NtInteger (MP.IpFixed toArb)
                            val u = TMU.localVariableFresh0 (im, typ)
                          in
-                           MS.seq (blk0 (Vector.new1 u), 
+                           MS.seq (blk0 (Vector.new1 u),
                                    MS.bindsRhs (v, convert (fromMP, toMP) [(M.SVariable u, typ)]))
                          end
                         | NONE => blk0 v
@@ -807,7 +807,7 @@ struct
                      case more
                        of [(M.SVariable s, styp)] =>
                          let
-                           val utyp = case conv 
+                           val utyp = case conv
                                         of SOME (_, toArb) => MUP.NumericTyp.tIntegerFixed toArb
                                          | _ => typ
                            val u = TMU.localVariableFresh0 (im, utyp)
@@ -1012,7 +1012,7 @@ struct
             val s0 = MS.bindRhs (cntu, convert (intNumTyp ws, wordNumTyp ws) [(cnt, cntt)])
             val one  = TMU.simpleInt (1, SOME (wordArbTyp ws))
             val zero = TMU.simpleInt (0, SOME (wordArbTyp ws))
-            fun body i = 
+            fun body i =
                 let
                   (* val i  = TMU.localVariableFresh0 (im, wordTyp ws) *)
                   val srci = TMU.localVariableFresh0 (im, wordTyp ws)
@@ -1130,18 +1130,18 @@ struct
           val a' = IM.variableClone (im, a)
           val () = TMU.setVariableKind (im, a', M.VkLocal)
           val fv = TMU.localVariableFresh0 (im, fvt)
-          val eval = 
+          val eval =
               let
                 val code = TMU.stateGetCodesForFunction (state, f)
               in M.EThunk {thunk = f', value = not (MilUtils.Codes.exhaustive code), code = code}
               end
           val blk0 = MU.eval (im, cfg, FK.fromTyp (cfg, fvt), eval, TMU.exitCut, fx, fv)
           val call = M.CClosure {cls = fv, code = TMU.noCode}
-          val tr = M.TInterProc {callee = M.IpCall {call = call, args = Vector.new1 (M.SVariable a')}, 
+          val tr = M.TInterProc {callee = M.IpCall {call = call, args = Vector.new1 (M.SVariable a')},
                                  ret = M.RTail {exits = true}, fx = fx}
           val ccCode = M.CcThunk {thunk = self, fvs = Vector.new2 (f', a')}
           val ccType = M.CcThunk {thunk = selft, fvs = Vector.new2 (ft, at)}
-          val code = TMU.mkNamedFunction (state, "atomicModifyMutVarEval_#", ccCode, ccType, true, true, 
+          val code = TMU.mkNamedFunction (state, "atomicModifyMutVarEval_#", ccCode, ccType, true, true,
                                           Vector.new0 (), Vector.new0 (), Vector.new1 pt, blk0, tr, fx)
           val fvs = Vector.new2 ((FK.fromTyp (cfg, ft), M.SVariable f), (FK.fromTyp (cfg, at), M.SVariable a))
           val rhs = M.RhsThunkInit {typ = FK.fromTyp (cfg, pt), thunk = NONE, fx = fx, code = SOME code, fvs = fvs}
@@ -1160,7 +1160,7 @@ struct
           val p' = IM.variableClone (im, p)
           val () = TMU.setVariableKind (im, p', M.VkLocal)
           val pv = TMU.localVariableFresh0 (im, pt)
-          val eval = 
+          val eval =
               let
                 val code = TMU.stateGetCodesForFunction (state, p)
               in M.EThunk {thunk = p', value = not (MilUtils.Codes.exhaustive code), code = code}
@@ -1176,8 +1176,8 @@ struct
           val t = M.TInterProc {callee = M.IpEval {typ = fk, eval = eval}, ret = M.RTail {exits = true}, fx = fx}
           val ccCode = M.CcThunk {thunk = self, fvs = Vector.new1 p'}
           val ccType = M.CcThunk {thunk = selft, fvs = Vector.new1 ptt}
-          val f = TMU.mkNamedFunction 
-                    (state, "atomicModifyMutVarPrj" ^ Int.toString i ^ "_#", ccCode, ccType, true, true, 
+          val f = TMU.mkNamedFunction
+                    (state, "atomicModifyMutVarPrj" ^ Int.toString i ^ "_#", ccCode, ccType, true, true,
                      Vector.new0 (), Vector.new0 (), Vector.new1 rt, blk, t, fx)
           val fvs = Vector.new1 (FK.fromTyp (cfg, ptt), M.SVariable p)
           val rhs = M.RhsThunkInit {typ = FK.fromTyp (cfg, rt), thunk = NONE, fx = fx, code = SOME f, fvs = fvs}
@@ -1280,7 +1280,7 @@ struct
                   let
                     val { im, cfg, effects, ... } = state
                     val clo = TMU.localVariableFresh0 (im, ctyp)
-                    val eval = 
+                    val eval =
                         let
                           val code = TMU.stateGetCodesForFunction (state, fvar)
                         in M.EThunk { thunk = fvar, value = not (MilUtils.Codes.exhaustive code), code = code }
@@ -1418,7 +1418,7 @@ struct
                 val cuts = M.C {exits = true, targets = LS.singleton l1}
                 val cx = Effect.Control
                 val ax = Effect.Any
-                val eval = 
+                val eval =
                     let
                       val code = TMU.stateGetCodesForFunction (state, fvar)
                     in M.EThunk {thunk = fvar, value = not (MilUtils.Codes.exhaustive code), code = code}
@@ -1429,7 +1429,7 @@ struct
                 val b5 = setHandler (state, M.SVariable oeh)
                 val b7 = setHandler (state, M.SVariable oeh)
                 val hv = TMU.localVariableFresh0 (im, htyp)
-                val eval = 
+                val eval =
                     let
                       val code = TMU.stateGetCodesForFunction (state, hvar)
                     in M.EThunk {thunk = hvar, value = not (MilUtils.Codes.exhaustive code), code = code}
@@ -1507,7 +1507,7 @@ struct
             val cmp2 = TMU.localVariableFresh0 (im, M.TBoolean)
             val l1 = IM.labelFresh im
             val l2 = IM.labelFresh im
-            val l3 = IM.labelFresh im 
+            val l3 = IM.labelFresh im
             val l4 = IM.labelFresh im
             val goto1 = M.TGoto (M.T {block = l1, arguments = Vector.new0 ()})
             val blk0 = MS.prependTL (goto1, l1, Vector.new0 (), MS.empty)
@@ -1528,7 +1528,7 @@ struct
                   val t = MilUtils.Bool.ifT (cfg, M.SVariable cmp2, {trueT = tt, falseT = ft})
                 in t
                 end
-            val blk8 = MS.prependTL (mkIf4, l4, Vector.new0 (), MS.empty) 
+            val blk8 = MS.prependTL (mkIf4, l4, Vector.new0 (), MS.empty)
             val blk1 = MS.bindRhs (rv, mkMVarRead (cfg, et, mv))
             val blk2 = MS.bindRhs (cmp1, rhsPrim (MP.Prim MP.PPtrEq) [(M.SVariable rv, et), (null, et)])
             val blk4 = MS.doRhs (mkMVarWait (cfg, et, mv, M.WpNonNull))
@@ -1642,7 +1642,7 @@ struct
             val blk0 = MS.prependTL (goto1, l1, Vector.new0 (), MS.empty)
             val goto3 = M.TGoto (M.T {block = l1, arguments = Vector.new0 ()})
             val blk5 = MS.prependTL (goto3, l3, Vector.new0 (), MS.empty)
-            val mkIf2 = 
+            val mkIf2 =
                 let
                   val tt = M.T {block = l3, arguments = Vector.new0 ()}
                   val ft = M.T {block = l2, arguments = Vector.new0 ()}
@@ -2035,11 +2035,11 @@ struct
             MS.seqn [blk0, blk1, blk2]
           end
          | _ => failMsg("freeStablePtr", "number of argument mismatch")
-  
+
 
   fun newWeakPtr ((state, rvar), argstyps) =
       case argstyps
-        of [(key, ktyp), (value, vtyp), (M.SVariable finalizer, ftyp), 
+        of [(key, ktyp), (value, vtyp), (M.SVariable finalizer, ftyp),
             (sval as (M.SVariable svar), styp)] =>
           let
             val { im, cfg, ... } = state
@@ -2051,16 +2051,16 @@ struct
             val thk = TMU.localVariableFresh0 (im, refTyp)
             val blk0 = TMU.kmThunk (state, Vector.new1 fvar, finalizer, Effect.Heap)
             (* the return type is IO () *)
-            val blk1 = MS.bindRhs (isNull, rhsPrim (MP.Prim MP.PPtrEq) 
+            val blk1 = MS.bindRhs (isNull, rhsPrim (MP.Prim MP.PPtrEq)
                         [(M.SVariable fvar, M.TRef), (null, M.TRef)])
             val rTyps = Vector.new2 (M.TRef, styp)
             val blk2 = MU.ifBool (im, cfg, M.SVariable isNull,
                         (MS.empty, Vector.new1 null),
-                        (TMU.mkThunk (state, thk, fvar, [svar], rTyps, Effect.Any), Vector.new1 (M.SVariable thk)), 
+                        (TMU.mkThunk (state, thk, fvar, [svar], rTyps, Effect.Any), Vector.new1 (M.SVariable thk)),
                         Vector.new1 tthk)
             fun rhfTyp () = M.TCode {cc = M.CcCode, args = Vector.new1 M.TRef, ress = Vector.new0 ()}
             val (rhf, rhft) = TMU.externVariable (state, pkgName, "ihrRunHaskellFinaliser", rhfTyp)
-            val (blk3, _) = extern Effect.Heap "pLsrWpoNewWithRun" ((state, Vector.new1 wvar), 
+            val (blk3, _) = extern Effect.Heap "pLsrWpoNewWithRun" ((state, Vector.new1 wvar),
                                 [(key, ktyp), (value, vtyp), (M.SVariable tthk, ttyp), (M.SVariable rhf, rhft)])
             val blk4 = tupleSimple ((state, rvar), [(sval, styp), (M.SVariable wvar, weakPtrTyp)])
           in
@@ -2097,12 +2097,12 @@ struct
             val hasEnv = TMU.localVariableFresh0 (im, boolTyp)
             val blk0 = MS.bindRhs (im, cfg, hasEnv, compare (intNumTyp, MP.CEq)
                          [(ival, ityp), (TMU.simpleInt (1, intArbTyp), intTyp)])
-            val blk1 = MSU.ifTrue (im, cfg, Vector.new1 fthk, M.SVariable hasEnv, 
+            val blk1 = MSU.ifTrue (im, cfg, Vector.new1 fthk, M.SVariable hasEnv,
                          (blkWithEnv, Vector.new1 (M.SVariable hthk)),
                          (blkNoEnv, Vector.new1 (M.SVariable gthk)))
             *)
             val blk1 = MS.bindRhs (fthk, M.RhsSimple null)
-            val (blk2, _) = extern Effect.Heap "pLsrWpoNew" ((state, Vector.new1 wvar), 
+            val (blk2, _) = extern Effect.Heap "pLsrWpoNew" ((state, Vector.new1 wvar),
                          [(key, ktyp), (value, vtyp), (M.SVariable fthk, M.TRef)])
             val blk3 = tupleSimple ((state, rvar), [(sval, styp), (M.SVariable wvar, weakPtrTyp)])
           in
@@ -2123,10 +2123,10 @@ struct
             val bvar = TMU.localVariableFresh0 (im, M.TRef)
             val (blk0, _) = extern Effect.Heap "pLsrWpoRead" ((state, Vector.new1 bvar), [(arg, typ)])
             val isNull = TMU.localVariableFresh0 (im, M.TBoolean)
-            val blk1 = MS.bindRhs (isNull, rhsPrim (MP.Prim MP.PPtrEq) 
+            val blk1 = MS.bindRhs (isNull, rhsPrim (MP.Prim MP.PPtrEq)
                          [(M.SVariable bvar, M.TRef), (null, M.TRef)])
             val pvar = TMU.localVariableFresh0 (im, intTyp)
-            val blk2 = MU.ifBool (im, cfg, M.SVariable isNull, 
+            val blk2 = MU.ifBool (im, cfg, M.SVariable isNull,
                          (MS.empty, Vector.new1 (TMU.simpleInt (0, SOME intArbTyp))),
                          (MS.empty, Vector.new1 (TMU.simpleInt (1, SOME intArbTyp))),
                          Vector.new1 pvar)
@@ -2138,7 +2138,7 @@ struct
 
   (*
    * Our finalizeWeak# differs from GHC's in that it always returns a function
-   * to run the finalizer (by evaluating the finalizer thunk) regardless of whether 
+   * to run the finalizer (by evaluating the finalizer thunk) regardless of whether
    * the finalizer has been run or not.
    *)
   fun finalizeWeakPtr ((state, rvar), argstyps) =
@@ -2165,21 +2165,21 @@ struct
             val gtyp = M.TClosure { args = Vector.new1 styp, ress = Vector.new2 (styp, M.TThunk utyp) }
             val gvar = TMU.localVariableFresh0 (im, gtyp)
             val (blk, _) = externDo0 Effect.Any "pLsrWpoFinalize" (state, [(M.SVariable pvar, typ)])
-            val blk = MS.seq (blk, MS.bindRhs (uvar, 
+            val blk = MS.seq (blk, MS.bindRhs (uvar,
                         M.RhsSum { tag = defaultTag , ofVals = Vector.new0 (), typs = Vector.new0 () }))
-            val blk = MS.seq (blk, tupleRhs ((state, Vector.new2 (vvar, wvar)), 
+            val blk = MS.seq (blk, tupleRhs ((state, Vector.new2 (vvar, wvar)),
                         [(M.RhsSimple (M.SVariable qvar), styp),
                          (M.RhsThunkValue { typ = FK.fromTyp (cfg, utyp)
                                           , thunk = NONE
                                           , ofVal = M.SVariable uvar }, M.TThunk utyp)]))
             val tr = M.TReturn (Vector.new2 (M.SVariable vvar, M.SVariable wvar))
-            val afun = TMU.mkClosureFunction (state, fvar, M.TRef, true, false, Vector.new1 pvar, Vector.new1 qvar, 
-                                              Vector.new2 (styp, M.TThunk utyp), blk, tr, Effect.Any) 
+            val afun = TMU.mkClosureFunction (state, fvar, M.TRef, true, false, Vector.new1 pvar, Vector.new1 qvar,
+                                              Vector.new2 (styp, M.TThunk utyp), blk, tr, Effect.Any)
             val fvs = Vector.new1 (FK.fromTyp (cfg, typ), arg)
             val blk0 = MS.bindRhs (gvar, M.RhsClosureInit { cls = NONE, code = SOME afun, fvs = fvs })
-            val blk1 = tupleRhs ((state, rvar), 
-                         [(M.RhsSimple sval, styp), 
-                          (M.RhsSimple (TMU.simpleInt (1, SOME intArbTyp)), intTyp), 
+            val blk1 = tupleRhs ((state, rvar),
+                         [(M.RhsSimple sval, styp),
+                          (M.RhsSimple (TMU.simpleInt (1, SOME intArbTyp)), intTyp),
                           (M.RhsThunkValue { typ = FK.fromTyp (cfg, gtyp)
                                            , thunk = NONE
                                            , ofVal = M.SVariable gvar }, M.TThunk gtyp)])
@@ -2191,7 +2191,7 @@ struct
   fun forceEval ((state, rvar), argstyps) =
       case argstyps
         of [(arg, typ), (sval, styp)] =>
-          (case (arg, typ) 
+          (case (arg, typ)
             of (M.SVariable uvar, M.TThunk vtyp) =>
              let
                val { im, cfg, ... } = state
@@ -2226,7 +2226,7 @@ struct
       fun drop2nd l = List.first l :: tl (tl l)
       val fx = fn p => fn _ => GPO.effects p
     in
-      fn p => 
+      fn p =>
          (case p
            of GPO.GtCharzh => singleB |> (compare (charNumTyp, MP.CLt) o List.rev) & (fx p)
             | GPO.GeCharzh => singleB |> (compare (charNumTyp, MP.CLe) o List.rev) & (fx p)
@@ -2580,7 +2580,7 @@ struct
             | GPO.WriteInt8OffAddrzh => externWithStateDo (fx p ()) "pLsrPrimGHCWriteInt8OffAddrzh"
             | GPO.WriteWordOffAddrzh => externWithStateDo (fx p ()) "pLsrPrimGHCWriteUIntOffAddrzh"
             | GPO.WriteIntOffAddrzh => externWithStateDo (fx p ()) "pLsrPrimGHCWriteIntOffAddrzh"
-            | GPO.WriteWideCharOffAddrzh => externWithStateDo (fx p ()) "pLsrPrimGHCWriteUInt32OffAddrzh" 
+            | GPO.WriteWideCharOffAddrzh => externWithStateDo (fx p ()) "pLsrPrimGHCWriteUInt32OffAddrzh"
             | GPO.WriteStablePtrOffAddrzh => externWithStateDo (fx p ()) "pLsrPrimGHCWriteAddrOffAddrzh"
             | GPO.WriteDoubleOffAddrzh => externWithStateDo (fx p ()) "pLsrPrimGHCWriteDoubleOffAddrzh"
             | GPO.WriteFloatOffAddrzh => externWithStateDo (fx p ()) "pLsrPrimGHCWriteFloatOffAddrzh"
@@ -2638,13 +2638,13 @@ struct
             | GPO.EqStablePtrzh => singleB |> (rhsPrim (MP.Prim MP.PPtrEq)) & (fx p)
             | GPO.ReallyUnsafePtrEqualityzh => singleB |> (rhsPrim (MP.Prim MP.PPtrEq)) & (fx p)
             | GPO.Seqzh => forceEval & (fx p)
-            | GPO.DataToTagzh => dataToTag & (fx p) 
+            | GPO.DataToTagzh => dataToTag & (fx p)
             | GPO.TagToEnumzh => tagToEnum & (fx p)
             | GPO.TraceEventzh => withStateDoNothing & (fx p))
   end
 
   fun primOp (state, v, rvar, argstyps) =
-      let 
+      let
         val { cfg, ...} = state
       in
         prims cfg v ((state, rvar), argstyps)

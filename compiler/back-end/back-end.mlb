@@ -10,6 +10,7 @@ local
         runtime.sml
         mil-to-pil.sml
         outputter.sml
+        ../version.sml
         back-end.sml
 in
         structure Outputter

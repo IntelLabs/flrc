@@ -16,7 +16,7 @@ sig
 		   rootsInGlobals: bool,
 		   style: gcStyle,
 		   tagOnly: bool}
-  datatype os = OsCygwin | OsLinux | OsMinGW 
+  datatype os = OsCygwin | OsLinux | OsMinGW
   datatype outputKind = OkC | OkPillar
   datatype parStyle = PNone | PAll | PAuto | PPar
   type passInfo = {enable: bool,
@@ -39,17 +39,17 @@ sig
                      | ViEMU            (* emulated *)
                      | ViSSE of int*int (* SSE x.y *)
   (* isa: The target ISA
-   * instructions : explicitly enabled/disabled/emulated instructions 
+   * instructions : explicitly enabled/disabled/emulated instructions
    *  - overrides the isa setting
    * sizes : explicitly enabled/disabled/emulated sizes
    *  - overrides the isa setting
    *)
   datatype vectorConfig = VC of {isa          : vectorISA,
-                                 instructions : {disabled : string List.t, 
-                                                 emulated : string List.t, 
+                                 instructions : {disabled : string List.t,
+                                                 emulated : string List.t,
                                                  enabled  : string List.t},
-                                 sizes        : {disabled : string List.t, 
-                                                 emulated : string List.t, 
+                                 sizes        : {disabled : string List.t,
+                                                 emulated : string List.t,
                                                  enabled  : string List.t}
                                 }
   datatype t = C of {agc : agcProg,
@@ -66,7 +66,7 @@ sig
 		     ghcOpt : string list,
 		     home : Path.t,
                      host : os,
-                     iflcLibDirectory : Path.t,
+                     (* iflcLibDirectory : Path.t, *)
 		     iflcOpt : int,
 		     keep: StringSet.t,
 		     linkStr: string list,
@@ -106,7 +106,7 @@ sig
   val ghcOpt: t -> string list
   val home : t -> Path.t
   val host : t -> os
-  val iflcLibDirectory : t -> Path.t
+  (* val iflcLibDirectory : t -> Path.t *)
   val iflcOpt: t -> int
   val keep: t * string -> bool
   val linkStr: t -> string list
@@ -146,13 +146,13 @@ sig
   val warnLevel: t * 'a -> int
   structure Control : sig
     type control
-    val add: ({check: string -> bool, 
+    val add: ({check: string -> bool,
                describe: unit -> Layout.t} StringDict.t
 	      * string StringDict.t ref)
 	     * string
 	     * string
 	     -> bool
-    val describeControl: ({check: string -> bool, 
+    val describeControl: ({check: string -> bool,
                            describe: unit -> Layout.t} StringDict.t
 			  * 'a)
 			 * string
@@ -166,7 +166,7 @@ sig
 	    * (t -> 'a)
 	    -> control * (t -> 'a)
     val mks: control list
-	     -> {check: string -> bool, 
+	     -> {check: string -> bool,
                  describe: unit -> Layout.t} StringDict.t
 		* 'a StringDict.t ref
   end
@@ -229,11 +229,11 @@ struct
     datatype vectorISA = ViEMU | ViSSE of int*int | ViAVX | ViMIC | ViANY
 
     datatype vectorConfig = VC of {isa          : vectorISA,
-                                   instructions : {disabled : string List.t, 
-                                                   emulated : string List.t, 
+                                   instructions : {disabled : string List.t,
+                                                   emulated : string List.t,
                                                    enabled  : string List.t},
-                                   sizes        : {disabled : string List.t, 
-                                                   emulated : string List.t, 
+                                   sizes        : {disabled : string List.t,
+                                                   emulated : string List.t,
                                                    enabled  : string List.t}
                                   }
 
@@ -245,8 +245,8 @@ struct
          statPost : bool
     }
     (* stackWorker is the default stack size to use for the worker threads
-     * stackMain is the default stack size to use for the main thread 
-     * singleThreaded true means that no concurrent runtime constructs are allowed 
+     * stackMain is the default stack size to use for the main thread
+     * singleThreaded true means that no concurrent runtime constructs are allowed
      *)
     type runtimeConfig = {stackWorker    : int option,
                           stackMain      : int option,
@@ -262,7 +262,7 @@ struct
          ghcOpt           : string list,
          home             : Path.t,
          host             : os,
-         iflcLibDirectory : Path.t,
+         (* iflcLibDirectory : Path.t, *)
          iflcOpt          : int,
          keep             : StringSet.t,
          linkStr          : string list,
@@ -296,7 +296,7 @@ struct
     fun ghcOpt c                      = get (c, #ghcOpt)
     fun home c                        = get (c, #home)
     fun host c                        = get (c, #host)
-    fun iflcLibDirectory c            = get (c, #iflcLibDirectory)
+    (* fun iflcLibDirectory c            = get (c, #iflcLibDirectory) *)
     fun iflcOpt c                     = get (c, #iflcOpt)
     fun linkStr c                     = get (c, #linkStr)
     fun linkDirectories c             = get (c, #linkDirectories)
@@ -324,7 +324,7 @@ struct
     *   excessive amount of output, even for large programs.  Examples might
     *   include printing out analysis summaries for optimization passes.
     * 1 => Moderately detailed debug information.  This may generate excessive
-    *   amounts of output, but should be practical for medium sized programs.  
+    *   amounts of output, but should be practical for medium sized programs.
     *   Examples might include printing out per-procedure information,
     *   including during iteration.
     * 2 => Extremely detailed debug information.  This may be impractical for
@@ -361,7 +361,7 @@ struct
     fun passIs (C cfg, name) =
         Option.isSome (StringDict.lookup (#passes cfg, name))
 
-    fun passGet (C cfg, name) = 
+    fun passGet (C cfg, name) =
         case StringDict.lookup (#passes cfg, name)
          of SOME i => i
           | NONE   =>
@@ -373,7 +373,7 @@ struct
     fun passShowPost (cfg, name)  = #showPost (passGet (cfg, name))
     fun passStatPost (cfg, name)  = #statPost (passGet (cfg, name))
 
-    fun pathToHostString (cfg, path) = 
+    fun pathToHostString (cfg, path) =
         (case host cfg
           of OsCygwin => Path.toWindowsString path
            | OsLinux  => Path.toUnixString path
@@ -387,12 +387,12 @@ struct
           | Ws64 => IntArb.S64
 
    (* These are for controlling internal compiler warnings.  Warnings are used
-    * for unexpected conditions which do not prevent correct compilation. 
+    * for unexpected conditions which do not prevent correct compilation.
     * Warn levels:
-    * 0 => Very unexpected condition.  Probably a performance bug, and/or may 
-    *   reflect a bug elsewhere in the compiler.  Correct compilation is still 
+    * 0 => Very unexpected condition.  Probably a performance bug, and/or may
+    *   reflect a bug elsewhere in the compiler.  Correct compilation is still
     *   possible, but the issue should be addressed ASAP.
-    * 
+    *
     * 1 => Unexpected condition.  Impact on performance minor, and probably not
     *   indicative of a bug elsewhere.  Correct compilation and most
     *   optimization is still possible, but the issue should be investigated
@@ -402,7 +402,7 @@ struct
     *   unexpected about the IR, but neither optimization nor correctness is
     *   affected.  At some point, it may be desirable to understand why the
     *   warning is being generated and eliminate it.
-    * 
+    *
     *)
     fun warnLevel (C cfg, name) =
         case #warnLev cfg
@@ -419,7 +419,7 @@ struct
       datatype debug = D of string * string
 
       fun mk (name, description) =
-          if debug then 
+          if debug then
             let
               fun enabled c = StringSet.member (get (c, #debug_), name)
               val d = D (name, description)
@@ -539,7 +539,7 @@ struct
           end
 
       type controls =
-           {describe : unit -> Layout.t, 
+           {describe : unit -> Layout.t,
             check : string -> bool} StringDict.t
 
       fun mks l =
@@ -568,7 +568,7 @@ struct
           List.map (StringDict.toList controls, #1)
 
       fun finalise (_, cs) = !cs
-          
+
     end
 
 end;

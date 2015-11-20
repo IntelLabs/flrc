@@ -19,5 +19,5 @@ echo "structure Version =" >> $out
 echo "struct" >> $out
 echo "  val iflcVersion = \"$version\"" >> $out
 echo "  val build = \"$build\"" >> $out
-echo "  val prefix = \"$prefix\"" >> $out
+echo "  val prefix = Path.fromString \"$prefix\"" >> $out
 echo "end" >> $out

@@ -46,7 +46,7 @@ struct
         Globals.debugs @ IMil.debugs @ MilLayout.debugs @ MilExtendedLayout.debugs @ debugs
 
     val nonPassFeatures = Globals.features @ features
-    
+
     val nonPassControls =
         Globals.controls @ MilLayout.controls @ MilExtendedLayout.controls @ IMil.controls @ controls
 
@@ -109,7 +109,7 @@ struct
         (List.map (exts, fn (ext, p) => (ext, p >>> doMil)))
 
     end
-         
+
     fun compileWP (config : Config.t, fname : string) : unit =
         case OS.Path.splitBaseExt fname
          of {ext = NONE, ...} =>
@@ -117,7 +117,7 @@ struct
           | {base, ext = SOME ext} =>
             let
               val pd = PassData.mk (config, Passes.stats)
-              val doFile = 
+              val doFile =
                   case List.peek (exts, fn (e, _) => e = ext)
                    of NONE => (fn _ => Chat.error (config, fname ^ " - unknown file type"))
                     | SOME (_, p) => Pass.apply p
@@ -182,6 +182,7 @@ struct
 
   fun parseCommandLine () =
       let
+        (*
         val initLibDir =
             case Process.getEnv "IFLCLIB"
              of SOME d => d
@@ -191,6 +192,8 @@ struct
             case Process.getEnv "IFLCHOME"
              of SOME d => Path.fromString (OS.Path.mkCanonical d)
               | _ => initLibDir
+        *)
+        val initHomeDir = Version.prefix
 
         val agc         = ref Config.AgcTgc
         val expert      = ref false
@@ -202,7 +205,7 @@ struct
                                  | MLton.Platform.OS.Linux => Config.OsLinux
                                  | MLton.Platform.OS.MinGW => Config.OsMinGW
 			         | p => raise Fail ("Unsupported host: " ^ MLton.Platform.OS.toString p))
-        val libDir      = ref initLibDir
+        (* val libDir      = ref initLibDir *)
         val keeps       = Passes.keeps
         val keep        = ref SS.empty
         val output      = ref NONE
@@ -236,20 +239,20 @@ struct
             case SD.lookup (passes, name)
              of SOME pd => f pd
               | NONE => usage (invalidPass name)
-        fun setEnabled (usage, name, b) = 
+        fun setEnabled (usage, name, b) =
             liftPassF (usage, name,
                     fn pd =>
                        if PassData.isOptional pd orelse b then
                          PassData.setEnabled (pd, b)
                        else
                          usage ("pass not disableable: " ^ name))
-        fun setShowPre (usage, name, b) = 
+        fun setShowPre (usage, name, b) =
             liftPassF (usage, name, fn pd => PassData.setShowPre (pd, b))
-        fun setStatPre (usage, name, b) = 
+        fun setStatPre (usage, name, b) =
             liftPassF (usage, name, fn pd => PassData.setStatPre (pd, b))
-        fun setShowPost (usage, name, b) = 
+        fun setShowPost (usage, name, b) =
             liftPassF (usage, name, fn pd => PassData.setShowPost (pd, b))
-        fun setStatPost (usage, name, b) = 
+        fun setStatPost (usage, name, b) =
             liftPassF (usage, name, fn pd => PassData.setStatPost (pd, b))
 
         fun rest (s, i) = String.substring (s, i, String.size s - i)
@@ -288,7 +291,7 @@ struct
                          val () = SD.foreach (passes, doOne)
                        in ()
                        end
-                     else 
+                     else
                        setShowPost (usage, s, true)
 
         fun doStatIR (usage, s) =
@@ -319,23 +322,23 @@ struct
                   val () = SD.foreach (passes, doOne)
                 in ()
                 end
-              | _ => if s = "all" then 
+              | _ => if s = "all" then
                        let
                          fun doOne (_, pd) = PassData.setStatPost (pd, true)
                          val () = SD.foreach (passes, doOne)
                        in ()
                        end
-                     else 
+                     else
                        setStatPost (usage, s, true)
-                     
+
         fun doVectorArg (usage, r, s) =
             case String.sub (s, 0)
              of #"-" =>
                 let
                   val name = rest (s, 1)
                   val {disabled, emulated, enabled} = !r
-                  val () = r := {disabled = name :: disabled, 
-                                 emulated = emulated, 
+                  val () = r := {disabled = name :: disabled,
+                                 emulated = emulated,
                                  enabled  = enabled}
                 in ()
                 end
@@ -343,8 +346,8 @@ struct
                 let
                   val name = rest (s, 1)
                   val {disabled, emulated, enabled} = !r
-                  val () = r := {disabled = disabled, 
-                                 emulated = emulated, 
+                  val () = r := {disabled = disabled,
+                                 emulated = emulated,
                                  enabled  = name :: enabled}
                 in ()
                 end
@@ -352,8 +355,8 @@ struct
                 let
                   val name = rest (s, 1)
                   val {disabled, emulated, enabled} = !r
-                  val () = r := {disabled = disabled, 
-                                 emulated = name :: emulated, 
+                  val () = r := {disabled = disabled,
+                                 emulated = name :: emulated,
                                  enabled  = enabled}
                 in ()
                 end
@@ -413,11 +416,11 @@ struct
                 usage ("bad control: " ^ c ^ "\n" ^ listControls ())
 
         val report = ref SS.empty
-        fun addReport s = 
+        fun addReport s =
             let
               val add = fn s => report := SS.insert (!report, s)
             in
-              if s = "*" orelse s = "all" then 
+              if s = "*" orelse s = "all" then
                 List.foreach (SD.toList passes, fn (s, _) => add s)
               else
                 add s
@@ -430,7 +433,7 @@ struct
         val pilcStr = ref []
         val linkStr = ref []
 
-        fun makeOptions {usage=Usage} = 
+        fun makeOptions {usage=Usage} =
             let
               fun usage s = (ignore (Usage s); raise Fail "unreachable")
               fun mkOne (s, n, a, d, opt) =
@@ -454,7 +457,7 @@ struct
                     "set control string for pass, or describe",
                     Popt.SpaceString2
                       (fn (s1, s2) => addControl (usage, s1, s2))),
-                             
+
                    (Popt.Normal, "D", "",
                     "generate debug info/checks",
                     Popt.trueRef pilDebug),
@@ -463,7 +466,7 @@ struct
                     "debug compiler (describe to list)",
                     Popt.SpaceString (fn s => addDebug (usage, s))),
 
-                   (Popt.Normal, "debugLevel", " {0|1|2}", 
+                   (Popt.Normal, "debugLevel", " {0|1|2}",
                     "compiler debugging levels to print",
                     Popt.SpaceString
                       (fn s =>
@@ -526,14 +529,14 @@ struct
                                  | "mingw"  => host := Config.OsMinGW
                                  | _ => usage ("invalid -host arg: " ^ s))),
 
-                   (Popt.Normal, "iflcLib", " directory", "use alternate iflc library",
-                    Popt.SpaceString (fn s => libDir := Path.fromString (OS.Path.mkCanonical s))),
+                   (* (Popt.Normal, "iflcLib", " directory", "use alternate iflc library",
+                    Popt.SpaceString (fn s => libDir := Path.fromString (OS.Path.mkCanonical s))), *)
 
                    (Popt.Normal, "iflcO", " {0|1|2|3}",
                     "set iflc optimization level",
                     Popt.Int
                       (fn i =>
-                          if i <= 3 then 
+                          if i <= 3 then
                             (iflcOpt := i)
                           else
                             usage ("invalid -iflcO arg: " ^ (Int.toString i)))),
@@ -558,12 +561,12 @@ struct
                    (Popt.Normal, "list", "",
                     "list passes (see -print,-enable)",
                     Popt.None (fn () => print passesString)),
-                   
-                   (Popt.Normal, "O", " {0|1|2|3}", 
+
+                   (Popt.Normal, "O", " {0|1|2|3}",
                     "set overall optimization level",
                     Popt.Int
                       (fn i =>
-                          if i <= 3 then 
+                          if i <= 3 then
                             (pilOpt := i; iflcOpt := i)
                           else
                             usage ("invalid -O arg: " ^ (Int.toString i)))),
@@ -586,7 +589,7 @@ struct
                     "set pil optimization level",
                     Popt.Int
                       (fn i =>
-                          if i <= 3 then 
+                          if i <= 3 then
                             (pilOpt := i)
                           else
                             usage ("invalid -pilO arg: " ^ (Int.toString i)))),
@@ -650,16 +653,16 @@ struct
 
                    (Popt.Normal, "Varch", " {ViANY|ViAVX|ViEMU|ViSSE|ViMIC}",
                     "target vector ISA arch",
-                    Popt.SpaceString 
-                      (fn s => 
+                    Popt.SpaceString
+                      (fn s =>
                           va :=
-                          (case s 
+                          (case s
                             of "ViANY" => Config.ViANY
                              | "ViAVX" => Config.ViAVX
                              | "ViMIC" => Config.ViMIC
                              | "ViEMU" => Config.ViEMU
                              | "ViSSE" => Config.ViSSE (4, 2)
-                             | _ => 
+                             | _ =>
                                usage ("invalid -va args: " ^ s)))),
 
                    (Popt.Normal, "verbose", " {0|1|2}", "how verbose to be",
@@ -671,21 +674,21 @@ struct
                            | "1" => Config.VInfo
                            | "2" => Config.VTop
                            | _ => usage ("invalid -verbose arg: " ^ s)))),
-                   
+
                    (Popt.Normal, "version", "", "print version and exit",
                     Popt.None printVersionAndExit),
 
                    (Popt.Expert, "Vinstr", " {-,=,+}instr",
                     "vector ISA instr override",
-                    Popt.SpaceString 
+                    Popt.SpaceString
                     (fn s => doVectorArg (fn () => usage ("Bad -Vinstr arg"), vInstrs, s))),
 
                    (Popt.Expert, "Vsize", " {-,=,+}sz",
                     "vector ISA size override",
-                    Popt.SpaceString 
+                    Popt.SpaceString
                     (fn s => doVectorArg (fn () => usage ("Bad -Vsize arg"), vSizes, s))),
 
-                   (Popt.Normal, "warnLevel", " {0|1|2}", 
+                   (Popt.Normal, "warnLevel", " {0|1|2}",
                     "compiler internal warn levels to print",
                     Popt.SpaceString
                       (fn s =>
@@ -695,12 +698,12 @@ struct
                            | "1" => Config.VInfo
                            | "2" => Config.VTop
                            | _ => usage ("invalid -warnLevel arg: " ^ s)))),
-                   
+
                    (Popt.Expert, "ws", " {32|64}",
                     "target word size is 32 or 64 bit",
                     Popt.Int
                       (fn i =>
-                          ws := (case i 
+                          ws := (case i
                                   of 32 => Config.Ws32
                                    | 64 => Config.Ws64
                                    | _ =>
@@ -718,28 +721,31 @@ struct
                           makeOptions = makeOptions,
                           showExpert = fn () => !expert}
 
-      val usage = 
+      val usage =
        fn msg => (usage msg; Fail.fail ("Ppiler", "parseCommandLine", "unreachable"))
 
     in
 
-      case parse (CommandLine.arguments ()) 
+      case parse (CommandLine.arguments ())
        of Result.Yes files =>
           let
+            (*
             val home =
                 case Process.getEnv "IFLCHOME"
                  of SOME d => Path.fromString (OS.Path.mkCanonical d)
                   | _ => !libDir
+            *)
+            val home = Version.prefix
 
-            val output = 
+            val output =
                 case !output
-                 of NONE => 
+                 of NONE =>
                     (case !toolset
                       of Config.TsGcc => Config.OkC
                        | Config.TsIcc => Config.OkC
                        | Config.TsIpc => Config.OkPillar
                        | Config.TsOpc => Config.OkPillar)
-                  | SOME ok => 
+                  | SOME ok =>
                     (case (ok, !toolset)
                       of (Config.OkPillar, Config.TsGcc) => usage "Pillar cannot be compiled with the gcc toolset"
                        | (Config.OkPillar, Config.TsIcc) => usage "Pillar cannot be compiled with the icc toolset"
@@ -749,7 +755,7 @@ struct
                        | (Config.OkC,      Config.TsIcc) => ok
                        | (Config.OkPillar, Config.TsIpc) => ok
                        | (Config.OkPillar, Config.TsOpc) => ok)
-            val () = 
+            val () =
                 case (output, !toolset, !futures)
                  of (Config.OkC, _,            Config.PAll)  => usage "-futures all not supported under C"
                   | (Config.OkC, Config.TsGcc, Config.PNone) => ()
@@ -758,12 +764,12 @@ struct
 
 (*            val () =
                 if !futures <> Config.PNone andalso
-                   (!thunks = Config.TsDirect orelse !thunks = Config.TsEither) 
+                   (!thunks = Config.TsDirect orelse !thunks = Config.TsEither)
                 then
                   usage "Futures should not be used with the direct scheme"
                 else
                   ()*)
-            val () = 
+            val () =
                 case (!gcs, output)
                  of (SOME Config.GcsConservative, Config.OkPillar) => usage "Conservative GC not supported on Pillar"
                   | (SOME Config.GcsAccurate,     Config.OkC)      => usage "Accurate GC not supported on C"
@@ -791,17 +797,17 @@ struct
             (* Futures require multi-threading.
              * Otherwise, we default to single-threaded for C, multi-threaded for pillar
              *)
-            val singleThreaded = 
+            val singleThreaded =
                 case !single
-                 of SOME b => 
+                 of SOME b =>
                     (case parStyle
                       of Config.PNone => b
-                       | _            => 
+                       | _            =>
                          if b then
                            usage "Can't combine futures with single threaded runtime"
                          else
                            b)
-                  | NONE => 
+                  | NONE =>
                     (case (parStyle, output)
                       of (Config.PNone, Config.OkC) => true
                        | _                          => false)
@@ -822,7 +828,7 @@ struct
               gc               = gci,
               home             = home,
               host             = !host,
-              iflcLibDirectory = !libDir,
+              (* iflcLibDirectory = !libDir, *)
               iflcOpt          = !iflcOpt,
               keep             = !keep,
               linkStr          = List.rev (!linkStr),
