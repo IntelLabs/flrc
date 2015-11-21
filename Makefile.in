@@ -1,0 +1,3 @@
+include ihc-makefile.inc
+
+IHC_PREFIX=@prefix@

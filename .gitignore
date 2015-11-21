@@ -45,7 +45,6 @@ config.sub
 configure
 depcomp
 install-sh
-Makefile.in
 missing
 stamp-h
 stamp-h1
@@ -68,3 +67,4 @@ compiler/version.sml
 
 # /runtime
 /runtime/Makefile
+/runtime/Makefile.in
