@@ -1,4 +1,4 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Haskell Research Compiler *)
 (* Copyright (C) Intel Corporation, October 2006 *)
 
 structure Tokens = Tokens

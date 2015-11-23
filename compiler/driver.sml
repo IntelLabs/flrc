@@ -1,4 +1,4 @@
-(* The Intel FL to C/Pillar Compiler *)
+(* The Haskell Research Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (* This file contains the top level driver for the compiler *)
@@ -715,7 +715,7 @@ struct
           end
 
       val extStr = String.dropLast (List.fold (Compilation.exts, "", fn ((ext, _), s) => s ^ "," ^ ext))
-      val mainUsage = "ppiler [option ...] [file.{" ^ extStr ^ "} ...]"
+      val mainUsage = "hrc [option ...] [file.{" ^ extStr ^ "} ...]"
       val {usage, parse} =
           Popt.makeUsage {mainUsage = mainUsage,
                           makeOptions = makeOptions,

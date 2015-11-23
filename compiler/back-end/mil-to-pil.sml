@@ -1,4 +1,4 @@
-(* The Intel FL to C/Pillar Compiler *)
+(* The Haskell Research Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (* Convert Mil into C/Pillar *)

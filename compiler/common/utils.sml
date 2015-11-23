@@ -1,4 +1,4 @@
-(* The Intel FL to C/Pillar Compiler *)
+(* The Haskell Research Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (* Utility stuff not in the MLton library *)

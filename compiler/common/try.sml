@@ -1,4 +1,4 @@
-(* The Intel FL to C/Pillar Compiler *)
+(* The Haskell Research Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (* This provides a syntactically lightweight analog to the failure (option) monad.

@@ -1,4 +1,4 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Haskell Research Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (* Various optimisations on functions with all known callers *)

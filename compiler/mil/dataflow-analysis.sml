@@ -1,4 +1,4 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Haskell Research Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (* Comment by Leaf, after reviewing code.

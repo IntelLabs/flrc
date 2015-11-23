@@ -1,4 +1,4 @@
-(* The Intel FL to C/Pillar Compiler *)
+(* The Haskell Research Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (*  Dominance module: Takes  a dominator  tree and  provides dominance

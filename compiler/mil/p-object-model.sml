@@ -1,4 +1,4 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Haskell Research Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (* This module defines how P concepts are modeled in core Mil.  There are three

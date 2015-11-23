@@ -1,4 +1,4 @@
-(* The Intel P to C/Pillar Compiler *)
+(* The Haskell Research Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
 (* This defines a class of sequences parameterized over an arbitrary
