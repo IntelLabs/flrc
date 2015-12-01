@@ -502,7 +502,6 @@ struct
     fun opt (config, compiler) =
         let
           val level = Config.pilOpt config
-          (*
           val iccIp = (if Config.host config = Config.OsLinux
                   then "-ip"
                   else "-Qip")
@@ -512,7 +511,6 @@ struct
           val disableCpuDispatch = (if Config.host config = Config.OsLinux
                   then ["-diag-disable", "cpu-dispatch"]
                   else ["-Qdiag-disable:cpu-dispatch"])
-          *)
           val iccIp = ""
           val vecRep0 = ""
           val disableCpuDispatch = []
@@ -574,7 +572,6 @@ struct
     fun float (config, compiler) =
         let
           val sloppy = Config.sloppyFp config
-          (*
           val fastModel = (if Config.host config = Config.OsLinux
                   then ["-fp-model", "fast"]
                   else ["-fp:fast"])
@@ -602,7 +599,6 @@ struct
           val vecNo = (if Config.host config = Config.OsLinux
                   then "-no-vec"
                   else "-Qvec-")
-          *)
           val fastModel = []
           val sourceModel = []
           val ftzYes = ""
@@ -818,6 +814,7 @@ struct
 
         val mt = multiThreaded config
         val gcs = #style (Config.gc config)
+        (*
         fun agc (config, opc) =
             (case Config.agc config
               of Config.AgcGcMf => ifDebug (config, "gc-mfd.lib", "gc-mf.lib")
@@ -829,6 +826,7 @@ struct
                                      ifDebug (config, "gc-cgcd.lib", "gc-cgc.lib")
                                    else
                                      ifDebug (config, "gc-cgcd_pthread.lib", "gc-cgc_pthread.lib"))
+        *)
         val failPillar = fn () => fail ("gcLibraries", "Conservative GC not supported on Pillar")
         val failC      = fn () => fail ("gcLibraries", "Accurate GC not supported on C")
         val libs =
@@ -839,10 +837,10 @@ struct
                | (Config.GcsConservative, LdICC,    false) => [ifDebug (config, "gc-bdwd.lib", "gc-bdw.lib")]
                | (Config.GcsConservative, LdOpc, _    )    => failPillar ()
                | (Config.GcsAccurate,     LdOpc, _    )    => [ifDebug (config, "pgcd.lib", "pgc.lib"),
-                                                               "imagehlp.lib", agc (config, true)]
+                                                               "imagehlp.lib"(*, agc (config, true)*)]
                | (Config.GcsConservative, LdIpc,    _    ) => failPillar ()
-               | (Config.GcsAccurate,     LdIpc,    _    ) => [ifDebug (config, "pgcd_pthread.lib", "pgc_pthread.lib"),
-                                                               "imagehlp.lib", agc (config, false)]
+               | (Config.GcsAccurate,     LdIpc,    _    ) => [(*ifDebug (config, "pgcd_pthread.lib", "pgc_pthread.lib"),*)
+                                                               "imagehlp.lib"(*, agc (config, false)*)]
                | (Config.GcsAccurate,     _,        _    ) => failC ())
 
       in libs
@@ -876,7 +874,7 @@ struct
         val libs =
             (case ldTag
               of LdOpc    => [ifDebug (config, "pillard.lib", "pillar.lib")]
-               | LdIpc    => [ifDebug (config, "pillard_pthread.lib", "pillar_pthread.lib")]
+               | LdIpc    => [(*ifDebug (config, "pillard_pthread.lib", "pillar_pthread.lib")*)]
                | LdICC    => ["user32.lib"]
                | LdGCC    => ["libm.a"])
         val mcrtLib = [ifDebug (config, "mcrtd.lib", "mcrt.lib")]
