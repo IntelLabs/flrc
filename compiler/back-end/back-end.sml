@@ -392,12 +392,10 @@ struct
           ifDebug (config, [iccSymbolStr, "-debug"], [iccSymbolStr])
         end
 
-    fun arch (config) = ["-msse3"]
-           (*
+    fun arch (config) =
            if Config.host config = Config.OsLinux
               then ["-xAVX"]
               else ["-QxAVX"]
-            *)
 
     fun opt (config) =
         let
@@ -411,9 +409,6 @@ struct
           val disableCpuDispatch = (if Config.host config = Config.OsLinux
                   then ["-diag-disable", "cpu-dispatch"]
                   else ["-Qdiag-disable:cpu-dispatch"])
-          val iccIp = ""
-          val vecRep0 = ""
-          val disableCpuDispatch = []
           val ps =
             let
               val opts =
@@ -459,15 +454,6 @@ struct
           val vecNo = (if Config.host config = Config.OsLinux
                   then "-no-vec"
                   else "-Qvec-")
-          val fastModel = []
-          val sourceModel = []
-          val ftzYes = ""
-          val ftzNo = ""
-          val precDivYes = ""
-          val precDivNo = ""
-          val precSqrtYes = ""
-          val precSqrtNo = ""
-          val vecNo = ""
           val os =
             if sloppy
                then fastModel @ [ftzYes, precDivNo, precSqrtNo]
