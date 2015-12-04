@@ -2894,11 +2894,7 @@ struct
        Config.Feature.mk ("Plsr:no-gmp", "don't use gmp library for integers")
 
    val noGMP =
-    fn c =>
-       case Config.toolset c
-        of Config.TsGcc => true
-         | Config.TsIcc => true
-         | _ => noGMP' c
+    fn c => noGMP' c
 
   fun genStaticIntInfNative (state, env, i) =
       let

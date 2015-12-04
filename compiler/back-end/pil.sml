@@ -135,7 +135,7 @@ struct
   structure L = Layout
   structure LU = LayoutUtils
 
-  val outputKind = Config.output 
+  val outputKind = Config.output
 
   type identifier = L.t
 
@@ -261,7 +261,7 @@ struct
 
     fun code (rt, ats) = codeCC (rt, "", ats)
 
-    fun multiReturn rts = 
+    fun multiReturn rts =
         let
           val rtsL = List.map (rts, abs)
           val l = L.seq [LU.sequence ("@[", "]@", ",") rtsL]
@@ -327,25 +327,25 @@ struct
 
     fun word  w = (L.str ("0x" ^ (Word.toString w)), 16)
     fun word32 w = (L.str ("0x" ^ (Word32.toString w)), 16)
-    fun wordInf w = if IntInf.>= (w, 0) 
+    fun wordInf w = if IntInf.>= (w, 0)
                       then (L.str ("0x" ^ (IntInf.format (w, StringCvt.HEX))), 16)
                       else (L.str ("-0x" ^ (IntInf.format (~w, StringCvt.HEX))), 16)
 
     val two2thirtyone = IntInf.<< (1, Word.fromInt 31)
-    fun intInf i = 
+    fun intInf i =
         if i >= 0 andalso i < two2thirtyone then
           (IntInf.layout i, 16)
         else
           wordInf i
 
-    fun int i = 
+    fun int i =
         if i >= 0 then
           (Int.layout i, 16)
         else
           (* need to avoid overflow when negating *)
           (L.seq [L.str "-", IntInf.layout (IntInf.~ (IntInf.fromInt i))], 16)
 
-    fun int32 i = 
+    fun int32 i =
         if i >= 0 then
           (Int32.layout i, 16)
         else
@@ -353,39 +353,39 @@ struct
 
     fun boolean b = (L.str (if b then "1" else "0"), 16)
 
-    fun float f = 
+    fun float f =
         let
-          val s = 
+          val s =
               case Real32.class f
-               of Real64.Class.INF => 
-                  if f < 0.0 then 
+               of Real64.Class.INF =>
+                  if f < 0.0 then
                     "-INFINITY32"
                   else
                     "INFINITY32"
-                | Real64.Class.NAN => 
+                | Real64.Class.NAN =>
                   if Real32.signBit f then
                     "-NAN32"
                   else
                     "NAN32"
-                | _ => 
+                | _ =>
                   fixNeg (Real32.format (f, Real32.Format.exact))
         in (L.str s, 16)
         end
-    fun double f = 
+    fun double f =
         let
-          val s = 
+          val s =
               case Real64.class f
-               of Real64.Class.INF => 
-                  if f < 0.0 then 
+               of Real64.Class.INF =>
+                  if f < 0.0 then
                     "-INFINITY64"
                   else
                     "INFINITY64"
-                | Real64.Class.NAN => 
+                | Real64.Class.NAN =>
                   if Real64.signBit f then
                     "-NAN64"
                   else
                     "NAN64"
-                | _ => 
+                | _ =>
                   fixNeg (Real64.format (f, Real64.Format.exact))
         in (L.str s, 16)
         end
@@ -454,7 +454,7 @@ struct
            not (List.isEmpty cuts) then
           let
             val cuts = L.sequence ("", "", ",") cuts
-            val cuts = if Config.toolset config = Config.TsIpc then L.paren cuts else cuts
+            val cuts = L.paren cuts
             val ls = [LU.indent (L.seq [L.str "also cuts to ", cuts])]
           in ls
           end
@@ -578,7 +578,7 @@ struct
 
     fun returnExpr e = [addSemi (L.seq [L.str "return ", E.layout e])]
 
-    fun returnMultiExpr es = 
+    fun returnMultiExpr es =
         let
           val es = List.map (es, E.layout)
         in [addSemi (L.seq [L.str "return ", LU.sequence ("@[", "]@", ",") es])]

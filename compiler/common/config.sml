@@ -27,10 +27,6 @@ sig
   type runtimeConfig = {stackWorker    : int option,
                         stackMain      : int option,
                         singleThreaded : bool}
-  datatype toolset = TsIpc (* Intel Pillar Compiler *)
-                   | TsOpc (* Old Pillar Compiler *)
-                   | TsGcc (* Gcc *)
-                   | TsIcc (* Intel C compiler *)
   datatype verbosity = VSilent | VQuiet | VInfo | VTop
   datatype wordSize = Ws32 | Ws64
   datatype vectorISA = ViANY            (* unconstrained *)
@@ -90,7 +86,6 @@ sig
                      synchThunks : bool,
 		     targetWordSize: wordSize,
 		     timeExecution: string option,
-		     toolset: toolset,
                      vectorConfig : vectorConfig,
 		     warnLev: verbosity}
   val agc: t -> agcProg
@@ -140,7 +135,6 @@ sig
   val targetWordSize: t -> wordSize
   val targetWordSize': t -> IntArb.size
   val timeExecution: t -> string option
-  val toolset: t -> toolset
   val verbose: t -> bool
   val vectorConfig: t -> vectorConfig
   val warnLevel: t * 'a -> int
@@ -197,10 +191,6 @@ struct
     val debug : bool = true
 
     datatype outputKind = OkC | OkPillar
-    datatype toolset = TsIpc (* Intel Pillar Compiler *)
-                     | TsOpc (* Old Pillar Compiler *)
-                     | TsGcc (* Gcc *)
-                     | TsIcc (* Intel C compiler *)
     datatype parStyle = PNone | PAll | PAuto | PPar
 
     datatype gcStyle = GcsNone | GcsConservative | GcsAccurate
@@ -282,7 +272,6 @@ struct
          synchThunks      : bool,
          targetWordSize   : wordSize,
          timeExecution    : string option,
-         toolset          : toolset,
          vectorConfig     : vectorConfig,
          warnLev          : verbosity
     }
@@ -312,7 +301,6 @@ struct
     fun synchronizeThunks c           = get (c, #synchThunks)
     fun targetWordSize c              = get (c, #targetWordSize)
     fun timeExecution c               = get (c, #timeExecution)
-    fun toolset c                     = get (c, #toolset)
     fun vectorConfig c                = get (c, #vectorConfig)
 
     (*** Derived Getters ***)

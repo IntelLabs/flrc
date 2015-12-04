@@ -217,7 +217,6 @@ struct
         val stops       = Passes.stops
         val stop        = ref "exe"
         val synchThunks = ref false
-        val toolset     = ref Config.TsIpc
         val logLev      = ref Config.VSilent
         val warnLev     = ref Config.VSilent
         val debugLev    = ref Config.VSilent
@@ -639,18 +638,6 @@ struct
                     "time the program",
                     Popt.SpaceString (fn s => timeExe := SOME s)),
 
-                   (Popt.Normal, "toolset", " {ipc|opc|gcc|icc}",
-                    "choose assembler/linker toolset",
-                    Popt.SpaceString
-                      (fn s =>
-                          toolset :=
-                          (case s of
-                             "ipc" => Config.TsIpc
-                           | "opc" => Config.TsOpc
-                           | "gcc" => Config.TsGcc
-                           | "icc" => Config.TsIcc
-                           | _ => usage ("invalid -toolset arg: " ^ s)))),
-
                    (Popt.Normal, "Varch", " {ViANY|ViAVX|ViEMU|ViSSE|ViMIC}",
                     "target vector ISA arch",
                     Popt.SpaceString
@@ -739,28 +726,15 @@ struct
 
             val output =
                 case !output
-                 of NONE =>
-                    (case !toolset
-                      of Config.TsGcc => Config.OkC
-                       | Config.TsIcc => Config.OkC
-                       | Config.TsIpc => Config.OkPillar
-                       | Config.TsOpc => Config.OkPillar)
+                 of NONE => Config.OkPillar
                   | SOME ok =>
-                    (case (ok, !toolset)
-                      of (Config.OkPillar, Config.TsGcc) => usage "Pillar cannot be compiled with the gcc toolset"
-                       | (Config.OkPillar, Config.TsIcc) => usage "Pillar cannot be compiled with the icc toolset"
-                       | (Config.OkC,      Config.TsIpc) => usage "C cannot be compiled with the ipc toolset"
-                       | (Config.OkC,      Config.TsOpc) => usage "C cannot be compiled with the opc toolset"
-                       | (Config.OkC,      Config.TsGcc) => ok
-                       | (Config.OkC,      Config.TsIcc) => ok
-                       | (Config.OkPillar, Config.TsIpc) => ok
-                       | (Config.OkPillar, Config.TsOpc) => ok)
+                    (case ok
+                      of Config.OkC => usage "C cannot be compiled with the ipc toolset"
+                       | Config.OkPillar => ok)
             val () =
-                case (output, !toolset, !futures)
-                 of (Config.OkC, _,            Config.PAll)  => usage "-futures all not supported under C"
-                  | (Config.OkC, Config.TsGcc, Config.PNone) => ()
-                  | (Config.OkC, Config.TsGcc, _)            => usage "-futures not supported with GNU toolset"
-                  | _                                        => ()
+                case (output, !futures)
+                 of (Config.OkC, Config.PAll) => usage "-futures all not supported under C"
+                  | _                         => ()
 
 (*            val () =
                 if !futures <> Config.PNone andalso
@@ -849,7 +823,6 @@ struct
               synchThunks      = !synchThunks,
               targetWordSize   = !ws,
               timeExecution    = !timeExe,
-              toolset          = !toolset,
               vectorConfig     = vectorConfig,
               warnLev          = !warnLev
              },
