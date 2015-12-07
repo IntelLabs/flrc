@@ -3361,7 +3361,21 @@ struct
                Pil.D.includeLocalFile "ihc/plsr",
                Pil.D.blank,
                incs,
-               exts,
+(*
+  There are a number of reasons we don't want to print externs in the output file:
+
+   1. GHC's extern declaration doesn't exactly match C function's type, for example,
+      CInt is internally represented as Int# in GHC Core, which translates to int64
+      on x86_64, and if we have already included a C header, it will become a type
+      mis-match, and GCC will error (ICC will warn).
+
+   2. We have already included all header files, which will be inlined by pilicl,
+      and extern definitions following the header files are just redundant.
+
+   Unless we can fix 1, or the assumption in 2 is no longer valid, we can safety
+   exclude extern declarations in the output.
+*)
+               (* exts, *)
                Pil.D.blank,
                Pil.D.comment "Types",
                typs,
