@@ -1,3 +1,4 @@
-include ihc-makefile.inc
+include hrc-makefile.inc
 
-IHC_PREFIX=@prefix@
+HRC_PREFIX=@prefix@
+PLATFORM_CPPFLAGS=@PLATFORM_CPPFLAGS@

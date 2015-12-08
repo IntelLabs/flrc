@@ -83,7 +83,7 @@ struct
   type argsAndTyps = (Mil.simple * Mil.typ) list
   type block = HsToMilUtils.MS.t
 
-  val pkgName = "ihc/plsr-prims-ghc"
+  val pkgName = "hrc/plsr-prims-ghc"
   (* mil types *)
   val boolTyp      = M.TBoolean
   val int64ArbTyp  = IntArb.T (IntArb.S64, IntArb.Signed)

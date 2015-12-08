@@ -9,55 +9,28 @@
 
 #include <math.h>
 #include <float.h>
-
-#define IEEE_FLOATING_POINT 1
-
-/*
- * Encoding and decoding Doubles.  Code based on the HBC code
- * (lib/fltcode.c).
- */
-
-#if IEEE_FLOATING_POINT
-#define MY_DMINEXP  ((DBL_MIN_EXP) - (DBL_MANT_DIG) - 1)
-/* DMINEXP is defined in values.h on Linux (for example) */
-#define DHIGHBIT 0x00100000
-#define DMSBIT   0x80000000
-
-#define MY_FMINEXP  ((FLT_MIN_EXP) - (FLT_MANT_DIG) - 1)
-#define FHIGHBIT 0x00800000
-#define FMSBIT   0x80000000
-#endif
-
-#if defined(WORDS_BIGENDIAN) || defined(FLOAT_WORDS_BIGENDIAN)
-#define L 1
-#define H 0
-#else
-#define L 0
-#define H 1
-#endif
-
-#define __abs(a)		(( (a) >= 0 ) ? (a) : (-(a)))
+#include "hrc/ghc/float.h"
 
 StgDouble
 __2Int_encodeDouble (I_ j_high, I_ j_low, I_ e)
 {
   StgDouble r;
-  
+
   /* assuming 32 bit ints */
   ASSERT(sizeof(int          ) == 4            );
 
   r = (StgDouble)((unsigned int)j_high);
   r *= 4294967296.0; /* exp2f(32); */
   r += (StgDouble)((unsigned int)j_low);
-  
+
   /* Now raise to the exponent */
   if ( r != 0.0 ) /* Lennart suggests this avoids a bug in MIPS's ldexp */
     r = ldexp(r, e);
-  
+
   /* sign is encoded in the size */
   if (j_high < 0)
     r = -r;
-  
+
   return r;
 }
 
@@ -66,13 +39,13 @@ StgDouble
 __word_encodeDouble (W_ j, I_ e)
 {
   StgDouble r;
-  
+
   r = (StgDouble)j;
-  
+
   /* Now raise to the exponent */
   if ( r != 0.0 ) /* Lennart suggests this avoids a bug in MIPS's ldexp */
     r = ldexp(r, e);
-  
+
   return r;
 }
 
@@ -81,17 +54,17 @@ StgDouble
 __int_encodeDouble (I_ j, I_ e)
 {
   StgDouble r;
-  
+
   r = (StgDouble)__abs(j);
-  
+
   /* Now raise to the exponent */
   if ( r != 0.0 ) /* Lennart suggests this avoids a bug in MIPS's ldexp */
     r = ldexp(r, e);
-  
+
   /* sign is encoded in the size */
   if (j < 0)
     r = -r;
-  
+
   return r;
 }
 
@@ -100,17 +73,17 @@ StgFloat
 __int_encodeFloat (I_ j, I_ e)
 {
   StgFloat r;
-  
+
   r = (StgFloat)__abs(j);
-  
+
   /* Now raise to the exponent */
   if ( r != 0.0 ) /* Lennart suggests this avoids a bug in MIPS's ldexp */
     r = ldexp(r, e);
-  
+
   /* sign is encoded in the size */
   if (j < 0)
     r = -r;
-  
+
   return r;
 }
 
@@ -119,13 +92,13 @@ StgFloat
 __word_encodeFloat (W_ j, I_ e)
 {
   StgFloat r;
-  
+
   r = (StgFloat)j;
-  
+
   /* Now raise to the exponent */
   if ( r != 0.0 ) /* Lennart suggests this avoids a bug in MIPS's ldexp */
     r = ldexp(r, e);
-  
+
   return r;
 }
 
@@ -217,4 +190,3 @@ __decodeFloat_Int (I_ *man, I_ *exp, StgFloat flt)
 	    *man = - *man;
     }
 }
-

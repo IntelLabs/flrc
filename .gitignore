@@ -68,3 +68,4 @@ compiler/version.sml
 # /runtime
 /runtime/Makefile
 /runtime/Makefile.in
+/runtime/ghc/*.a

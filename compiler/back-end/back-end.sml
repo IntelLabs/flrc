@@ -28,11 +28,10 @@ struct
                            val name = "BackEnd"
                            val indent = 0
                          end)
-
+  (*
   val runtimeDirectory =
    fn config => Path.snoc (Config.home config, "runtime")
 
-  (*
   val iflcLibDirectory =
    fn config => Config.iflcLibDirectory config
 
@@ -591,6 +590,15 @@ struct
       in [file]
       end
 
+  fun runtimeLibraries (config) =
+      let
+        val hrcGhcRtLib =
+          case Config.targetWordSize config
+           of Config.Ws32 => "libhrc_ghc_runtime32.a"
+            | Config.Ws64 => "libhrc_ghc_runtime64.a"
+      in [hrcGhcRtLib]
+      end
+
   fun unmanagedLibraries (config) =
       let
         val threads =
@@ -606,11 +614,12 @@ struct
         val (prtBegin, prtEnd) =
           ([ifDebug (config, "pillar2c_crt_begind.obj", "pillar2c_crt_begin.obj")],
            [ifDebug (config, "pillar2c_crt_endd.obj", "pillar2c_crt_end.obj")])
-        val gcLibs = gcLibraries (config)
-        val futureLibs = futureLibraries (config)
-        val unmanagedLibs = unmanagedLibraries (config)
+        val gcLibs = gcLibraries config
+        val futureLibs = futureLibraries config
+        val runtimeLibs = runtimeLibraries config
+        val unmanagedLibs = unmanagedLibraries config
         val pre = prtBegin
-        val post = List.concat [futureLibs, prtEnd, gcLibs, unmanagedLibs]
+        val post = List.concat [futureLibs, prtEnd, gcLibs, runtimeLibs, unmanagedLibs]
       in (pre, post)
       end
 

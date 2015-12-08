@@ -1,10 +1,9 @@
 /* The Haskell Research Compiler */
 /* COPYRIGHT_NOTICE_1 */
 
-typedef enum {
-    ISK_SystemEventThreadEventManager, ISK_SystemEventThreadIOManager, ISK_GHCConcWindowsPendingDelays,
-    ISK_GHCConcWindowsIOManagerThread, ISK_GHCConcWindowsProdding, ISK_GHCConcSignalSignalHandler, ISK_Num
-} IhrStoreKey;
+#include <prt/prt.h>
+#include "hrc/plsr-util.h"
+#include "hrc/ghc/Globals.h"
 
 static void* ihrStore[ISK_Num] = {NULL, };
 static struct prtMutex* ihrStoreLock;
@@ -74,7 +73,7 @@ void blockUserSignals() {}
 
 void unblockUserSignals() {}
 
-void stopTimer() {} 
+void stopTimer() {}
 
 void startTimer() {}
 

@@ -1,6 +1,8 @@
 /* The Haskell Research Compiler */
 /* COPYRIGHT_NOTICE_1 */
 
+#include "hrc/ghc/thread.h"
+
 /* place holders for now */
 I_ rts_getThreadId (W_ tid)
 {

@@ -22,6 +22,8 @@
 #include <signal.h>
 #endif
 
+#include "hrc/ghc/TTY.h"
+
 // Here we save the terminal settings on the standard file
 // descriptors, if we need to change them (eg. to support NoBuffering
 // input).
@@ -52,7 +54,7 @@ resetTerminalSettings (void)
     // if we changed them.  See System.Posix.Internals.tcSetAttr for
     // more details, including the reason we termporarily disable
     // SIGTTOU here.
-    { 
+    {
 	int fd;
 	sigset_t sigset, old_sigset;
 	sigemptyset(&sigset);
