@@ -18,7 +18,7 @@ root_map.txt
 
 # ignore .c files unless they are in the runtime directory
 *.c
-!runtime/*.c
+!runtime/ghc/*.c
 
 #ignore .hi (haskell interface) files
 *.hi
