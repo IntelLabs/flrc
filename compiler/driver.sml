@@ -166,7 +166,7 @@ struct
   fun printVersion () =
       let
         val version =
-            "Intel Functional Language Compiler " ^ Version.iflcVersion ^ (if Config.debug then " (DEBUG)" else "")
+            "Haskell Research Compiler " ^ Version.iflcVersion ^ (if Config.debug then " (DEBUG)" else "")
         val () = Out.outputl (Out.standard, version)
         val () = List.foreach (langVersions, fn s => Out.outputl (Out.standard, s))
         val () = Out.outputl (Out.standard, "Build " ^ Version.build)

@@ -1,4 +1,4 @@
-(* IFLC/IHC *)
+(* HRC *)
 (* COPYRIGHT_NOTICE_1 *)
 
 signature ANORM_STRICT_STATS =
@@ -7,7 +7,7 @@ sig
   val layout : options -> ANormStrict.t * Config.t -> Layout.t
   (*
    * Due to typeManager requirement, it's difficult to implement the function below:
-   * val module : Config.t * ANormStrict.tm * options * ANormStrict.module * Out.t -> unit 
+   * val module : Config.t * ANormStrict.tm * options * ANormStrict.module * Out.t -> unit
    *)
   val program : Config.t * options * ANormStrict.t * Out.t -> unit
 end;
@@ -18,7 +18,7 @@ struct
   val passname = "ANormStrictStats"
 
   structure ANS = ANormStrict
-  structure WS = WordSet 
+  structure WS = WordSet
   structure I = Identifier
   structure L = Layout
 
@@ -41,7 +41,7 @@ struct
                  }
 
   val stateMk =
-   fn () => 
+   fn () =>
       S {tySet = ref WS.empty, expNodes = ref 0, tyNodes = ref 0, varUses = ref 0, vExps = ref 0, vFuns = ref 0, vThks = ref 0}
 
   val incr = fn r => r := (!r) + 1
@@ -53,15 +53,15 @@ struct
   val incrVExps = incrF #vExps
   val incrVFuns = incrF #vFuns
   val incrVThks = incrF #vThks
-  val insertTyNode = 
-   fn (S { tySet = tySet, ... }, env, ty) => 
+  val insertTyNode =
+   fn (S { tySet = tySet, ... }, env, ty) =>
      tySet := WS.insert (!tySet, TypeRep.hashRepWithManager (getTM env, ty))
 
   val variableUse = fn (s, e, _) => incrVarUses s
   val analyzeExp = fn (s, e, _) => incrExpNodes s
   val analyzeTy = fn (s, e, t) => incrTyNodes s before insertTyNode (s, e, t)
 
-  val analyzeVDefg = fn (s, e, vdg) => 
+  val analyzeVDefg = fn (s, e, vdg) =>
                         let
                           val () =
                               case vdg
@@ -69,7 +69,7 @@ struct
                                 | _          => ()
                         in e
                         end
-  val analyzeVDef = fn (s, e, vd) => 
+  val analyzeVDef = fn (s, e, vd) =>
                        (case vd
                          of ANS.Vfun _ => incrVFuns s
                           | ANS.Vthk _ => incrVThks s)
@@ -84,7 +84,7 @@ struct
                                     val analyzeAlt = NONE
                                     val analyzeVDef = SOME analyzeVDef
                                     val analyzeVDefg = SOME analyzeVDefg)
-  val layoutStats = 
+  val layoutStats =
    fn (s, e, O {id, ...}) =>
       let
         val S {tySet, expNodes, tyNodes, varUses, vExps, vFuns, vThks} = s
@@ -108,7 +108,7 @@ struct
       end
 
   val layoutMk =
-   fn doIt => 
+   fn doIt =>
       fn opts => fn (p as (_, _, tm), config) =>
          let
            val s = stateMk ()
@@ -123,7 +123,7 @@ struct
    fn (config, opts, m, out) =>
       Layout.outputWidth (layoutMk A.module opts (m, config), 78, out)
   *)
-        
+
   val layout = layoutMk A.program
 
   val program =

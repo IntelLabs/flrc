@@ -1,0 +1,21 @@
+(* The Haskell Research Compiler *)
+(* COPYRIGHT_NOTICE_1 *)
+
+(* Import libraries *)
+$(SML_LIB)/mlton/sources.mlb
+
+(* Files for the project *)
+common/common.mlb
+core-hs/core-hs.mlb
+anorm-lazy/anorm-lazy.mlb
+anorm-strict/anorm-strict.mlb
+ch-to-as/ch-to-as.mlb
+as-to-mil/as-to-mil.mlb
+mil/mil.mlb
+mil/imil/imil.mlb
+mil/compile.mlb
+back-end/back-end.mlb
+version.sml
+driver.sml
+haskell.sml
+hrc.sml

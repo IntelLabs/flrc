@@ -1,4 +1,4 @@
-(* IFLC/IHC *)
+(* HRC *)
 (* COPYRIGHT_NOTICE_1 *)
 
 signature ANORM_STRICT_STATS =
@@ -15,7 +15,7 @@ struct
   val passname = "ANormLazyStats"
 
   structure AL = ANormLazy
-  structure WS = WordSet 
+  structure WS = WordSet
   structure I = Identifier
   structure L = Layout
 
@@ -36,7 +36,7 @@ struct
                  }
 
   val stateMk =
-   fn () => 
+   fn () =>
       S {tySet = ref WS.empty, expNodes = ref 0, tyNodes = ref 0, varUses = ref 0, vDefs = ref 0}
 
   val incr = fn r => r := (!r) + 1
@@ -46,8 +46,8 @@ struct
   val incrTyNodes = incrF #tyNodes
   val incrVarUses = incrF #varUses
   val incrVDefs = incrF #vDefs
-  val insertTyNode = 
-   fn (S { tySet = tySet, ... }, env, ty) => 
+  val insertTyNode =
+   fn (S { tySet = tySet, ... }, env, ty) =>
      tySet := WS.insert (!tySet, TypeRep.hashRepWithManager (getTM env, ty))
 
   val variableUse = fn (s, e, _) => incrVarUses s
@@ -64,7 +64,7 @@ struct
                                     val analyzeExp = SOME analyzeExp
                                     val analyzeAlt = NONE
                                     val analyzeVDef = SOME analyzeVDef)
-  val layoutStats = 
+  val layoutStats =
    fn (s, e, O {id, ...}) =>
       let
         val S {tySet, expNodes, tyNodes, varUses, vDefs} = s
@@ -86,7 +86,7 @@ struct
       end
 
   val layoutMk =
-   fn doIt => 
+   fn doIt =>
       fn opts => fn (p as (_, _, tm), config) =>
          let
            val s = stateMk ()
@@ -101,7 +101,7 @@ struct
    fn (config, opts, m, out) =>
       Layout.outputWidth (layoutMk A.module opts (m, config), 78, out)
   *)
-        
+
   val layout = layoutMk A.program
 
   val program =

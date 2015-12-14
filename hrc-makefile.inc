@@ -3,9 +3,6 @@
 
 all: all2
 
-# TODO: Tidy this up
-HRC_EXE = $(IHC_EXE)
-
 INSTALL_BINDIR     = $(HRC_PREFIX)/bin
 INSTALL_INCLUDEDIR = $(HRC_PREFIX)/include/hrc
 INSTALL_LIBDIR     = $(HRC_PREFIX)/lib
@@ -398,21 +395,21 @@ $(IFLC_EXE): make-version $(IFLC_SRCS)
 	mlton $(COMPILER_OPTS) -output ../$(IFLC_EXE) iflc.*.c iflc.*.s && \
 	rm -f iflc.*.c iflc.*.s;
 
-### ihc
+### hrc
 
-IHC = ihc
-IHC_EXE = $(BINDIR)/$(IHC)$(EXE)
+HRC = hrc
+HRC_EXE = $(BINDIR)/$(HRC)$(EXE)
 
-IHC_SRCS = $(COMPILER_SRCS) $(HASKELL_SRCS) compiler/ihc.mlb compiler/ihc.sml
+HRC_SRCS = $(COMPILER_SRCS) $(HASKELL_SRCS) compiler/hrc.mlb compiler/hrc.sml
 
-ihc: $(IHC_EXE)
+hrc: $(HRC_EXE)
 
-$(IHC_EXE): make-version $(IHC_SRCS) compiler/ihc.mlb
+$(HRC_EXE): make-version $(HRC_SRCS) compiler/hrc.mlb
 	cd compiler; \
-	rm -f ihc.*.c ihc.*.s; \
-	mlton $(COMPILER_OPTS) -stop g $(IHC).mlb && \
-	mlton $(COMPILER_OPTS) -output ../$(IHC_EXE) ihc.*.c ihc.*.s && \
-	rm -f ihc.*.c ihc.*.s
+	rm -f hrc.*.c hrc.*.s; \
+	mlton $(COMPILER_OPTS) -stop g $(HRC).mlb && \
+	mlton $(COMPILER_OPTS) -output ../$(HRC_EXE) hrc.*.c hrc.*.s && \
+	rm -f hrc.*.c hrc.*.s
 
 ### New P Runtime Support
 
@@ -459,7 +456,7 @@ PLSR_SRCS = \
 
 iflc-all: nfe iflc npr
 
-all2: hrc-ghc-runtime ihc
+all2: hrc-ghc-runtime hrc
 
 partclean:
 	rm -f runtime/ghc/*.a
@@ -488,7 +485,7 @@ partclean:
 	rm -f mlmon.out gc.log root_map.txt *.ppm compiler/version.sml
 
 clean: partclean
-	rm -f $(OFE_EXE) $(NFE_EXE) $(IFLC_EXE) $(IHC_EXE) $(NP_RUNTIME) regressions.log smvp.res
+	rm -f $(OFE_EXE) $(NFE_EXE) $(IFLC_EXE) $(HRC_EXE) $(NP_RUNTIME) regressions.log smvp.res
 
 ### Testing
 

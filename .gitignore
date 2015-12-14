@@ -55,6 +55,7 @@ ylwrap
 
 # /
 /bin/frontend-new
+/bin/hrc
 /bin/iflc
 /bin/ihc
 
