@@ -52,7 +52,7 @@ typedef struct PlsrWpoS {
 
 #define pLsrWpoPadding \
     (sizeof(PlsrWpoU) - sizeof(PlsrVTable) - 3*sizeof(PlsrRef) - sizeof(PlsrFinalizerCode))
-pLsrVTableStatic(pLsrWpoVTable_, VNoneTag, "*weak pointer object*", pLsrWpoPadding);
+pLsrVTableStatic(pLsrWpoVTable_, "*weak pointer object*", pLsrWpoPadding);
 #define pLsrWpoVTable (&pLsrWpoVTable_)
 
 
@@ -75,7 +75,7 @@ static PlsrWpo pLsrWpoNewWithRun(PlsrRef key, PlsrRef value, PlsrRef finalizer, 
     return res;
 }
 
-void pLsrWpoRunFinalizer(PlsrRef finalizer) 
+void pLsrWpoRunFinalizer(PlsrRef finalizer)
 {
     pLsrThunkEvalRef(finalizer);
 }
@@ -95,7 +95,7 @@ static PlsrRef pLsrWpoRead(PlsrWpo wpo)
     return ((PlsrWpoU*)wpo)->value;
 }
 
-static void pLsrWpoFinalize(PlsrWpo wpo) 
+static void pLsrWpoFinalize(PlsrWpo wpo)
 {
     ((PlsrWpoU*)wpo)->value = NULL;
     if (((PlsrWpoU*)wpo)->finalizer) {
@@ -106,7 +106,7 @@ static void pLsrWpoFinalize(PlsrWpo wpo)
 
 #pragma pillar_managed(off)
 
-static void pLsrWpoTombstone(void * wpo) 
+static void pLsrWpoTombstone(void * wpo)
 {
 #ifdef PLSR_WPO_TRACE
     printf("Tombstoning WPO object %p with value %p\n", wpo, ((PlsrWpoU*)wpo)->value);
@@ -145,7 +145,7 @@ static void pLsrWpoCheckAssertions()
 
 #else /* ! P_USE_PILLAR */
 
-static PlsrWpo pLsrWpoNew(PlsrRef key, PlsrRef value, PlsrRef finalizer) 
+static PlsrWpo pLsrWpoNew(PlsrRef key, PlsrRef value, PlsrRef finalizer)
 {
     pLsrRuntimeError("Weak pointer objects not supported");
     return 0;

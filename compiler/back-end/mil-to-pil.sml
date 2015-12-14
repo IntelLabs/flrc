@@ -60,7 +60,6 @@ struct
   fun parStyle env = Config.parStyle (getConfig env)
   fun synchThunks env = Config.synchronizeThunks (getConfig env)
 
-  fun vtTagOnly          env = #tagOnly         (Config.gc (getConfig env))
   fun vtReg              env = #registerVtables (Config.gc (getConfig env))
   fun gcGRoots           env = #reportRoots     (Config.gc (getConfig env))
   fun gcGRootsInGlobals  env = #rootsInGlobals  (Config.gc (getConfig env))
@@ -131,7 +130,6 @@ struct
   datatype vtInfo = Vti of {
                     code      : M.variable option,
                     name      : string,
-                    tag       : M.pObjKind,
                     pinned    : bool,
                     fixedSize : int,
                     fixedRefs : bool Vector.t,
@@ -160,9 +158,8 @@ struct
           | (VtmAlwaysImmutable, VtmAlwaysImmutable) => EQUAL
   in
   fun vtInfoCompare (Vti x1, Vti x2) =
-      rec10 (#code, option Identifier.variableCompare,
+       rec9 (#code, option Identifier.variableCompare,
              #name, String.compare,
-             #tag, MU.PObjKind.compare,
              #pinned, Bool.compare,
              #fixedSize, Int.compare,
              #fixedRefs, vector Bool.compare,
@@ -1183,8 +1180,8 @@ struct
      end =
   struct
 
-    fun vtiToName (state, env, pok, fixedSize, fixedRefs, array) =
-        (String.fromChar (MU.PObjKind.toChar pok)) ^
+    fun vtiToName (state, env, fixedSize, fixedRefs, array) =
+        (* (String.fromChar (MU.PObjKind.toChar pok)) ^ *)
         (String.concat (Vector.toListMap (fixedRefs,
                                        fn b => if b then "r" else "w"))) ^
         (String.make (fixedSize mod OM.wordSize (state, env), #"b")) ^
@@ -1200,7 +1197,7 @@ struct
     (* From the components of a tuple type, compute its vtable information *)
     fun deriveVtInfo (state, env, no, mdd, nebi) =
         let
-          val M.MDD {pok, pinned, fixed, array} = mdd
+          val M.MDD {pinned, fixed, array} = mdd
           val td = MU.MetaDataDescriptor.toTupleDescriptor mdd
           val config = getConfig env
           val ws = OM.wordSize (state, env)
@@ -1242,7 +1239,7 @@ struct
                   end
           val n =
               case no
-               of NONE => vtiToName (state, env, pok, fs, frefs, a)
+               of NONE => vtiToName (state, env, fs, frefs, a)
                 | SOME n => n
           val mut = not (MU.MetaDataDescriptor.immutable mdd)
           val vtm =
@@ -1254,7 +1251,7 @@ struct
                 VtmCreatedMutable
         in
           Vti {code = NONE,
-               name = n, tag = pok, pinned = pinned,
+               name = n, pinned = pinned,
                fixedSize = fs, fixedRefs = frefs,
                alignment = alignment, padding = totalPadding,
                array = a, mut = vtm}
@@ -1272,18 +1269,18 @@ struct
     fun genMetaDataUnboxed (state, env, vti) =
         let
           val () = incVtables state
-          val Vti {code, name, tag, pinned, fixedSize, fixedRefs, alignment, padding, array, mut} = vti
+          val Vti {code, name, pinned, fixedSize, fixedRefs, alignment, padding, array, mut} = vti
           (* Generate the actual vtable, with a forward dec of the code variable if present *)
           val vt = freshVariableDT (state, env, "vtable", M.VkGlobal)
           val vt' = genVarE (state, env, vt)
           val () =
               let
-                val tag = Pil.E.namedConstant (RT.MD.pObjKindTag tag)
+                (* val tag = Pil.E.namedConstant (RT.MD.pObjKindTag tag) *)
                 val vtg =
                     case code
                      of NONE =>
                         let
-                          val args = [vt', tag, Pil.E.string name, Pil.E.int padding]
+                          val args = [vt', (*tag,*) Pil.E.string name, Pil.E.int padding]
                           val vtg = Pil.D.macroCall (RT.MD.static, args)
                         in vtg
                         end
@@ -1296,7 +1293,7 @@ struct
                           val d = Pil.varDec (ubt, genVar (state, env, cv))
                           val () = addXtrGlb (state, Pil.D.staticVariable d)
                           val cv = genVarE (state, env, cv)
-                          val args = [vt', tag, Pil.E.string name, Pil.E.int padding, cv]
+                          val args = [vt', (* tag, *) Pil.E.string name, Pil.E.int padding, cv]
                           val vtg = Pil.D.macroCall (RT.MD.staticCustom, args)
                         in vtg
                         end
@@ -1357,10 +1354,7 @@ struct
           Pil.E.addrOf (genVarE (state, env, vt))
         end
 
-    fun genMetaData (state, env, no, mdd as M.MDD {pok, ...}, nebi) =
-        if vtTagOnly env then
-          Pil.E.namedConstant (RT.MD.pObjKindMetaData pok)
-        else
+    fun genMetaData (state, env, no, mdd as M.MDD {...}, nebi) =
           let
             val vti = deriveVtInfo (state, env, no, mdd, nebi)
             val vt = vTableFromInfo (state, env, vti)
@@ -1368,9 +1362,7 @@ struct
           end
 
     fun genMetaDataThunk (state, env, no, typ, fks, backpatch, codeO, value) =
-        if vtTagOnly env then
-          Pil.E.namedConstant (RT.Thunk.vTable typ)
-        else if value then
+        if value then
           Pil.E.namedConstant (RT.Thunk.vTable typ)
         else
           let
@@ -1414,7 +1406,7 @@ struct
             val frefs = Array.toVector frefs
             val n =
                 case no
-                 of NONE => vtiToName (state, env, M.PokCell, fs, frefs, NONE)
+                 of NONE => vtiToName (state, env, fs, frefs, NONE)
                   | SOME n => n
             val mut =
                 if value then
@@ -1424,7 +1416,7 @@ struct
                     VtmAlwaysImmutable
                 else
                   VtmCreatedMutable
-            val vti = Vti {code = codeO, name = n, tag = M.PokCell, pinned = false, fixedSize = fs,
+            val vti = Vti {code = codeO, name = n, pinned = false, fixedSize = fs,
                            fixedRefs = frefs, alignment = alignment, padding = padding, array = NONE,
                            mut = mut}
             val vt = vTableFromInfo (state, env, vti)
@@ -1480,7 +1472,6 @@ struct
              in
                Pil.E.word32 m
              end) *)
-        | M.CPok pok => Pil.E.namedConstant (RT.MD.pObjKindTag pok)
         | M.CRef i   => Pil.E.cast (genTyp (state, env, M.TRef), Pil.E.intInf i)
         | M.COptionSetEmpty =>
           notCoreMil (env, "genConstant", "COptionSetEmpty")
@@ -1552,7 +1543,7 @@ struct
 
   fun genTuple (state, env, no, dest, mdd, inits) =
       let
-        val M.MDD {pok, pinned, fixed, array} = mdd
+        val M.MDD {pinned, fixed, array} = mdd
         val td = MU.MetaDataDescriptor.toTupleDescriptor mdd
         val (fdo, lenIdx, nebi) =
             case array
@@ -2136,12 +2127,6 @@ struct
                   else
                     Pil.S.expr (Pil.E.assign (genVarE (state, env, v), Pil.E.null))
             in bind doIt
-            end
-          | M.RhsObjectGetKind v =>
-            let
-              val v = genVarE (state, env, v)
-              val e = Pil.E.call (Pil.E.namedConstant RT.Object.getKind, [v])
-            in assignP e
             end
           | M.RhsThunkMk {typ, fvs} =>
             bind (fn v => mkThunk (state, env, v, typ, NONE, fvs))

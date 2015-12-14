@@ -58,9 +58,9 @@ struct
    val || = Try.||
    val @@ = Utils.Function.@@
 
-   infix 3 << @@ oo om <! <\ 
+   infix 3 << @@ oo om <! <\
    infixr 3 />
-   infix 4 or || 
+   infix 4 or ||
 
    structure Chat = ChatF (type env = Config.t
                            fun extract x = x
@@ -111,12 +111,11 @@ struct
              MU.CallConv.compare MUT.compare (cc1, cc2) = EQUAL andalso
              subtypes (c, args2, args1) andalso
              subtypes (c, ress1, ress2)
-           | (M.TTuple {pok = pok1, fixed = ftvs1, array = a1}, M.TTuple {pok = pok2, fixed = ftvs2, array = a2}) =>
-             MU.PObjKind.compare (pok1, pok2) = EQUAL andalso
+           | (M.TTuple {fixed = ftvs1, array = a1}, M.TTuple {fixed = ftvs2, array = a2}) =>
              Vector.size ftvs1 >= Vector.size ftvs2 andalso
              let
                fun checkField ((t1, vs1, v1), (t2, vs2, v2)) =
-                   MU.ValueSize.eq (vs1, vs2) andalso 
+                   MU.ValueSize.eq (vs1, vs2) andalso
                    case (v1, v2)
                     of (M.FvReadOnly , M.FvReadOnly ) => subtype (c, t1, t2)
                      | (M.FvReadOnly , M.FvReadWrite) => false
@@ -146,14 +145,14 @@ struct
            | (M.TSum {tag = t1, arms = a1}, M.TSum {tag = t2, arms = a2}) =>
              let
                (* Seems reasonable to allow subtyping on tag types, but I'm not sure this
-                * is a good idea. -leaf 
+                * is a good idea. -leaf
                 *)
                val rec loop =
                 fn (a1, a2) =>
                    case (a1, a2)
                     of ([], _)                      => true
                      | (_, [])                      => false
-                     | ((c1, v1)::a12, (c2, v2)::a22) => 
+                     | ((c1, v1)::a12, (c2, v2)::a22) =>
                        (case MU.Constant.compare (c1, c2)
                          of LESS    => loop (a12, a2)
                           | GREATER => loop (a1, a22)
@@ -171,23 +170,16 @@ struct
      structure Lub =
      struct
 
-     val pObjKind =
-      fn (pok1, pok2) => 
-         if MU.PObjKind.eq (pok1, pok2) then
-           SOME pok1
-         else 
-           NONE
-
-     val typKind = 
-      fn (tk1, tk2) => 
+     val typKind =
+      fn (tk1, tk2) =>
          if MU.TypKind.eq (tk1, tk2) then
            SOME tk1
-         else 
+         else
            NONE
 
-     val vector = 
-         Try.lift 
-         (fn (v1, v2, doit) => 
+     val vector =
+         Try.lift
+         (fn (v1, v2, doit) =>
              let
                val () = Try.require (Vector.length v1 = Vector.length v2)
                val v = Vector.map2 (v1, v2, doit)
@@ -198,31 +190,31 @@ struct
       * the purely structural rules (i.e. no width subtyping, and only
       * comparing like to like) which are dual.  This function is parameterized
       * over the full lub/glb functions which are used to compute lubs/glbs of
-      * the sub-components.  By instantiating up/down with lub/glb or glb/lub, 
+      * the sub-components.  By instantiating up/down with lub/glb or glb/lub,
       * the structural lub rules/glb rules are obtained.
-      * 
+      *
       * The second two functions implement the non-structural rules for lubs/glbs
       * respectively.  These functions assume that none of the non-structural rules
       * apply (that is, that the structural lub/glb has failed).
       *
-      * N.B.  The structural code is deliberately written to cover all cases so that 
-      * exhaustiveness checking will catch any missed cases.  Please preserve 
+      * N.B.  The structural code is deliberately written to cover all cases so that
+      * exhaustiveness checking will catch any missed cases.  Please preserve
       * this. The other functions are not necessarily of this form, so a match
       * non-exhaustive warning in the structural code should prompt an inspection
       * of the non-structural code as well.
       *)
-     val rec structural = 
-      fn (up, down) => 
-      fn (config, t1, t2) => 
+     val rec structural =
+      fn (up, down) =>
+      fn (config, t1, t2) =>
          let
            val up = fn (t1, t2) => up (config, t1, t2)
            val down = fn (t1, t2) => down (config, t1, t2)
            val eq = fn (t1, t2) => if MU.Typ.eq (t1, t2) then SOME t1 else NONE
            val cc = (* Not sure what the right thing is here, equality is safe *)
                fn (cc1, cc2) => if MU.CallConv.eq MU.Typ.eq (cc1, cc2) then SOME cc1 else NONE
-           val to = 
-               Try.try 
-               (fn () => 
+           val to =
+               Try.try
+               (fn () =>
                    (case (t1, t2)
                      of (M.TAny, M.TAny) => M.TAny
                       | (M.TAnyS _, M.TAnyS _) => <@ eq (t1, t2)
@@ -236,7 +228,7 @@ struct
                       | (M.TViVector vit1, M.TViVector vit2) => <@ eq (t1, t2)
                       | (M.TViMask vit1, M.TViMask vit2) => <@ eq (t1, t2)
                       | (M.TCode {cc = cc1, args = args1, ress = ress1},
-                         M.TCode {cc = cc2, args = args2, ress = ress2}) => 
+                         M.TCode {cc = cc2, args = args2, ress = ress2}) =>
                         let
                           val cc = <@ cc (cc1, cc2)
                           val args = <@ vector (args1, args2, down)
@@ -246,21 +238,21 @@ struct
                       | (M.TTuple _, M.TTuple _) => Try.fail () (* handled elsewhere *)
                       | (M.TCString, M.TCString) => M.TCString
                       | (M.TIdx, M.TIdx) => M.TIdx
-                      | (M.TContinuation ts1, M.TContinuation ts2) => 
+                      | (M.TContinuation ts1, M.TContinuation ts2) =>
                        let
                          val ts = <@ vector (ts1, ts2, up)
                        in M.TContinuation ts
                        end
                       | (M.TThunk t1, M.TThunk t2) => M.TThunk (up (t2, t2))
                       | (M.TPAny, M.TPAny) => M.TPAny
-                      | (M.TClosure {args = args1, ress = ress1}, M.TClosure {args = args2, ress = ress2}) => 
+                      | (M.TClosure {args = args1, ress = ress1}, M.TClosure {args = args2, ress = ress2}) =>
                         let
                           val args = <@ vector (args1, args2, down)
                           val ress = <@ vector (ress1, ress2, up)
                         in M.TClosure {args = args, ress = ress}
                         end
                       | (M.TSum ts1, M.TSum ts2) => Try.fail () (* handled elsewhere *)
-                      | (M.TPType {kind = kind1, over = over1}, M.TPType {kind = kind2, over = over2}) => 
+                      | (M.TPType {kind = kind1, over = over1}, M.TPType {kind = kind2, over = over2}) =>
                         let
                           val kind = <@ typKind (kind1 ,kind2)
                           val over = up (over1, over2)
@@ -271,7 +263,7 @@ struct
                       | (M.TNonRefPtr, _) => Try.fail ()     | (M.TRef, _) => Try.fail ()
                       | (M.TBits _, _) => Try.fail ()        | (M.TNone, _) => Try.fail ()
                       | (M.TNumeric _, _) => Try.fail ()     | (M.TBoolean, _) => Try.fail ()
-                      | (M.TName, _) => Try.fail ()     
+                      | (M.TName, _) => Try.fail ()
                       | (M.TViVector vit1, _) => Try.fail () | (M.TViMask vit1, _) => Try.fail ()
                       | (M.TCode _, _) => Try.fail ()        | (M.TTuple _, _) => Try.fail ()
                       | (M.TCString, _) => Try.fail ()
@@ -284,17 +276,17 @@ struct
          in to
          end
 
-     (* In order to make the non-structural glb/lub code more compact, we partition 
-      * the types into classes which behave identically wrt lub/glb.  There are 
-      * individual partitions for TAny, Mask types, the TAnyS _ types, and TNone. 
+     (* In order to make the non-structural glb/lub code more compact, we partition
+      * the types into classes which behave identically wrt lub/glb.  There are
+      * individual partitions for TAny, Mask types, the TAnyS _ types, and TNone.
       * The TRef, TPtr, TPAny, and TBits types each define a partition which includes
       * themselves and their exact immediate sub-types.  So for example, the SRef
       * class contains TRef, as well as TRat, TInteger, etc; but not TPAny nor any of
       * its immediate sub-types (e.g. TClosure, etc).  The boolean argument to these
       * classes indicate whether or not the summarized type is exact.  So for example,
       * TRef is classified by SRef false, whereas TRat is classified by SRef true.
-      *)      
-     datatype summary = 
+      *)
+     datatype summary =
               SRef of bool        (* false => TRef, true => An exact immediate subtype of TRef except TPAny *)
             | SNonRefPtr of bool  (* false => TNonRefPtr, true => An exact immediate subtype of TNonRefPtr *)
             | SPAny of bool       (* false => TPAny, true => An exact immediate subtype of TPAny *)
@@ -306,21 +298,21 @@ struct
             | SSized              (* TAnyS *)
             | SNone               (* TNone *)
 
-     val summarizeNumericTyp = 
-      fn (config, nt) => 
+     val summarizeNumericTyp =
+      fn (config, nt) =>
          (case nt
            of M.Prims.NtRat            => SRef true
-            | M.Prims.NtInteger ip     => 
+            | M.Prims.NtInteger ip     =>
               (case ip
                 of M.Prims.IpArbitrary => SRef true
                  | M.Prims.IpFixed ia  => SBits true)
-            | M.Prims.NtFloat fp       => 
+            | M.Prims.NtFloat fp       =>
               (case fp
                 of M.Prims.FpSingle    => SFloat
                  | M.Prims.FpDouble    => SDouble))
 
      val summarize =
-      fn (config, t) => 
+      fn (config, t) =>
          (case t
            of M.TAny                       => SAny
             | M.TAnyS vs                   => SSized
@@ -334,7 +326,7 @@ struct
             | M.TViVector et               => SBits true
             | M.TViMask et                 => SMask
             | M.TCode {cc, args, ress}     => SNonRefPtr true
-            | M.TTuple {pok, fixed, array} => if MU.Typ.isP t then SPAny true else SRef true
+            | M.TTuple {fixed, array}      => if MU.Typ.isP t then SPAny true else SRef true
             | M.TCString                   => SNonRefPtr true
             | M.TIdx                       => SRef true
             | M.TContinuation ts           => SNonRefPtr true
@@ -346,23 +338,23 @@ struct
             | M.TPRef t                    => SPAny true)
 
      (* This code handles the non-structural lub cases *)
-     val rec lubLossy = 
-      fn (config, t1, t2) => 
+     val rec lubLossy =
+      fn (config, t1, t2) =>
          let
            val lub = fn (t1, t2) => lub (config, t1, t2)
            val glb = fn (t1, t2) => glb (config, t1, t2)
            val eq = fn (t1, t2) => if MU.Typ.eq (t1, t2) then SOME t1 else NONE
            val sub = fn (t1, t2) => if subtype (config, t1, t2) then SOME t2 else NONE
 
-           val field = 
-               (fn ((t1, vs1, fv1), (t2, vs2, fv2)) => 
-                   if MU.ValueSize.eq (vs1, vs2) then 
+           val field =
+               (fn ((t1, vs1, fv1), (t2, vs2, fv2)) =>
+                   if MU.ValueSize.eq (vs1, vs2) then
                      SOME (case (fv1, fv2)
                             of (M.FvReadOnly, M.FvReadOnly) => (lub (t1, t2), vs1, M.FvReadOnly)
                              | (M.FvReadOnly, M.FvReadWrite) => (lub (t1, t2), vs1, M.FvReadOnly)
                              | (M.FvReadWrite, M.FvReadOnly) => (lub (t2, t1), vs1, M.FvReadOnly)
                              | (M.FvReadWrite, M.FvReadWrite) =>
-                               if MU.Typ.eq (t1, t2) then (t1, vs1, M.FvReadWrite) 
+                               if MU.Typ.eq (t1, t2) then (t1, vs1, M.FvReadWrite)
                                else (lub (t1, t2), vs1, M.FvReadOnly))
                    else NONE)
 
@@ -375,11 +367,10 @@ struct
            *     = [ak v bk v bn+1 v ... v bm] if R1 = [ak] and R2 = [bk]
            *)
            val tTupleWidth =
-               Try.lift 
-               (fn ({pok = pok1, fixed = fixed1, array = array1},
-                    {pok = pok2, fixed = fixed2, array = array2}) => 
+               Try.lift
+               (fn ({fixed = fixed1, array = array1},
+                    {fixed = fixed2, array = array2}) =>
                    let
-                     val pok = <@ pObjKind (pok1, pok2)
                      val len = Int.min (Vector.length fixed1, Vector.length fixed2)
                      val (fixed1, extras1) = Utils.Vector.split (fixed1, len)
                      val (fixed2, extras2) = Utils.Vector.split (fixed2, len)
@@ -387,10 +378,10 @@ struct
                      val extras = Vector.concat [extras1, extras2]
                      val fixed = Vector.map2 (fixed1, fixed2, <@ field)
                      val array = Vector.fold (extras, <@ field (array1, array2), <@ field)
-                   in M.TTuple {pok = pok, fixed = fixed, array = array}
+                   in M.TTuple {fixed = fixed, array = array}
                    end)
-               
-           val t = 
+
+           val t =
                (case (t1, t2)
                   (* Width subtyping on tuples *)
                  of (M.TTuple r1, M.TTuple r2) =>
@@ -399,12 +390,12 @@ struct
                         | NONE => if MU.Typ.isP t1 andalso MU.Typ.isP t2 then M.TPAny else M.TRef)
 
                   (* Sum widening *)
-                  | (M.TSum {tag = t1, arms = a1}, M.TSum {tag = t2, arms = a2}) => 
+                  | (M.TSum {tag = t1, arms = a1}, M.TSum {tag = t2, arms = a2}) =>
                     if not (equal (t1, t2)) then if MU.Typ.isP t1 andalso MU.Typ.isP t2 then M.TPAny else M.TRef
                     else
                       let
-                        val combine = 
-                         fn (v1, v2) => 
+                        val combine =
+                         fn (v1, v2) =>
                             let
                               val n = Int.min (Vector.length v1, Vector.length v2)
                               val v1 = Vector.prefix (v1, n)
@@ -417,12 +408,12 @@ struct
                       in M.TSum {tag = tag, arms = arms}
                       end
 
-                  (* All other combinations.  Note that by assumption, 
+                  (* All other combinations.  Note that by assumption,
                    * t1 and t2 have different top level structure.
                    *)
-                  | _ => 
+                  | _ =>
                     (case (MU.Typ.valueSize (config, t1), MU.Typ.valueSize (config, t2))
-                      of (SOME sz1, SOME sz2) => 
+                      of (SOME sz1, SOME sz2) =>
                          if MU.ValueSize.eq (sz1, sz2) then  (* Both same sized *)
                            (case (summarize (config, t1), summarize (config, t2))
                              of (SNone, _) => t2
@@ -430,7 +421,7 @@ struct
                               | (SAny, _) => M.TAny
                               | (_, SAny) => M.TAny
                               | (SMask, _) => M.TAny
-                              | (_, SMask) => M.TAny 
+                              | (_, SMask) => M.TAny
                               | (SSized, _) => M.TAnyS sz1 (* Same size *)
                               | (_, SSized) => M.TAnyS sz1 (* Same size *)
                               | (SBits _, SBits _) => M.TBits sz1 (* Same size, both <= Bits *)
@@ -464,25 +455,25 @@ struct
          end
 
      (* This code handles the non-structural glb cases *)
-     and rec glbLossy = 
-      fn (config, t1, t2) => 
+     and rec glbLossy =
+      fn (config, t1, t2) =>
          let
            val lub = fn (t1, t2) => lub (config, t1, t2)
            val glb = fn (t1, t2) => glb (config, t1, t2)
            val eq = fn (t1, t2) => if MU.Typ.eq (t1, t2) then SOME t1 else NONE
            val sub = fn (t1, t2) => if subtype (config, t1, t2) then SOME t1 else NONE
 
-           val field = 
-               Try.lift 
-               (fn ((t1, vs1, fv1), (t2, vs2, fv2)) => 
-                   if MU.ValueSize.eq (vs1, vs2) then 
+           val field =
+               Try.lift
+               (fn ((t1, vs1, fv1), (t2, vs2, fv2)) =>
+                   if MU.ValueSize.eq (vs1, vs2) then
                      (case (fv1, fv2)
                        of (M.FvReadOnly, M.FvReadOnly) => (glb (t1, t2), vs1, M.FvReadOnly)
                         | (M.FvReadOnly, M.FvReadWrite) => (<@ sub (t2, t1), vs1, M.FvReadWrite)
                         | (M.FvReadWrite, M.FvReadOnly) => (<@ sub (t1, t2), vs1, M.FvReadWrite)
                         | (M.FvReadWrite, M.FvReadWrite) => (<@ eq (t1, t2), vs1, M.FvReadWrite))
                    else Try.fail ())
-               
+
            (* GLB: t1 ^ t2
             * <a1, ..., an, R1> ^ <b1, ..., bn, ..., bm, R2> = <a1 ^ b1, ..., an ^ bn, cn+1, ..., cm, R3>
             * where
@@ -494,24 +485,23 @@ struct
             *      = bi otherwise
             *)
            val rec tTupleWidth =
-            fn (r1 as {pok = pok1, fixed = fixed1, array = array1},
-                r2 as {pok = pok2, fixed = fixed2, array = array2}) => 
+            fn (r1 as {fixed = fixed1, array = array1},
+                r2 as {fixed = fixed2, array = array2}) =>
                if (Vector.length fixed1 > Vector.length fixed2) then
                  tTupleWidth (r2, r1)
-               else 
+               else
                  Try.try
-                   (fn () => 
-                       let 
-                         val pok = <@ pObjKind (pok1, pok2)
+                   (fn () =>
+                       let
                          val (fixed2, extras2) = Utils.Vector.split (fixed2, Vector.length fixed1)
                          val fixedA = Vector.map2 (fixed1, fixed2, <@ field)
                          val fixedB = Vector.map (extras2, fn f2 => (<@ field (array1, f2)))
                          val fixed = Vector.concat [fixedA, fixedB]
                          val array = <@ field (array1, array2)
-                       in M.TTuple {pok = pok, fixed = fixed, array = array}
+                       in M.TTuple {fixed = fixed, array = array}
                        end)
-               
-           val t = 
+
+           val t =
                (case (t1, t2)
                   (* Width subtyping on tuples *)
                  of (M.TTuple r1, M.TTuple r2) =>
@@ -520,12 +510,12 @@ struct
                         | NONE => M.TNone)
 
                   (* Sum narrowing *)
-                  | (M.TSum {tag = t1, arms = a1}, M.TSum {tag = t2, arms = a2}) => 
+                  | (M.TSum {tag = t1, arms = a1}, M.TSum {tag = t2, arms = a2}) =>
                     if not (equal (t1, t2)) then M.TNone
                     else
                       let
-                        val combine = 
-                         fn (v1, v2) => 
+                        val combine =
+                         fn (v1, v2) =>
                             let
                               val n = Int.min (Vector.length v1, Vector.length v2)
                               val (v1, extra1) = Utils.Vector.split (v1, n)
@@ -539,12 +529,12 @@ struct
                     in M.TSum {tag = tag, arms = arms}
                     end
 
-                  (* All other combinations.  Note that by assumption, 
+                  (* All other combinations.  Note that by assumption,
                    * t1 and t2 have different top level structure.
                    *)
-                  | _ => 
+                  | _ =>
                     (case (MU.Typ.valueSize (config, t1), MU.Typ.valueSize (config, t2))
-                      of (SOME sz1, SOME sz2) => 
+                      of (SOME sz1, SOME sz2) =>
                          if MU.ValueSize.eq (sz1, sz2) then  (* Both same sized *)
                            (case (summarize (config, t1), summarize (config, t2))
                              of (SNone, _) => M.TNone
@@ -586,7 +576,7 @@ struct
                            )
                          else
                            M.TNone (* Different sizes *)
-                       | _ => 
+                       | _ =>
                          (case (t1, t2)
                            of (_, M.TAny) => t1
                             | (M.TAny, _) => t2
@@ -597,14 +587,14 @@ struct
          in t
          end
 
-     and rec lub = 
-      fn args =>           
+     and rec lub =
+      fn args =>
          (case structural (lub, glb) args
            of NONE => lubLossy args
             | SOME t => t)
 
-     and rec glb = 
-      fn args => 
+     and rec glb =
+      fn args =>
          (case structural (glb, lub) args
            of NONE => glbLossy args
             | SOME t => t)
@@ -634,27 +624,27 @@ struct
      val tInt = MUP.NumericTyp.tIntegerArbitrary
      val tPAny = M.TPAny
      val tSet = POM.OptionSet.typ
-     val tArrayV = fn (c, t) => OA.varTyp (c, M.PokArray, t)
+     val tArrayV = fn (c, t) => OA.varTyp (c, t)
      val tUint8 = MUP.NumericTyp.tIntegerFixed (IntArb.T (IntArb.S8, IntArb.Unsigned))
-     val tUintp = 
+     val tUintp =
       fn c => MUP.NumericTyp.tIntegerFixed (IntArb.T (Config.targetWordSize' c, IntArb.Unsigned))
-     val tSintp = 
+     val tSintp =
       fn c => MUP.NumericTyp.tIntegerFixed (IntArb.T (Config.targetWordSize' c, IntArb.Signed))
      val tMask = fn vd => M.TViMask vd
      val tVector = fn (sz, t) => M.TViVector {vectorSize = sz, elementTyp = t}
      val tCString = M.TCString
-     val tString = 
+     val tString =
       fn (c, si) =>
          let
            val ord = M.CName (Prims.getOrd si)
-           val char = MU.Boxed.t (M.PokRat, tRat)
+           val char = MU.Boxed.t tRat
            val sum = POM.Sum.typ (M.TName, Vector.new1 (ord, Vector.new1 char))
-           val str = OA.varTyp (c, M.PokArray, char)
+           val str = OA.varTyp (c, char)
          in str
          end
      val tBoolean = M.TBoolean
-     val nullary = Vector.new0 
-     val unary = Vector.new1 
+     val nullary = Vector.new0
+     val unary = Vector.new1
      val binary = Vector.new2
      val trinary = Vector.new3
      val mk00 = fn () => (nullary (), nullary ())
@@ -669,10 +659,10 @@ struct
      val mk31 = fn (a1, a2, a3, r1) => (trinary (a1, a2, a3), unary r1)
 
 
-     val rec stringOp = 
-      fn (c, p) => 
+     val rec stringOp =
+      fn (c, p) =>
          let
-           val res = 
+           val res =
 	       case p
 	        of MP.SAllocate      => mk11 (tUintp c, tCString)
 	         | MP.SDeallocate    => mk10 tCString
@@ -684,10 +674,10 @@ struct
            res
          end
 
-     val logicOp = 
-      fn (c, operator, t) => 
+     val logicOp =
+      fn (c, operator, t) =>
          let
-           val res = 
+           val res =
                case PU.Arity.logicOp operator
                 of PU.Arity.ArAtoA    => mk11 (t, t)
                  | PU.Arity.ArAAtoA   => mk21 (t, t, t)
@@ -699,37 +689,37 @@ struct
          case no
           of MP.NGetString => mk11 (M.TName, M.TCString)
            | MP.NGetHash => mk11 (M.TName, tUintp c)
-         
-     val rec prim = 
-      fn (c, p) => 
+
+     val rec prim =
+      fn (c, p) =>
          let
-           val res = 
+           val res =
 	       case p
-	        of MP.PNumArith r1   => 
+	        of MP.PNumArith r1   =>
                    let
                      val t = M.TNumeric (#typ r1)
-                     val res = 
+                     val res =
                          case PU.Arity.arithOp (#operator r1)
                           of PU.Arity.ArAtoA    => mk11 (t, t)
                            | PU.Arity.ArAAtoA   => mk21 (t, t, t)
                            | PU.Arity.ArAAtoB   => fail ("prim", "Unexpected arithOp arity")
-                           | PU.Arity.ArOther _ => 
+                           | PU.Arity.ArOther _ =>
                              (case #operator r1
                                of MP.ADivMod _  => mk22 (t, t, t, t)
                                 | _             => fail ("prim", "Unexpected arithOp arity"))
                    in res
                    end
-	         | MP.PFloatOp r1    => 
+	         | MP.PFloatOp r1    =>
                    let
                      val t = M.TNumeric (MP.NtFloat (#typ r1))
-                     val res = 
+                     val res =
                          case PU.Arity.floatOp (#operator r1)
                           of PU.Arity.ArAtoA    => mk11 (t, t)
                            | PU.Arity.ArAAtoA   => mk21 (t, t, t)
                            | _                  => fail ("prim", "Unexpected floatOp arity")
                    in res
                    end
-	         | MP.PNumCompare r1 => 
+	         | MP.PNumCompare r1 =>
                    let
                      val t1 = M.TNumeric (#typ r1)
                      val t2 = M.TBoolean
@@ -738,17 +728,17 @@ struct
                    end
 	         | MP.PNumConvert r1 => mk11 (M.TNumeric (#from r1), M.TNumeric (#to r1))
 	         | MP.PNumCast r1 => mk11 (M.TNumeric (#from r1), M.TNumeric (#to r1))
-	         | MP.PBitwise r1    => 
+	         | MP.PBitwise r1    =>
                    let
                      val t1 = M.TNumeric (MP.NtInteger (#typ r1))
                      val doRotShift =
                       fn () => mk21 (t1, tUint8, t1)
-                     val res = 
+                     val res =
                          case PU.Arity.bitwiseOp (#operator r1)
                           of PU.Arity.ArAtoA    => mk11 (t1, t1)
                            | PU.Arity.ArAAtoA   => mk21 (t1, t1, t1)
                            | PU.Arity.ArAAtoB   => fail ("prim", "Unexpected bitwiseOp arity")
-                           | PU.Arity.ArOther _ => 
+                           | PU.Arity.ArOther _ =>
                              (case #operator r1
                                of MP.BRotL   => doRotShift ()
                                 | MP.BRotR   => doRotShift ()
@@ -765,20 +755,20 @@ struct
          in
            res
          end
-         
-     val dataOp = 
-      fn (c, p, desc, targs) => 
+
+     val dataOp =
+      fn (c, p, desc, targs) =>
          let
-           val t = if Vector.length targs > 0 then 
+           val t = if Vector.length targs > 0 then
                      Vector.sub (targs, 0)
                    else
                      fail ("dataOp", "Type argument required for dataOp typing")
            val size = PU.VectorDescriptor.vectorSize desc
            val tv = tVector (size, t)
-           val res = 
+           val res =
 	       case p
 	        of MP.DBroadcast    => mk11 (t, tv)
-	         | MP.DVector       => 
+	         | MP.DVector       =>
                    let
                      val n = PU.VectorDescriptor.elementCount desc
                    in (Vector.new (n, t), unary tv)
@@ -786,19 +776,19 @@ struct
 	         | MP.DSub r1       => mk11 (tv, t)
 	         | MP.DPermute r1   => mk11 (tv, tv)
 	         | MP.DBlend        => mk31 (tMask desc, tv, tv, tv)
-	         | MP.DSplit        => 
+	         | MP.DSplit        =>
                    let
-                     val size2 = 
-                         (case PU.VectorSize.halfSize size 
+                     val size2 =
+                         (case PU.VectorSize.halfSize size
                            of SOME size => size
                             | NONE => fail ("dataOp", "Vector size can't be split"))
                      val tv2 = tVector (size, t)
                    in mk12 (tv, tv2, tv2)
                    end
-	         | MP.DConcat       => 
+	         | MP.DConcat       =>
                    let
-                     val size2 = 
-                         (case PU.VectorSize.doubleSize size 
+                     val size2 =
+                         (case PU.VectorSize.doubleSize size
                            of SOME size => size
                             | NONE => fail ("dataOp", "Vector size can't be doubled"))
                      val tv2 = tVector (size, t)
@@ -807,38 +797,38 @@ struct
          in
            res
          end
-         
-     val vector = 
-      fn (c, p, targs) => 
+
+     val vector =
+      fn (c, p, targs) =>
          let
-           val unBin = 
-            fn (ats, rts) => 
+           val unBin =
+            fn (ats, rts) =>
                (case (Vector.length ats, Vector.length rts)
                  of (2, 1) => (Vector.sub (ats, 0), Vector.sub (ats, 1), Vector.sub (rts, 0))
                   | _ => fail ("vector", "Not a binary operator"))
 
-           val unUn = 
-            fn (ats, rts) => 
+           val unUn =
+            fn (ats, rts) =>
                (case (Vector.length ats, Vector.length rts)
                  of (1, 1) => (Vector.sub (ats, 0), Vector.sub (rts, 0))
                   | _ => fail ("vector", "Not a unary operator"))
-               
-           val res = 
+
+           val res =
 	       case p
-	        of MP.ViPointwise r1   => 
+	        of MP.ViPointwise r1   =>
                    let
                      val (ats, rts) = prim (c, #operator r1)
                      val size = PU.VectorDescriptor.vectorSize (#descriptor r1)
                      val ats = Vector.map (ats, fn t => tVector (size, t))
                      val rts = Vector.map (rts, fn t => tVector (size, t))
-                     val ats = 
-                         if #masked r1 then 
+                     val ats =
+                         if #masked r1 then
                            Utils.Vector.snoc (ats, tMask (#descriptor r1))
-                         else 
+                         else
                            ats
                    in (ats, rts)
                    end
-	         | MP.ViConvert r1     => 
+	         | MP.ViConvert r1     =>
                    let
                      val {to, from} = r1
                      val p = MP.PNumConvert {to = #typ to, from = #typ from}
@@ -850,7 +840,7 @@ struct
                      val t = mk11 (t1, t2)
                    in t
                    end
-	         | MP.ViCast r1     => 
+	         | MP.ViCast r1     =>
                    let
                      val {to, from} = r1
                      val p = MP.PNumCast {to = #typ to, from = #typ from}
@@ -862,7 +852,7 @@ struct
                      val t = mk11 (t1, t2)
                    in t
                    end
-	         | MP.ViCompare r1     => 
+	         | MP.ViCompare r1     =>
                    let
                      val t1 = M.TNumeric (#typ r1)
                      val size = PU.VectorDescriptor.vectorSize (#descriptor r1)
@@ -871,7 +861,7 @@ struct
                      val t = mk21 (t1, t1, t2)
                    in t
                    end
-	         | MP.ViReduction r1   => 
+	         | MP.ViReduction r1   =>
                    let
                      val (t1, _, _) = unBin (prim (c, #operator r1))
                      val size = PU.VectorDescriptor.vectorSize (#descriptor r1)
@@ -887,10 +877,10 @@ struct
            res
          end
 
-     val runtime = 
-      fn (c, si, p) => 
+     val runtime =
+      fn (c, si, p) =>
          let
-           val res = 
+           val res =
 	       case p
 	        of MP.RtFloatMk              => mk21 (tRat, tRat, tFloat)
 	         | MP.RtWriteln              => mk10 tPAny
@@ -931,11 +921,11 @@ struct
          in
            res
          end
-         
-     val t = 
-      fn (c, si, p, targs) => 
+
+     val t =
+      fn (c, si, p, targs) =>
          let
-           val res = 
+           val res =
 	       case p
 	        of MP.Prim r1    => prim (c, r1)
 	         | MP.Runtime r1 => runtime (c, si, r1)
@@ -995,16 +985,15 @@ struct
                       ress = MU.Code.rtyps f}
            | M.GErrorVal t => t
            | M.GIdx _ => M.TIdx
-           | M.GTuple {mdDesc, inits} => 
+           | M.GTuple {mdDesc, inits} =>
              let
-               val pok = MU.MetaDataDescriptor.pok mdDesc
                val getFD = fn i => MU.MetaDataDescriptor.fixedField (mdDesc, i)
-               val get = fn i => let val fd = getFD i 
-                                 in (MU.FieldDescriptor.alignment fd, MU.FieldDescriptor.var fd) 
+               val get = fn i => let val fd = getFD i
+                                 in (MU.FieldDescriptor.alignment fd, MU.FieldDescriptor.var fd)
                                  end
                val s = simples (config, si, inits)
                val l = Vector.mapi (s, fn (i, t) => let val (vs, vr) = get i in (t, vs, vr) end)
-             in  MU.Typ.fixedArray (pok, l)
+             in  MU.Typ.fixedArray l
              end
            | M.GRat _ => MUP.NumericTyp.tRat
            | M.GInteger _ => MUP.NumericTyp.tIntegerArbitrary
@@ -1013,7 +1002,7 @@ struct
              M.TThunk (simple (config, si, ofVal))
            | M.GSimple s => simple (config, si, s)
            | M.GClosure {code = NONE, ...} => M.TPAny
-           | M.GClosure {code = SOME f, ...} => 
+           | M.GClosure {code = SOME f, ...} =>
              (case variable (config, si, f)
                of M.TCode {args, ress, ...} =>
                   M.TClosure {args = args, ress = ress}

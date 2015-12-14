@@ -109,7 +109,7 @@ typedef struct IhrThreadS {
 #define ihrThreadSize sizeof(IhrThreadU)
 #define ihrThreadPadding \
     (sizeof(IhrThreadU) - sizeof(PlsrVTable) - sizeof(PrtTaskHandle) - sizeof(IhrThreadStatus) - 2*sizeof(bool))
-pLsrVTableStatic (ihrVTableThread, VNoneTag, "*haskell thread*", ihrThreadPadding);
+pLsrVTableStatic (ihrVTableThread, "*haskell thread*", ihrThreadPadding);
 
 #ifdef P_USE_PILLAR
 typedef ref IhrThreadId;
@@ -224,7 +224,7 @@ typedef struct IhrPairS {
 
 #define ihrPairPadding \
     (sizeof(struct IhrPairS) - sizeof(PlsrVTable) - 2*sizeof(sintp))
-pLsrVTableStatic (ihrVTablePair, VNoneTag, "*IHR pair*", ihrPairPadding);
+pLsrVTableStatic (ihrVTablePair, "*IHR pair*", ihrPairPadding);
 #define ihrPairSize (sizeof(struct IhrPairS))
 
 #ifndef PLSR_LINUX
@@ -484,7 +484,7 @@ typedef struct {
 typedef PlsrDecodedDoubleU *PlsrDecodedDoubleB;
 #define pLsrDecodedDoublePadding                \
     (sizeof(PlsrDecodedDoubleU) - sizeof(PlsrVTable) - sizeof(uintp) - sizeof(sintp) - 2*sizeof(uintp) - sizeof(sintp))
-pLsrVTableStatic (pLsrVTableDecodedDouble, VNoneTag, "*decoded double*", pLsrDecodedDoublePadding);
+pLsrVTableStatic (pLsrVTableDecodedDouble, "*decoded double*", pLsrDecodedDoublePadding);
 PlsrRef pLsrPrimGHCDecodeDouble2Intzh (double v)
 {
     PlsrDecodedDoubleB d;
@@ -510,7 +510,7 @@ typedef struct {
 #define pLsrDecodedFloatPadding                \
     (sizeof(PlsrDecodedFloatU) - sizeof(PlsrVTable) - sizeof(uintp) - 2*sizeof(sintp))
 typedef PlsrDecodedFloatU *PlsrDecodedFloatB;
-pLsrVTableStatic (pLsrVTableDecodedFloat, VNoneTag, "*decoded float*", pLsrDecodedFloatPadding);
+pLsrVTableStatic (pLsrVTableDecodedFloat, "*decoded float*", pLsrDecodedFloatPadding);
 PlsrRef pLsrPrimGHCDecodeFloatzh (float v)
 {
     PlsrDecodedFloatB f;

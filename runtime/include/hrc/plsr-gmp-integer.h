@@ -90,7 +90,7 @@ typedef struct PlsrAPIntS_ {
 #endif /* !PLSR_GMP_USE_MALLOC */
 
 /* This must be pinned, and we must add finalizers for it */
-pLsrVTableStatic(pLsrAPIntVTable_, VNoneTag, "*ap integer*", pLsrAPIntPadding);
+pLsrVTableStatic(pLsrAPIntVTable_, "*ap integer*", pLsrAPIntPadding);
 #define pLsrAPIntVTable (&pLsrAPIntVTable_)
 
 

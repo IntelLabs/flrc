@@ -1,15 +1,15 @@
 (* The Haskell Research Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
-(* Redundant Conditional Branch Removal 
+(* Redundant Conditional Branch Removal
  *)
 
 signature MIL_REMOVE_BRANCH =
 sig
   val pass : (BothMil.t, BothMil.t) Pass.t
 end
-                             
-structure MilRemoveBranch :> MIL_REMOVE_BRANCH = 
+
+structure MilRemoveBranch :> MIL_REMOVE_BRANCH =
 struct
 
   val passname = "MilRemoveBranch"
@@ -35,24 +35,24 @@ struct
   structure IBlock = IMil.IBlock
   structure IFunc  = IMil.IFunc
 
-  structure Chat = ChatF (struct 
+  structure Chat = ChatF (struct
                             type env = PD.t
                             val extract = PD.getConfig
                             val name = passname
                             val indent = 2
                           end)
 
-  structure Click = 
+  structure Click =
   struct
     val stats = []
-    val {stats, click = rcbr} 
-      = PD.clicker {stats = stats, passname = passname, 
+    val {stats, click = rcbr}
+      = PD.clicker {stats = stats, passname = passname,
                     name = "ImpossibleEdges", desc = "Impossible branches removed"}
-    val {stats, click = prunePath} 
-      = PD.clicker {stats = stats, passname = passname, 
+    val {stats, click = prunePath}
+      = PD.clicker {stats = stats, passname = passname,
                     name = "PrunedPaths", desc = "Short correlated branches skipped"}
-    val {stats, click = mergeBranches} 
-      = PD.clicker {stats = stats, passname = passname, 
+    val {stats, click = mergeBranches}
+      = PD.clicker {stats = stats, passname = passname,
                     name = "MergeBranch", desc = "Merge similar branches of a boolean switch"}
   end   (*  structure Click *)
 
@@ -63,7 +63,7 @@ struct
     | RSel  of M.constant
 
   (* EP (v, c, true)  => v = c
-   * EP (v, c, false) => v <> c 
+   * EP (v, c, false) => v <> c
    * EpCmp (nt, v1, c, v2) => v1 c (at type nt) v2
    *)
   datatype edgePredicate =
@@ -73,17 +73,17 @@ struct
   val getLabel = fn (imil, b) => #1 (IBlock.getLabel' (imil, b))
   val labelString = fn (imil, b) => ID.labelString(getLabel(imil, b))
 
-  val constCompare = 
-   fn (c1, c2) => 
-      case (c1, c2) 
+  val constCompare =
+   fn (c1, c2) =>
+      case (c1, c2)
        of (RSel cc1,  RSel cc2)  => MU.Compare.constant (cc1, cc2)
         | (RCons cc1, RCons cc2) => MU.Compare.constant (cc1, cc2)
         | (RSel _,   _)          => LESS
         | (_,         RSel _)    => GREATER
 
-  val constEquals = 
-   fn (c1, c2) => 
-      case (c1, c2) 
+  val constEquals =
+   fn (c1, c2) =>
+      case (c1, c2)
        of (RSel cc1,  RSel cc2)  => MU.Eq.constant (cc1, cc2)
         | (RCons cc1, RCons cc2) => MU.Eq.constant (cc1, cc2)
         | (_,   _)               => false
@@ -111,7 +111,7 @@ struct
           Equality.quad (MPU.Eq.numericTyp, MPU.Eq.compareOp, Identifier.variableEqual, Identifier.variableEqual)
                         (x1, x2)
 
-  structure PS = SetF (struct 
+  structure PS = SetF (struct
                         type t = edgePredicate
                         val compare = predicateCompare
                        end)
@@ -146,35 +146,35 @@ struct
 
     val debugShowPre =
      fn (d, imil, fname)  =>
-        debugDo (d, fn () => 
-                       if (Config.debugLevel (PD.getConfig d, passname)) > 0 then 
+        debugDo (d, fn () =>
+                       if (Config.debugLevel (PD.getConfig d, passname)) > 0 then
                          let
                            val () = prints (d, "before branch removal:\n")
                            val () = printLayout (d, IFunc.layout (imil, IFunc.getIFuncByName (imil, fname)))
                            val () = prints (d, "\n")
                          in ()
                          end
-                       else 
+                       else
                          let
                            val () = prints (d, "Branch removal: ")
                            val () = printLayout (d, IMil.Layout.var (imil, fname))
                            val () = prints (d, "\n")
                          in ()
                          end)
-        
-    val printVariable = 
-     fn (d, imil, v) => 
+
+    val printVariable =
+     fn (d, imil, v) =>
         prints (d, Layout.toString (IMil.Layout.var (imil, v)))
 
-    val printEdge = 
+    val printEdge =
      fn (d, imil, (a, b)) =>
         prints (d, "[" ^ labelString (imil, a) ^ "->" ^ labelString (imil, b) ^ "] ")
 
-    val printConst = 
+    val printConst =
      fn (d, imil, const) =>
         let
-          val f = 
-           fn (t, c) => 
+          val f =
+           fn (t, c) =>
             let
               val l = MilLayout.layoutConstant (PD.getConfig d, IMil.T.getSi imil, c)
               val s = Layout.toString l
@@ -185,7 +185,7 @@ struct
            of RSel c  => f ("S.", c)
             | RCons c => f ("C.", c)
         end
-  
+
     val printPredicate =
      fn (d, imil, ep) =>
         case ep
@@ -211,7 +211,7 @@ struct
 
     val printPredicateSet =
      fn (d, imil, s, ps) =>
-        debugDo (d, fn () => 
+        debugDo (d, fn () =>
                        let
                          val () = prints (d, "PSSet:[" ^ s ^ "]")
                          val () = PS.foreach (ps, fn x => printPredicate (d, imil, x))
@@ -221,9 +221,9 @@ struct
 
     val printEdgeState =
      fn (d, imil, e as (a, b), ps, impossible) =>
-        debugDo (d, fn () => 
+        debugDo (d, fn () =>
                        let
-                         val () = if impossible then 
+                         val () = if impossible then
                                     prints (d, "impossible edge: ")
                                   else
                                     prints (d, "unknown edge: ")
@@ -235,24 +235,24 @@ struct
                        in ()
                        end)
 
-    val printOrigInstr = 
+    val printOrigInstr =
      fn (d, imil, e as (a, b), instr) =>
-        debugDo (d, fn () => 
-                       printLayout (d, L.seq [L.str "remove ", 
-                                              L.str (labelString(imil, b)), 
-                                              L.str " in ", 
+        debugDo (d, fn () =>
+                       printLayout (d, L.seq [L.str "remove ",
+                                              L.str (labelString(imil, b)),
+                                              L.str " in ",
                                               L.str (labelString(imil, a)),
-                                              L.str "\n", 
+                                              L.str "\n",
                                               IMil.IInstr.layout (imil, instr)]))
 
     val printNewInstr =
      fn (d, imil, newinstr) =>
-        debugDo (d, fn () => 
+        debugDo (d, fn () =>
                        printLayout (d, L.seq [L.str("=>\n"), IMil.IInstr.layout (imil, newinstr), L.str("\n")]))
 
     val layoutCfg =
      fn (d, imil, ifunc, s) =>
-        debugDo (d, fn () => 
+        debugDo (d, fn () =>
                        let
                          val cn = ID.variableString'(IFunc.getFName (imil, ifunc))
                          val () = LU.writeLayout (IFunc.layout (imil, ifunc), cn ^ "_" ^ s ^ ".fun" )
@@ -263,18 +263,18 @@ struct
     val layoutTreeDot =
      fn (d, imil, ifunc, s, t) =>
         let
-          val f = 
-           fn () => 
+          val f =
+           fn () =>
               let
-                val cfgname = "dom" ^ ID.variableString'(IFunc.getFName (imil, ifunc)) ^ "_" ^ s ^ ".dot" 
-                fun labelNode n = [Dot.NodeOption.Label[(labelString(imil, n), Dot.Center)], 
+                val cfgname = "dom" ^ ID.variableString'(IFunc.getFName (imil, ifunc)) ^ "_" ^ s ^ ".dot"
+                fun labelNode n = [Dot.NodeOption.Label[(labelString(imil, n), Dot.Center)],
                                    Dot.NodeOption.Shape Dot.Ellipse]
                 val graphOptions = [Dot.GraphOption.Size {width=8.5, height=10.0},
                                     Dot.GraphOption.Page {width=8.5, height=11.0},
                                     Dot.GraphOption.Orientation Dot.Landscape]
-                val () = LU.writeLayout (Tree.layoutDot (t, {nodeOptions = labelNode, 
-                                                             options = graphOptions, 
-                                                             title = cfgname}), 
+                val () = LU.writeLayout (Tree.layoutDot (t, {nodeOptions = labelNode,
+                                                             options = graphOptions,
+                                                             title = cfgname}),
                                          cfgname)
               in ()
               end
@@ -284,9 +284,9 @@ struct
   end (* structure Debug *)
 
   (*
-   *	Split critical edges.  
-   *    This guarantees that every branch with more than one out edge 
-   *    immediately dominates all of its successors 
+   *	Split critical edges.
+   *    This guarantees that every branch with more than one out edge
+   *    immediately dominates all of its successors
    *    (and hence each successor is in a 1:1 correspondence with the outedges).
    *)
 
@@ -297,7 +297,7 @@ struct
    *
    * If a->b is a CFG edge then the edge (not just the source node)
    * must dominate the target (since otherwise there must be a path from
-   * a to b which does not include a->b, and hence a must have an additional 
+   * a to b which does not include a->b, and hence a must have an additional
    * outedge and b must have an additional edge, which contradicts).
    *
    * If we have such an edge and the transfer is a case, we can extract
@@ -309,13 +309,13 @@ struct
       let
         val bl = getLabel (imil, b)
 
-        val doCase = 
+        val doCase =
          fn ({select, on, cases, default}) =>
-            Try.try 
-              (fn () => 
+            Try.try
+              (fn () =>
                   let
                     val v = Try.<@ MU.Operand.Dec.sVariable on
-                    val construct = 
+                    val construct =
                         case select
                          of M.SeSum _    => RSel
                           | M.SeConstant => RCons
@@ -348,10 +348,10 @@ struct
                                 | _                                      => ps
                         in ps
                         end
-                    val doIt = 
+                    val doIt =
                      fn ((n, t as M.T {block, ...}), (ps, found)) =>
                         (case (found, block = bl)
-                          of (true, true) => 
+                          of (true, true) =>
                              let
                                val () = Chat.warn0 (d, "Multiple targets to same block!")
                              in Try.fail ()
@@ -360,7 +360,7 @@ struct
                            | (false, true)  => (addOne (ps, v, n, true ), true )
                            | (false, false) => (addOne (ps, v, n, false), false))
                     val (ps, found) = Vector.fold (cases, (PS.empty, false), doIt)
-                    val ps = 
+                    val ps =
                         (case (found, default)
                           of (true,  NONE)                          => ps
                            | (false, NONE)                          => Try.fail ()
@@ -376,8 +376,8 @@ struct
                                ps)
                   in ps
                   end)
-            
-        val ps = 
+
+        val ps =
             let
               val pso =
                   case IBlock.getTransfer' (imil, a)
@@ -448,9 +448,9 @@ struct
       in !out
       end
 
-  (* Given a dominator tree on an edge split CFG, propagate predicates down 
-   * the tree. The root node starts with no predicates.  Each child 
-   * gets its parents predicates plus any predicates that can be 
+  (* Given a dominator tree on an edge split CFG, propagate predicates down
+   * the tree. The root node starts with no predicates.  Each child
+   * gets its parents predicates plus any predicates that can be
    * inferred from its inedges, and the transitive closure of comparison predicates.
    *)
   val propagatePredicates =
@@ -475,7 +475,7 @@ struct
 
   (* Given a set of true predicates ps and a predicate p guarding
    * an edge, check whether p could possibly ever be true given ps.  *)
-  val impossiblePredicate : PD.t * PS.t * edgePredicate -> bool = 
+  val impossiblePredicate : PD.t * PS.t * edgePredicate -> bool =
    fn (d, psset, ep1) =>
       let
         val chkOne =
@@ -489,8 +489,8 @@ struct
                     | _                         => false)
                | (EP _, EpCmp _) => false
                | (EpCmp _, EP _) => false
-               | (EpCmp (nt1, c1, v1, v2), EpCmp (nt2, c2, v3, v4)) => 
-                 MPU.Eq.numericTyp (nt1, nt2) andalso I.variableEqual (v1, v4) andalso 
+               | (EpCmp (nt1, c1, v1, v2), EpCmp (nt2, c2, v3, v4)) =>
+                 MPU.Eq.numericTyp (nt1, nt2) andalso I.variableEqual (v1, v4) andalso
                  (case (c1, c2)
                    of (MP.CEq, MP.CNe) => (I.variableEqual (v1, v3) andalso I.variableEqual (v2, v4)) orelse
                                           (I.variableEqual (v1, v4) andalso I.variableEqual (v2, v3))
@@ -521,18 +521,18 @@ struct
          * for the edge to be taken are constradicted by the predicates
          * known to be true in the source block, then the edge is impossible
          *)
-        val impossible = PS.exists (edgePredicates, fn p => impossiblePredicate (d, sourcePredicates, p)) 
-               
+        val impossible = PS.exists (edgePredicates, fn p => impossiblePredicate (d, sourcePredicates, p))
+
         val () = Debug.debugDo (d, fn () => Debug.printPredicateSet (d, imil, labelString(imil, a), sourcePredicates))
         val () = Debug.debugDo (d, fn () => Debug.printEdgeState(d, imil, e, edgePredicates, impossible))
-                 
+
       in impossible
       end
 
   val removeImpossible =
    fn (d, imil, e as (a, b), sw, predicates) =>
       Try.exec
-        (fn () => 
+        (fn () =>
             let
               val () = Try.require (impossibleEdge (d, imil, predicates, e))
 
@@ -541,20 +541,20 @@ struct
               val () = Debug.debugDo (d, fn () => Debug.printOrigInstr (d, imil, e, instr))
               val {select, on, cases, default} = sw
               val bl = getLabel (imil, b)
-              val cases = 
+              val cases =
                   let
-                    val noteq = 
+                    val noteq =
                      fn (_, M.T {block, arguments}) => block <> bl
                   in Vector.keepAll (cases, noteq)
                   end
-              val default = 
+              val default =
                   case default
-                   of SOME (M.T {block, arguments}) => 
+                   of SOME (M.T {block, arguments}) =>
                       if block = bl then NONE else default
                     | _                             => NONE
 
               val () = Click.rcbr d
-              val t = 
+              val t =
                   if Vector.length cases > 0 orelse isSome default then
                     let
                       val sw = {select = select, on = on, cases = cases, default = default}
@@ -572,13 +572,13 @@ struct
   val trimEdge =
    fn (d, imil, dict, e as (a, b)) =>
       case LD.lookup (dict, getLabel (imil, a))
-       of SOME psset => 
+       of SOME psset =>
           (case IBlock.getTransfer' (imil, a)
             of M.TCase cs     => removeImpossible (d, imil, e, cs, psset)
              | _ => ())
         | _ => ()
-      
-  val checkBlockPS = 
+
+  val checkBlockPS =
    fn (d, imil, dict, a) =>
       let
         val edges = IBlock.outEdges (imil, a)
@@ -587,22 +587,22 @@ struct
       end
 
   (* Redundant conditional branch elimination.  The algorithm is as follows.
-   * 1) Split critical edges. 
-   * 2) Walk the dominator tree top down, building a global dictionary 
-   *    G mapping labels to sets of predicates which are true on entry 
+   * 1) Split critical edges.
+   * 2) Walk the dominator tree top down, building a global dictionary
+   *    G mapping labels to sets of predicates which are true on entry
    *    to that label.  For each node B in the tree with immediate dominator
-   *    A, G(B) contains the set of predicates which are true in A, plus 
+   *    A, G(B) contains the set of predicates which are true in A, plus
    *    any predicates induced by the edge from A->B, if A->B is an edge
    *    in the cfg.
-   * 3) Walk the dominator tree bottom up.  For every node A: 
+   * 3) Walk the dominator tree bottom up.  For every node A:
    *    For every successor B of A:
    *      If the edge A->B is impossible, delete it.  An edge is impossible if
    *        a) x = c1 is in G(A), and x = c2 guards the edge, or
    *        b) x <> c1 is in G(A) and x = c1 guards the edge, or
    *        b) x = c1 is in G(A) and x <> c1 guards teh edge
    *)
-  val rcbrFunction = 
-   fn (d, imil, ifunc) => 
+  val rcbrFunction =
+   fn (d, imil, ifunc) =>
       let
         val () = Debug.debugDo (d, fn () => Debug.layoutCfg (d, imil, ifunc, "rcbr"))
         val dom = IFunc.getDomTree (imil, ifunc)
@@ -624,13 +624,13 @@ struct
               val cl = getLabel (imil, c)
 
               val doTarget =
-               fn (t as M.T {block, arguments}) => 
+               fn (t as M.T {block, arguments}) =>
                   if block = cl then
                     M.T {block = cl, arguments = Vector.new0 ()}
-                  else 
+                  else
                     t
 
-              val newcases = 
+              val newcases =
                   Utils.Vector.mapSecond (cases, doTarget)
               val newdefault = Option.map (default, doTarget)
               val instr = IBlock.getTransfer (imil, a)
@@ -638,7 +638,7 @@ struct
               val newinstr = IMil.MTransfer (M.TCase {select = select, on=on, cases=newcases, default=newdefault})
               val newInstrLayout = IMil.IInstr.layoutMil (imil, newinstr)
               val () = IMil.IInstr.replaceMil (imil, instr, newinstr)
-              val () = Debug.debugDo (d, fn () => Debug.printLayout(d, L.seq[L.str "extension replace case:\n", 
+              val () = Debug.debugDo (d, fn () => Debug.printLayout(d, L.seq[L.str "extension replace case:\n",
                                                                              oldInstrLayout,
                                                                              L.str " =>\n",
                                                                              newInstrLayout]))
@@ -655,7 +655,7 @@ struct
               val newinstr = IMil.MTransfer (M.TGoto newtarget)
               val newInstrLayout = IMil.IInstr.layoutMil (imil, newinstr)
               val () = IMil.IInstr.replaceMil (imil, instr, newinstr)
-              val () = Debug.debugDo (d, fn () => Debug.printLayout(d, L.seq[L.str "extension replace goto:\n", 
+              val () = Debug.debugDo (d, fn () => Debug.printLayout(d, L.seq[L.str "extension replace goto:\n",
                                                                              oldInstrLayout,
                                                                              L.str " =>\n",
                                                                              newInstrLayout]))
@@ -666,18 +666,18 @@ struct
         (* Is (a, b) an acceptable candidate starting edge? *)
         val candidate =
             Try.lift
-              (fn (a, b) => 
+              (fn (a, b) =>
                   let
                     val bpara = IBlock.getParameters (imil, b)
                     val () = Try.require (IBlock.isEmpty (imil, b))
                     val () = Try.require (Vector.size bpara = 0)
                     (* Guard against degenerate cases *)
-                    val caseOk = 
-                     fn {select, on, cases, default} => 
+                    val caseOk =
+                     fn {select, on, cases, default} =>
                         (Vector.length cases > 1) orelse
                         ((Vector.length cases = 1) andalso
                          isSome default)
-                    val () = 
+                    val () =
                         (case IBlock.getTransfer'(imil, b)
                           of Mil.TGoto _      => Try.fail ()
                            | Mil.TCase sw     => Try.require (caseOk sw)
@@ -685,7 +685,7 @@ struct
                            | Mil.TReturn _    => Try.fail ()
                            | Mil.TCut _       => Try.fail ()
                            | Mil.THalt _      => Try.fail ())
-                    val () = 
+                    val () =
                         case IBlock.getTransfer' (imil, a)
                          of M.TGoto t      => ()
                           | M.TCase t      => ()
@@ -696,14 +696,14 @@ struct
                   in ()
                   end)
 
-        val compressPath = 
+        val compressPath =
          fn (a, b, c) =>
-            Try.exec 
+            Try.exec
               (fn () =>
                   let
                     val cpara = IBlock.getParameters (imil, c)
                     val () = Try.require (Vector.size cpara = 0)
-                    val () = 
+                    val () =
                         case IBlock.getTransfer' (imil, a)
                          of M.TGoto t      => replaceGoto (a, b, c, t)
                           | M.TCase t      => replaceCase (a, b, c, t)
@@ -722,12 +722,12 @@ struct
             end
 
         val checkEdge =
-         fn (a, b) => 
+         fn (a, b) =>
             Try.exec
-              (fn () => 
+              (fn () =>
                   let
                     val () = Try.<@ candidate (a, b)
-                    val ps = 
+                    val ps =
                         let
                           val ab_ps = getEdgePredicates (d, imil, (a, b))
                         in case LD.lookup (psDict, getLabel (imil, a))
@@ -736,13 +736,13 @@ struct
                         end
                     val cs = IBlock.succs (imil, b)
                     val cs = List.keepAll (cs, fn c => not (impossiblePath (ps, a, b, c)))
-                    val () = 
+                    val () =
                         (case cs
                           of [c] => compressPath (a, b, c)
                            | _   => ())
                   in ()
                   end)
-            
+
         val () = List.foreach (IBlock.succs (imil, a), fn b => checkEdge (a, b))
       in ()
       end
@@ -756,7 +756,7 @@ struct
    *
    * This optimization preserves the edge-split property.  It only fires if
    * b ends in a non-degenerative case.  Since b has multiple out edges,
-   * c must therefore have a single in-edge, so targetting a to c cannot 
+   * c must therefore have a single in-edge, so targetting a to c cannot
    * induce a critical edge.
    * example:
    * L1:
@@ -768,8 +768,8 @@ struct
    * If v=10 in L1, then we could make L1 go straight to L3 instead of L2.
    *
    * simple algorithm:
-   * Consider edge (a->b->c), if PS(b->c) is redundant in (PS(a) union PS(a->b)), 
-   * and b is empty block only with transfer instruction, 
+   * Consider edge (a->b->c), if PS(b->c) is redundant in (PS(a) union PS(a->b)),
+   * and b is empty block only with transfer instruction,
    * then we can make (a->c) directly.
    *)
   val prunePaths =
@@ -783,7 +783,7 @@ struct
       in ()
       end
 
-  (* Merge both branches of a boolean switch: 
+  (* Merge both branches of a boolean switch:
    *
    *  case b of true  => goto L1;
    *          | false => goto L2;
@@ -791,7 +791,7 @@ struct
    *  L2: B2; goto L3(Y);
    *
    *  == goto L1;
-   *     B; 
+   *     B;
    *     case b of true  => goto L3(X);
    *             | false => goto L3(Y);
    *
@@ -804,7 +804,7 @@ struct
   val mergeBranches =
     fn (d, imil, ifunc) =>
       let
-        fun doCase (i, r) = 
+        fun doCase (i, r) =
             let
               val config = PD.getConfig d
               val func = IMil.IInstr.getIFunc (imil, i)
@@ -823,7 +823,7 @@ struct
               val b2pd = IBlock.preds (imil, b2)
               val () = Try.require ((List.length b2pd = 1) andalso (hd b2pd = b0))
 
-              fun checkGoto (b1, b2) = 
+              fun checkGoto (b1, b2) =
                   let
                     val M.T {block = l3, arguments = args1} = Try.<@ MU.Transfer.Dec.tGoto (IBlock.getTransfer' (imil, b1))
                     val M.T {block = l3', arguments = args2} = Try.<@ MU.Transfer.Dec.tGoto (IBlock.getTransfer' (imil, b2))
@@ -838,7 +838,7 @@ struct
                       end
                   end
 
-              fun checkReturn (b1, b2) = 
+              fun checkReturn (b1, b2) =
                   let
                     val args1 = Try.<@ MU.Transfer.Dec.tReturn (IBlock.getTransfer' (imil, b1))
                     val args2 = Try.<@ MU.Transfer.Dec.tReturn (IBlock.getTransfer' (imil, b2))
@@ -847,7 +847,7 @@ struct
                     fn () =>
                       let
                         val l3 = IMil.Var.labelFresh imil
-                        val typs = Vector.map (args1, fn x => MilType.Typer.operand (config, IMil.T.getSi imil, x)) 
+                        val typs = Vector.map (args1, fn x => MilType.Typer.operand (config, IMil.T.getSi imil, x))
                         val args = Vector.map (typs, fn t => IMil.Var.new (imil, "rv_#", t, M.VkLocal))
                         val b3 = M.B { parameters = args,
                                        instructions = Vector.new0 (),
@@ -864,43 +864,43 @@ struct
               val trF = Try.<@ (Try.|| (checkGoto, checkReturn)) (b1, b2)
 
               fun checkBlock (b1, b2) =
-                  let 
+                  let
                     val effects = Effect.fromList [Effect.InitRead, Effect.HeapRead]
 
-                    fun checkEffect i = if Effect.subset (MU.Instruction.fx (config, i), effects) 
+                    fun checkEffect i = if Effect.subset (MU.Instruction.fx (config, i), effects)
                                           then SOME i else NONE
 
                     fun emptyBlk () = []
                     fun pushInstr (blk, instr) = instr :: blk
 
                     fun checkInstr state =
-                      fn (SOME (M.I {dests = d1, rhs = rhs1, ... }), 
+                      fn (SOME (M.I {dests = d1, rhs = rhs1, ... }),
                           SOME (M.I {dests = d2, rhs = rhs2, ... })) =>
-                        let 
+                        let
                           val (vMap, aMap, blk) = state
                           val vMap = ref vMap (* vMap keeps track of variable equivalance *)
                           val aMap = ref aMap (* aMap keeps track of assumptions *)
                           val blk  = ref blk
 
-                          fun newCondMov (u, v1, v2) = MU.Instruction.new (u, M.RhsPrim { 
-                              prim = P.Prim P.PCondMov, createThunks = false, typs = Vector.new0 (), 
+                          fun newCondMov (u, v1, v2) = MU.Instruction.new (u, M.RhsPrim {
+                              prim = P.Prim P.PCondMov, createThunks = false, typs = Vector.new0 (),
                               args = Vector.new3 (on, v1, v2) })
 
                           type 'a opt = (unit -> 'a) option
 
-                          val when : (bool * ('a -> 'b) * 'a opt) -> 'b opt = 
+                          val when : (bool * ('a -> 'b) * 'a opt) -> 'b opt =
                             fn (b, f, x) => if b then Option.map (x, fn g => f o g) else NONE
 
-                          val both : ('a opt * 'b opt) -> ('a * 'b) opt = 
+                          val both : ('a opt * 'b opt) -> ('a * 'b) opt =
                             fn (x, y) => UO.map2 (x, y, fn (x, y) => fn () => (x (), y ()))
 
                           val checkVariable =
-                            fn (v1, v2) => if v1 = v2 then SOME (fn () => v1) else 
+                            fn (v1, v2) => if v1 = v2 then SOME (fn () => v1) else
                               (case (VD.lookup (!vMap, v1), VD.lookup (!vMap, v2))
                                 of (SOME i, SOME j) => if i = j then SOME (fn () => i) else NONE
-                                 | (vi, vj) => 
+                                 | (vi, vj) =>
                                   let
-                                    fun f () = 
+                                    fun f () =
                                       let
                                         val i = UO.out (vi, fn () => v1)
                                         val j = UO.out (vj, fn () => v2)
@@ -920,15 +920,15 @@ struct
                              | (SOME v1, SOME v2) => Option.map (checkVariable (v1, v2), fn f => fn () => SOME (f ()))
                              | _ => NONE
 
-                          val checkOperand = 
+                          val checkOperand =
                             fn (o1, o2) =>
                               (case (o1, o2)
-                                of (M.SVariable v1, M.SVariable v2) => 
+                                of (M.SVariable v1, M.SVariable v2) =>
                                   Option.map (checkVariable (v1, v2), fn f => M.SVariable o f)
-                                 | (M.SConstant c1, M.SConstant c2) => 
-                                  if MU.Constant.eq (c1, c2) then SOME (fn () => M.SConstant c1) else 
+                                 | (M.SConstant c1, M.SConstant c2) =>
+                                  if MU.Constant.eq (c1, c2) then SOME (fn () => M.SConstant c1) else
                                     let
-                                      fun f () = 
+                                      fun f () =
                                         let
                                           val t = MU.Constant.typOf (config, c1)
                                           val u = IMil.Var.new (imil, "cm_#", t, M.VkLocal)
@@ -941,50 +941,50 @@ struct
                                     end
                                 | _ => NONE)
 
-                          val checkOperands = fn (a1, a2) => 
-                              if Vector.length a1 = Vector.length a2 
+                          val checkOperands = fn (a1, a2) =>
+                              if Vector.length a1 = Vector.length a2
                                 then Option.map (UO.distributeV (Vector.map2 (a1, a2, checkOperand)),
                                                  fn ops => fn () => Vector.map (ops, fn f => f ()))
                                 else NONE
 
                           val checkField =
-                            fn (M.FiVariable o1, M.FiVariable o2) => 
+                            fn (M.FiVariable o1, M.FiVariable o2) =>
                               Option.map (checkOperand (o1, o2), fn f => M.FiVariable o f)
-                             | (f1, f2) => 
+                             | (f1, f2) =>
                               if MU.FieldIdentifier.eq (f1, f2) then SOME (fn () => f1) else NONE
 
-                          val rhs : M.rhs opt = 
-                              (case (rhs1, rhs2) 
-                                of (M.RhsSimple o1, M.RhsSimple o2) => 
+                          val rhs : M.rhs opt =
+                              (case (rhs1, rhs2)
+                                of (M.RhsSimple o1, M.RhsSimple o2) =>
                                   when (true, M.RhsSimple, checkOperand (o1, o2))
-                                 | (M.RhsPrim { prim = p1, args = a1, createThunks = c1, typs = t1 }, 
-                                    M.RhsPrim { prim = p2, args = a2, ... }) => 
+                                 | (M.RhsPrim { prim = p1, args = a1, createThunks = c1, typs = t1 },
+                                    M.RhsPrim { prim = p2, args = a2, ... }) =>
                                   let
-                                    fun rhs args = M.RhsPrim 
+                                    fun rhs args = M.RhsPrim
                                         { prim = p1, args = args, createThunks = c1, typs = t1 }
                                   in
                                     when (p1 = p2, rhs, checkOperands (a1, a2))
                                   end
-                                 | (M.RhsTupleSub (M.TF { tup = v1, field = f1, tupDesc = d1 }), 
-                                    M.RhsTupleSub (M.TF { tup = v2, field = f2, tupDesc = d2 })) => 
+                                 | (M.RhsTupleSub (M.TF { tup = v1, field = f1, tupDesc = d1 }),
+                                    M.RhsTupleSub (M.TF { tup = v2, field = f2, tupDesc = d2 })) =>
                                   let
                                     val eqD = MU.TupleDescriptor.eq (d1, d2)
-                                    fun rhs (tup, field) = M.RhsTupleSub (M.TF 
+                                    fun rhs (tup, field) = M.RhsTupleSub (M.TF
                                         { tup = tup, field = field, tupDesc = d1 })
-                                  in      
+                                  in
                                     when (eqD, rhs, both (checkVariable (v1, v2), checkField (f1, f2)))
                                   end
-                                 | (M.RhsTupleSet { tupField = M.TF { tup = v1, field = f1, tupDesc = d1 }, 
-                                                    ofVal = o1 }, 
+                                 | (M.RhsTupleSet { tupField = M.TF { tup = v1, field = f1, tupDesc = d1 },
+                                                    ofVal = o1 },
                                     M.RhsTupleSet { tupField = M.TF { tup = v2, field = f2, tupDesc = d2 },
-                                                    ofVal = o2 }) => 
+                                                    ofVal = o2 }) =>
                                   let
                                     val eqD = MU.TupleDescriptor.eq (d1, d2)
-                                    fun rhs (tup, (field, ofVal)) = M.RhsTupleSet 
-                                        { tupField = M.TF { tup = tup, field = field, tupDesc = d1 }, 
+                                    fun rhs (tup, (field, ofVal)) = M.RhsTupleSet
+                                        { tupField = M.TF { tup = tup, field = field, tupDesc = d1 },
                                           ofVal = ofVal }
-                                  in      
-                                    when (eqD, rhs, both (checkVariable (v1, v2), 
+                                  in
+                                    when (eqD, rhs, both (checkVariable (v1, v2),
                                           both (checkField (f1, f2), checkOperand (o1, o2))))
                                   end
                                  | (M.RhsIdxGet { idx = v1, ofVal = o1 },
@@ -994,12 +994,10 @@ struct
                                   in
                                     when (true, rhs, both (checkVariable (v1, v2), checkOperand (o1, o2)))
                                   end
-                                 | (M.RhsCont l1, M.RhsCont l2) => 
+                                 | (M.RhsCont l1, M.RhsCont l2) =>
                                   when (l1 = l2, M.RhsCont, SOME (fn () => l1))
-                                 | (M.RhsObjectGetKind v1, M.RhsObjectGetKind v2) => 
-                                  when (true, M.RhsObjectGetKind, checkVariable (v1, v2))
                                  | (M.RhsThunkGetFv { thunk = v1, idx = i1, typ = t1, fvs = fk1 },
-                                    M.RhsThunkGetFv { thunk = v2, idx = i2, typ = t2, fvs = fk2 }) => 
+                                    M.RhsThunkGetFv { thunk = v2, idx = i2, typ = t2, fvs = fk2 }) =>
                                   let
                                     val eqFK = Vector.forall2 (fk1, fk2, MU.FieldKind.eq)
                                     fun rhs v = M.RhsThunkGetFv { thunk = v, idx = i1, typ = t1, fvs = fk1 }
@@ -1007,7 +1005,7 @@ struct
                                     when (i1 = i2 andalso eqFK, rhs, checkVariable (v1, v2))
                                   end
                                  | (M.RhsThunkGetValue { thunk = v1, typ = fk1},
-                                    M.RhsThunkGetValue { thunk = v2, typ = fk2}) => 
+                                    M.RhsThunkGetValue { thunk = v2, typ = fk2}) =>
                                   let
                                     val eqFK = MU.FieldKind.eq(fk1, fk2)
                                     fun rhs v = M.RhsThunkGetValue { thunk = v, typ = fk1 }
@@ -1015,7 +1013,7 @@ struct
                                     when (eqFK, rhs, checkVariable (v1, v2))
                                   end
                                  | (M.RhsThunkValue { thunk = v1, typ = fk1, ofVal = o1},
-                                    M.RhsThunkValue { thunk = v2, typ = fk2, ofVal = o2}) => 
+                                    M.RhsThunkValue { thunk = v2, typ = fk2, ofVal = o2}) =>
                                   let
                                     val eqFK = MU.FieldKind.eq(fk1, fk2)
                                     fun rhs (v, ofVal) = M.RhsThunkValue { thunk = v, typ = fk1, ofVal = ofVal }
@@ -1023,35 +1021,35 @@ struct
                                     when (eqFK, rhs, both (checkVariable' (v1, v2), checkOperand (o1, o2)))
                                   end
                                  | (M.RhsClosureMk { fvs = fk1 },
-                                    M.RhsClosureMk { fvs = fk2 }) => 
+                                    M.RhsClosureMk { fvs = fk2 }) =>
                                   let
-                                    val eqFK = Vector.length fk1 = Vector.length fk2 andalso 
+                                    val eqFK = Vector.length fk1 = Vector.length fk2 andalso
                                                Vector.forall2 (fk1, fk2, MU.FieldKind.eq)
                                     fun rhs fk = M.RhsClosureMk { fvs = fk }
                                   in
                                     when (eqFK, rhs, SOME (fn () => fk1))
                                   end
                                  | (M.RhsClosureInit { cls = v1, code = c1, fvs = fv1 },
-                                    M.RhsClosureInit { cls = v2, code = c2, fvs = fv2 }) => 
+                                    M.RhsClosureInit { cls = v2, code = c2, fvs = fv2 }) =>
                                   let
                                     val (fk1, o1) = Vector.unzip fv1
                                     val (fk2, o2) = Vector.unzip fv2
-                                    val eqCFK = c1 = c2 andalso Vector.length fk1 = Vector.length fk2 andalso 
+                                    val eqCFK = c1 = c2 andalso Vector.length fk1 = Vector.length fk2 andalso
                                                 Vector.forall2 (fk1, fk2, MU.FieldKind.eq)
                                     fun rhs (v, os) = M.RhsClosureInit { cls = v, code = c1, fvs = Vector.zip (fk1, os) }
                                   in
                                     when (eqCFK, rhs, both (checkVariable' (v1, v2), checkOperands (o1, o2)))
                                   end
                                  | (M.RhsClosureGetFv { cls = v1, idx = i1, fvs = fk1 },
-                                    M.RhsClosureGetFv { cls = v2, idx = i2, fvs = fk2 }) => 
+                                    M.RhsClosureGetFv { cls = v2, idx = i2, fvs = fk2 }) =>
                                   let
-                                    val eqFK = Vector.length fk1 = Vector.length fk2 andalso 
+                                    val eqFK = Vector.length fk1 = Vector.length fk2 andalso
                                                Vector.forall2 (fk1, fk2, MU.FieldKind.eq)
                                     fun rhs v = M.RhsClosureGetFv { cls = v, idx = i1, fvs = fk1 }
                                   in
                                     when (i1 = i2 andalso eqFK, rhs, checkVariable (v1, v2))
                                   end
-                                 | (M.RhsEnum { tag = o1, typ = fk1 }, M.RhsEnum { tag = o2, typ = fk2 }) => 
+                                 | (M.RhsEnum { tag = o1, typ = fk1 }, M.RhsEnum { tag = o2, typ = fk2 }) =>
                                   let
                                     fun rhs tag = M.RhsEnum { tag = tag, typ = fk1 }
                                   in
@@ -1066,7 +1064,7 @@ struct
                                   in
                                     when (i1 = i2 andalso eqC andalso eqFK, rhs, checkVariable (v1, v2))
                                   end
-                                 | (M.RhsSumGetTag { sum = v1, typ = fk1 }, 
+                                 | (M.RhsSumGetTag { sum = v1, typ = fk1 },
                                     M.RhsSumGetTag { sum = v2, typ = fk2 }) =>
                                   let
                                     fun rhs v = M.RhsSumGetTag { sum = v, typ = fk1 }
@@ -1075,18 +1073,18 @@ struct
                                   end
                                  | _ => NONE)
 
-                          fun match rhs = 
+                          fun match rhs =
                               let
                                 fun updateMap (v1, v2) =
-                                    let 
+                                    let
                                       val u  = IMil.Var.clone (imil, v1)
-                                      val () = vMap := VD.insert (VD.insert (!vMap, v1, u), v2, u) 
+                                      val () = vMap := VD.insert (VD.insert (!vMap, v1, u), v2, u)
                                     in
                                       u
                                     end
                                 val dest = Vector.map2 (d1, d2, updateMap)
                                 val () = blk := pushInstr (!blk, MU.Instruction.new' (dest, rhs))
-                                fun reassign (u, v) = 
+                                fun reassign (u, v) =
                                     blk := pushInstr (!blk, MU.Instruction.new (u, M.RhsSimple (M.SVariable v)))
                                 val () = Vector.foreach2 (d1, dest, reassign)
                                 val () = Vector.foreach2 (d2, dest, reassign)
@@ -1098,24 +1096,24 @@ struct
                         end
                        | _ => NONE
 
-                    fun checkIInstrs (state, mismatched, i1, i2) = 
+                    fun checkIInstrs (state, mismatched, i1, i2) =
                         let
                           val (vMap, aMap, blk) = state
                         in
                           if mismatched > 3 then NONE
                           else case (i1, i2)
                             of (NONE, NONE) => SOME (mismatched, blk)
-                             | _ =>  
+                             | _ =>
                               let
                                 val mi1 = UO.bind (i1, IMil.IInstr.toInstruction)
                                 val mi2 = UO.bind (i2, IMil.IInstr.toInstruction)
                                 val i1' = UO.bind (i1, fn i => IMil.IInstr.next (imil, i))
                                 val i2' = UO.bind (i2, fn i => IMil.IInstr.next (imil, i))
                                 val ins = checkInstr state (mi1, mi2)
-                              in 
+                              in
                                 case ins
                                   of SOME (x, state) => checkIInstrs (state, mismatched, i1', i2')
-                                   | NONE => 
+                                   | NONE =>
                                     let
                                       val mismatched = mismatched + 1
                                       fun nextInstrs (i1, i2) = fn instr =>
@@ -1134,7 +1132,7 @@ struct
 
                     val initState = (VD.empty, VD.empty, [])
                   in
-                    checkIInstrs (initState, 0, IBlock.getFirst (imil, b1), IBlock.getFirst (imil, b2)) 
+                    checkIInstrs (initState, 0, IBlock.getFirst (imil, b1), IBlock.getFirst (imil, b2))
                   end
 
               val (_, blk) = Try.<@ checkBlock (b1, b2)
@@ -1143,7 +1141,7 @@ struct
               val () = IBlock.replaceTransfer (imil, b0, tr)
               val () = IBlock.delete (imil, b1)
               val () = IBlock.delete (imil, b2)
-            in 
+            in
               Click.mergeBranches d
             end
 
@@ -1158,7 +1156,7 @@ struct
         ()
       end
 
-  val optimize = 
+  val optimize =
    fn (d, m, imil, ifunc) =>
       let
         val () = splitCriticalEdges (imil, ifunc)
@@ -1168,7 +1166,7 @@ struct
       in ()
       end
 
-  fun program (imil, d) = 
+  fun program (imil, d) =
       let
         val m  = IMil.T.unBuild imil
         val () = List.foreach (IMil.Enumerate.T.funcs imil, fn ifunc => optimize (d, m, imil, ifunc))

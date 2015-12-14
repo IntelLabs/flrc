@@ -1,7 +1,7 @@
 (* The Haskell Research Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
-signature MIL_REP_OBJECT = 
+signature MIL_REP_OBJECT =
 sig
   structure Shape :
   sig
@@ -20,7 +20,7 @@ sig
 
     val fieldKind : Config.t * 'node shape -> Mil.fieldKind option
 
-    val typOf : Config.t * 'node shape * ('node -> Mil.typ) * ('node -> Mil.valueSize) * ('node -> Mil.fieldVariance) 
+    val typOf : Config.t * 'node shape * ('node -> Mil.typ) * ('node -> Mil.valueSize) * ('node -> Mil.fieldVariance)
                 -> Mil.typ
     val flatTypOf : (Config.t * 'node shape) -> Mil.typ
 
@@ -33,7 +33,7 @@ sig
       val pSetEmpty : unit -> 'node shape
       val sum : {tag : 'node, arm : (Mil.constant * 'node Vector.t)} -> 'node shape
       val sum' : {tag : 'node, arms : (Mil.constant * 'node Vector.t) Vector.t}  -> 'node shape
-      val tuple : {pok : Mil.pObjKind option, fields : 'node Vector.t, array : 'node option} -> 'node shape
+      val tuple : {fields : 'node Vector.t, array : 'node option} -> 'node shape
       val thunkValue : {code : 'node, result : 'node} -> 'node shape
       val thunk : {name : Mil.variable option, code : 'node, result : 'node, fvs : 'node Vector.t} -> 'node shape
       val code : {name : Mil.variable option, args : 'node Vector.t, ress : 'node Vector.t} -> 'node shape
@@ -44,10 +44,10 @@ sig
       val cont : {label : Mil.label option, args : 'node Vector.t} -> 'node shape
       val cut : {filter : Mil.LS.t option, args : 'node Vector.t} -> 'node shape
     end (* structure Build *)
-         
+
     structure Dec :
     sig
-      val tuple : 'node shape -> {pok : Mil.pObjKind option, fields : 'node Vector.t, array : 'node option} option
+      val tuple : 'node shape -> {fields : 'node Vector.t, array : 'node option} option
       val thunkVal : 'node shape -> 'node option
       val sum : 'node shape -> {tag : 'node, arms : (Mil.constant * ('node Vector.t)) Vector.t} option
     end
@@ -75,14 +75,14 @@ sig
 
 end
 
-structure MilRepObject :> MIL_REP_OBJECT = 
+structure MilRepObject :> MIL_REP_OBJECT =
 struct
 
   structure M = Mil
   structure Type = MilType.Type
   structure Typer = M
   structure MU = MilUtils
-  structure Seq = MilRepSeq 
+  structure Seq = MilRepSeq
   structure I = Identifier
   structure MRB = MilRepBase
   structure ID = IntDict
@@ -94,11 +94,10 @@ struct
   structure VS = Mil.VS
   structure LS = Mil.LS
   structure CD = MU.Constant.Dict
-  structure POKL = MRB.PObjKindLat
 
-  datatype edge = datatype MRB.edge 
+  datatype edge = datatype MRB.edge
 
-  structure Shape = 
+  structure Shape =
   struct
     (*
      * functions:  We map function names to a tuple of their free variable
@@ -119,39 +118,39 @@ struct
      * I think the way this works is that for a known call, we can simply match up
      * the appropriate actual/formal pair.  For an unknown call, we may discover
      * later on that there are more functions in the equivalence class, so we must
-     * include a summary node.  If a summary node exists, it must be linked with 
+     * include a summary node.  If a summary node exists, it must be linked with
      * everything that joins the node.
      *)
-    datatype 'node code = 
+    datatype 'node code =
              CCode of {calls : ('node Vector.t * 'node Vector.t) option,
                        filter : VS.t option,
                        named : ('node Vector.t * 'node Vector.t) VD.t} IID.t
 
     (* This is the same as code *)
-    datatype 'node cont = 
+    datatype 'node cont =
              CCont of {cuts : 'node Vector.t option,
                        filter : LS.t option,
                        named : 'node Vector.t LD.t} ID.t
-                      
-    datatype 'node shape = 
+
+    datatype 'node shape =
              TUnknown of M.typ
            | TBase of M.typ
            | TClosure of 'node * ('node env)
            | TPSet of 'node Seq.t
            | TSum  of 'node * ('node Seq.t CD.t)
-           | TTuple of POKL.t * 'node Seq.t
+           | TTuple of 'node Seq.t
            | TThunk of 'node * 'node * ('node env)
            | TCode of 'node code
            | TCont of 'node cont
 
-    val dictFlowsTo = 
-     fn (map2, itemFlowsTo, d1, d2) => 
+    val dictFlowsTo =
+     fn (map2, itemFlowsTo, d1, d2) =>
         let
           val edgesR = ref []
-          val help = 
-           fn (key, s1, s2) => 
-              Utils.Option.union 
-                (s1, s2, fn (s1, s2) => 
+          val help =
+           fn (key, s1, s2) =>
+              Utils.Option.union
+                (s1, s2, fn (s1, s2) =>
                             let
                               val (s, edges) = itemFlowsTo (s1, s2)
                               val () = edgesR := edges @ (!edgesR)
@@ -162,23 +161,23 @@ struct
         end
 
     (* Assumes equal length *)
-    val vectorFlowsTo = 
+    val vectorFlowsTo =
      fn (v1, v2) => (v1, Utils.Vector.toListMap2 (v1, v2, EFlow))
 
-    val vectorUnify = 
+    val vectorUnify =
      fn (v1, v2) => (v1, Utils.Vector.toListMap2 (v1, v2, EUnify))
 
     val envFlowsTo =
-     fn (e1, e2) => 
+     fn (e1, e2) =>
         let
-          val add = 
-           fn combine => 
-           fn (id, v) => 
+          val add =
+           fn combine =>
+           fn (id, v) =>
               let
                 val i = Vector.length v
-              in 
+              in
                 case ID.lookup (id, i)
-                 of SOME v' => 
+                 of SOME v' =>
                     let
                       val (v, edges) = combine (v', v)
                       val id = ID.insert (id, i, v)
@@ -187,21 +186,21 @@ struct
                   | NONE => (ID.insert (id, i, v), [])
               end
           val (e, edges) =
-              (case (e1, e2) 
-                of (EEnv id1, EEnv id2) => 
+              (case (e1, e2)
+                of (EEnv id1, EEnv id2) =>
                    let
                      val (id, edges) = dictFlowsTo (ID.map2, vectorFlowsTo, id1, id2)
                    in (EEnv id, edges)
                    end
-                 | (EClosure vd1, EClosure vd2) => 
+                 | (EClosure vd1, EClosure vd2) =>
                    let
                      val (vd, edges) = dictFlowsTo (VD.map2, vectorFlowsTo, vd1, vd2)
                    in (EClosure vd, edges)
                    end
-                 | (EEnv id, EClosure vd) => 
+                 | (EEnv id, EClosure vd) =>
                    let
-                     val help = 
-                      fn (x, v, (id, edges)) => 
+                     val help =
+                      fn (x, v, (id, edges)) =>
                          let
                            val (id, edges') = add vectorFlowsTo (id, v)
                            val edges = edges' @ edges
@@ -210,10 +209,10 @@ struct
                      val (id, edges) = VD.fold (vd, (id, []), help)
                    in (EEnv id, edges)
                    end
-                 | (EClosure vd, EEnv id2) => 
+                 | (EClosure vd, EEnv id2) =>
                    let
-                     val help = 
-                      fn (x, v, (id, edges)) => 
+                     val help =
+                      fn (x, v, (id, edges)) =>
                          let
                            val (id, edges') = add vectorUnify (id, v)
                            val edges = edges' @ edges
@@ -225,18 +224,18 @@ struct
                    end)
         in (e, edges)
         end
-        
 
-    val argsRessFlowsTo = 
-     fn ((args1, ress1), (args2, ress2)) => 
+
+    val argsRessFlowsTo =
+     fn ((args1, ress1), (args2, ress2)) =>
         let
           val (args, edges1) = vectorFlowsTo (args2, args1)  (* contra-variant *)
           val (ress, edges2) = vectorFlowsTo (ress1, ress2)
         in ((args, ress), edges1 @ edges2)
         end
 
-    val argsRessUnify = 
-     fn ((args1, ress1), (args2, ress2)) => 
+    val argsRessUnify =
+     fn ((args1, ress1), (args2, ress2)) =>
         let
           val (args, edges1) = vectorUnify (args2, args1)  (* contra-variant *)
           val (ress, edges2) = vectorUnify (ress1, ress2)
@@ -248,13 +247,13 @@ struct
          {calls = calls2, filter = filter2, named = named2}) =>
         let
           val named = VD.union (named1, named2, fn (k, a, _) => a)
-          val filter = 
-              Utils.Option.union 
+          val filter =
+              Utils.Option.union
                 (filter1, filter2, fn (filter1, filter2) => VS.union (filter1, filter2))
-              
+
           val edgesR = ref []
           val add = fn edges => edgesR := edges @ !edgesR
-          val add' = fn (a, edges) => 
+          val add' = fn (a, edges) =>
                         let
                           val () = add edges
                         in a
@@ -262,19 +261,19 @@ struct
 
           val add'' = fn (a, edges) => add edges
 
-          val calls = 
+          val calls =
               Utils.Option.union
-                (calls1, calls2, fn (p1, p2) => 
+                (calls1, calls2, fn (p1, p2) =>
                                     add' (argsRessUnify (p1, p2)))
-              
+
           val applies =
-           fn v => 
+           fn v =>
               (case filter
                 of SOME filter => VS.member (filter, v)
                  | NONE => true)
-              
-          val flow = 
-           fn p1 => 
+
+          val flow =
+           fn p1 =>
            fn (v, p2) =>
               if applies v then
                 add'' (argsRessFlowsTo (p1, p2))
@@ -285,8 +284,8 @@ struct
         in ({calls = calls, filter = filter, named = named}, !edgesR)
         end
 
-    val codeFlowsTo = 
-     fn (CCode iid1, CCode iid2) => 
+    val codeFlowsTo =
+     fn (CCode iid1, CCode iid2) =>
         let
           val (iid, edges) = dictFlowsTo (IID.map2, codeFlowsTo', iid1, iid2)
         in (CCode iid, edges)
@@ -297,13 +296,13 @@ struct
          {cuts = cuts2, filter = filter2, named = named2}) =>
         let
           val named = LD.union (named1, named2, fn (k, a, _) => a)
-          val filter = 
-              Utils.Option.union 
+          val filter =
+              Utils.Option.union
                 (filter1, filter2, fn (filter1, filter2) => LS.union (filter1, filter2))
-              
+
           val edgesR = ref []
           val add = fn edges => edgesR := edges @ !edgesR
-          val add' = fn (a, edges) => 
+          val add' = fn (a, edges) =>
                         let
                           val () = add edges
                         in a
@@ -311,19 +310,19 @@ struct
 
           val add'' = fn (a, edges) => add edges
 
-          val cuts = 
+          val cuts =
               Utils.Option.union
-                (cuts1, cuts2, fn (p1, p2) => 
+                (cuts1, cuts2, fn (p1, p2) =>
                                   add' (vectorUnify (p1, p2)))
-              
+
           val applies =
-           fn l => 
+           fn l =>
               (case filter
                 of SOME filter => LS.member (filter, l)
                  | NONE => true)
 
-          val flow = 
-           fn p1 => 
+          val flow =
+           fn p1 =>
            fn (l, p2) =>
               if applies l then
                 add'' (vectorFlowsTo (p1, p2))
@@ -334,72 +333,71 @@ struct
         end
 
 
-    val contFlowsTo = 
-     fn (CCont iid1, CCont iid2) => 
+    val contFlowsTo =
+     fn (CCont iid1, CCont iid2) =>
         let
           val (iid, edges) = dictFlowsTo (ID.map2, contFlowsTo', iid1, iid2)
         in (CCont iid, edges)
         end
 
     val seqFlowsTo =
-     fn (s1, s2) => 
+     fn (s1, s2) =>
         let
           val (s, edges) = Seq.union (s1, s2)
           val edges = List.map (edges, EUnify)
         in (s, edges)
         end
 
-    val shapeFlowsTo = 
-     fn (config, shape1, shape2) => 
+    val shapeFlowsTo =
+     fn (config, shape1, shape2) =>
         let
           val noflow = (shape1, [])
-          val (shape, edges) = 
+          val (shape, edges) =
               (case (shape1, shape2)
                 of (TUnknown t1, TUnknown t2) => (TUnknown (Type.lub (config, t1, t2)), [])
                  | (TUnknown _, _) => noflow
                  | (TBase t1, TBase t2) => (TBase (Type.lub (config, t1, t2)), [])
                  | (TBase _, _) => noflow
-                 | (TClosure (n1, e1), TClosure (n2, e2)) => 
+                 | (TClosure (n1, e1), TClosure (n2, e2)) =>
                    let
                      val (e, edges) = envFlowsTo (e1, e2)
                      val edges = EFlow (n1, n2)::edges
                    in (TClosure (n1, e), edges)
                    end
                  | (TClosure _, _) => noflow
-                 | (TPSet s1, TPSet s2) => 
+                 | (TPSet s1, TPSet s2) =>
                    let
                      val (s, edges) = seqFlowsTo (s1, s2)
                    in (TPSet s, edges)
                    end
                  | (TPSet _, _) => noflow
-                 | (TSum (t1, d1), TSum (t2, d2)) => 
+                 | (TSum (t1, d1), TSum (t2, d2)) =>
                    let
                      val flow = fn (a1, a2) => seqFlowsTo (a1, a2)
                      val (d, edges) = dictFlowsTo (CD.map2, flow, d1, d2)
                    in (TSum (t1, d), EFlow (t1, t2)::edges)
                    end
                  | (TSum _, _) => noflow
-                 | (TTuple (pok1, s1), TTuple (pok2, s2)) => 
+                 | (TTuple s1, TTuple s2) =>
                    let
-                     val pok = POKL.join (pok1, pok2)
                      val (s, edges) = seqFlowsTo (s1, s2)
-                   in (TTuple (pok, s), edges)
+                   in (TTuple s, edges)
                    end
                  | (TTuple _, _) => noflow
-                 | (TThunk (n1, r1, e1), TThunk (n2, r2, e2)) => 
+                 | (TThunk (n1, r1, e1), TThunk (n2, r2, e2)) =>
                     let
                       val (e, edges) = envFlowsTo (e1, e2)
                       val edges = EFlow (r1, r2) :: EFlow (n1, n2) :: edges
                     in (TThunk (n1, r1, e), edges)
                     end
                  | (TThunk _, _) => noflow
-                 | (TCode c1, TCode c2) => 
+                 | (TCode c1, TCode c2) =>
                    let
                      val (c, edges) = codeFlowsTo (c1, c2)
                    in (TCode c, edges)
                    end
                  | (TCode _, _) => noflow
-                 | (TCont s1, TCont s2) => 
+                 | (TCont s1, TCont s2) =>
                    let
                      val (s, edges) = contFlowsTo (s1, s2)
                    in (TCont s, edges)
@@ -408,8 +406,8 @@ struct
         in (shape, edges)
         end
 
-    val foreachWithParity = 
-     fn (shape, node, nodeMinus) => 
+    val foreachWithParity =
+     fn (shape, node, nodeMinus) =>
         let
           val seq = fn s => Seq.foreach (s, node)
           val vector = fn v => Vector.foreach (v, node)
@@ -418,39 +416,39 @@ struct
                                        vector v2)
           val env = fn env => ()
 
-          val code = 
-           fn (CCode d) => 
-              IID.foreach (d, fn (i, {calls, filter, named}) => 
+          val code =
+           fn (CCode d) =>
+              IID.foreach (d, fn (i, {calls, filter, named}) =>
                                  let
                                    val () = Option.foreach (calls, argRes)
                                    val () = VD.foreach (named, fn (i, p) => argRes p)
                                  in ()
                                  end)
-          val cont = 
-           fn (CCont d) => 
-              ID.foreach (d, fn (i, {cuts, filter, named}) => 
+          val cont =
+           fn (CCont d) =>
+              ID.foreach (d, fn (i, {cuts, filter, named}) =>
                                 let
                                   val () = Option.foreach (cuts, vectorMinus)
                                   val () = LD.foreach (named, fn (i, p) => vectorMinus p)
                                 in ()
                                 end)
 
-          val () = 
+          val () =
               (case shape
                 of TUnknown t => ()
                  | TBase t => ()
                  | TClosure (n, e) => (node n; env e)
                  | TPSet s => seq s
                  | TSum (n, cd) => (node n;CD.foreach (cd, fn (k, s) => seq s))
-                 | TTuple (pok, s) => seq s
+                 | TTuple s => seq s
                  | TThunk (n, r, e) => (node n; node r; env e)
                  | TCode c => code c
                  | TCont c => cont c)
         in ()
         end
 
-    val fieldKind = 
-        fn (config, s) => 
+    val fieldKind =
+        fn (config, s) =>
            (case s
              of TUnknown t => MU.FieldKind.fromTyp' (config, t)
               | TBase t    => MU.FieldKind.fromTyp' (config, t)
@@ -465,17 +463,17 @@ struct
     structure TypOf =
     struct
 
-      val code = 
-       fn (node, variance, config, CCode d) => 
+      val code =
+       fn (node, variance, config, CCode d) =>
           let
             val doOne =
-             fn (v, {calls, filter, named}, t0) => 
+             fn (v, {calls, filter, named}, t0) =>
                 let
                   val mk =
-                   fn (args, ress) => M.TCode {cc = M.CcCode, 
-                                               args = Vector.map (args, node), 
+                   fn (args, ress) => M.TCode {cc = M.CcCode,
+                                               args = Vector.map (args, node),
                                                ress = Vector.map (ress, node)}
-                  val t0 = 
+                  val t0 =
                       (case calls
                         of SOME ar => Type.lub (config, t0, mk ar)
                          | NONE => t0)
@@ -487,15 +485,15 @@ struct
           in t
           end
 
-      val cont = 
-       fn (node, variance, config, CCont d) => 
+      val cont =
+       fn (node, variance, config, CCont d) =>
           let
             val doOne =
-             fn (v, {cuts, filter, named}, t0) => 
+             fn (v, {cuts, filter, named}, t0) =>
                 let
                   val mk =
                    fn args => M.TContinuation (Vector.map (args, node))
-                  val t0 = 
+                  val t0 =
                       (case cuts
                         of SOME args => Type.lub (config, t0, mk args)
                          | NONE => t0)
@@ -507,18 +505,18 @@ struct
           in t
           end
 
-      val shape = 
+      val shape =
        fn (config, s, node, alignment, variance) =>
           let
             val t =
                 (case s
                   of TUnknown t => t
                    | TBase t => t
-                   | TClosure (code, env) => 
+                   | TClosure (code, env) =>
                      (case node code
                        of M.TCode {args, ress, ...} => M.TClosure {args = args, ress = ress}
                         | _ => M.TPAny)
-                   | TPSet elts => 
+                   | TPSet elts =>
                      let
                        val over =
                            (case elts
@@ -528,30 +526,24 @@ struct
                               | Seq.SeqBot => M.TNone)
                      in M.TPType {kind = M.TkE, over = over}
                      end
-                   | TSum (n, cd) => 
+                   | TSum (n, cd) =>
                      let
                        val armsL = CD.toListSorted cd
                        val seq = fn s => Vector.map (#1 (Seq.deconstruct s), node)
                        val arms = Vector.fromListMap (armsL, fn (c, s) => (c, seq s))
                      in M.TSum {tag = node n, arms = arms}
                      end
-                   | TTuple (pokl, nodes) => 
-                     if POKL.isTop pokl then M.TRef
-                     else
+                   | TTuple nodes =>
                        let
-                         val pok = 
-                             (case POKL.get pokl
-                               of NONE => M.PokNone
-                                | SOME pok => pok)
                          val (elts, terminator) = Seq.deconstruct nodes
-                         val field = 
+                         val field =
                           fn n => (node n, alignment n, variance n)
                          val fixed = Vector.map (elts, field)
-                         val array = 
+                         val array =
                              (case terminator
                                of SOME (SOME a) => (field a)
                                 | _ => (M.TNone, M.Vs8, M.FvReadWrite))
-                       in M.TTuple {pok = pok, fixed = fixed, array = array}
+                       in M.TTuple {fixed = fixed, array = array}
                        end
                    | TThunk (code, res, env) => M.TThunk (node res)
                    | TCode c => code (node, variance, config, c)
@@ -562,7 +554,7 @@ struct
 
     val typOf = TypOf.shape
 
-    val flatTypOf = 
+    val flatTypOf =
        fn (config, s) =>
           let
             val t =
@@ -572,9 +564,7 @@ struct
                    | TClosure (code, env) => M.TPAny
                    | TPSet elts => M.TPAny
                    | TSum (n, nd)    => M.TPAny
-                   | TTuple (pokl, nodes) => (case POKL.get pokl 
-                                               of SOME pok => if pok = M.PokNone then M.TRef else M.TPAny
-                                                | NONE => M.TRef)
+                   | TTuple nodes => M.TRef
                    | TThunk (code, res, env) => M.TRef
                    | TCode c => M.TBits (MU.ValueSize.ptrSize config)
                    | TCont c => M.TBits (MU.ValueSize.ptrSize config))
@@ -594,130 +584,126 @@ struct
            | TCode _    => 7
            | TCont _    => 10)
 
-    val filter = 
-     fn (shape, dead) => 
+    val filter =
+     fn (shape, dead) =>
         let
           val live = not o dead
           val seq = fn s => Seq.filter (s, dead)
           val vector = fn v => Vector.keepAll (v, live)
-          val iDictMap = 
+          val iDictMap =
            fn (d, doOne) => ID.map (d, fn (i, e) => doOne e)
-          val vDictMap = 
+          val vDictMap =
            fn (d, doOne) => VD.map (d, fn (i, e) => doOne e)
-          val lDictMap = 
+          val lDictMap =
            fn (d, doOne) => LD.map (d, fn (i, e) => doOne e)
-          val iiDictMap = 
+          val iiDictMap =
            fn (d, doOne) => IID.map (d, fn (i, e) => doOne e)
           val pairMap =
            fn doOne => fn (a, b) => (doOne a, doOne b)
-          val env = 
-           fn e => 
+          val env =
+           fn e =>
               case e
                of EEnv d     => EEnv (iDictMap (d, vector))
                 | EClosure d => EClosure (vDictMap (d, vector))
 
-          val code = 
-           fn (CCode d) => 
-              CCode (iiDictMap (d, fn {calls, filter, named} => 
+          val code =
+           fn (CCode d) =>
+              CCode (iiDictMap (d, fn {calls, filter, named} =>
                                       {calls = Option.map (calls, pairMap vector),
                                        filter = filter,
                                        named = vDictMap (named, pairMap vector)}))
-          val cont = 
-           fn (CCont d) => 
-              CCont (iDictMap (d, fn {cuts, filter, named} => 
+          val cont =
+           fn (CCont d) =>
+              CCont (iDictMap (d, fn {cuts, filter, named} =>
                                      {cuts = Option.map (cuts, vector),
                                       filter = filter,
                                       named = lDictMap (named, vector)}))
 
-          val shape = 
+          val shape =
               case shape
                of TUnknown t        => shape
                 | TBase t          => shape
                 | TClosure (n, e)  => TClosure (n, env e)
                 | TPSet s          => TPSet s
                 | TSum (n, cd)     => TSum (n, CD.map (cd, fn (c, s) => seq s))
-                | TTuple (pok, s)  => TTuple (pok, seq s)
+                | TTuple s         => TTuple (seq s)
                 | TThunk (n, r, e) => TThunk (n, r, env e)
                 | TCode c          => TCode (code c)
                 | TCont c          => TCont (cont c)
         in shape
         end
 
-    structure Build = 
+    structure Build =
     struct
       val unknown =
        fn t => TUnknown t
 
-      val base = 
+      val base =
        fn t => TBase t
 
-      val closure = 
-       fn {name, code, fvs} => 
+      val closure =
+       fn {name, code, fvs} =>
           let
-            val env = 
+            val env =
                 (case name
                   of SOME name => EClosure (VD.singleton (name, fvs))
                    | NONE => EEnv (ID.singleton (Vector.length fvs, fvs)))
           in TClosure (code, env)
           end
 
-      val callClosure = 
-       fn code => 
+      val callClosure =
+       fn code =>
           let
             val env = EClosure VD.empty
           in TClosure (code, env)
           end
 
 
-      val pSet = 
+      val pSet =
        fn element => TPSet (Seq.seq1 element)
 
       val pSetEmpty =
        fn () => TPSet Seq.seq0
 
       val sum' =
-       fn {tag, arms} => TSum (tag, Vector.fold (arms, CD.empty, fn ((idx, fields), cd) 
+       fn {tag, arms} => TSum (tag, Vector.fold (arms, CD.empty, fn ((idx, fields), cd)
                                                                     => CD.insert (cd, idx, Seq.fromVectorOpen fields)))
 
-      val sum = 
+      val sum =
        fn {tag, arm} => sum' {tag = tag, arms = Vector.new1 arm}
 
-      val tuple = 
-       fn {pok, fields, array} => 
+      val tuple =
+       fn {fields, array} =>
           let
             val toField = fn node => node
             val fields = Vector.map (fields, toField)
             val array = Option.map (array, toField)
-            val seq = 
+            val seq =
                 (case array
                   of NONE => Seq.fromVectorClosed fields
                    | SOME f => Seq.fromVector (fields, Seq.Seq f))
-            val pok = 
-                (case pok
-                  of NONE => POKL.bot
-                   | SOME pok => POKL.elt pok)
-          in TTuple (pok, seq)
+          in TTuple seq
           end
 
       val thunkValue =
-       fn {code, result} => 
+       fn {code, result} =>
           let
             val env = EClosure VD.empty
           in TThunk (code, result, env)
           end
 
       val thunk =
-       fn {name, code, result, fvs} => 
+       fn {name, code, result, fvs} =>
           let
-            val env = 
+            val env =
                 (case name
                   of SOME name => EClosure (VD.singleton (name, fvs))
                    | NONE => EEnv (ID.singleton (Vector.length fvs, fvs)))
           in TThunk (code, result, env)
           end
 
-      val evalThunk = 
-       fn {code, result} => 
+      val evalThunk =
+       fn {code, result} =>
           let
             val env = EClosure VD.empty
           in TThunk (code, result, env)
@@ -725,10 +711,10 @@ struct
 
 
       val code =
-       fn {name, args, ress} => 
+       fn {name, args, ress} =>
           let
             val idx = (Vector.length args, Vector.length ress)
-            val entry = 
+            val entry =
                 (case name
                   of SOME name => {calls = NONE,
                                    filter = NONE,
@@ -740,8 +726,8 @@ struct
           in TCode code
           end
 
-      val call = 
-       fn {filter, args, ress} => 
+      val call =
+       fn {filter, args, ress} =>
           let
             val idx = (Vector.length args, Vector.length ress)
             val calls = SOME (args, ress)
@@ -752,14 +738,14 @@ struct
           in TCode code
           end
 
-      val eval = 
+      val eval =
        fn {filter, ress} => call {filter = filter, args = Vector.new0 (), ress = ress}
 
-      val cont = 
-       fn {label, args} => 
+      val cont =
+       fn {label, args} =>
           let
             val idx = Vector.length args
-            val entry = 
+            val entry =
                 (case label
                   of SOME label => {cuts = NONE,
                                     filter = NONE,
@@ -771,8 +757,8 @@ struct
           in TCont cont
           end
 
-      val cut = 
-       fn {filter, args} => 
+      val cut =
+       fn {filter, args} =>
           let
             val idx = Vector.length args
             val cuts = SOME args
@@ -785,32 +771,32 @@ struct
 
     end (* structure Build *)
 
-    structure Dec = 
+    structure Dec =
     struct
-      val tuple = 
-       fn s => 
+      val tuple =
+       fn s =>
           (case s
-            of TTuple (pok, seq) => 
+            of TTuple seq =>
                let
                  val (fixed, arrayO) = Seq.deconstruct seq
-                 val array = 
+                 val array =
                      (case arrayO
                        of NONE => NONE
                         | SOME array => array)
-               in SOME {pok = POKL.get pok, fields = fixed, array = array}
+               in SOME {fields = fixed, array = array}
                end
              | _ => NONE)
 
-      val thunkVal = 
-       fn s => 
+      val thunkVal =
+       fn s =>
           (case s
             of TThunk (_, res, _) => SOME res
              | _ => NONE)
 
-      val sum = 
-       fn s => 
+      val sum =
+       fn s =>
           (case s
-            of TSum (tag, arms) => 
+            of TSum (tag, arms) =>
                let
                  val arms = CD.toVector arms
                  val doOne =
@@ -822,31 +808,31 @@ struct
     end (* structure Dec *)
   end (* structure Shape *)
 
-  structure Object = 
+  structure Object =
   struct
     type 'node object = 'node Shape.shape ID.t
 
-    val fromShape = 
+    val fromShape =
      fn shape => ID.singleton (Shape.class shape, shape)
 
-    val addShape = 
+    val addShape =
      fn (object, shape) => ID.insert (object, Shape.class shape, shape)
 
-    val lookupShape = 
+    val lookupShape =
      fn (object, shape) => ID.lookup (object, Shape.class shape)
 
-    val flowsTo = 
-     fn (config, u1, u2) => 
+    val flowsTo =
+     fn (config, u1, u2) =>
         let
           val flow = fn (s1, s2) => Shape.shapeFlowsTo (config, s1, s2)
           val (u, edges) = Shape.dictFlowsTo (ID.map2, flow, u1, u2)
         in (u, edges)
         end
 
-    val shapeFlowsTo = 
-     fn (config, object, shape) => 
+    val shapeFlowsTo =
+     fn (config, object, shape) =>
         let
-          val (shape, edges) = 
+          val (shape, edges) =
               (case lookupShape (object, shape)
                 of SOME shape' => Shape.shapeFlowsTo (config, shape', shape)
                  | NONE => (shape, []))
@@ -854,11 +840,11 @@ struct
         in (object, edges)
         end
 
-    val flowsToShape = 
-     fn (config, shape, object) => 
+    val flowsToShape =
+     fn (config, shape, object) =>
         let
-          val flow = fn (_, s, (shape, edges)) => 
-                        let 
+          val flow = fn (_, s, (shape, edges)) =>
+                        let
                           val (shape, edges') = Shape.shapeFlowsTo (config, shape, s)
                         in (shape, edges' @ edges)
                         end
@@ -866,56 +852,55 @@ struct
         in (s, edges)
         end
 
-    val bottom = 
+    val bottom =
      fn () => ID.empty
 
-    val foreachWithParity = 
-     fn (object, nodePlus, nodeMinus) => 
+    val foreachWithParity =
+     fn (object, nodePlus, nodeMinus) =>
         ID.foreach (object, fn (i, shape) => Shape.foreachWithParity (shape, nodePlus, nodeMinus))
 
-    val typOf = 
-     fn (config, object, node, alignment, variance) => 
+    val typOf =
+     fn (config, object, node, alignment, variance) =>
         let
           val shape = fn (config, shape) => Shape.typOf (config, shape, node, alignment, variance)
         in ID.fold (object, M.TNone, fn (i, s, t) => Type.lub (config, shape (config, s), t))
         end
 
     val flatTypOf =
-     fn (config, object) => 
+     fn (config, object) =>
         ID.fold (object, M.TNone, fn (i, s, t) => Type.lub (config, Shape.flatTypOf s, t))
 
 
   end (* structure Object *)
 
-  structure Layout = 
+  structure Layout =
   struct
     structure L = Layout
     structure LU = LayoutUtils
 
     val typ = MilLayout.layoutTyp
-    val pObj = MilLayout.layoutPObjKind
     val var = MilLayout.layoutVariable
     val label = MilLayout.layoutLabel
     val int = Int.layout
 
-    val env = 
+    val env =
      fn (config, si, layoutNode, env) =>
         let
           val node = layoutNode
           val vector = fn v => Vector.layout node v
           val var = fn v => var (config, si, v)
-          val dict = 
-           fn (key, dict, d) => 
+          val dict =
+           fn (key, dict, d) =>
               let
-                val entry = 
-                 fn (i, e) => L.seq [key i, 
+                val entry =
+                 fn (i, e) => L.seq [key i,
                                      L.str " => ", vector e]
                 val d = dict (d, entry)
               in
                 LU.parenSeq [L.str "env = ", d]
               end
 
-          val l = 
+          val l =
               (case env
                 of (Shape.EEnv env) => dict (int, ID.layout, env)
                  | (Shape.EClosure cls) => dict (var, VD.layout, cls))
@@ -923,26 +908,26 @@ struct
         end
 
     val codeEntry =
-     fn (config, si, layoutNode) => 
-     fn ((i1, i2), {calls, filter, named}) => 
+     fn (config, si, layoutNode) =>
+     fn ((i1, i2), {calls, filter, named}) =>
         let
           val node = layoutNode
           val vector = fn v => Vector.layout node v
           val var = fn v => var (config, si, v)
-          val doPair = 
+          val doPair =
            fn (args, ress) => L.seq [vector args, L.str " => ", vector ress]
-          val calls = 
+          val calls =
               case calls
                of NONE => L.str "NONE"
                 | SOME p => doPair p
-          val filter = 
+          val filter =
               case filter
                of NONE => L.empty
                 | SOME s => L.seq [L.str "Filter is ", VS.layout (s, var)]
-          val named = 
+          val named =
               let
-                val entry = 
-                 fn (i, p) => L.seq [var i, 
+                val entry =
+                 fn (i, p) => L.seq [var i,
                                      L.str " => ", doPair p]
                 val d = VD.layout (named, entry)
               in
@@ -952,31 +937,31 @@ struct
                   L.mayAlign [calls, filter, named]]
         end
 
-    val code = 
-     fn (config, si, layoutNode, Shape.CCode d) => 
+    val code =
+     fn (config, si, layoutNode, Shape.CCode d) =>
         L.seq [L.str "Code ", IID.layout (d, codeEntry (config, si, layoutNode))]
 
     val contEntry =
-     fn (config, si, layoutNode) => 
-     fn (i1, {cuts, filter, named}) => 
+     fn (config, si, layoutNode) =>
+     fn (i1, {cuts, filter, named}) =>
         let
           val node = layoutNode
           val vector = fn v => Vector.layout node v
           val label = fn l => label (config, si, l)
-          val doOne = 
+          val doOne =
            fn args => L.seq [L.str " -/-> ", vector args]
-          val cuts = 
+          val cuts =
               case cuts
                of NONE => L.str "NONE"
                 | SOME p => doOne p
-          val filter = 
+          val filter =
               case filter
                of NONE => L.empty
                 | SOME s => L.seq [L.str "Filter is ", LS.layout (s, label)]
-          val named = 
+          val named =
               let
-                val entry = 
-                 fn (i, p) => L.seq [label i, 
+                val entry =
+                 fn (i, p) => L.seq [label i,
                                      L.str " => ", doOne p]
                 val d = LD.layout (named, entry)
               in
@@ -986,12 +971,12 @@ struct
                   L.mayAlign [cuts, filter, named]]
         end
 
-    val cont = 
-     fn (config, si, layoutNode, Shape.CCont d) => 
+    val cont =
+     fn (config, si, layoutNode, Shape.CCont d) =>
         L.seq [L.str "Cont ", ID.layout (d, contEntry (config, si, layoutNode))]
 
-    val shape = 
-     fn (config, si, layoutNode, shape) => 
+    val shape =
+     fn (config, si, layoutNode, shape) =>
         let
           val typ = fn t => typ (config, si, t)
           val node = layoutNode
@@ -999,37 +984,36 @@ struct
           val code = fn c => code (config, si, layoutNode, c)
           val cont = fn c => cont (config, si, layoutNode, c)
           val seq = Seq.layout node
-          val pObj = fn pok => pObj (config, si, pok)
 
-          val l = 
+          val l =
               (case shape
                 of Shape.TUnknown t => L.seq[L.str "UNKNOWN[", typ t, L.str "]"]
                  | Shape.TBase t => L.seq[L.str "Base[", typ t, L.str "]"]
-                 | Shape.TClosure (n, e) => 
+                 | Shape.TClosure (n, e) =>
                    L.seq [L.str "Clos ", LU.parenSeq [node n], L.str " where ", env e]
                  | Shape.TPSet s => L.seq [L.str "PSet", seq s]
-                 | Shape.TSum (n, cd) => 
+                 | Shape.TSum (n, cd) =>
                    let
-                     val help = 
-                      fn (k, s) => L.seq [MilLayout.layoutConstant (config, si, k), 
+                     val help =
+                      fn (k, s) => L.seq [MilLayout.layoutConstant (config, si, k),
                                           L.str " => ", seq s]
                    in
                      L.seq [L.str "Sum", LU.parenSeq [node n], CD.layout (cd, help)]
                    end
-                 | Shape.TTuple (pok, s) => L.seq [L.str "Tuple", 
-                                                   LU.parenSeq [POKL.layout pObj pok,
-                                                                seq s]]
-                 | Shape.TThunk (n, r, e) => L.mayAlign [L.str "Thunk ", LU.bracketSeq [node r], LU.parenSeq [node n], 
+                 | Shape.TTuple s => L.seq [L.str "Tuple",
+                                            LU.parenSeq [(* POKL.layout pObj pok, *)
+                                                         seq s]]
+                 | Shape.TThunk (n, r, e) => L.mayAlign [L.str "Thunk ", LU.bracketSeq [node r], LU.parenSeq [node n],
                                                          L.str " where ", env e]
                  | Shape.TCode c => code c
                  | Shape.TCont c => cont c)
         in l
         end
 
-    val object = 
-     fn (config, si, layoutNode, object) => 
+    val object =
+     fn (config, si, layoutNode, object) =>
         let
-          val help = 
+          val help =
            fn (i, s) => shape (config, si, layoutNode, s)
           val l = ID.layout (object, help)
         in l

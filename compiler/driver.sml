@@ -199,7 +199,6 @@ struct
         val expert      = ref false
         val futures     = ref Config.PNone
         val gcs         = ref NONE
-        val gcTagOnly   = ref true
         val host        = ref (case MLton.Platform.OS.host
                                 of MLton.Platform.OS.Cygwin => Config.OsCygwin
                                  | MLton.Platform.OS.Linux => Config.OsLinux
@@ -512,9 +511,6 @@ struct
                                  | "accurate" => gcs := SOME Config.GcsAccurate
                                  | _ => usage ("invalid -gc arg: " ^ s))),
 
-                   (Popt.Expert, "gcFullVTables", "", "generate full vtable",
-                    Popt.falseRef gcTagOnly),
-
                    (Popt.Normal, "ghcO", " string",
                     "pass string to GHC",
                     Popt.SpaceString (fn s => ghcOpt := s :: !ghcOpt)),
@@ -759,12 +755,8 @@ struct
                       of Config.OkC      => Config.GcsConservative
                        | Config.OkPillar => Config.GcsAccurate)
                   | SOME gcs => gcs
-            val rvt =
-                if gcs = Config.GcsAccurate then
-                  let val () = gcTagOnly := false in true end
-                else
-                  false
-            val gci = {tagOnly = !gcTagOnly, registerVtables = rvt,
+            val rvt = (gcs = Config.GcsAccurate)
+            val gci = {registerVtables = rvt,
                        reportRoots = rvt, rootsInGlobals = false,
                        reportGlobals = true, style = gcs}
 

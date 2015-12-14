@@ -14,8 +14,7 @@ sig
 		   reportGlobals: bool,
 		   reportRoots: bool,
 		   rootsInGlobals: bool,
-		   style: gcStyle,
-		   tagOnly: bool}
+		   style: gcStyle}
   datatype os = OsCygwin | OsLinux | OsMinGW
   datatype outputKind = OkC | OkPillar
   datatype parStyle = PNone | PAll | PAuto | PPar
@@ -57,8 +56,7 @@ sig
 			  reportGlobals: bool,
 			  reportRoots: bool,
 			  rootsInGlobals: bool,
-			  style: gcStyle,
-			  tagOnly: bool},
+			  style: gcStyle},
 		     ghcOpt : string list,
 		     home : Path.t,
                      host : os,
@@ -96,8 +94,7 @@ sig
 	      reportGlobals: bool,
 	      reportRoots: bool,
 	      rootsInGlobals: bool,
-	      style: gcStyle,
-	      tagOnly: bool}
+	      style: gcStyle}
   val ghcOpt: t -> string list
   val home : t -> Path.t
   val host : t -> os
@@ -199,16 +196,14 @@ struct
 
     datatype agcProg = AgcGcMf | AgcTgc | AgcCgc
 
-    (* tagOnly means generate vtables with only tags in them, no size or ref
-     * information.
-     * registerVtables means call the GC to register vtables.
+    (* registerVtables means call the GC to register vtables.
      * report roots means call the GC to report global roots
      * rootsInGlobals means if reporting roots then include roots in globals
      * reportGlobals means report global objects to the GC
      * Note that not all combinations make sense, user beware!
      *)
     type gcConfig =
-         { tagOnly : bool, registerVtables : bool,
+         { registerVtables : bool,
            reportRoots : bool, rootsInGlobals: bool,
            reportGlobals : bool, style : gcStyle }
 

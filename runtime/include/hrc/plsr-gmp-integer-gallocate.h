@@ -26,7 +26,7 @@ typedef struct PlsrAPIntS_ {
 } PlsrAPIntS;
 
 #define pLsrAPIntPadding (sizeof(PlsrAPIntS) - sizeof(PlsrVTable) - sizeof(int) - sizeof(int))
-pLsrVTableStatic(pLsrAPIntVTable_, VNoneTag, "*ap integer*", pLsrAPIntPadding);
+pLsrVTableStatic(pLsrAPIntVTable_, "*ap integer*", pLsrAPIntPadding);
 #define pLsrAPIntVTable (&pLsrAPIntVTable_)
 
 #ifdef P_USE_PILLAR

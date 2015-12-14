@@ -136,14 +136,14 @@ functor MilAnalyseF (
       case fi
        of M.FiFixed      idx              => ()
         | M.FiVariable   opnd             => analyseOperand (s, e, opnd)
-        | M.FiVectorFixed {descriptor, 
-                           mask, 
+        | M.FiVectorFixed {descriptor,
+                           mask,
                            index}         => analyseOperandO (s, e, mask)
-        | M.FiVectorVariable {descriptor, 
+        | M.FiVectorVariable {descriptor,
                               base,
                               mask,
-                              index, 
-                              kind}       => 
+                              index,
+                              kind}       =>
           let
             val () = analyseOperandO (s, e, mask)
             val () = analyseOperand (s, e, index)
@@ -189,7 +189,6 @@ functor MilAnalyseF (
           in ()
           end
         | M.RhsCont l => analyseJump (s, e, l)
-        | M.RhsObjectGetKind v => analyseVariable (s, e, v)
         | M.RhsThunkMk {typ, fvs} => ()
         | M.RhsThunkInit {typ, thunk, fx, code, fvs} =>
           let
@@ -268,7 +267,7 @@ functor MilAnalyseF (
       in ()
       end
 
-  fun analyseCodes (s, e, {possible, exhaustive}) = 
+  fun analyseCodes (s, e, {possible, exhaustive}) =
       VS.foreach (possible, fn v => analyseVariable (s, e, v))
 
   fun analyseCall (s, e, c) =
@@ -279,7 +278,7 @@ functor MilAnalyseF (
             val () = analyseCodes (s, e, code)
           in ()
           end
-        | M.CClosure {cls, code} => 
+        | M.CClosure {cls, code} =>
           let
             val () = analyseVariable (s, e, cls)
             val () = analyseCodes (s, e, code)
@@ -294,7 +293,7 @@ functor MilAnalyseF (
 
   fun analyseEval (s, e, eval) =
       case eval
-       of M.EThunk {thunk, value, code} => 
+       of M.EThunk {thunk, value, code} =>
           let
             val () = analyseVariable (s, e, thunk)
             val () = analyseCodes (s, e, code)
@@ -377,8 +376,8 @@ functor MilAnalyseF (
       in ()
       end
 
-  fun analyseBlocks (s, e, blocks) = 
-      LD.foreach (blocks, fn (l, b) => analyseBlock (s, e, l, b)) 
+  fun analyseBlocks (s, e, blocks) =
+      LD.foreach (blocks, fn (l, b) => analyseBlock (s, e, l, b))
 
   fun analyseCodeBody (s, e, M.CB {entry, blocks}) =
       let
@@ -409,12 +408,12 @@ functor MilAnalyseF (
         val e = analyseBinders (s, e, args)
         val () = analyseCodeBody (s, e, body)
       in ()
-      end 
+      end
 
   fun analyseGlobal (s, e, v, g) =
       let
         val e = analyseBinder (s, e, v)
-        val e = 
+        val e =
             case clientGlobal
              of NONE => e
               | SOME ag => ag (s, e, v, g)
@@ -429,7 +428,7 @@ functor MilAnalyseF (
           | M.GCString _               => ()
           | M.GThunkValue {typ, ofVal} => analyseSimple (s, e, ofVal)
           | M.GSimple simp             => analyseSimple (s, e, simp)
-          | M.GClosure {code, fvs}   => 
+          | M.GClosure {code, fvs}   =>
             let
               val () = analyseVariableO (s, e, code)
               fun doOne (fk, opnd) = analyseOperand (s, e, opnd)

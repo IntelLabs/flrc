@@ -1,7 +1,7 @@
 (* The Haskell Research Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
-signature MIL_TO_CORE_MIL = 
+signature MIL_TO_CORE_MIL =
 sig
   val pass : (BothMil.t, BothMil.t) Pass.t
 end
@@ -11,7 +11,7 @@ functor MilToCoreMilF(val passname : string
                       val lowerPTypes : bool
                       val lowerSums : bool
                       val lowerClosures : bool
-                      val lowerPRefs : bool) :> MIL_TO_CORE_MIL = 
+                      val lowerPRefs : bool) :> MIL_TO_CORE_MIL =
 struct
 
   val fail = fn (fname, msg) => Fail.fail (passname, fname, msg)
@@ -40,32 +40,32 @@ struct
 
   fun getVarTyp (s, v) = MSTM.variableTyp (stateGetStm s, v)
 
-  val nextBlock = 
-   fn state => 
+  val nextBlock =
+   fn state =>
       let
         val stm = stateGetStm state
         val l = IM.labelFresh stm
       in l
       end
 
-  val namedVar = 
-   fn (state, s, t, b)  => 
+  val namedVar =
+   fn (state, s, t, b)  =>
       let
         val stm = stateGetStm state
         val v = MSTM.variableFresh (stm, s ^ "_#", t, b)
       in v
       end
 
-  val relatedVar = 
-   fn (state, vo, s, t, b)  => 
+  val relatedVar =
+   fn (state, vo, s, t, b)  =>
       let
         val stm = stateGetStm state
         val v = MSTM.variableRelated (stm, vo, s, t, b)
       in v
       end
 
-  val cloneVar = 
-   fn (state, v)  => 
+  val cloneVar =
+   fn (state, v)  =>
       let
         val stm = stateGetStm state
         val v = IM.variableClone (stm, v)
@@ -85,8 +85,8 @@ struct
                                     val getConfig = envGetConfig
                                   end)
 
-  val layoutOperand = 
-   fn (state, env, oper)  => 
+  val layoutOperand =
+   fn (state, env, oper)  =>
       let
         val stm = stateGetStm state
         val si = I.SymbolInfo.SiManager stm
@@ -98,14 +98,14 @@ struct
   structure Chat = ChatF(struct type env = env
                                 val extract = envGetConfig
                                 val name = passname
-                                val indent = 2 
+                                val indent = 2
                          end)
 
-  val rec operToVar = 
+  val rec operToVar =
    fn (state, env, oper) =>
       case oper
        of M.SVariable v => v
-        | M.SConstant _ => 
+        | M.SConstant _ =>
           let
             val l = layoutOperand (state, env, oper)
             val s = Layout.toString l
@@ -115,17 +115,17 @@ struct
 
   val wordSize = fn env => Config.targetWordSize' (envGetConfig env)
 
-  val label = 
+  val label =
    fn (state, env, l, vs) => (env, NONE)
 
   val rec doTyps =
    fn (state, env, ts) => Vector.map (ts, fn t => doTyp (state, env, t))
-  and rec doTyp = 
-   fn (state, env, t) => 
-      let 
+  and rec doTyp =
+   fn (state, env, t) =>
+      let
         val typs = fn ts => doTyps (state, env, ts)
         val typ = fn t => doTyp (state, env, t)
-        val t = 
+        val t =
             case t
              of M.TAny => t
               | M.TAnyS _ => t
@@ -153,12 +153,12 @@ struct
                         | _ => M.TCode {cc = cc, args = aTyps, ress = rTyps}
                 in t
                 end
-              | M.TTuple {pok, fixed, array} =>
+              | M.TTuple {fixed, array} =>
                 let
                   fun typVar (t, ag, v) = (typ t, ag, v)
                   val tvs = Vector.map (fixed, typVar)
                   val tv = typVar array
-                  val t = M.TTuple {pok = pok, fixed = tvs, array = tv}
+                  val t = M.TTuple {fixed = tvs, array = tv}
                 in t
                 end
               | M.TCString => t
@@ -213,7 +213,7 @@ struct
       in t
       end
 
-  val doPSetEmpty =  
+  val doPSetEmpty =
    fn (state, env, ()) => POM.OptionSet.empty (envGetConfig env)
 
   fun doPTypePH (state, env, ()) = POM.Type.mk ()
@@ -241,13 +241,13 @@ struct
   fun doPFunGetFv (state, env, (fvs, cls, idx)) =
       POM.Function.getFv (envGetConfig env, fvs, cls, idx)
 
-  val doPSetNew = 
+  val doPSetNew =
    fn (state, env, oper) => POM.OptionSet.mk (envGetConfig env, oper)
 
   fun doPSetGet (state, env, v) = POM.OptionSet.get (envGetConfig env, v)
 
   fun doPSetCond (state, env, dests, bool, ofVal) =
-      let 
+      let
         val c = envGetConfig env
         val (ps, vF, asF, vT, asT) =
             case Utils.Vector.lookup (dests, 0)
@@ -268,7 +268,7 @@ struct
       end
 
   fun doPSetQuery (state, env, dests, v) =
-      let 
+      let
         val c = envGetConfig env
         val (rhs, t, compConst) = POM.OptionSet.query (c, v)
         val vc = relatedVar (state, v, "_ptr", t, M.VkLocal)
@@ -283,7 +283,7 @@ struct
       in s
       end
 
-  val doSum = 
+  val doSum =
    fn (state, env, (c, fks, opers)) =>
       let
         val config = envGetConfig env
@@ -291,7 +291,7 @@ struct
         POM.Sum.mk (config, MU.Constant.fkOf (config, c), c, fks, opers)
       end
 
-  val doEnum = 
+  val doEnum =
    fn (state, env, (tag, fk)) =>
       let
         val config = envGetConfig env
@@ -318,26 +318,26 @@ struct
       else
         NONE
 
-  val instr = 
-   fn (state, env, i) => 
+  val instr =
+   fn (state, env, i) =>
       let
         val M.I {dests, n, rhs} = i
-        val res = 
+        val res =
             case rhs
-             of M.RhsSimple (M.SConstant M.COptionSetEmpty) => 
+             of M.RhsSimple (M.SConstant M.COptionSetEmpty) =>
                 lowerToRhs (state, env, lowerPTypes, doPSetEmpty, dests, ())
               | M.RhsSimple (M.SConstant M.CTypePH) =>
                 lowerToRhs (state, env, lowerPTypes, doPTypePH, dests, ())
               | M.RhsClosureMk {fvs} =>
                 lowerToRhs (state, env, lowerClosures, doPFunMk, dests, fvs)
-              | M.RhsClosureInit {cls, code, fvs} => 
+              | M.RhsClosureInit {cls, code, fvs} =>
                 if lowerClosures then
                   SOME (doPFunInit (state, env, dests, cls, code, fvs))
                 else
                   NONE
-              | M.RhsClosureGetFv {fvs, cls, idx} => 
+              | M.RhsClosureGetFv {fvs, cls, idx} =>
                 lowerToRhs (state, env, lowerClosures, doPFunGetFv, dests, (fvs, cls, idx))
-              | M.RhsPSetNew oper => 
+              | M.RhsPSetNew oper =>
                 lowerToRhs (state, env, lowerPTypes, doPSetNew, dests, oper)
               | M.RhsPSetGet v =>
                 lowerToRhs (state, env, lowerPTypes, doPSetGet, dests, v)
@@ -352,9 +352,9 @@ struct
                   SOME (doPSetQuery (state, env, dests, v))
                 else
                   NONE
-              | M.RhsEnum {tag, typ} => 
+              | M.RhsEnum {tag, typ} =>
                 lowerToRhs (state, env, lowerSums, doEnum, dests, (tag, typ))
-              | M.RhsSum {tag, typs, ofVals} => 
+              | M.RhsSum {tag, typs, ofVals} =>
                 lowerToRhs (state, env, lowerSums, doSum, dests, (tag, typs, ofVals))
               | M.RhsSumProj {typs, sum, tag, idx} =>
                 lowerToRhs (state, env, lowerSums, doSumProj, dests, (typs, sum, tag, idx))
@@ -364,15 +364,15 @@ struct
       in (env, res)
       end
 
-  val doSwitch = 
-   fn (state, env, (fk, on, cases, default)) => 
+  val doSwitch =
+   fn (state, env, (fk, on, cases, default)) =>
       let
-        val v = 
+        val v =
             case on
              of M.SVariable v => v
               | _ => fail ("doSwitch", "Arg is not a variable")
         val t = getVarTyp (state, v)
-        val t = case t 
+        val t = case t
                   of Mil.TSum { tag, ... } => tag
                    | _ => MU.FieldKind.toTyp fk
         val tgv = relatedVar (state, v, "_tag", t, M.VkLocal)
@@ -382,10 +382,10 @@ struct
       in (env, SOME (s, t))
       end
 
-  val doCall = 
-   fn (state, env, mk, call, args, rTyps) => 
+  val doCall =
+   fn (state, env, mk, call, args, rTyps) =>
       let
-        val res = 
+        val res =
             case call
              of M.CCode _ => NONE
               | M.CDirectClosure {cls, code} =>
@@ -395,7 +395,7 @@ struct
                   val t = mk (POM.Function.doCall (c, code, codes, cls, args))
                 in SOME (MS.empty, t)
                 end
-              | M.CClosure {cls, code} => 
+              | M.CClosure {cls, code} =>
                 let
                   val c = envGetConfig env
                   val si = stateGetSymbolInfo state
@@ -413,10 +413,10 @@ struct
       in (env, res)
       end
 
-  val transfer = 
+  val transfer =
    fn (state, env, t) =>
       let
-        val res = 
+        val res =
             (case t
               of M.TInterProc {callee = M.IpCall {call, args}, ret, fx} =>
                  if lowerClosures then
@@ -429,7 +429,7 @@ struct
                          end
                      val c = envGetConfig env
                      val si = stateGetSymbolInfo state
-                     val rtyps = 
+                     val rtyps =
                          case ret
                           of M.RNormal {rets, ...} => Vector.map (rets, fn v => MTT.variable (c, si, v))
                            | M.RTail _ => envGetReturnTypes env
@@ -438,16 +438,16 @@ struct
                    end
                  else
                    (env, NONE)
-               | M.TCase (sw as {select = M.SeSum fk, on, cases, default}) => 
-                 if lowerSums then 
+               | M.TCase (sw as {select = M.SeSum fk, on, cases, default}) =>
+                 if lowerSums then
                    doSwitch (state, env, (fk, on, cases, default))
-                 else 
+                 else
                    (env, NONE)
                | _ => (env, NONE))
       in res
       end
 
-  val doClosureConv = 
+  val doClosureConv =
    fn (state, env, cls, fvs, args, M.CB {entry, blocks}) =>
       let
         val c = envGetConfig env
@@ -455,7 +455,7 @@ struct
         val newEntry = nextBlock state
         val fvts = Vector.map (fvs, fn v => MTT.variable (c, si, v))
         val fks = Vector.map (fvts, fn t => MU.FieldKind.fromTyp (c, t))
-        val project = 
+        val project =
          fn (i, v) =>
             MU.Instruction.new (v, POM.Function.getFv (c, fks, cls, i))
         val projections = Vector.mapi (fvs, project)
@@ -471,15 +471,15 @@ struct
       in (M.CcCode, args, body)
       end
 
-  val doConv = 
+  val doConv =
    fn (state, env, conv, args, body) =>
       let
-        val res = 
-            case conv 
+        val res =
+            case conv
              of M.CcCode => (conv, args, body)
               | M.CcUnmanaged _ => (conv, args, body)
-              | M.CcClosure {cls, fvs} => 
-                if lowerClosures then 
+              | M.CcClosure {cls, fvs} =>
+                if lowerClosures then
                   doClosureConv (state, env, cls, fvs, args, body)
                 else
                   (conv, args, body)
@@ -487,7 +487,7 @@ struct
       in res
       end
 
-  val doCode = 
+  val doCode =
    fn (state, env, f) =>
       let
         val M.F {fx, escapes, recursive, cc, args, rtyps, body} = f
@@ -495,7 +495,7 @@ struct
         val rtyps = doTyps (state, env, rtyps)
       in
         M.F {fx = fx,
-             escapes = escapes, 
+             escapes = escapes,
              recursive = recursive,
              cc = conv,
              args = args,
@@ -503,33 +503,33 @@ struct
              body = body}
       end
 
-  val global = 
+  val global =
    fn (state, env, v, g) =>
       let
         val c = envGetConfig env
-        val env = 
+        val env =
             (case g
               of M.GCode (M.F {rtyps, ...}) => envSetReturnTypes (env, rtyps)
                | _ => env)
-        val go = 
+        val go =
             case g
-             of M.GCode code => 
+             of M.GCode code =>
                 SOME (v, M.GCode (doCode (state, env, code)))
               | M.GErrorVal t => SOME (v, M.GErrorVal (doTyp (state, env, t)))
               (* name small values ensures this form *)
-              | M.GSimple (M.SConstant (M.COptionSetEmpty)) => 
+              | M.GSimple (M.SConstant (M.COptionSetEmpty)) =>
                 if lowerPTypes then
                   SOME (v, POM.OptionSet.emptyGlobal c)
                 else
                   NONE
               (* name small values ensures this form *)
-              | M.GSimple (M.SConstant (M.CTypePH)) => 
+              | M.GSimple (M.SConstant (M.CTypePH)) =>
                 if lowerPTypes then
                   SOME (v, POM.Type.mkGlobal ())
                 else
                   NONE
               | M.GSimple _ => NONE
-              | M.GClosure {code, fvs} => 
+              | M.GClosure {code, fvs} =>
                 if lowerClosures then
                   let
                     val g = POM.Function.mkGlobal (c, code, fvs)
@@ -542,10 +542,10 @@ struct
                   SOME (v, POM.Sum.mkGlobal (c, MU.Constant.fkOf (c, tag), tag, typs, ofVals))
                 else
                   NONE
-              | M.GPSet s => 
+              | M.GPSet s =>
                 if lowerPTypes then
                   SOME (v, POM.OptionSet.mkGlobal (c, s))
-                else 
+                else
                   NONE
               | M.GIdx _ => NONE
               | M.GTuple _ => NONE
@@ -567,11 +567,11 @@ struct
                                val transfer = transfer
                                val global = global)
 
-  val nameSmall = 
-   fn (config, p) => 
+  val nameSmall =
+   fn (config, p) =>
       let
-        val constantsToName = 
-         fn c => 
+        val constantsToName =
+         fn c =>
             (case c
               of M.COptionSetEmpty => true
                | M.CTypePH => true
@@ -594,9 +594,9 @@ struct
       in ()
       end
 
-  val program = 
-   fn (p, pd) => 
-      let 
+  val program =
+   fn (p, pd) =>
+      let
         val config = PassData.getConfig pd
         val p = nameSmall (config, p)
         val M.P {symbolTable = st, ...} = p
@@ -625,7 +625,7 @@ struct
 
   val pass =
       Pass.mkCompulsoryPass (description, associates,
-                             BothMil.mkMilPass program) 
+                             BothMil.mkMilPass program)
 
 end
 
@@ -638,7 +638,7 @@ val lowerSums = false
 val lowerClosures = true
 val lowerPRefs = false)
 
-structure MilLowerPSums = 
+structure MilLowerPSums =
 MilToCoreMilF(
 val passname = "MilLowerPSums"
 val desc = "P sums"
@@ -647,7 +647,7 @@ val lowerSums = true
 val lowerClosures = false
 val lowerPRefs = false)
 
-structure MilLowerPTypes = 
+structure MilLowerPTypes =
 MilToCoreMilF(
 val passname = "MilLowerPTypes"
 val desc = "P option sets & intensional types"

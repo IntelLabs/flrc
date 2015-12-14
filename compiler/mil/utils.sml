@@ -31,7 +31,6 @@ sig
     val abiCallConv        : Mil.abiCallConv t
     val callConv           : 'a t -> 'a Mil.callConv t
     val typKind            : Mil.typKind t
-    val pObjKind           : Mil.pObjKind t
     val valueSize          : Mil.valueSize t
     val fieldVariance      : Mil.fieldVariance t
     val fieldSize          : Mil.fieldSize t
@@ -76,7 +75,6 @@ sig
     val abiCallConv        : Mil.abiCallConv t
     val callConv           : 'a t -> 'a Mil.callConv t
     val typKind            : Mil.typKind t
-    val pObjKind           : Mil.pObjKind t
     val valueSize          : Mil.valueSize t
     val fieldVariance      : Mil.fieldVariance t
     val fieldSize          : Mil.fieldSize t
@@ -151,18 +149,6 @@ sig
     val eq : t * t -> bool
   end
 
-  structure PObjKind :
-  sig
-    type t = Mil.pObjKind
-    val fromChar : char -> t option
-    val fromTyp : Mil.typ -> t option
-    val toChar : t -> char
-    val toString : t -> string
-    val isP : t -> bool
-    val compare : t Compare.t
-    val eq : t * t -> bool
-  end
-
   structure ValueSize :
   sig
     type t = Mil.valueSize
@@ -215,12 +201,12 @@ sig
     val eq : t * t -> bool
   end
 
-  structure Prims : 
+  structure Prims :
   sig
     structure Utils : PRIMS_UTILS
 
-    structure NumericTyp : 
-    sig 
+    structure NumericTyp :
+    sig
       val tFloat  : Mil.typ
       val tDouble : Mil.typ
       val tIntegerArbitrary : Mil.typ
@@ -250,7 +236,7 @@ sig
     val compare : t Compare.t
     val eq : t * t -> bool
 
-    val fixedArray : PObjKind.t * (t * Mil.valueSize * FieldVariance.t) Vector.t -> t
+    val fixedArray : (t * Mil.valueSize * FieldVariance.t) Vector.t -> t
 
     structure Dec :
     sig
@@ -263,13 +249,12 @@ sig
       val tName : t -> unit option
       val tNumeric : t -> Mil.Prims.numericTyp option
       val tBoolean : t -> unit option
-      val tViVector : t -> {vectorSize : Mil.Prims.vectorSize, 
+      val tViVector : t -> {vectorSize : Mil.Prims.vectorSize,
                             elementTyp : Mil.typ} option
       val tViMask : t -> Mil.Prims.vectorDescriptor option
       val tCode : t -> {cc : t Mil.callConv, args : t Vector.t, ress : t Vector.t} option
       val tTuple :
-          t -> {pok   : Mil.pObjKind, 
-                fixed : (t * Mil.valueSize * Mil.fieldVariance) Vector.t, 
+          t -> {fixed : (t * Mil.valueSize * Mil.fieldVariance) Vector.t,
                 array : t * Mil.valueSize * Mil.fieldVariance} option
       val tCString : t -> unit option
       val tIdx : t -> unit option
@@ -329,7 +314,7 @@ sig
     val toTraceSize : Config.t * t -> TraceabilitySize.t (* pre: result determined *)
     val fromTyp : Config.t * Typ.t -> t (* pre: result determined *)
     val fromTyp' : Config.t * Typ.t -> t option
-    val toTyp : t -> Typ.t 
+    val toTyp : t -> Typ.t
   end
 
   structure FieldDescriptor :
@@ -376,7 +361,6 @@ sig
   structure MetaDataDescriptor :
   sig
     type t = Mil.metaDataDescriptor
-    val pok : t -> PObjKind.t
     val fixedFields : t -> FieldDescriptor.t Vector.t
     val numFixed : t -> int
     val fixedField : t * int -> FieldDescriptor.t
@@ -400,7 +384,6 @@ sig
     val eq : t * t -> bool
     (* Syntactic comparison *)
     structure Dict : DICT where type key = t
-    val pObjKind : t -> Mil.pObjKind option
     val typOf : Config.t * t -> Typ.t
     val fkOf : Config.t * t -> FieldKind.t
     structure Dec :
@@ -413,7 +396,6 @@ sig
       val cFloat : t -> Real32.t option
       val cDouble : t -> Real64.t option
       val cViMask : t -> {descriptor : Mil.Prims.vectorDescriptor, elts : bool Vector.t} option
-      val cPok : t -> Mil.pObjKind option
       val cOptionSetEmpty : t -> unit option
       val cTypePH : t -> unit option
     end (* structure Dec *)
@@ -424,7 +406,6 @@ sig
     type t = Mil.simple
     val compare : t Compare.t
     val eq : t * t -> bool
-    val pObjKind : t -> Mil.pObjKind option
     structure Dec :
     sig
       val sVariable : t -> Mil.variable option
@@ -444,24 +425,24 @@ sig
     end (* structure Dec *)
   end
 
-  structure TupleBase : 
+  structure TupleBase :
   sig
     type t = Mil.tupleBase
     val compare : t Compare.t
     val eq      : t Eq.t
-    structure Dec : 
+    structure Dec :
     sig
       val tbScalar : t -> unit option
       val tbVector : t -> unit option
     end (* structure Dec *)
   end (* structure TupleBase *)
 
-  structure VectorIndexKind : 
+  structure VectorIndexKind :
   sig
     type t = Mil.vectorIndexKind
     val compare : t Compare.t
     val eq      : t Eq.t
-    structure Dec : 
+    structure Dec :
     sig
       val vikStrided : t -> int option
       val vikVector  : t -> unit option
@@ -481,11 +462,11 @@ sig
     val fixed : t -> int option
     val variable : t -> Operand.t option
     val fieldDescriptor : TupleDescriptor.t * t -> FieldDescriptor.t
-    structure Dec : 
+    structure Dec :
     sig
       val fiFixed          : t -> int option
       val fiVariable       : t -> Mil.operand option
-      val fiVectorFixed    : t -> 
+      val fiVectorFixed    : t ->
                              {descriptor : Mil.Prims.vectorDescriptor,
                               mask : Mil.operand option,
                               index : int} option
@@ -540,16 +521,15 @@ sig
     val isHeapAllocation : t -> bool
     val isInit : t -> bool
     val isInitOf : t * Mil.variable -> bool
-    val pObjKind : t -> Mil.pObjKind option
     val arity : Config.t * t -> int
     structure Dec :
     sig
       val rhsSimple : t -> Mil.simple option
-      val rhsPrim : t -> {prim : Mil.Prims.t, 
-                          createThunks : bool, 
-                          typs : Mil.typ Vector.t, 
+      val rhsPrim : t -> {prim : Mil.Prims.t,
+                          createThunks : bool,
+                          typs : Mil.typ Vector.t,
                           args : Mil.operand Vector.t} option
-      val rhsTuple : t -> {mdDesc : Mil.metaDataDescriptor,  
+      val rhsTuple : t -> {mdDesc : Mil.metaDataDescriptor,
                            inits  : Mil.operand Vector.t} option
       val rhsTupleSub : t -> Mil.tupleField option
       val rhsTupleSet : t -> {tupField : Mil.tupleField, ofVal: Mil.operand} option
@@ -558,13 +538,12 @@ sig
       val rhsTupleInited : t -> {mdDesc : Mil.metaDataDescriptor, tup : Mil.variable} option
       val rhsIdxGet : t -> {idx : Mil.variable, ofVal : Mil.operand} option
       val rhsCont : t -> Mil.label option
-      val rhsObjectGetKind : t -> Mil.variable option
       val rhsThunkMk : t -> {typ : Mil.fieldKind, fvs : Mil.fieldKind Vector.t} option
       val rhsThunkInit : t -> {
         typ   : Mil.fieldKind,
-        thunk : Mil.variable option, 
+        thunk : Mil.variable option,
         fx    : Mil.effects,
-        code  : Mil.variable option, 
+        code  : Mil.variable option,
         fvs   : (Mil.fieldKind * Mil.operand) Vector.t
       } option
       val rhsThunkGetFv : t -> {
@@ -575,15 +554,15 @@ sig
       } option
       val rhsThunkValue : t -> {
         typ    : Mil.fieldKind,
-        thunk  : Mil.variable option, 
+        thunk  : Mil.variable option,
         ofVal : Mil.operand
       } option
       val rhsThunkGetValue : t -> {typ : Mil.fieldKind, thunk : Mil.variable} option
       val rhsThunkSpawn : t -> {typ : Mil.fieldKind, thunk : Mil.variable, fx : Mil.effects} option
       val rhsClosureMk : t -> {fvs : Mil.fieldKind Vector.t} option
       val rhsClosureInit : t -> {
-        cls  : Mil.variable option, 
-        code : Mil.variable option, 
+        cls  : Mil.variable option,
+        code : Mil.variable option,
         fvs  : (Mil.fieldKind * Mil.operand) Vector.t
       } option
       val rhsClosureGetFv : t -> {fvs : Mil.fieldKind Vector.t, cls : Mil.variable, idx : int} option
@@ -614,7 +593,6 @@ sig
     val isHeapAllocation : t -> bool
     val isInit : t -> bool
     val isInitOf : t * Mil.variable -> bool
-    val pObjKind : t -> Mil.pObjKind option
   end
 
   structure Target :
@@ -639,7 +617,7 @@ sig
     val isCore : t -> bool
     val compare : t Compare.t
     val eq : (t * t -> bool)
-    structure Dec : 
+    structure Dec :
     sig
       val seSum      : t -> Mil.fieldKind option
       val seConstant : t -> unit option
@@ -666,7 +644,7 @@ sig
     val cls : t -> Mil.variable option
     val code : t -> Mil.variable option
     val codes : t -> Mil.codes
-    structure Dec : 
+    structure Dec :
     sig
       val cCode : t -> {ptr : Mil.variable, code : Mil.codes} option
       val cClosure : t -> {cls : Mil.variable, code : Mil.codes} option
@@ -679,11 +657,11 @@ sig
     type t = Mil.eval
     val compare : t Compare.t
     val eq : t * t -> bool
-    val thunk : t -> Mil.variable 
+    val thunk : t -> Mil.variable
     val value : t -> bool
     val codes : t -> Mil.codes
     structure Dict : DICT where type key = t
-    structure Dec : 
+    structure Dec :
     sig
       val eThunk : t -> {thunk : Mil.variable, value : bool, code : Mil.codes} option
       val eDirectThunk : t -> {thunk : Mil.variable, value : bool, code : Mil.variable} option
@@ -696,7 +674,7 @@ sig
     val compare : t Compare.t
     val eq : t * t -> bool
     val codes : t -> Mil.codes
-    structure Dec : 
+    structure Dec :
     sig
       val ipCall : t -> {call : Mil.call, args : Mil.operand Vector.t} option
       val ipEval : t -> {typ : Mil.fieldKind, eval : Mil.eval} option
@@ -731,7 +709,7 @@ sig
     val eq : t * t -> bool
     val cuts : t -> Cuts.t
     val binds : t -> Mil.variable Vector.t
-    structure Dec : 
+    structure Dec :
     sig
       val rNormal : t -> {rets : Mil.variable Vector.t, block : Mil.label, cuts : Mil.cuts} option
       val rTail : t -> {exits : bool} option
@@ -743,7 +721,7 @@ sig
     datatype kind =
         OekGoto of {args : Operand.t Vector.t}
       | OekCase of {select : Selector.t, on : Operand.t, eq : Constant.t, args : Operand.t Vector.t}
-      | OekCaseDefault 
+      | OekCaseDefault
         of {select : Selector.t, on : Operand.t, cases : Constant.t Vector.t, args  : Operand.t Vector.t}
       | OekInterProcRet of {callee : InterProc.t, rets : Mil.variable Vector.t, fx : Mil.effects}
       | OekInterProcTail of {callee : InterProc.t, fx : Mil.effects}
@@ -771,10 +749,10 @@ sig
     val mapOverTargets : t * (Mil.target -> Mil.target) -> t
     val fx : Config.t * t -> Effect.set
     val binds : t -> Mil.variable Vector.t
-    structure Dec : 
+    structure Dec :
     sig
       val tGoto : t -> Mil.target option
-      val tCase : t -> {select : Mil.selector, on : Mil.operand, 
+      val tCase : t -> {select : Mil.selector, on : Mil.operand,
                         cases : (Mil.constant * Mil.target) Vector.t, default : Mil.target option} option
       val tInterProc : t -> {callee : Mil.interProc, ret : Mil.return, fx : Mil.effects} option
       val tReturn : t -> Mil.operand Vector.t option
@@ -883,9 +861,8 @@ sig
     structure Dict : DICT where type key = t
     val compare : t Compare.t
     val eq : t * t -> bool
-    val pObjKind : t -> Mil.pObjKind option
     val immutable : t -> bool
-    structure Dec : 
+    structure Dec :
     sig
       val gCode : t -> Mil.code option
       val gErrorVal : t -> Mil.typ option
@@ -1055,9 +1032,9 @@ sig
   structure Boxed :
   sig
     val td : FieldKind.t -> TupleDescriptor.t
-    val t : PObjKind.t * Typ.t -> Typ.t
-    val box : Config.t * PObjKind.t * FieldKind.t * Operand.t -> Rhs.t
-    val boxGlobal : Config.t * PObjKind.t * FieldKind.t * Simple.t -> Global.t
+    val t : Typ.t -> Typ.t
+    val box : Config.t * FieldKind.t * Operand.t -> Rhs.t
+    val boxGlobal : Config.t * FieldKind.t * Simple.t -> Global.t
     val ofValIndex : int
     val unbox : Config.t * FieldKind.t * Mil.variable -> Rhs.t
   end
@@ -1065,10 +1042,10 @@ sig
   (* This defines constructors for fixed length Mil tuples. *)
   structure Tuple :
   sig
-    val typ : Mil.pObjKind * (Mil.typ * Mil.valueSize * Mil.fieldVariance) Vector.t -> Mil.typ
+    val typ : (Mil.typ * Mil.valueSize * Mil.fieldVariance) Vector.t -> Mil.typ
 
     val td : Mil.fieldDescriptor Vector.t -> Mil.tupleDescriptor
-    val mdd : Mil.pObjKind * (Mil.fieldDescriptor Vector.t) -> Mil.metaDataDescriptor
+    val mdd : Mil.fieldDescriptor Vector.t -> Mil.metaDataDescriptor
 
     (* These assume PokNone *)
     val mddImmutable     : Mil.fieldKind Vector.t -> Mil.metaDataDescriptor
@@ -1082,24 +1059,24 @@ sig
 
     val new : Mil.metaDataDescriptor * Mil.operand Vector.t -> Mil.rhs
     val proj : Mil.tupleDescriptor * Mil.variable * int -> Mil.rhs
-    val init : Mil.tupleDescriptor * Mil.variable * int * Mil.operand -> Mil.rhs 
+    val init : Mil.tupleDescriptor * Mil.variable * int * Mil.operand -> Mil.rhs
     val inited : Mil.metaDataDescriptor * Mil.variable -> Mil.rhs
   end (* structure Tuple *)
 
-  (* This defines an abstraction of variable length arrays in MIL.  
+  (* This defines an abstraction of variable length arrays in MIL.
    * These arrays always have length fields (even if created via
    * the newFixed constructor *)
   structure OrdinalArray :
   sig
     val tdVar : Config.t * Mil.fieldKind -> Mil.tupleDescriptor
-    val fixedTyp : Config.t * PObjKind.t * Typ.t Vector.t -> Typ.t
-    val varTyp : Config.t * PObjKind.t * Typ.t -> Typ.t
+    val fixedTyp : Config.t * Typ.t Vector.t -> Typ.t
+    val varTyp : Config.t * Typ.t -> Typ.t
     datatype typ = TNot | TFixed of Typ.t Vector.t | TVar of Typ.t
     val isTyp : Config.t * Typ.t -> typ
-    val newFixed : Config.t * PObjKind.t * FieldKind.t Vector.t
+    val newFixed : Config.t * FieldKind.t Vector.t
                    * Mil.operand Vector.t
                    -> Rhs.t
-    val newVar : Config.t * PObjKind.t * FieldKind.t * Mil.operand -> Rhs.t
+    val newVar : Config.t * FieldKind.t * Mil.operand -> Rhs.t
     val lenIndex : int
     val length : Config.t * Mil.variable -> Rhs.t
     val sub : Config.t * FieldKind.t * Mil.variable * Operand.t
@@ -1107,17 +1084,17 @@ sig
     val update : Config.t * FieldKind.t * Mil.variable * Operand.t
                  * Operand.t
                  -> Rhs.t
-    val inited : Config.t * PObjKind.t * FieldKind.t * Mil.variable -> Rhs.t
+    val inited : Config.t * FieldKind.t * Mil.variable -> Rhs.t
   end
 
   structure IndexedArray :
   sig
     val tdVar : Config.t * Mil.fieldKind -> Mil.tupleDescriptor
     val fixedTyp :
-        Config.t * PObjKind.t * int Identifier.NameDict.t * Typ.t Vector.t
+        Config.t * int Identifier.NameDict.t * Typ.t Vector.t
         -> Typ.t
-    val varTyp : Config.t * PObjKind.t * Typ.t -> Typ.t
-    val newFixed : Config.t * PObjKind.t * int Identifier.NameDict.t
+    val varTyp : Config.t * Typ.t -> Typ.t
+    val newFixed : Config.t * int Identifier.NameDict.t
                    * FieldKind.t Vector.t * Mil.variable * Mil.operand Vector.t
                    -> Rhs.t
     val lenIndex : int
@@ -1167,11 +1144,11 @@ sig
 
   structure Def :
   sig
-    datatype t = 
+    datatype t =
              DefGlobal of Mil.global
            | DefRhs of Mil.rhs
 
-    structure Out : 
+    structure Out :
     sig
       val tuple : t -> {mdDesc : Mil.metaDataDescriptor, inits  : Mil.simple Vector.t} option
       val thunkValue : t -> {typ : Mil.fieldKind, ofVal : Mil.simple} option
@@ -1184,9 +1161,9 @@ sig
     end (* structure Out *)
   end (* structure Def *)
 
-  structure Id : 
+  structure Id :
   sig
-    datatype t = 
+    datatype t =
         L of Mil.label    (* block label *)
       | I of int          (* numbered instruction *)
       | T of Mil.label    (* block transfer *)
@@ -1194,7 +1171,7 @@ sig
 
     val compare : t Compare.t
     val eq : t * t -> bool
-    val layout : Mil.symbolInfo * t -> Layout.t 
+    val layout : Mil.symbolInfo * t -> Layout.t
 
     structure Set : SET where type element = t
     structure Dict : DICT where type key = t
@@ -1208,7 +1185,7 @@ sig
   end (* structure FlatTyp *)
 
   (* Compiler assumptions about pointers into the heap *)
-  structure HeapModel : 
+  structure HeapModel :
   sig
     val null : Config.t -> IntInf.t
     val validRefConstant : Config.t * IntInf.t -> bool
@@ -1231,21 +1208,21 @@ struct
 
   fun fieldKind config = M.FkBits (ptrSize config)
 
-  fun int (config, i) = 
+  fun int (config, i) =
       let
         val iat = intArbTyp config
       in
-        if IA.fits (iat, IntInf.fromInt i) then 
+        if IA.fits (iat, IntInf.fromInt i) then
           M.CIntegral (IA.fromInt (iat, i))
         else
           Fail.fail ("MilUtils.Intp", "int", "Doesn't fit")
       end
 
-  fun intInf (config, i) = 
+  fun intInf (config, i) =
       let
         val iat = intArbTyp config
       in
-        if IA.fits (iat, i) then 
+        if IA.fits (iat, i) then
           M.CIntegral (IA.fromIntInf (iat, i))
         else
           Fail.fail ("MilUtils.Intp", "intInf", "Doesn't fit")
@@ -1287,7 +1264,7 @@ struct
   structure LS = I.LabelSet
   structure LD = I.LabelDict
 
-  structure IA = IntArb 
+  structure IA = IntArb
   structure M = Mil
   structure MP = Mil.Prims
 
@@ -1303,7 +1280,7 @@ struct
 
     type t = Mil.fieldSize
 
-    val ord = 
+    val ord =
      fn fs =>
         (case fs of M.Fs8 => 0 | M.Fs16 => 1 | M.Fs32 => 2 | M.Fs64 => 3)
 
@@ -1314,22 +1291,22 @@ struct
            | M.Fs16 => M.Vs16
            | M.Fs32 => M.Vs32
            | M.Fs64 => M.Vs64)
-                       
-    val numBytes = 
+
+    val numBytes =
      fn fs =>
         (case fs
           of M.Fs8  => 1
            | M.Fs16 => 2
            | M.Fs32 => 4
            | M.Fs64 => 8)
-        
-    val numBits = 
+
+    val numBits =
      fn fs => numBytes fs * 8
 
-    val toString = 
+    val toString =
      fn fs => "S" ^ (Int.toString (numBits fs))
 
-    val fromString = 
+    val fromString =
      fn s =>
         (case s
           of "S8"  => SOME M.Fs8
@@ -1345,15 +1322,15 @@ struct
           | IntArb.S32  => M.Fs32
           | IntArb.S64  => M.Fs64
 
-    val toIntArbSz : t -> IntArb.size = 
-     fn fk => 
+    val toIntArbSz : t -> IntArb.size =
+     fn fk =>
         (case fk
          of M.Fs8  => IntArb.S8
           | M.Fs16 => IntArb.S16
           | M.Fs32 => IntArb.S32
           | M.Fs64 => IntArb.S64)
 
-    val intArb = 
+    val intArb =
      fn (IA.T (sz, _)) =>
         intArbSz sz
 
@@ -1388,13 +1365,13 @@ struct
 
     structure Dec =
     struct
-      val fs8  : t -> unit option = 
+      val fs8  : t -> unit option =
        fn a => case a of M.Fs8 => SOME () | _ => NONE
-      val fs16 : t -> unit option = 
+      val fs16 : t -> unit option =
        fn a => case a of M.Fs16 => SOME () | _ => NONE
-      val fs32 : t -> unit option = 
+      val fs32 : t -> unit option =
        fn a => case a of M.Fs32 => SOME () | _ => NONE
-      val fs64 : t -> unit option = 
+      val fs64 : t -> unit option =
        fn a => case a of M.Fs64 => SOME () | _ => NONE
     end (* structure Dec *)
 
@@ -1449,26 +1426,6 @@ struct
     fun typKind (tk1, tk2) =
         C.fromOrd (fn tk => case tk of M.TkI => 0 | M.TkE => 1) (tk1, tk2)
 
-    fun pObjKind (pok1, pok2) =
-        let
-          fun ord pok =
-              case pok
-               of M.PokNone      => 0
-                | M.PokRat       => 1
-                | M.PokFloat     => 2
-                | M.PokDouble    => 3
-                | M.PokName      => 4
-                | M.PokFunction  => 5
-                | M.PokArray     => 6
-                | M.PokDict      => 7
-                | M.PokTagged    => 8
-                | M.PokOptionSet => 9
-                | M.PokType      => 10
-                | M.PokCell      => 11
-                | M.PokPtr       => 12
-        in C.fromOrd ord (pok1, pok2)
-        end
-
     fun valueSize (vs1, vs2) =
         let
           fun ord vs =
@@ -1497,14 +1454,14 @@ struct
 
     val fieldSize = FieldSize.compare
 
-    fun constant (c1, c2) = 
+    fun constant (c1, c2) =
         let
           val viMask = C.rec2 (#descriptor, PrimsUtils.VectorDescriptor.compare,
                                #elts, C.vector Bool.compare)
         in
           case (c1, c2)
            of (M.CBoolean b1,     M.CBoolean b2    ) => Bool.compare (b1, b2)
-            | (M.CBoolean _,      _                ) => LESS 
+            | (M.CBoolean _,      _                ) => LESS
             | (_,                 M.CBoolean _     ) => GREATER
             | (M.CRat r1,         M.CRat r2        ) => IntInf.compare (r1, r2)
             | (M.CRat _,          _                ) => LESS
@@ -1527,9 +1484,6 @@ struct
             | (M.CViMask x1,      M.CViMask x2     ) => viMask (x1, x2)
             | (M.CViMask _,       _                ) => LESS
             | (_,                 M.CViMask _      ) => GREATER
-            | (M.CPok pok1,       M.CPok pok2      ) => pObjKind (pok1, pok2)
-            | (M.CPok _,          _                ) => LESS
-            | (_,                 M.CPok _         ) => GREATER
             | (M.CRef i1,         M.CRef i2        ) => IntInf.compare (i1, i2)
             | (M.CRef _,          _                ) => LESS
             | (_,                 M.CRef _         ) => GREATER
@@ -1545,7 +1499,7 @@ struct
           val viVector = C.rec2 (#vectorSize, PrimsUtils.VectorSize.compare, #elementTyp, typ)
           val code = C.rec3 (#cc, callConv typ, #args, C.vector typ, #ress, C.vector typ)
           val typAVar = C.triple (typ, valueSize, fieldVariance)
-          val tuple = C.rec3 (#pok, pObjKind, #fixed, C.vector typAVar, #array, typAVar)
+          val tuple = C.rec2 (#fixed, C.vector typAVar, #array, typAVar)
           val pclosure = C.rec2 (#args, C.vector typ, #ress, C.vector typ)
           (* Note: assumes sum types are sorted by tag *)
           val sum = C.rec2 (#tag, typ, #arms, C.vector (C.pair (constant, C.vector typ)))
@@ -1641,14 +1595,13 @@ struct
           (td1, td2)
 
     fun metaDataDescriptor (M.MDD mdd1, M.MDD mdd2) =
-        C.rec4 (#pok, pObjKind,
-                #pinned, Bool.compare,
+        C.rec3 (#pinned, Bool.compare,
                 #fixed, C.vector fieldDescriptor,
                 #array, C.option (C.pair (Int.compare, fieldDescriptor)))
           (mdd1, mdd2)
 
-    fun simple (s1, s2) = 
-        case (s1, s2) 
+    fun simple (s1, s2) =
+        case (s1, s2)
          of (M.SVariable v1, M.SVariable v2) => variable (v1, v2)
           | (M.SVariable _,  _             ) => LESS
           | (_,              M.SVariable _ ) => GREATER
@@ -1658,8 +1611,8 @@ struct
     val operands = C.vector operand
     val operandO = C.option operand
 
-    val tupleBase = 
-     fn p => 
+    val tupleBase =
+     fn p =>
         let
           val res = case p
 		     of (Mil.TbScalar   , Mil.TbScalar   ) => EQUAL
@@ -1669,9 +1622,9 @@ struct
         in
           res
         end
-        
-    val vectorIndexKind = 
-     fn p => 
+
+    val vectorIndexKind =
+     fn p =>
         let
           val kStrided = Int.compare
           val res = case p
@@ -1682,9 +1635,9 @@ struct
         in
           res
         end
-        
-    val fieldIdentifier = 
-     fn p => 
+
+    val fieldIdentifier =
+     fn p =>
         let
           val fixed = Int.compare
           val variable = operand
@@ -1692,11 +1645,11 @@ struct
                                     #mask, C.option operand,
                                     #index, Int.compare)
           val vectorVariable = C.rec5 (#descriptor, PrimsUtils.Compare.vectorDescriptor,
-                                       #base, tupleBase,  
+                                       #base, tupleBase,
                                        #mask, C.option operand ,
                                        #index, operand,
                                        #kind, vectorIndexKind)
-          val res = 
+          val res =
               case p
 	       of (Mil.FiFixed x1         , Mil.FiFixed x2         ) => fixed (x1, x2)
 		| (Mil.FiFixed _          , _                      ) => LESS
@@ -1801,9 +1754,6 @@ struct
             | (M.RhsCont           x1, M.RhsCont           x2) => l (x1, x2)
             | (M.RhsCont           _ , _                     ) => LESS
             | (_                     , M.RhsCont           _ ) => GREATER
-            | (M.RhsObjectGetKind  x1, M.RhsObjectGetKind  x2) => var (x1, x2)
-            | (M.RhsObjectGetKind  _ , _                     ) => LESS
-            | (_                     , M.RhsObjectGetKind  _ ) => GREATER
             | (M.RhsThunkMk        x1, M.RhsThunkMk        x2) => thkm (x1, x2)
             | (M.RhsThunkMk        _ , _                     ) => LESS
             | (_                     , M.RhsThunkMk        _ ) => GREATER
@@ -1861,7 +1811,7 @@ struct
     fun target (M.T x1, M.T x2) =
         C.rec2 (#block, label, #arguments, C.vector operand) (x1, x2)
 
-    fun selector (x1 : M.selector, x2 : M.selector) = 
+    fun selector (x1 : M.selector, x2 : M.selector) =
         (case (x1, x2)
           of (M.SeSum fk1 , M.SeSum fk2 ) => fieldKind (fk1, fk2)
            | (M.SeSum fk  , _           ) => LESS
@@ -1870,7 +1820,7 @@ struct
 
     local
       val a = C.vector (C.pair (constant, target))
-    in 
+    in
     val doCase = C.rec4 (#select, selector, #on, operand, #cases, a, #default, C.option target)
     end
 
@@ -1882,9 +1832,9 @@ struct
       val closure = C.rec2 (#cls, variable, #code, codes)
       val dclosure = C.rec2 (#cls, variable, #code, variable)
     in
-    fun call (arg1, arg2) = 
+    fun call (arg1, arg2) =
         case (arg1, arg2)
-         of (M.CCode          x1, M.CCode          x2) => code (x1, x2) 
+         of (M.CCode          x1, M.CCode          x2) => code (x1, x2)
           | (M.CCode          _ , _                  ) => LESS
           | (_                  , M.CCode          _ ) => GREATER
           | (M.CClosure       x1, M.CClosure       x2) => closure (x1, x2)
@@ -1897,9 +1847,9 @@ struct
       val thunk = C.rec3 (#thunk, variable, #value, Bool.compare, #code, codes)
       val dthunk = C.rec3 (#thunk, variable, #value, Bool.compare, #code, variable)
     in
-    fun eval (arg1, arg2) = 
+    fun eval (arg1, arg2) =
         case (arg1, arg2)
-         of (M.EThunk       x1, M.EThunk       x2) => thunk (x1, x2) 
+         of (M.EThunk       x1, M.EThunk       x2) => thunk (x1, x2)
           | (M.EThunk       _ , _                ) => LESS
           | (_                , M.EThunk       _ ) => GREATER
           | (M.EDirectThunk x1, M.EDirectThunk x2) => dthunk (x1, x2)
@@ -2035,10 +1985,9 @@ struct
     val label              : Mil.label t = Equality.fromCompare Compare.label
     val effects            : Mil.effects t = Equality.fromCompare Compare.effects
     val abiCallConv        : Mil.abiCallConv t = Equality.fromCompare Compare.abiCallConv
-    val callConv           : 'a t -> 'a Mil.callConv t = 
+    val callConv           : 'a t -> 'a Mil.callConv t =
      fn eqA => Equality.fromCompare (Compare.callConv (fn (a, b) => if eqA (a, b) then EQUAL else LESS))
     val typKind            : Mil.typKind t = Equality.fromCompare Compare.typKind
-    val pObjKind           : Mil.pObjKind t = Equality.fromCompare Compare.pObjKind
     val valueSize          : Mil.valueSize t = Equality.fromCompare Compare.valueSize
     val fieldVariance      : Mil.fieldVariance t = Equality.fromCompare Compare.fieldVariance
     val fieldSize          : Mil.fieldSize t = FieldSize.eq
@@ -2105,7 +2054,7 @@ struct
     val compare = Compare.callConv
     val eq = Eq.callConv
 
-    fun fold (cc, a, f) = 
+    fun fold (cc, a, f) =
         case cc
          of M.CcCode => a
           | M.CcUnmanaged _ => a
@@ -2122,7 +2071,7 @@ struct
             in a
             end
 
-    fun mapAndFold (cc, a, f) = 
+    fun mapAndFold (cc, a, f) =
         case cc
          of M.CcCode => (M.CcCode, a)
           | M.CcUnmanaged abi => (M.CcUnmanaged abi, a)
@@ -2167,24 +2116,24 @@ struct
 
     structure Dec =
     struct
-      val ccCode = 
-       fn c => 
-          (case c 
+      val ccCode =
+       fn c =>
+          (case c
             of M.CcCode => SOME ()
              | _ => NONE)
-      val ccUnmanaged = 
-       fn c => 
-          (case c 
+      val ccUnmanaged =
+       fn c =>
+          (case c
             of M.CcUnmanaged abi => SOME abi
              | _ => NONE)
-      val ccClosure = 
-       fn c => 
-          (case c 
+      val ccClosure =
+       fn c =>
+          (case c
             of M.CcClosure r => SOME r
              | _ => NONE)
-      val ccThunk = 
-       fn c => 
-          (case c 
+      val ccThunk =
+       fn c =>
+          (case c
             of M.CcThunk r => SOME r
              | _ => NONE)
     end (* structure Dec *)
@@ -2207,113 +2156,12 @@ struct
 
   end
 
-  structure PObjKind =
-  struct
-
-    type t = Mil.pObjKind
-
-    fun fromChar c =
-        case c
-         of #"-" => SOME M.PokNone     
-          | #"R" => SOME M.PokRat      
-          | #"F" => SOME M.PokFloat    
-          | #"D" => SOME M.PokDouble   
-          | #"N" => SOME M.PokName     
-          | #"L" => SOME M.PokFunction 
-          | #"A" => SOME M.PokArray    
-          | #"B" => SOME M.PokDict     
-          | #"S" => SOME M.PokTagged   
-          | #"O" => SOME M.PokOptionSet
-          | #"P" => SOME M.PokPtr      
-          | #"T" => SOME M.PokType     
-          | #"C" => SOME M.PokCell     
-          | _    => NONE
-
-    fun toChar pok =
-        case pok
-         of M.PokNone      => #"-"
-          | M.PokRat       => #"R"
-          | M.PokFloat     => #"F"
-          | M.PokDouble    => #"D"
-          | M.PokName      => #"N"
-          | M.PokFunction  => #"L"
-          | M.PokArray     => #"A"
-          | M.PokDict      => #"B"
-          | M.PokTagged    => #"S"
-          | M.PokOptionSet => #"O"
-          | M.PokPtr       => #"P"
-          | M.PokType      => #"T"
-          | M.PokCell      => #"C"
-
-    fun toString pok =
-        case pok
-         of M.PokNone      => "None"
-          | M.PokRat       => "Rat"
-          | M.PokFloat     => "Float"
-          | M.PokDouble    => "Double"
-          | M.PokName      => "Name"
-          | M.PokFunction  => "Fun"
-          | M.PokArray     => "Array"
-          | M.PokDict      => "Dict"
-          | M.PokTagged    => "Tag"
-          | M.PokOptionSet => "Set"
-          | M.PokPtr       => "Ptr"
-          | M.PokType      => "Type"
-          | M.PokCell      => "Cell"
-
-    val compare = Compare.pObjKind
-    val eq = Eq.pObjKind
-
-    val fromTyp = 
-     fn t =>
-        (case t
-          of M.TAny                       => NONE
-           | M.TAnyS vs                   => NONE
-           | M.TNonRefPtr                 => NONE
-           | M.TRef                       => NONE
-           | M.TBits vs                   => NONE
-           | M.TNone                      => NONE
-           | M.TNumeric _                 => NONE
-           | M.TBoolean                   => NONE
-           | M.TName                      => SOME M.PokName
-           | M.TViVector et               => NONE
-           | M.TViMask et                 => NONE
-           | M.TCode {cc, args, ress}     => NONE
-           | M.TTuple {pok, fixed, array} => SOME pok
-           | M.TCString                   => NONE
-           | M.TIdx                       => NONE
-           | M.TContinuation ts           => NONE
-           | M.TThunk t                   => SOME M.PokCell 
-           | M.TPAny                      => NONE
-           | M.TClosure {args, ress}      => SOME M.PokFunction
-           | M.TSum nts                   => SOME M.PokTagged
-           | M.TPType {kind, over}        => SOME M.PokType
-           | M.TPRef t                    => SOME M.PokPtr)
-
-     fun isP pok =
-         case pok
-          of M.PokNone      => false
-           | M.PokRat       => true
-           | M.PokFloat     => true
-           | M.PokDouble    => true
-           | M.PokName      => true
-           | M.PokFunction  => true
-           | M.PokArray     => true
-           | M.PokDict      => true
-           | M.PokTagged    => true
-           | M.PokOptionSet => true
-           | M.PokType      => true
-           | M.PokPtr       => true
-           | M.PokCell      => false
-
-  end
-
   structure ValueSize =
   struct
 
     type t = Mil.valueSize
 
-    fun fromBytes i = 
+    fun fromBytes i =
         case i
          of 1    => SOME M.Vs8
           | 2    => SOME M.Vs16
@@ -2359,14 +2207,14 @@ struct
           | IntArb.S32  => M.Vs32
           | IntArb.S64  => M.Vs64
 
-    fun ptrSize config = 
+    fun ptrSize config =
         (case Config.targetWordSize config
           of Config.Ws32 => M.Vs32
            | Config.Ws64 => M.Vs64)
 
     val maxSize : t = M.Vs1024 (* The ValueSize of the largest value *)
     val minSize : t = M.Vs8    (* The ValueSize of the smallest value *)
-    val compareByBitcount : t Compare.t = 
+    val compareByBitcount : t Compare.t =
         fn (a, b) => Int.compare (numBits a, numBits b)
 
     val wordSize = ptrSize
@@ -2423,7 +2271,7 @@ struct
       | TsRef
       | TsNone
       | TsMask of MP.vectorDescriptor
-                  
+
     fun toString (config, ts) =
         case ts
          of TsAny       => "Any"
@@ -2468,13 +2316,13 @@ struct
           | TsNone      => NONE
           | TsMask vet  => NONE
 
-    fun subTS (config, ts1, ts2) = 
+    fun subTS (config, ts1, ts2) =
         case (ts1, ts2)
          of (TsNone, _) => true
           | (_, TsNone) => false
           | (_, TsAny) => true
           | (TsAny, _) => false
-          | (_, TsAnyS vs) => 
+          | (_, TsAnyS vs) =>
             (case valueSize (config, ts1)
               of SOME vs' => vs' = vs
                | NONE => false)
@@ -2493,7 +2341,7 @@ struct
           | (TsMask _, _) => false
           | (TsRef, TsRef) => true
 
-    fun eq (ts1, ts2) = 
+    fun eq (ts1, ts2) =
         case (ts1, ts2)
          of (TsAny     , TsAny     ) => true
           | (TsAnyS vs1, TsAnyS vs2) => ValueSize.eq (vs1, vs2)
@@ -2507,12 +2355,12 @@ struct
 
   end
 
-  structure Prims = 
+  structure Prims =
   struct
 
     structure Utils = PrimsUtils
 
-    structure NumericTyp = 
+    structure NumericTyp =
     struct
 
       val tFloat  : Mil.typ = M.TNumeric (MP.NtFloat (MP.FpSingle))
@@ -2523,8 +2371,8 @@ struct
 
       structure TS = TraceabilitySize
 
-      val traceabilitySize = 
-       fn (c, nt) => 
+      val traceabilitySize =
+       fn (c, nt) =>
           (case nt
             of MP.NtRat                     => TS.TsRef
              | MP.NtInteger MP.IpArbitrary  => TS.TsRef
@@ -2544,31 +2392,31 @@ struct
     type t = Mil.typ
 
     (*  case t
-         of M.TAny                       => 
-          | M.TAnyS vs                   => 
-          | M.TPtr                       => 
-          | M.TRef                       => 
-          | M.TBits vs                   => 
-          | M.TNone                      => 
-          | M.TRat                       => 
-          | M.TInteger                   => 
-          | M.TName                      => 
-          | M.TIntegral sz               => 
-          | M.TFloat                     => 
-          | M.TDouble                    => 
-          | M.TViVector et               => 
-          | M.TViMask et                 => 
-          | M.TCode {cc, args, ress}     => 
-          | M.TTuple {pok, fixed, array} => 
+         of M.TAny                       =>
+          | M.TAnyS vs                   =>
+          | M.TPtr                       =>
+          | M.TRef                       =>
+          | M.TBits vs                   =>
+          | M.TNone                      =>
+          | M.TRat                       =>
+          | M.TInteger                   =>
+          | M.TName                      =>
+          | M.TIntegral sz               =>
+          | M.TFloat                     =>
+          | M.TDouble                    =>
+          | M.TViVector et               =>
+          | M.TViMask et                 =>
+          | M.TCode {cc, args, ress}     =>
+          | M.TTuple {fixed, array}      =>
           | M.TCString                   =>
-          | M.TIdx                       => 
-          | M.TContinuation ts           => 
-          | M.TThunk t                   => 
-          | M.TPAny                      => 
-          | M.TClosure {args, ress}      => 
-          | M.TPSum nts                  => 
-          | M.TPType {kind, over}        => 
-          | M.TPRef t                    => 
+          | M.TIdx                       =>
+          | M.TContinuation ts           =>
+          | M.TThunk t                   =>
+          | M.TPAny                      =>
+          | M.TClosure {args, ress}      =>
+          | M.TPSum nts                  =>
+          | M.TPType {kind, over}        =>
+          | M.TPRef t                    =>
      *)
 
     fun traceabilitySize (c, t) =
@@ -2585,7 +2433,7 @@ struct
           | M.TViVector et               => TS.TsBits (Prims.Utils.VectorSize.toValueSize (#vectorSize et))
           | M.TViMask et                 => TS.TsMask et
           | M.TCode {cc, args, ress}     => TS.TsBits (ValueSize.ptrSize c)
-          | M.TTuple {pok, fixed, array} => TS.TsRef
+          | M.TTuple {fixed, array}      => TS.TsRef
           | M.TCString                   => TS.TsBits (ValueSize.ptrSize c)
           | M.TIdx                       => TS.TsRef
           | M.TContinuation ts           => TS.TsBits (ValueSize.ptrSize c)
@@ -2611,7 +2459,7 @@ struct
 
     fun fieldSize (config, t) = Option.map (valueSize (config, t), FieldSize.fromValueSize)
 
-    fun fieldSize' (config, t) = 
+    fun fieldSize' (config, t) =
         (case fieldSize (config, t)
           of SOME vs => vs
            | NONE    => Fail.fail ("MilUtils.Typ", "fieldSize'", "Typ has no size"))
@@ -2649,7 +2497,6 @@ struct
      fun isP t =
          case t
           of M.TName             => true
-           | M.TTuple {pok, ...} => PObjKind.isP pok
            | M.TPAny             => true
            | M.TClosure _        => true
            | M.TSum _            => true
@@ -2671,7 +2518,7 @@ struct
           | M.TViVector et               => true
           | M.TViMask et                 => true
           | M.TCode {cc, args, ress}     => true
-          | M.TTuple {pok, fixed, array} => true
+          | M.TTuple {fixed, array}      => true
           | M.TCString                   => true
           | M.TIdx                       => true
           | M.TContinuation ts           => true
@@ -2685,53 +2532,53 @@ struct
     val compare = Compare.typ
     val eq = Eq.typ
 
-    fun fixedArray (pok, tvs) = M.TTuple {pok = pok, fixed = tvs, array = (M.TNone, M.Vs8, M.FvReadWrite)}
+    fun fixedArray (tvs) = M.TTuple {fixed = tvs, array = (M.TNone, M.Vs8, M.FvReadWrite)}
 
     structure Dec =
     struct
-      val tAny = 
+      val tAny =
        fn t => (case t of M.TAny => SOME () | _ => NONE)
-      val tAnyS = 
+      val tAnyS =
        fn t => (case t of M.TAnyS r => SOME r | _ => NONE)
-      val tNonRefPtr = 
+      val tNonRefPtr =
        fn t => (case t of M.TNonRefPtr => SOME () | _ => NONE)
-      val tRef = 
+      val tRef =
        fn t => (case t of M.TRef => SOME () | _ => NONE)
-      val tBits = 
+      val tBits =
        fn t => (case t of M.TBits r => SOME r | _ => NONE)
-      val tNone = 
+      val tNone =
        fn t => (case t of M.TNone => SOME () | _ => NONE)
-      val tNumeric = 
+      val tNumeric =
        fn t => (case t of M.TNumeric r => SOME r | _ => NONE)
-      val tBoolean = 
+      val tBoolean =
        fn t => (case t of M.TBoolean => SOME () | _ => NONE)
-      val tName = 
+      val tName =
        fn t =>(case t of M.TName => SOME () | _ => NONE)
-      val tViVector = 
+      val tViVector =
        fn t => (case t of M.TViVector r => SOME r | _ => NONE)
-      val tViMask = 
+      val tViMask =
        fn t => (case t of M.TViMask r => SOME r | _ => NONE)
-      val tCode = 
+      val tCode =
        fn t => (case t of M.TCode r => SOME r | _ => NONE)
-      val tTuple = 
+      val tTuple =
        fn t => (case t of M.TTuple r => SOME r | _ => NONE)
       val tCString =
        fn t => (case t of M.TCString => SOME () | _ => NONE)
-      val tIdx = 
+      val tIdx =
        fn t => (case t of M.TIdx => SOME () | _ => NONE)
-      val tContinuation = 
+      val tContinuation =
        fn t => (case t of M.TContinuation r => SOME r | _ => NONE)
-      val tThunk = 
+      val tThunk =
        fn t => (case t of M.TThunk r => SOME r | _ => NONE)
-      val tPAny = 
+      val tPAny =
        fn t => (case t of M.TPAny => SOME () | _ => NONE)
-      val tClosure = 
+      val tClosure =
        fn t => (case t of M.TClosure r => SOME r | _ => NONE)
-      val tSum = 
+      val tSum =
        fn t => (case t of M.TSum r => SOME r | _ => NONE)
-      val tPType = 
+      val tPType =
        fn t => (case t of M.TPType r => SOME r | _ => NONE)
-      val tPRef = 
+      val tPRef =
        fn t => (case t of M.TPRef t => SOME t | _ => NONE)
     end (* structure Dec *)
 
@@ -2820,8 +2667,8 @@ struct
 
     val vsToFs = FieldSize.fromValueSize
 
-    val fromNumericTyp = 
-     fn (c, nt) => 
+    val fromNumericTyp =
+     fn (c, nt) =>
         (case nt
           of MP.NtRat                      => M.FkRef
            | MP.NtInteger MP.IpArbitrary   => M.FkRef
@@ -2832,7 +2679,7 @@ struct
     fun fromTyp' (c, t) =
         (case t
           of M.TAny                       => NONE
-           | M.TAnyS vs                   => NONE 
+           | M.TAnyS vs                   => NONE
            | M.TNonRefPtr                 => SOME (M.FkBits (FieldSize.ptrSize c))
            | M.TRef                       => SOME M.FkRef
            | M.TBits vs                   => SOME (M.FkBits (vsToFs vs))
@@ -2843,7 +2690,7 @@ struct
            | M.TViVector et               => NONE
            | M.TViMask et                 => NONE
            | M.TCode {cc, args, ress}     => SOME (M.FkBits (FieldSize.ptrSize c))
-           | M.TTuple {pok, fixed, array} => SOME M.FkRef
+           | M.TTuple {fixed, array}      => SOME M.FkRef
            | M.TCString                   => SOME (M.FkBits (FieldSize.ptrSize c))
            | M.TIdx                       => SOME M.FkRef
            | M.TContinuation ts           => SOME (M.FkBits (FieldSize.ptrSize c))
@@ -2859,7 +2706,7 @@ struct
           of SOME fk => fk
            | NONE => Fail.fail ("MilUtils.FieldKind", "fromTyp", "No field kind for typ"))
 
-    fun toTyp fk = 
+    fun toTyp fk =
         (case fk
           of M.FkRef     => M.TRef
            | M.FkBits fs => M.TBits (FieldSize.toValueSize fs)
@@ -2897,9 +2744,9 @@ struct
     val unalignedRO : FieldKind.t -> t = fn k => M.FD {kind = k, alignment = M.Vs8, var = M.FvReadOnly}
     val unalignedRW : FieldKind.t -> t = fn k => M.FD {kind = k, alignment = M.Vs8, var = M.FvReadWrite}
     (* Aligned on max of natural boundary and specified alignment *)
-    val alignedRO : FieldKind.t * ValueSize.t -> t = 
+    val alignedRO : FieldKind.t * ValueSize.t -> t =
      fn (k, a) => M.FD {kind = k, alignment = a, var = M.FvReadOnly}
-    val alignedRW : FieldKind.t * ValueSize.t -> t = 
+    val alignedRW : FieldKind.t * ValueSize.t -> t =
      fn (k, a) => M.FD {kind = k, alignment = a, var = M.FvReadWrite}
 
   end
@@ -2941,7 +2788,6 @@ struct
 
     type t = Mil.metaDataDescriptor
 
-    fun pok (M.MDD {pok = p, ...}) = p
     fun fixedFields (M.MDD {fixed, ...}) = fixed
     fun array (M.MDD {array = a, ...}) = a
     fun pinned (M.MDD {pinned = p, ...}) = p
@@ -2989,7 +2835,6 @@ struct
           | M.CFloat _        => true
           | M.CDouble _       => true
           | M.CViMask _       => true
-          | M.CPok _          => true
           | M.CRef _          => true
           | M.COptionSetEmpty => false
           | M.CTypePH         => false
@@ -3003,24 +2848,8 @@ struct
                               val compare = compare
                             end)
 
-    val pObjKind = 
-     fn c => 
-        (case c
-          of M.CBoolean _      => NONE
-           | M.CRat _          => NONE
-           | M.CInteger _      => NONE
-           | M.CName _         => SOME M.PokName
-           | M.CIntegral _     => NONE
-           | M.CFloat _        => NONE
-           | M.CDouble _       => NONE
-           | M.CViMask _       => NONE
-           | M.CPok _          => NONE
-           | M.CRef _          => NONE
-           | M.COptionSetEmpty => SOME M.PokOptionSet
-           | M.CTypePH         => SOME M.PokType)
-
-    val typOf = 
-     fn (config, c) => 
+    val typOf =
+     fn (config, c) =>
         case c
          of M.CRat _          => Prims.NumericTyp.tRat
           | M.CInteger _      => Prims.NumericTyp.tIntegerArbitrary
@@ -3030,39 +2859,36 @@ struct
           | M.CFloat _        => Prims.NumericTyp.tFloat
           | M.CDouble _       => Prims.NumericTyp.tDouble
           | M.CViMask x       => M.TViMask (#descriptor x)
-          | M.CPok _          => Uintp.t config
           | M.COptionSetEmpty => M.TPType {kind = M.TkE, over = M.TNone}
           | M.CRef _          => M.TRef
           | M.CTypePH         => M.TPType {kind = M.TkI, over = M.TNone}
 
-    val fkOf = 
+    val fkOf =
      fn (config, c) => FieldKind.fromTyp (config, typOf (config, c))
 
     structure Dec =
     struct
-      val cBoolean  = 
+      val cBoolean  =
        fn c => (case c of M.CBoolean b => SOME b | _ => NONE)
-      val cRat = 
+      val cRat =
        fn c => (case c of M.CRat r => SOME r | _ => NONE)
-      val cInteger = 
+      val cInteger =
        fn c => (case c of M.CInteger r => SOME r | _ => NONE)
-      val cName = 
+      val cName =
        fn c => (case c of M.CName r => SOME r | _ => NONE)
-      val cIntegral = 
+      val cIntegral =
        fn c => (case c of M.CIntegral r => SOME r | _ => NONE)
-      val cFloat = 
+      val cFloat =
        fn c => (case c of M.CFloat r => SOME r | _ => NONE)
-      val cDouble = 
+      val cDouble =
        fn c => (case c of M.CDouble r => SOME r | _ => NONE)
-      val cViMask = 
+      val cViMask =
        fn c => (case c of M.CViMask r => SOME r | _ => NONE)
-      val cPok = 
-       fn c => (case c of M.CPok r => SOME r | _ => NONE)
-      val cRef = 
+      val cRef =
        fn c => (case c of M.CRef i => SOME i | _ => NONE)
-      val cOptionSetEmpty = 
+      val cOptionSetEmpty =
        fn c => (case c of M.COptionSetEmpty => SOME () | _ => NONE)
-      val cTypePH = 
+      val cTypePH =
        fn c => (case c of M.CTypePH => SOME () | _ => NONE)
     end (* structure Dec *)
 
@@ -3075,12 +2901,6 @@ struct
 
     val compare = Compare.simple
     val eq = Eq.simple
-
-    val pObjKind = 
-     fn s => 
-        (case s
-          of M.SConstant c => Constant.pObjKind c
-           | M.SVariable v => NONE)
 
     structure Dec =
     struct
@@ -3104,24 +2924,24 @@ struct
 
   end
 
-  structure TupleBase = 
+  structure TupleBase =
   struct
     type t = Mil.tupleBase
     val compare = Compare.tupleBase
     val eq      = Eq.tupleBase
-    structure Dec = 
+    structure Dec =
     struct
       val tbScalar = fn tu => (case tu of Mil.TbScalar => SOME () | _ => NONE)
       val tbVector = fn tu => (case tu of Mil.TbVector => SOME () | _ => NONE)
     end (* structure Dec *)
   end (* structure TupleBase *)
 
-  structure VectorIndexKind = 
+  structure VectorIndexKind =
   struct
     type t = Mil.vectorIndexKind
     val compare = Compare.vectorIndexKind
     val eq      = Eq.vectorIndexKind
-    structure Dec = 
+    structure Dec =
     struct
       val vikStrided = fn ve => (case ve of Mil.VikStrided r => SOME r | _ => NONE)
       val vikVector  = fn ve => (case ve of Mil.VikVector => SOME () | _ => NONE)
@@ -3194,7 +3014,7 @@ struct
             | M.FiVectorVariable r => array ()
         end
 
-    structure Dec = 
+    structure Dec =
     struct
       val fiFixed          = fn fi => (case fi of Mil.FiFixed r => SOME r | _ => NONE)
       val fiVariable       = fn fi => (case fi of Mil.FiVariable r => SOME r | _ => NONE)
@@ -3293,7 +3113,6 @@ struct
           | M.RhsTupleInited _    => true
           | M.RhsIdxGet _         => true
           | M.RhsCont _           => true
-          | M.RhsObjectGetKind _  => true
           | M.RhsThunkMk _        => true
           | M.RhsThunkInit _      => true
           | M.RhsThunkGetFv _     => true
@@ -3330,34 +3149,34 @@ struct
       fun tuple {mdDesc, inits} =
           let
             val fx = T
-            val fx = 
+            val fx =
                 if MetaDataDescriptor.hasArray mdDesc orelse
                    MetaDataDescriptor.numFixed mdDesc <> Vector.length inits then
                   union (fx, InitGenS)
-                else 
+                else
                   fx
-            val fx = 
+            val fx =
                 if MetaDataDescriptor.immutable mdDesc then
                   fx
-                else 
+                else
                   union (fx, HeapGenS)
           in fx
           end
 
       fun tupleSub tf =
           if FieldDescriptor.immutable (TupleField.fieldDescriptor tf) then
-            InitReadS 
-          else 
+            InitReadS
+          else
             readS
 
       fun tupleSet {tupField, ofVal} =
           if FieldDescriptor.immutable (TupleField.fieldDescriptor tupField) then
             InitWriteS
-          else 
+          else
             writeS
 
       (* Note that evals cannot be re-ordered with getVals, and hence
-       * they need to be assigned effects that prevent re-ordering 
+       * they need to be assigned effects that prevent re-ordering
        *)
       fun thunkInit {thunk, ...} =
           if Option.isSome thunk then InitWriteS else genS
@@ -3378,7 +3197,6 @@ struct
           | M.RhsTupleInited _        => InitWriteS
           | M.RhsIdxGet _             => InitReadS
           | M.RhsCont _               => T
-          | M.RhsObjectGetKind _      => T
           | M.RhsThunkMk _            => genS
           | M.RhsThunkInit x          => thunkInit x
           | M.RhsThunkGetFv _         => InitReadS
@@ -3398,20 +3216,20 @@ struct
           | M.RhsSumGetTag _          => T
     end
 
-    val getInit = 
-     fn rhs => 
-        (case rhs 
-          of M.RhsTupleSet {tupField = M.TF {tup, tupDesc, ...}, ...} => 
+    val getInit =
+     fn rhs =>
+        (case rhs
+          of M.RhsTupleSet {tupField = M.TF {tup, tupDesc, ...}, ...} =>
              if TupleDescriptor.immutable tupDesc then SOME tup else NONE
-           | M.RhsTupleInited {tup, mdDesc} => 
+           | M.RhsTupleInited {tup, mdDesc} =>
              if MetaDataDescriptor.immutable mdDesc then SOME tup else NONE
            | M.RhsThunkInit {thunk, ...} => thunk
            | M.RhsThunkValue {thunk, ...} => thunk
            | M.RhsClosureInit {cls, ...} => cls
            | _ => NONE)
 
-    val isHeapAllocation = 
-     fn rhs => 
+    val isHeapAllocation =
+     fn rhs =>
         case rhs
          of M.RhsTuple _       => true
           | M.RhsThunkMk _     => true
@@ -3426,42 +3244,10 @@ struct
     val isInit = isSome o getInit
 
     val isInitOf =
-     fn (rhs, v) => 
+     fn (rhs, v) =>
         (case getInit rhs
           of SOME v' => v = v'
            | NONE => false)
-
-    val pObjKind =
-     fn rhs => 
-        (case rhs 
-          of M.RhsSimple s             => Simple.pObjKind s
-           | M.RhsPrim _               => NONE (* XXX anything else here?  -leaf *)
-           | M.RhsTuple {mdDesc, ...}  => SOME (MetaDataDescriptor.pok mdDesc)
-           | M.RhsTupleSub _           => NONE
-           | M.RhsTupleSet _           => NONE
-           | M.RhsTupleCAS _           => NONE
-           | M.RhsTupleWait _          => NONE
-           | M.RhsTupleInited _        => NONE
-           | M.RhsIdxGet _             => NONE
-           | M.RhsCont _               => NONE
-           | M.RhsObjectGetKind _      => NONE
-           | M.RhsThunkMk _            => SOME M.PokCell 
-           | M.RhsThunkInit _          => SOME M.PokCell 
-           | M.RhsThunkGetFv _         => NONE
-           | M.RhsThunkValue _         => SOME M.PokCell 
-           | M.RhsThunkGetValue _      => NONE
-           | M.RhsThunkSpawn _         => NONE
-           | M.RhsClosureMk _          => SOME M.PokFunction
-           | M.RhsClosureInit x        => SOME M.PokFunction
-           | M.RhsClosureGetFv _       => NONE
-           | M.RhsPSetNew _            => SOME M.PokOptionSet
-           | M.RhsPSetGet _            => NONE
-           | M.RhsPSetCond _           => SOME M.PokOptionSet
-           | M.RhsPSetQuery _          => NONE
-           | M.RhsEnum _               => SOME M.PokTagged
-           | M.RhsSum _                => SOME M.PokTagged
-           | M.RhsSumProj _            => NONE
-           | M.RhsSumGetTag _          => NONE)
 
     fun arity (config, rhs) =
         case rhs
@@ -3475,7 +3261,6 @@ struct
           | M.RhsTupleInited _                     => 0
           | M.RhsIdxGet _                          => 1
           | M.RhsCont _                            => 1
-          | M.RhsObjectGetKind _                   => 1
           | M.RhsThunkMk _                         => 1
           | M.RhsThunkInit {thunk = NONE, ...}     => 1
           | M.RhsThunkInit {thunk = SOME _, ...}   => 0
@@ -3499,61 +3284,59 @@ struct
 
     structure Dec =
     struct
-      val rhsSimple = 
+      val rhsSimple =
        fn rhs => (case rhs of M.RhsSimple r => SOME r | _ => NONE)
-      val rhsPrim = 
+      val rhsPrim =
        fn rhs => (case rhs of M.RhsPrim r => SOME r | _ => NONE)
-      val rhsTuple = 
+      val rhsTuple =
        fn rhs => (case rhs of M.RhsTuple r => SOME r | _ => NONE)
-      val rhsTupleSub = 
+      val rhsTupleSub =
        fn rhs => (case rhs of M.RhsTupleSub r => SOME r | _ => NONE)
-      val rhsTupleSet = 
+      val rhsTupleSet =
        fn rhs => (case rhs of M.RhsTupleSet r => SOME r | _ => NONE)
-      val rhsTupleCas = 
+      val rhsTupleCas =
        fn rhs => (case rhs of M.RhsTupleCAS r => SOME r | _ => NONE)
-      val rhsTupleWait = 
+      val rhsTupleWait =
        fn rhs => (case rhs of M.RhsTupleWait r => SOME r | _ => NONE)
-      val rhsTupleInited = 
+      val rhsTupleInited =
        fn rhs => (case rhs of M.RhsTupleInited r => SOME r | _ => NONE)
-      val rhsIdxGet = 
+      val rhsIdxGet =
        fn rhs => (case rhs of M.RhsIdxGet r => SOME r | _ => NONE)
-      val rhsCont = 
+      val rhsCont =
        fn rhs => (case rhs of M.RhsCont r => SOME r | _ => NONE)
-      val rhsObjectGetKind = 
-       fn rhs => (case rhs of M.RhsObjectGetKind r => SOME r | _ => NONE)
-      val rhsThunkMk = 
+      val rhsThunkMk =
        fn rhs => (case rhs of M.RhsThunkMk r => SOME r | _ => NONE)
-      val rhsThunkInit = 
+      val rhsThunkInit =
        fn rhs => (case rhs of M.RhsThunkInit r => SOME r | _ => NONE)
-      val rhsThunkGetFv = 
+      val rhsThunkGetFv =
        fn rhs => (case rhs of M.RhsThunkGetFv r => SOME r | _ => NONE)
-      val rhsThunkValue = 
+      val rhsThunkValue =
        fn rhs => (case rhs of M.RhsThunkValue r => SOME r | _ => NONE)
-      val rhsThunkGetValue = 
+      val rhsThunkGetValue =
        fn rhs => (case rhs of M.RhsThunkGetValue r => SOME r | _ => NONE)
-      val rhsThunkSpawn = 
+      val rhsThunkSpawn =
        fn rhs => (case rhs of M.RhsThunkSpawn r => SOME r | _ => NONE)
-      val rhsClosureMk = 
+      val rhsClosureMk =
        fn rhs => (case rhs of M.RhsClosureMk r => SOME r | _ => NONE)
-      val rhsClosureInit = 
+      val rhsClosureInit =
        fn rhs => (case rhs of M.RhsClosureInit r => SOME r | _ => NONE)
-      val rhsClosureGetFv = 
+      val rhsClosureGetFv =
        fn rhs => (case rhs of M.RhsClosureGetFv r => SOME r | _ => NONE)
-      val rhsPSetNew = 
+      val rhsPSetNew =
        fn rhs => (case rhs of M.RhsPSetNew r => SOME r | _ => NONE)
-      val rhsPSetGet = 
+      val rhsPSetGet =
        fn rhs => (case rhs of M.RhsPSetGet r => SOME r | _ => NONE)
-      val rhsPSetCond = 
+      val rhsPSetCond =
        fn rhs => (case rhs of M.RhsPSetCond r => SOME r | _ => NONE)
-      val rhsPSetQuery = 
+      val rhsPSetQuery =
        fn rhs => (case rhs of M.RhsPSetQuery r => SOME r | _ => NONE)
-      val rhsEnum = 
+      val rhsEnum =
        fn rhs => (case rhs of M.RhsEnum r => SOME r | _ => NONE)
-      val rhsSum = 
+      val rhsSum =
        fn rhs => (case rhs of M.RhsSum r => SOME r | _ => NONE)
-      val rhsSumProj = 
+      val rhsSumProj =
        fn rhs => (case rhs of M.RhsSumProj r => SOME r | _ => NONE)
-      val rhsSumGetTag = 
+      val rhsSumGetTag =
        fn rhs => (case rhs of M.RhsSumGetTag r => SOME r | _ => NONE)
     end (* structure Dec *)
 
@@ -3570,7 +3353,7 @@ struct
 
     fun dests (M.I {dests, ...}) = dests
 
-    fun dest (M.I {dests, ...}) = 
+    fun dest (M.I {dests, ...}) =
         (case Utils.Option.fromVector dests
           of SOME opt => opt
            | NONE => Fail.fail ("MilUtils.Instruction", "dest", "More than one destination"))
@@ -3591,10 +3374,8 @@ struct
 
     val isInit = Rhs.isInit o rhs
 
-    val isInitOf = 
+    val isInitOf =
      fn (i, v) => Rhs.isInitOf (rhs i, v)
-
-    val pObjKind = Rhs.pObjKind o rhs
 
   end
 
@@ -3617,7 +3398,7 @@ struct
 
     fun mkNoArgs b = mkArgs (b, Vector.new0())
 
-    structure Dec = 
+    structure Dec =
     struct
       val t = fn (M.T args) => args
     end
@@ -3631,7 +3412,7 @@ struct
     val eq : (t * t -> bool) = Eq.selector
     structure Dec =
     struct
-      val seSum      : t -> Mil.fieldKind option = 
+      val seSum      : t -> Mil.fieldKind option =
           fn s => case s of M.SeSum fk => SOME fk | _ => NONE
       val seConstant : t -> unit option =
           fn s => case s of M.SeConstant => SOME () | _ => NONE
@@ -3663,7 +3444,7 @@ struct
     val compare = Compare.call
     val eq = Eq.call
 
-    val cls = 
+    val cls =
      fn call =>
         (case call
           of M.CCode _ => NONE
@@ -3671,26 +3452,26 @@ struct
            | M.CDirectClosure {cls, ...} => SOME cls)
 
     val code =
-     fn call => 
+     fn call =>
         (case call
           of M.CCode {ptr, ...} => SOME ptr
            | M.CClosure _ => NONE
            | M.CDirectClosure {code, ...} => SOME code)
 
-    val codes = 
-     fn call => 
+    val codes =
+     fn call =>
         (case call
           of M.CCode {code, ...} => code
            | M.CClosure {code, ...} => code
            | M.CDirectClosure {cls, code} => {possible = VS.singleton code, exhaustive = true})
 
-    structure Dec = 
+    structure Dec =
     struct
-      val cCode = 
+      val cCode =
        fn c => (case c of M.CCode r => SOME r | _ => NONE)
-      val cClosure = 
+      val cClosure =
        fn c => (case c of M.CClosure r => SOME r | _ => NONE)
-      val cDirectClosure = 
+      val cDirectClosure =
        fn c => (case c of M.CDirectClosure r => SOME r | _ => NONE)
     end (* structure Dec *)
 
@@ -3704,20 +3485,20 @@ struct
     val compare = Compare.eval
     val eq = Eq.eval
 
-    val thunk = 
-     fn eval => 
+    val thunk =
+     fn eval =>
         (case eval
           of M.EThunk {thunk, ...} => thunk
            | M.EDirectThunk {thunk, ...} => thunk)
 
-    val value = 
-     fn eval => 
+    val value =
+     fn eval =>
         (case eval
           of M.EThunk {value, ...} => value
            | M.EDirectThunk {value, ...} => value)
 
-    val codes = 
-     fn eval => 
+    val codes =
+     fn eval =>
         (case eval
           of M.EThunk {thunk, value, code} => code
            | M.EDirectThunk {thunk, value, code} => {possible = VS.singleton code, exhaustive = true})
@@ -3741,10 +3522,10 @@ struct
     type t = Mil.interProc
 
     val compare = Compare.interProc
-    val eq = Eq.interProc 
+    val eq = Eq.interProc
 
     val codes =
-     fn i => 
+     fn i =>
         (case i
           of M.IpCall {call, ...} => Call.codes call
            | M.IpEval {eval, ...} => Eval.codes eval)
@@ -3839,9 +3620,9 @@ struct
 
     datatype t = OE of {kind : kind, dest : dest}
 
-    val target = 
-        fn (OE {kind, dest}) => 
-           (case dest 
+    val target =
+        fn (OE {kind, dest}) =>
+           (case dest
              of OedBlock l => SOME l
               | OedExit => NONE)
 
@@ -3876,7 +3657,7 @@ struct
     val compare = Compare.transfer
     val eq = Eq.transfer
 
-    local 
+    local
 
       open OutEdge
 
@@ -3969,7 +3750,7 @@ struct
         Try.try
           (fn () =>
               let
-                val (on, cases) = 
+                val (on, cases) =
                     (case t
                       of M.TCase {select = M.SeConstant, on, cases, default = NONE} => (on, cases)
                        | _                                                          => Try.fail ())
@@ -3979,17 +3760,17 @@ struct
                 val b1 = Try.<@ Constant.Dec.cBoolean c1
                 val b2 = Try.<@ Constant.Dec.cBoolean c2
                 val (tt, tf) =
-                    if not b1 andalso b2 then (t2, t1) else 
-                    if b1 andalso not b2 then (t1, t2) else 
+                    if not b1 andalso b2 then (t2, t1) else
+                    if b1 andalso not b2 then (t1, t2) else
                     Try.fail ()
               in {on = on, trueBranch = tt, falseBranch = tf}
               end)
 
-    val mapOverTargets = 
-     fn (t, f) => 
+    val mapOverTargets =
+     fn (t, f) =>
         let
-          val doCase = 
-           fn {select, on, cases, default} => 
+          val doCase =
+           fn {select, on, cases, default} =>
               let
                 val cases = Vector.map (cases, (fn (a, tg) => (a, f tg)))
                 val default = Option.map (default, f)
@@ -4005,11 +3786,11 @@ struct
             | M.THalt _      => t
         end
 
-    val isIntraProcedural = 
-     fn t => 
+    val isIntraProcedural =
+     fn t =>
         let
-          val doCase = 
-           fn {select, on, cases, default} => 
+          val doCase =
+           fn {select, on, cases, default} =>
               let
                 val tgs = Vector.map (cases, #2)
               in
@@ -4028,17 +3809,17 @@ struct
         end
 
     (* Note that evals cannot be re-ordered with getVals, and hence
-     * these two need to be assigned effects that prevent re-ordering 
+     * these two need to be assigned effects that prevent re-ordering
      *)
-    val fx  = 
-     fn (c, t) => 
+    val fx  =
+     fn (c, t) =>
         let
           val T = Effect.Total
-          val fx = 
+          val fx =
               case t
                of M.TGoto _                      => T
                 | M.TReturn _                    => T
-                | M.TInterProc {callee, fx, ...} => 
+                | M.TInterProc {callee, fx, ...} =>
                   (case callee
                     of M.IpEval _ => Effect.union (fx, Effect.fromList [Effect.InitRead, Effect.InitWrite])
                      | M.IpCall _ => fx)
@@ -4059,7 +3840,7 @@ struct
 
     structure Dec =
     struct
-      val tGoto = 
+      val tGoto =
        fn t => (case t of M.TGoto r => SOME r | _ => NONE)
       val tCase =
          fn t => (case t of M.TCase r => SOME r | _ => NONE)
@@ -4084,7 +3865,7 @@ struct
     val ((setParameters, parameters),
          (setInstructions, instructions),
          (setTransfer, transfer)
-        ) = 
+        ) =
         let
           val r2t = fn (M.B {parameters, instructions, transfer}) =>
                        (parameters, instructions, transfer)
@@ -4099,7 +3880,7 @@ struct
     fun numInstructions b = Vector.length (instructions b)
     fun instruction (b, idx) = Vector.sub (instructions b, idx)
 
-    fun isCore b = 
+    fun isCore b =
         Vector.forall (instructions b, Instruction.isCore) andalso
         Transfer.isCore (transfer b)
 
@@ -4122,24 +3903,24 @@ struct
                 val b1 = Try.<@ Constant.Dec.cBoolean c1
                 val b2 = Try.<@ Constant.Dec.cBoolean c2
                 val (tt, tf) =
-                    if not b1 andalso b2 then (#block t2, #block t1) else 
-                    if b1 andalso not b2 then (#block t1, #block t2) else 
+                    if not b1 andalso b2 then (#block t2, #block t1) else
+                    if b1 andalso not b2 then (#block t1, #block t2) else
                     Try.fail ()
 
               in (tt, tf)
               end)
 
-    val getBoolSuccessors : Mil.block -> (Mil.label * Mil.label) option = 
-     fn (M.B {transfer, ...}) => 
+    val getBoolSuccessors : Mil.block -> (Mil.label * Mil.label) option =
+     fn (M.B {transfer, ...}) =>
         case transfer
          of Mil.TCase {select = M.SeConstant, on, cases, default = NONE} =>  getBoolTargets cases
           | _ => NONE
 
     structure Map =
     struct
-      val lift = 
-       fn (set, get) => 
-          fn map => 
+      val lift =
+       fn (set, get) =>
+          fn map =>
              fn (t, f) => set (t, map (get t, f))
       val parameters   = lift (setParameters, parameters) (fn (p, f) => f p)
       val instructions = lift (setInstructions, instructions) Vector.map
@@ -4155,7 +3936,7 @@ struct
 
     val ((setEntry, entry),
          (setBlocks, blocks)
-        ) = 
+        ) =
         let
           val r2t = fn (M.CB {entry, blocks}) =>
                        (entry, blocks)
@@ -4171,18 +3952,18 @@ struct
     fun numBlocks cb = LD.size (blocks cb)
     fun labels cb = LS.fromList (LD.domain (blocks cb))
 
-    fun conts cb = 
+    fun conts cb =
         let
-          val doInstruction = 
-           fn (i, ls) => 
-              (case Instruction.rhs i 
+          val doInstruction =
+           fn (i, ls) =>
+              (case Instruction.rhs i
                 of M.RhsCont l => M.LS.insert (ls, l)
                  | _           => ls)
 
           val doBlock =
            fn (M.B {instructions, ...}, ls) => Vector.fold (instructions, ls, doInstruction)
 
-          val doOne = 
+          val doOne =
            fn (l, b, ls) => doBlock (b, ls)
 
         in LD.fold (blocks cb, M.LS.empty, doOne)
@@ -4205,23 +3986,23 @@ struct
           val seen = ref LS.empty
           fun visited i = LS.member (!seen, i)
           fun see i = seen := LS.insert (!seen, i)
-          fun finish i = 
+          fun finish i =
               let
                 val () = Fail.assert ("MilUtils.CodeBody", "listRPO", "Double visited a block",
                                       (fn () => not (visited i)))
               in see i
               end
-          fun checkFinished (i, _, acc) = 
+          fun checkFinished (i, _, acc) =
               if visited i then
                 acc
-              else 
+              else
                 let
                   val msg = "Unreachable node " ^ I.labelString i ^ " in listRPO: appending"
                   val () = Chat.warn1 (config, msg)
                   val acc = acc @ [(i, block (cb, i))]
                 in acc
                 end
-          fun list i = 
+          fun list i =
               if (visited i) then
                 []
               else
@@ -4254,7 +4035,7 @@ struct
           val seen = ref LS.empty
           fun visited i = LS.member (!seen, i)
           fun see i = seen := LS.insert (!seen, i)
-          fun build i = 
+          fun build i =
               if visited i then
                 NONE
               else
@@ -4276,8 +4057,8 @@ struct
 
     structure Map =
     struct
-      val lift = 
-       fn map => 
+      val lift =
+       fn map =>
           fn (t, f) => setBlocks (t, Mil.LD.map (blocks t, fn (l, b) => map (b, f)))
       val blocks       = lift (fn (b, f) => f b)
       val parameters   = lift Block.Map.parameters
@@ -4298,12 +4079,12 @@ struct
          (setCc, cc),
          (setArgs, args),
          (setRtyps, rtyps),
-         (setBody, body)) = 
+         (setBody, body)) =
         let
           val pFr = fn (M.F {fx, escapes, recursive, cc, args, rtyps, body}) =>
                        (fx, escapes, recursive, cc, args, rtyps, body)
           val rFp = fn (fx, escapes, recursive, cc, args, rtyps, body) =>
-                       M.F {fx = fx, escapes = escapes, recursive = recursive, 
+                       M.F {fx = fx, escapes = escapes, recursive = recursive,
                             cc = cc, args = args, rtyps = rtyps, body = body}
         in FunctionalUpdate.mk7 (pFr, rFp)
         end
@@ -4337,8 +4118,8 @@ struct
 
     structure Map =
     struct
-      val lift = 
-       fn map => 
+      val lift =
+       fn map =>
           fn (t, f) => setBody (t, map (body t, f))
       val codeBodies   = lift (fn (cb, f) => f cb)
       val blocks       = lift CodeBody.Map.blocks
@@ -4370,25 +4151,8 @@ struct
           | M.GPSet _       => false
 
     val compare = Compare.global
-  
-    val eq = Eq.global
-             
-    val pObjKind =
-     fn g => 
-        (case g
-          of M.GCode f              => NONE
-           | M.GErrorVal _          => NONE
-           | M.GIdx _               => NONE
-           | M.GTuple {mdDesc, ...} => SOME (MetaDataDescriptor.pok mdDesc)
-           | M.GRat _               => NONE
-           | M.GInteger _           => NONE
-           | M.GCString _           => NONE
-           | M.GThunkValue _        => SOME M.PokCell 
-           | M.GSimple s            => Simple.pObjKind s
-           | M.GClosure _           => SOME M.PokFunction
-           | M.GSum _               => SOME M.PokTagged
-           | M.GPSet _              => SOME M.PokOptionSet)
 
+    val eq = Eq.global
 
     val immutable =
      fn g =>
@@ -4413,7 +4177,7 @@ struct
     struct
       val gCode =
        fn g => (case g of M.GCode r => SOME r | _ => NONE)
-      val gErrorVal = 
+      val gErrorVal =
        fn g => (case g of M.GErrorVal r => SOME r | _ => NONE)
       val gIdx =
        fn g => (case g of M.GIdx r => SOME r | _ => NONE)
@@ -4439,10 +4203,10 @@ struct
 
     structure Map =
     struct
-      val lift = 
-       fn map => 
+      val lift =
+       fn map =>
           fn (t, f) =>
-             (case t 
+             (case t
                of M.GCode c => M.GCode (map (c, f))
                 | g         => g)
       val codes        = lift (fn (c, f) => f c)
@@ -4471,8 +4235,8 @@ struct
 
     structure Map =
     struct
-      val lift = 
-       fn map => 
+      val lift =
+       fn map =>
           fn (t, f) => Mil.VD.map (t, fn (v, g) => map (g, f))
       val globals      = lift (fn (g, f) => f g)
       val codes        = lift Global.Map.codes
@@ -4628,20 +4392,20 @@ struct
          (setExterns, externs),
          (setGlobals, globals),
          (setSymbolTable, symbolTable),
-         (setEntry, entry)) = 
+         (setEntry, entry)) =
         let
-          val r2t = fn M.P {includes, externs, globals, symbolTable, entry} => 
+          val r2t = fn M.P {includes, externs, globals, symbolTable, entry} =>
                        (includes, externs, globals, symbolTable, entry)
-          val t2r = fn (includes, externs, globals, symbolTable, entry) => 
-                       M.P {includes = includes, externs = externs, globals = globals, 
-                            symbolTable = symbolTable, entry = entry} 
-                       
+          val t2r = fn (includes, externs, globals, symbolTable, entry) =>
+                       M.P {includes = includes, externs = externs, globals = globals,
+                            symbolTable = symbolTable, entry = entry}
+
         in FunctionalUpdate.mk5 (r2t, t2r)
         end
 
     fun incl (p, i) = Vector.sub (includes p, i)
 
-    fun externVars p = 
+    fun externVars p =
         let
           val s1 = Vector.fold (externs p,  VS.empty, fn (i, evs) => VS.union (ExternGroup.externs i, evs))
           val s2 = Vector.fold (includes p, s1, fn (i, evs) => VS.union (IncludeFile.externs i, evs))
@@ -4654,8 +4418,8 @@ struct
 
     structure Map =
     struct
-      val lift = 
-       fn map => 
+      val lift =
+       fn map =>
           fn (t, f) => setGlobals (t, map (globals t, f))
       val globals      = lift Globals.Map.globals
       val codeBodies   = lift Globals.Map.codeBodies
@@ -4681,8 +4445,8 @@ struct
 
     fun toBool (config, c) = Constant.Dec.cBoolean c
 
-    fun ifT (c, opnd, {trueT, falseT}) = 
-        M.TCase {select = M.SeConstant, on = opnd, 
+    fun ifT (c, opnd, {trueT, falseT}) =
+        M.TCase {select = M.SeConstant, on = opnd,
                  cases = Vector.new2 ((T c, trueT), (F c, falseT)),
                  default = NONE}
   end
@@ -4690,7 +4454,7 @@ struct
   structure Boxed =
   struct
 
-    fun t (pok, ofTyp) = Typ.fixedArray (pok, Vector.new1 (ofTyp, M.Vs8, M.FvReadOnly))
+    fun t (ofTyp) = Typ.fixedArray (Vector.new1 (ofTyp, M.Vs8, M.FvReadOnly))
 
     fun td fk =
         let
@@ -4699,18 +4463,18 @@ struct
           M.TD {fixed = Vector.new1 fd, array = NONE}
         end
 
-    fun mdd (c, pok, fk) =
+    fun mdd (c, fk) =
         let
           val fd = FieldDescriptor.unalignedRO fk
         in
-          M.MDD {pok = pok, pinned = false, fixed = Vector.new1 fd, array = NONE}
+          M.MDD {pinned = false, fixed = Vector.new1 fd, array = NONE}
         end
 
-    fun box (c, pok, fk, opnd) =
-        M.RhsTuple {mdDesc = mdd (c, pok, fk), inits = Vector.new1 opnd}
+    fun box (c, fk, opnd) =
+        M.RhsTuple {mdDesc = mdd (c, fk), inits = Vector.new1 opnd}
 
-    fun boxGlobal (c, pok, fk, s) =
-        M.GTuple {mdDesc = mdd (c, pok, fk), inits = Vector.new1 s}
+    fun boxGlobal (c, fk, s) =
+        M.GTuple {mdDesc = mdd (c, fk), inits = Vector.new1 s}
 
     val ofValIndex = 0
 
@@ -4724,65 +4488,65 @@ struct
   structure Tuple =
   struct
 
-    fun typ (pok, tvs) = Typ.fixedArray (pok, tvs)
+    fun typ (tvs) = Typ.fixedArray tvs
 
     val td =
      fn fds => M.TD {fixed = fds, array = NONE}
 
-    val mdd = 
-     fn (pok, fds) => M.MDD {pok = pok, pinned = false, fixed = fds, array = NONE}
+    val mdd =
+     fn (fds) => M.MDD {pinned = false, fixed = fds, array = NONE}
 
-    val mddImmutable = 
-     fn fks => mdd (M.PokNone, Vector.map (fks, FieldDescriptor.unalignedRO))
-    val mddImmutableTyps = 
+    val mddImmutable =
+     fn fks => mdd (Vector.map (fks, FieldDescriptor.unalignedRO))
+    val mddImmutableTyps =
      fn (config, typs) => mddImmutable (Vector.map (typs, fn t => FieldKind.fromTyp (config, t)))
-    val mddImmutableRefs = 
+    val mddImmutableRefs =
      fn i => mddImmutable (Vector.new (i, M.FkRef))
-    val mddImmutableBits = 
+    val mddImmutableBits =
      fn (i, fs) => mddImmutable (Vector.new (i, M.FkBits fs))
 
     val tdImmutable = MetaDataDescriptor.toTupleDescriptor o mddImmutable
     val tdImmutableRefs = MetaDataDescriptor.toTupleDescriptor o mddImmutableRefs
     val tdImmutableBits = MetaDataDescriptor.toTupleDescriptor o mddImmutableBits
 
-    val new = 
+    val new =
      fn (vt, inits) => M.RhsTuple {mdDesc = vt, inits = inits}
 
-    val proj = 
+    val proj =
      fn (td, arr, idx) =>
         M.RhsTupleSub (M.TF {tupDesc = td,
                              tup = arr,
                              field = M.FiFixed idx})
 
-    val init = 
+    val init =
      fn (td, arr, idx, ofVal) =>
         M.RhsTupleSet {tupField = M.TF {tupDesc = td,
                                         tup = arr,
                                         field = M.FiFixed idx},
                        ofVal = ofVal}
-        
-    val inited = 
+
+    val inited =
      fn (vt, arr) =>
         M.RhsTupleInited {mdDesc = vt, tup = arr}
 
   end (* structure Tuple *)
 
-  (* This defines an abstraction of variable length arrays in MIL.  
+  (* This defines an abstraction of variable length arrays in MIL.
    * These arrays always have length fields (even if created via
    * the newFixed constructor *)
   structure OrdinalArray =
   struct
 
-    fun fixedTyp (c, pok, ts) =
+    fun fixedTyp (c, ts) =
         let
           fun addVar t = (t, M.Vs8, M.FvReadOnly)
           val tvs = Vector.map (Utils.Vector.cons (Uintp.t c, ts), addVar)
         in
-          Typ.fixedArray (pok, tvs)
+          Typ.fixedArray tvs
         end
 
-    fun varTyp (c, pok, t) =
-        M.TTuple {pok = pok, fixed = Vector.new1 (Uintp.t c, M.Vs8, M.FvReadOnly), array = (t, M.Vs8, M.FvReadOnly)}
+    fun varTyp (c, t) =
+        M.TTuple {fixed = Vector.new1 (Uintp.t c, M.Vs8, M.FvReadOnly), array = (t, M.Vs8, M.FvReadOnly)}
 
     datatype typ = TNot | TFixed of Typ.t Vector.t | TVar of Typ.t
 
@@ -4797,17 +4561,17 @@ struct
           fun stripLen tvs = Vector.map (Vector.dropPrefix (tvs, 1), #1)
         in
           case t
-           of M.TTuple {pok, fixed, array = (M.TNone, _, _)} =>
+           of M.TTuple {fixed, array = (M.TNone, _, _)} =>
               if checkLen fixed andalso checkRO fixed
               then TFixed (stripLen fixed)
               else TNot
-            | M.TTuple {pok, fixed, array = (t, _, M.FvReadOnly)} =>
+            | M.TTuple {fixed, array = (t, _, M.FvReadOnly)} =>
               if checkLen fixed andalso Vector.length fixed = 1
               then TVar t
               else TNot
             | _ => TNot
         end
-            
+
     fun tdFixed (c, fks) =
         let
           val lenFd = FieldDescriptor.unalignedRO (Uintp.fieldKind c)
@@ -4824,36 +4588,36 @@ struct
           M.TD {fixed = Vector.new1 lenFd, array = SOME eltFd}
         end
 
-    fun mddFixed (c, pok, fks) =
+    fun mddFixed (c, fks) =
         let
           val lenFd = FieldDescriptor.unalignedRO (Uintp.fieldKind c)
           val fks = Utils.Vector.cons (lenFd, Vector.map (fks, FieldDescriptor.unalignedRO))
         in
-          M.MDD {pok = pok, pinned = false, fixed = fks, array = NONE}
+          M.MDD {pinned = false, fixed = fks, array = NONE}
         end
 
     val lenIndex = 0
 
-    fun mddVar (c, pok, fk) =
+    fun mddVar (c, fk) =
         let
           val lenFd = FieldDescriptor.unalignedRO (Uintp.fieldKind c)
           val eltFd = FieldDescriptor.unalignedRO fk
           val f = Vector.new1 lenFd
           val a = SOME (lenIndex, eltFd)
-        in M.MDD {pok = pok, pinned = false, fixed = f, array = a}
+        in M.MDD {pinned = false, fixed = f, array = a}
         end
 
-    fun newFixed (c, pok, fks, os) =
+    fun newFixed (c, fks, os) =
         let
-          val mdd = mddFixed (c, pok, fks)
+          val mdd = mddFixed (c, fks)
           val inits =
               Utils.Vector.cons (M.SConstant (Uintp.int (c, Vector.length fks)), os)
           val rhs = M.RhsTuple {mdDesc = mdd, inits = inits}
         in rhs
         end
 
-    fun newVar (c, pok, fk, len) =
-        M.RhsTuple {mdDesc = mddVar (c, pok, fk), inits = Vector.new1 len}
+    fun newVar (c, fk, len) =
+        M.RhsTuple {mdDesc = mddVar (c, fk), inits = Vector.new1 len}
 
     fun length (c, arr) =
         M.RhsTupleSub (M.TF {tupDesc = tdFixed (c, Vector.new0()),
@@ -4871,25 +4635,24 @@ struct
                                         field = M.FiVariable idx},
                        ofVal = ofVal}
 
-    fun inited (c, pok, fk, arr) =
-        M.RhsTupleInited {mdDesc = mddVar (c, pok, fk), tup = arr}
+    fun inited (c, fk, arr) =
+        M.RhsTupleInited {mdDesc = mddVar (c, fk), tup = arr}
 
   end
 
   structure IndexedArray =
   struct
 
-    fun fixedTyp (c, pok, d, ts) =
+    fun fixedTyp (c, d, ts) =
         let
           val f = Vector.concat [Vector.new2 (Uintp.t c, M.TIdx), ts]
           val f = Vector.map (f, fn t => (t, M.Vs8, M.FvReadOnly))
         in
-          Typ.fixedArray (pok, f)
+          Typ.fixedArray f
         end
 
-    fun varTyp (c, pok, t) =
-        M.TTuple {pok = pok,
-                  fixed = Vector.new2 ((Uintp.t c, M.Vs8, M.FvReadOnly), (M.TIdx, M.Vs8, M.FvReadOnly)),
+    fun varTyp (c, t) =
+        M.TTuple {fixed = Vector.new2 ((Uintp.t c, M.Vs8, M.FvReadOnly), (M.TIdx, M.Vs8, M.FvReadOnly)),
                   array = (t, M.Vs8, M.FvReadOnly)}
 
     fun tdFixed (c, fks) =
@@ -4910,31 +4673,31 @@ struct
           M.TD {fixed = Vector.new2 (lenFd, idxFd), array = SOME eltFd}
         end
 
-    fun mddFixed (c, pok, fks) =
+    fun mddFixed (c, fks) =
         let
           val lenFd = FieldDescriptor.unalignedRO (Uintp.fieldKind c)
           val idxFd = FieldDescriptor.unalignedRO M.FkRef
           fun doOne fk = FieldDescriptor.unalignedRO fk
           val fks = Vector.concat [Vector.new2 (lenFd, idxFd), Vector.map (fks, doOne)]
         in
-          M.MDD {pok = pok, pinned = false, fixed = fks, array = NONE}
+          M.MDD {pinned = false, fixed = fks, array = NONE}
         end
 
     val lenIndex = 0
     val idxIndex = 1
 
-    fun mddVar (c, pok, fk) =
+    fun mddVar (c,fk) =
         let
           val lenFd = FieldDescriptor.unalignedRO (Uintp.fieldKind c)
           val idxFd = FieldDescriptor.unalignedRO M.FkRef
           val eltFd = FieldDescriptor.unalignedRO fk
         in
-          M.MDD {pok = pok, pinned = false, fixed = Vector.new2 (lenFd, idxFd), array = SOME (lenIndex, eltFd)}
+          M.MDD {pinned = false, fixed = Vector.new2 (lenFd, idxFd), array = SOME (lenIndex, eltFd)}
         end
 
-    fun newFixed (c, pok, d, fks, idxVar, os) =
+    fun newFixed (c, d, fks, idxVar, os) =
         let
-          val mdd = mddFixed (c, pok, fks)
+          val mdd = mddFixed (c, fks)
           val leni = M.SConstant (Uintp.int (c, Vector.length fks))
           val inits =
               Vector.concat [Vector.new2 (leni, M.SVariable idxVar), os]
@@ -4970,29 +4733,29 @@ struct
                                typs = Vector.new0 (),
                                args = Vector.new1 p}
 
-    val fromIntegral = 
+    val fromIntegral =
         fn (iat, p) => from (MP.NtInteger (MP.IpFixed iat), p)
 
-    val fromUintp = 
+    val fromUintp =
         fn (config, p) => fromIntegral (Uintp.intArbTyp config, p)
 
-    val fromSintp = 
+    val fromSintp =
         fn (config, p) => fromIntegral (Sintp.intArbTyp config, p)
 
-    structure Opt = 
+    structure Opt =
     struct
       val max = IntInf.- (IntInf.<< (IntInf.one, 0w30), IntInf.one)
       val min = IntInf.~ (IntInf.<< (IntInf.one, 0w30))
-      val integerFits = 
-       fn i => IntInf.>= (i, min) andalso IntInf.<= (i, max) 
-      val rationalFits = 
-       fn r => 
+      val integerFits =
+       fn i => IntInf.>= (i, min) andalso IntInf.<= (i, max)
+      val rationalFits =
+       fn r =>
           (case Rat.toIntInf r
             of SOME i => integerFits i
              | NONE => false)
-      val fromInteger = 
+      val fromInteger =
        fn i => if integerFits i then SOME (M.CInteger i) else NONE
-      val fromRational = 
+      val fromRational =
        fn r => Utils.Option.bind (Rat.toIntInf r, fromInteger)
 
     end (* structure Opt *)
@@ -5013,24 +4776,24 @@ struct
                                typs = Vector.new0 (),
                                args = Vector.new1 p}
 
-    val fromIntegral = 
+    val fromIntegral =
         fn (iat, p) => from (MP.NtInteger (MP.IpFixed iat), p)
 
-    val fromUintp = 
+    val fromUintp =
         fn (config, p) => fromIntegral (Uintp.intArbTyp config, p)
 
-    val fromSintp = 
+    val fromSintp =
         fn (config, p) => fromIntegral (Sintp.intArbTyp config, p)
 
-    structure Opt = 
+    structure Opt =
     struct
       val max = Integer.Opt.max
       val min = Integer.Opt.min
       val integerFits = Integer.Opt.integerFits
       val rationalFits = Integer.Opt.rationalFits
-      val fromInteger = 
+      val fromInteger =
        fn i => if integerFits i then SOME (M.CRat i) else NONE
-      val fromRational = 
+      val fromRational =
        fn r => Utils.Option.bind (Rat.toIntInf r, fromInteger)
     end (* structure Opt *)
 
@@ -5039,26 +4802,26 @@ struct
   structure Def =
   struct
 
-    datatype t = 
+    datatype t =
              DefGlobal of Mil.global
            | DefRhs of Mil.rhs
 
     structure Out =
     struct
       val tuple =
-       fn d => 
-          (case d 
+       fn d =>
+          (case d
             of DefGlobal (M.GTuple r) => SOME r
              | DefRhs (M.RhsTuple r) => SOME r
              | _ => NONE)
       val thunkValue =
-       fn d => 
+       fn d =>
           (case d
             of DefGlobal (M.GThunkValue r) => SOME r
              | DefRhs (M.RhsThunkValue {typ, thunk, ofVal}) => SOME {typ = typ, ofVal = ofVal}
              | _ => NONE)
-      val simple = 
-       fn d => 
+      val simple =
+       fn d =>
           (case d
             of DefGlobal (M.GSimple s) => SOME s
              | DefRhs (M.RhsSimple s) => SOME s
@@ -5093,7 +4856,7 @@ struct
           (case d
             of DefRhs (M.RhsPrim {prim, createThunks, typs, args}) =>
               (case prim
-                of Mil.Prims.Prim Mil.Prims.PCondMov => Try.try (fn () => 
+                of Mil.Prims.Prim Mil.Prims.PCondMov => Try.try (fn () =>
                   let
                     val (c, t, f) = Try.V.tripleton args
                   in
@@ -5108,14 +4871,14 @@ struct
   structure Id =
   struct
 
-    datatype t = 
+    datatype t =
              L of Mil.label    (* block label *)
            | I of int          (* numbered instruction *)
            | T of Mil.label    (* block transfer *)
            | G of Mil.variable (* global *)
 
-    val compare = 
-     fn (id1, id2) => 
+    val compare =
+     fn (id1, id2) =>
         (case (id1, id2)
           of (L l1, L l2) => Compare.label (l1, l2)
            | (L _, _) => GREATER
@@ -5132,8 +4895,8 @@ struct
 
     structure L = Layout
 
-    val layout = 
-        fn (si, id) => 
+    val layout =
+        fn (si, id) =>
            (case id
              of L l => L.seq [L.str "L_",SymbolInfo.layoutLabel (si, l)]
               | I i => L.seq [L.str "I_",Int.layout i]
@@ -5157,7 +4920,7 @@ struct
 
     (* Flat typs are the nullary super-types of the general types *)
     val fromTyp =
-     fn (config, t) => 
+     fn (config, t) =>
         (case t
           of M.TAny                       => t
            | M.TAnyS vs                   => t
@@ -5171,7 +4934,7 @@ struct
            | M.TViVector et               => M.TBits (PrimsUtils.VectorSize.toValueSize (#vectorSize et))
            | M.TViMask et                 => M.TAny
            | M.TCode {cc, args, ress}     => M.TBits (ValueSize.ptrSize config)
-           | M.TTuple {pok, fixed, array} => (case pok of M.PokNone => M.TRef | _ => M.TPAny)
+           | M.TTuple {fixed, array}      => M.TRef
            | M.TCString                   => t
            | M.TIdx                       => M.TRef
            | M.TContinuation ts           => M.TBits (ValueSize.ptrSize config)
@@ -5190,8 +4953,8 @@ struct
     val null : Config.t -> IntInf.t = fn c => 0
     val isNull : Config.t * IntInf.t -> bool = fn (c, i) => i = 0
     val lowBitsSet : Config.t * IntInf.t -> bool = fn (c, i) => IntInf.andb (i, 3) <> 0
-    val validRefConstant : Config.t * IntInf.t -> bool = 
+    val validRefConstant : Config.t * IntInf.t -> bool =
      fn (config, i) => isNull (config, i) orelse lowBitsSet (config, i)
   end (* structure HeapModel *)
-              
+
 end

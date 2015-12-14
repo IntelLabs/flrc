@@ -56,7 +56,6 @@ struct PlsrVTableS {
 
 typedef struct PlsrVTableS* PlsrVTable;
 
-#define pLsrVTableStaticTagField(tg) .tag = (tg),
 #define pLsrVTableStaticCustomField(c) .custom = ((uintp) (c)),
 #if (defined(PLSR_INSTRUMENT_VTB_ALC) || defined(DEBUG))
 #define pLsrVTableStaticNameField(nm) .name  = (nm),
@@ -68,28 +67,27 @@ typedef struct PlsrVTableS* PlsrVTable;
 #define pLsrVTableStaticNumObjectsField(n) .numObjects = (n),
 #define pLsrVTableStaticNumBytesField(n) .numBytes = (n),
 #else
-#define pLsrVTableStaticNextField(n) 
-#define pLsrVTableStaticNumObjectsField(n) 
-#define pLsrVTableStaticNumBytesField(n) 
-#endif 
+#define pLsrVTableStaticNextField(n)
+#define pLsrVTableStaticNumObjectsField(n)
+#define pLsrVTableStaticNumBytesField(n)
+#endif
 #if (defined(PLSR_INSTRUMENT_ALLOCATION) || defined(PLSR_INSTRUMENT_VTB_ALC))
 #define pLsrVTableStaticPaddingField(n) .padding = (n),
 #else
 #define pLsrVTableStaticPaddingField(n)
 #endif
 
-#define pLsrVTableStaticWithCustom(vt, tg, nm, p, c)        \
+#define pLsrVTableStaticWithCustom(vt, nm, p, c)        \
     pil_aligned(16) static struct PlsrVTableS vt =                  \
-        { pLsrVTableStaticTagField(tg)                      \
-          pLsrVTableStaticCustomField(c)                    \
+        { pLsrVTableStaticCustomField(c)                    \
           pLsrVTableStaticNameField(nm)                     \
           pLsrVTableStaticNextField(0)                      \
           pLsrVTableStaticNumObjectsField(0)                \
           pLsrVTableStaticNumBytesField(0)                  \
           pLsrVTableStaticPaddingField(p)}
 
-#define pLsrVTableStatic(vt, tg, nm, p)                   \
-    pLsrVTableStaticWithCustom(vt, tg, nm, p, 0)
+#define pLsrVTableStatic(vt, nm, p)                   \
+    pLsrVTableStaticWithCustom(vt, nm, p, 0)
 
 #define pLsrVTableGetTag(vt) ((vt)->tag)
 
@@ -98,7 +96,7 @@ typedef struct PlsrVTableS* PlsrVTable;
 /* This vtable should not be used with accurate GC, as it does not
  * determine its GC info unambiguously.
  */
-pLsrVTableStatic(pLsrVTableNone_, VNoneTag, "*none*", 0);
+pLsrVTableStatic(pLsrVTableNone_, "*none*", 0);
 #define pLsrVTableNone (&pLsrVTableNone_)
 
 /* VTables for thunks */
@@ -106,19 +104,19 @@ pLsrVTableStatic(pLsrVTableNone_, VNoneTag, "*none*", 0);
 /* When using accurate GC, these vtable is only for thunks with no
  * free variables, initialized atomically at allocation time.
  */
-pLsrVTableStatic(pLsrThunkValVTableRef_, VThunkTag, "*thunk value (ref)*", pLsrThunkPaddingRef);
+pLsrVTableStatic(pLsrThunkValVTableRef_, "*thunk value (ref)*", pLsrThunkPaddingRef);
 #define pLsrThunkValVTableRef (&pLsrThunkValVTableRef_)
 
-pLsrVTableStatic(pLsrThunkValVTable32_, VThunkTag, "*thunk value (32)*", pLsrThunkPadding32);
+pLsrVTableStatic(pLsrThunkValVTable32_, "*thunk value (32)*", pLsrThunkPadding32);
 #define pLsrThunkValVTable32 (&pLsrThunkValVTable32_)
 
-pLsrVTableStatic(pLsrThunkValVTable64_, VThunkTag, "*thunk value (64)*", pLsrThunkPadding64);
+pLsrVTableStatic(pLsrThunkValVTable64_, "*thunk value (64)*", pLsrThunkPadding64);
 #define pLsrThunkValVTable64 (&pLsrThunkValVTable64_)
 
-pLsrVTableStatic(pLsrThunkValVTableFloat_, VThunkTag, "*thunk value (float)*", pLsrThunkPaddingFloat);
+pLsrVTableStatic(pLsrThunkValVTableFloat_, "*thunk value (float)*", pLsrThunkPaddingFloat);
 #define pLsrThunkValVTableFloat (&pLsrThunkValVTableFloat_)
 
-pLsrVTableStatic(pLsrThunkValVTableDouble_, VThunkTag, "*thunk value (double)*", pLsrThunkPaddingDouble);
+pLsrVTableStatic(pLsrThunkValVTableDouble_, "*thunk value (double)*", pLsrThunkPaddingDouble);
 #define pLsrThunkValVTableDouble (&pLsrThunkValVTableDouble_)
 
 

@@ -104,7 +104,7 @@ struct
 
     fun remapItem (stm : M.symbolTableManager, vps : VS.t, r : MR.t, i : item) : MR.t =
         case i
-         of TiInstruction i => 
+         of TiInstruction i =>
             let
               val (vr, lr) = r
               val dests = MU.Instruction.dests i
@@ -177,7 +177,6 @@ struct
             | M.CFloat _ => c
             | M.CDouble _ => c
             | M.CViMask _ => c
-            | M.CPok _ => c
             | M.COptionSetEmpty => c
             | M.CRef _ => c
             | M.CTypePH => c
@@ -227,7 +226,6 @@ struct
             | M.RhsTupleInited _ => r
             | M.RhsIdxGet {idx, ofVal} => M.RhsIdxGet {idx = idx, ofVal = operand (nm, ofVal)}
             | M.RhsCont _ => r
-            | M.RhsObjectGetKind _ => r
             | M.RhsThunkMk _ => r
             | M.RhsThunkInit {typ, thunk, fx, code, fvs} =>
               M.RhsThunkInit {typ = typ, thunk = thunk, fx = fx, code = code, fvs = fieldKindOperands (nm, fvs)}
@@ -245,9 +243,9 @@ struct
             | M.RhsPSetCond {bool, ofVal} => M.RhsPSetCond {bool = operand (nm, bool), ofVal = operand (nm, ofVal)}
             | M.RhsPSetQuery opnd => M.RhsPSetQuery (operand (nm, opnd))
             | M.RhsEnum {typ, tag} => M.RhsEnum {typ = typ, tag = operand (nm, tag)}
-            | M.RhsSum {tag, typs, ofVals} => 
+            | M.RhsSum {tag, typs, ofVals} =>
               M.RhsSum {tag = constant (nm, tag), typs = typs, ofVals = operands (nm, ofVals)}
-            | M.RhsSumProj {typs, sum, tag, idx} => 
+            | M.RhsSumProj {typs, sum, tag, idx} =>
               M.RhsSumProj {typs = typs, sum = sum, tag = constant (nm, tag), idx = idx}
             | M.RhsSumGetTag _ => r
 
@@ -258,7 +256,7 @@ struct
           M.T {block = block , arguments = operands (nm, arguments)}
 
       fun switch (nm : t, {select, on, cases, default}) =
-          {select = select, 
+          {select = select,
            on = operand (nm, on),
            cases = Vector.map (cases, fn (x, t) => (constant (nm, x), target (nm, t))),
            default = Option.map (default, fn t => target (nm, t))}
@@ -508,7 +506,7 @@ struct
   fun keywordLF (kw : string) : unit P.t = P.ignore (P.all (List.map (String.explode kw, keychar')))
 
   fun keywordSF (kw : string) : unit P.t = syntax (keywordLF kw)
- 
+
   fun keywordS (kw : string) : unit P.t = keywordSF kw || P.error ("Expected " ^ kw)
 
   fun optFlag (kc : char) : bool P.t = P.succeeds (keycharSF kc)
@@ -522,6 +520,18 @@ struct
         val p = P.map (keycharSF right, fn () => Vector.new0 ()) ||
                 P.map (p2 && P.$ pr, fn (i, is) => Vector.fromList (i::is))
         val p = P.map (left && p1 && keycharS #";" && p, fn (((_, x), _), y) => (x, y))
+      in p
+      end
+
+  fun semiCommaAux2 (left : unit P.t, right : char, p : 'a P.t) : ('a Vector.t) P.t =
+      let
+        fun pr () =
+            P.map (keycharSF right, fn () => []) ||
+            P.map (keycharSF #"," && p && P.$ pr, fn ((_, i), is) => i::is) ||
+            P.error ("Expected , or " ^ String.fromChar right)
+        val p = P.map (keycharSF right, fn () => Vector.new0 ()) ||
+                P.map (p && P.$ pr, fn (i, is) => Vector.fromList (i::is))
+        val p = P.map (left && p, fn (_, y) => y)
       in p
       end
 
@@ -586,7 +596,7 @@ struct
                      fn (neg, s) => let val n = Option.valOf (Int.fromString s) in if neg then ~n else n end))
       || P.error "Expected int"
 
-  val intInfLF = 
+  val intInfLF =
       P.map (optNegLF && digitsLF,
              fn (neg, s) => let val n = Option.valOf (IntInf.fromString s) in if neg then IntInf.~ n else n end)
 
@@ -641,7 +651,7 @@ struct
   val double : Real64.t P.t =
       let
         val hex = P.satisfy Char.isHexDigit
-        val p = hex && hex && hex && hex && hex && hex && hex && hex 
+        val p = hex && hex && hex && hex && hex && hex && hex && hex
                     && hex && hex && hex && hex && hex && hex && hex && hex
         fun f (((((((((((((((c1, c2), c3), c4), c5), c6), c7), c8), c9), c10), c11), c12), c13), c14), c15), c16) =
             let
@@ -836,17 +846,14 @@ struct
   fun typKind (state : state, env : env) : M.typKind P.t =
       syntax (P.satisfyMap (MU.TypKind.fromChar)) || P.error "Expected type kind"
 
-  fun pObjKind (state : state, env : env) : M.pObjKind P.t =
-      syntax (P.satisfyMap (MU.PObjKind.fromChar)) || P.error "Expected P object kind"
-
   fun valueSize (state : state, env : env) : M.valueSize P.t =
       P.required (P.map (identifierF, MU.ValueSize.fromString), "Expected value size")
 
   fun fieldVariance (state : state, env : env) : M.fieldVariance P.t =
       syntax (P.satisfyMap (MU.FieldVariance.fromChar)) || P.error "Expected field variance"
 
-  fun alignmentOpt (state : state, env : env) : M.valueSize P.t = 
-      P.required (P.map (keycharSF #"-" -&& decimal, MU.ValueSize.fromBytes) || P.return (SOME M.Vs8), 
+  fun alignmentOpt (state : state, env : env) : M.valueSize P.t =
+      P.required (P.map (keycharSF #"-" -&& decimal, MU.ValueSize.fromBytes) || P.return (SOME M.Vs8),
                   "Bad alignment")
 
   fun typNameF (state : state, env : env) : string P.t =
@@ -855,16 +862,16 @@ struct
 
   fun typName (state : state, env : env) : string P.t = typNameF (state, env) || P.error "Expected type name"
 
-  fun vectorDescriptorF (state : state, env : env) : MP.vectorDescriptor P.t = 
+  fun vectorDescriptorF (state : state, env : env) : MP.vectorDescriptor P.t =
       PU.Parse.vectorDescriptor (getConfig env)
 
-  fun vectorDescriptor (state : state, env : env) : MP.vectorDescriptor P.t = 
+  fun vectorDescriptor (state : state, env : env) : MP.vectorDescriptor P.t =
       vectorDescriptorF (state, env) || P.error "Expected vector descriptor"
-      
-  fun vectorSizeF (state : state, env : env) : MP.vectorSize P.t = 
+
+  fun vectorSizeF (state : state, env : env) : MP.vectorSize P.t =
       PU.Parse.vectorSize (getConfig env)
 
-  fun vectorSize (state : state, env : env) : MP.vectorSize P.t = 
+  fun vectorSize (state : state, env : env) : MP.vectorSize P.t =
       vectorSizeF (state, env) || P.error "Expected vector size"
 
   fun constantNameF (state : state, env : env) : string P.t =
@@ -883,16 +890,17 @@ struct
         val bools = syntax (P.zeroOrMoreV (P.satisfyMap parseBool))
         fun doIt s =
             case s
-             of "Array" => P.succeed (M.CPok M.PokArray)
+             of (* "Array" => P.succeed (M.CPok M.PokArray)
               | "Cell" => P.succeed (M.CPok M.PokCell)
               | "Dict" => P.succeed (M.CPok M.PokDict)
-              | "Empty" => P.succeed M.COptionSetEmpty
+              | *)
+                "Empty" => P.succeed M.COptionSetEmpty
               | "F" => P.map (paren float, M.CFloat)
               | "False" => P.succeed (M.CBoolean false)
-              | "Float" => P.succeed (M.CPok M.PokFloat)
-              | "Fun" => P.succeed (M.CPok M.PokFunction)
+              (* | "Float" => P.succeed (M.CPok M.PokFloat)
+              | "Fun" => P.succeed (M.CPok M.PokFunction) *)
               | "D" => P.map (paren double, M.CDouble)
-              | "Double" => P.succeed (M.CPok M.PokDouble)
+              (* | "Double" => P.succeed (M.CPok M.PokDouble) *)
               | "I" => P.map (paren intInf, M.CInteger)
               | "M" =>
                 P.map (bracket (vectorDescriptor (state, env)) && angleBracket bools,
@@ -900,21 +908,21 @@ struct
               | "MaxSIntp" => P.succeed (M.CIntegral (IntArb.maxValueT (IntArb.T (platSize, IntArb.Signed))))
               | "MaxUIntp" => P.succeed (M.CIntegral (IntArb.maxValueT (IntArb.T (platSize, IntArb.Unsigned))))
               | "MinSIntp" => P.succeed (M.CIntegral (IntArb.minValueT (IntArb.T (platSize, IntArb.Signed))))
-              | "Name" => P.succeed (M.CPok M.PokName)
+              (* | "Name" => P.succeed (M.CPok M.PokName)
               | "None" => P.succeed (M.CPok M.PokNone)
-              | "Ptr" => P.succeed (M.CPok M.PokPtr)
+              | "Ptr" => P.succeed (M.CPok M.PokPtr) *)
               | "R" => P.map (paren intInf, M.CRat)
-              | "Rat" => P.succeed (M.CPok M.PokRat)
+              (* | "Rat" => P.succeed (M.CPok M.PokRat) *)
               | "Ref" => P.map (paren intInf, M.CRef)
               | "S8" => intArb (IntArb.Signed, IntArb.S8)
               | "S16" => intArb (IntArb.Signed, IntArb.S16)
               | "S32" => intArb (IntArb.Signed, IntArb.S32)
               | "S64" => intArb (IntArb.Signed, IntArb.S64)
-              | "Set" => P.succeed (M.CPok M.PokOptionSet)
+              (* | "Set" => P.succeed (M.CPok M.PokOptionSet) *)
               | "SP" => intArb (IntArb.Signed, platSize)
-              | "Tag" => P.succeed (M.CPok M.PokTagged)
+              (* | "Tag" => P.succeed (M.CPok M.PokTagged) *)
               | "True" => P.succeed (M.CBoolean true)
-              | "Type" => P.succeed (M.CPok M.PokType)
+              (* | "Type" => P.succeed (M.CPok M.PokType) *)
               | "TypePH" => P.succeed M.CTypePH
               | "U8" => intArb (IntArb.Unsigned, IntArb.S8)
               | "U16" => intArb (IntArb.Unsigned, IntArb.S16)
@@ -966,16 +974,16 @@ struct
               | "PRef" => P.map (paren (typ (state, env)), M.TPRef)
               | "PType" => P.map (paren (typ (state, env)), fn t => M.TPType {kind = M.TkI, over = t})
               | "Ref" => P.succeed M.TRef
-              | "Sum" => 
+              | "Sum" =>
                 let
-                  val arm = 
+                  val arm =
                       let
                         val k = constant (state, env)
                         val v = angleBracketSeq (P.$$ typ (state, env))
                         val p = k &&- keycharS #":" && v
                       in p
                       end
-                  val fv = Utils.SortedVectorMap.fromVector MU.Constant.compare 
+                  val fv = Utils.SortedVectorMap.fromVector MU.Constant.compare
                   val p = brace (P.$$ typ (state, env)) && braceSeq arm
                   val f = fn (tag, arms) => M.TSum {tag = tag, arms = fv arms}
                 in P.map (p, f)
@@ -991,12 +999,12 @@ struct
                    && keywordS "->"
                    && parenSeq (P.$$ typ (state, env)),
                    fn (((cc, args), _), ress) => M.TCode {cc = cc, args = args, ress = ress})
-        val typAVar = P.map (P.$$ typ (state, env) && alignmentOpt (state, env) && fieldVariance (state, env), 
+        val typAVar = P.map (P.$$ typ (state, env) && alignmentOpt (state, env) && fieldVariance (state, env),
                              (fn ((a, b), c) => (a, b, c)))
         val tuple =
-            P.map (semiCommaAux (keycharSF #"<", #"[", pObjKind (state, env), typAVar) &&
+            P.map (semiCommaAux2 (keycharSF #"<", #"[", typAVar) &&
                    typAVar &&- keycharS #"]" &&- keycharS #">",
-                   fn ((pok, tvs), tv) => M.TTuple {pok = pok, fixed = tvs, array = tv})
+                   fn (tvs, tv) => M.TTuple {fixed = tvs, array = tv})
         val closure =
             P.map (parenSeqF (P.$$ typ (state, env))
                    && keywordS "=>"
@@ -1048,13 +1056,13 @@ struct
         val f = fn ((k, a), v) => M.FD {kind = k, alignment = a, var = v}
       in P.map (p, f)
       end
-          
+
 
   fun tupleDescriptorNameF (state : state, env : env) : string P.t =
       P.bind identifierF
              (fn s =>
                  if String.length s >= 2 andalso String.sub (s, 0) = #"t" andalso String.sub (s, 1) = #"d"
-                 then P.succeed s 
+                 then P.succeed s
                  else P.fail)
 
   fun tupleDescriptorName (state : state, env : env) : string P.t =
@@ -1087,7 +1095,7 @@ struct
              (fn s =>
                  if String.length s >= 3 andalso String.sub (s, 0) = #"m" andalso String.sub (s, 1) = #"d" andalso
                     String.sub (s, 2) = #"d"
-                 then P.succeed s 
+                 then P.succeed s
                  else P.fail)
 
   fun metaDataDescriptorName (state : state, env : env) : string P.t =
@@ -1111,10 +1119,10 @@ struct
         val p = P.map (keycharSF #">", fn () => (Vector.new0 (), NONE)) ||
                 P.map (array, fn a => (Vector.new0 (), SOME a)) ||
                 P.map (fd && P.$ pr, fn (fd, (fds, a)) => (Vector.fromList (fd::fds), a))
-        val mk = fn ((pok, pO), (fixed, array)) => 
-                    M.MDD {pok = pok, pinned = isSome pO, fixed = fixed, array = array}
-        val p = 
-            P.map (keycharSF #"<" -&& pObjKind (state, env) && P.optional (keycharSF #"!") &&- keycharS #";" && p, mk)
+        val mk = fn (pO, (fixed, array)) =>
+                    M.MDD {pinned = isSome pO, fixed = fixed, array = array}
+        val p =
+            P.map (keycharSF #"<" -&& P.optional (keycharSF #"!") &&- keycharS #";" && p, mk)
         val p = p || named || P.error "Expected metadata descriptor"
       in p
       end
@@ -1136,40 +1144,40 @@ struct
 
   fun fieldIdentifier (state : state, env : env) : M.fieldIdentifier P.t =
       let
-        val fiFixed = 
+        val fiFixed =
             let
               val fi = P.map (keywordLF "sf:" -&& decimal, M.FiFixed)
             in syntax fi
             end
-        val fiVariable = 
+        val fiVariable =
             let
               val fv = P.map (keywordLF "sv:" -&& operand (state, env), M.FiVariable)
             in syntax fv
             end
-        val fiVectorFixed = 
+        val fiVectorFixed =
             let
               val mask = P.optional (keycharLF #"?" -&& operand (state, env))
               val p = keywordLF "vf" -&& bracket (vectorDescriptor (state, env)) &&- keycharLF #":" && decimal && mask
               val p = P.map (p, fn ((vd, i), mo) => M.FiVectorFixed {descriptor = vd, mask = mo, index = i})
             in syntax p
             end
-        val fiVectorVariable = 
+        val fiVectorVariable =
             let
               val mask = P.optional (keycharLF #"?" -&& operand (state, env))
               val base = P.optional (keycharLF #"^")
               val vd = bracket (vectorDescriptor (state, env))
               val vectorIndex = P.map (angleBracket (operand (state, env)), fn i => (M.VikVector, i))
-              val stridedIndex = 
+              val stridedIndex =
                   let
                     val p = angleBracket (operand (state, env) &&- keycharLF #":" &&
-                                          operand (state, env) &&- keycharLF #"+" && 
+                                          operand (state, env) &&- keycharLF #"+" &&
                                           paren (decimal &&- keywordLF "*n"))
                   in P.map (p, fn ((idx, _), i) => (M.VikStrided i, idx))
                   end
               val index = vectorIndex || stridedIndex
               val p = keywordLF "vv" -&& vd &&- keycharLF #":" && base && index && mask
-              val p = P.map (p, fn (((vd, base), (kind, idx)), mask) => 
-                                   M.FiVectorVariable {descriptor = vd, 
+              val p = P.map (p, fn (((vd, base), (kind, idx)), mask) =>
+                                   M.FiVectorVariable {descriptor = vd,
                                                        base = case base of NONE => M.TbScalar | SOME _ => M.TbVector,
                                                        mask = mask,
                                                        index = idx,
@@ -1238,7 +1246,7 @@ struct
    *   variable <- ClosureInit ...
    *   variable <- ThunkInit ...
    *   variable <- ThunkMkVal ...
-   *   <...> 
+   *   <...>
    *   ? ...
    *   prim(...)
    *   rhs keyword ...
@@ -1282,14 +1290,14 @@ struct
         val varStuff = P.bind (variableF (state, env)) doVar
         val tup = P.map (tupleF (state, env), fn (mdd, os) => M.RhsTuple {mdDesc = mdd, inits = os})
         val const = P.map (constantF (state, env), fn c => M.RhsSimple (M.SConstant c))
-        val primApp = 
+        val primApp =
             let
-              val p = PU.Parse.t (getConfig env) && P.succeeds (bracketF (keycharLF #"T")) 
+              val p = PU.Parse.t (getConfig env) && P.succeeds (bracketF (keycharLF #"T"))
                    && P.optional (braceSeqF (typ (state, env))) && parenSeq (operand (state, env))
-            in P.map (p, fn (((prim, ct), typsO), args) => M.RhsPrim {prim = prim, 
+            in P.map (p, fn (((prim, ct), typsO), args) => M.RhsPrim {prim = prim,
                                                                       createThunks = ct,
-                                                                      typs = case typsO 
-                                                                              of SOME typs => typs 
+                                                                      typs = case typsO
+                                                                              of SOME typs => typs
                                                                                | NONE => Vector.new0 (),
                                                                       args = args})
             end
@@ -1305,12 +1313,12 @@ struct
               | "ClosureInit" => closureInit NONE
               | "ClosureMk" => P.map (parenSeq (fieldKind (state, env)), fn fks => M.RhsClosureMk {fvs = fks})
               | "Cont" => P.map (paren (label (state, env)), M.RhsCont)
-              | "Enum" => 
+              | "Enum" =>
                 let
                   val p = paren (operand (state, env) &&- keycharSF #":" && fieldKind (state, env))
                 in P.map (p, fn (tag, typ) => M.RhsEnum {tag = tag, typ = typ})
                 end
-              | "GetKind" => P.map (paren (variable (state, env)), M.RhsObjectGetKind)
+              (* | "GetKind" => P.map (paren (variable (state, env)), M.RhsObjectGetKind) *)
               | "IdxGet" => P.map (pair (variable (state, env), operand (state, env)),
                                    fn (i, v) => M.RhsIdxGet {idx = i, ofVal = v})
               | "Inited" => P.map (pair (metaDataDescriptor (state, env), variable (state, env)),
@@ -1325,7 +1333,7 @@ struct
                 P.map (paren (variable (state, env) && keycharSF #":" && fieldKind (state, env)) &&
                        effects (state, env),
                        fn (((v, _), fk), fx) => M.RhsThunkSpawn {typ = fk, thunk = v, fx = fx})
-              | "SumProj" => 
+              | "SumProj" =>
                 let
                   val v = variable (state, env)
                   val k = constant (state, env)
@@ -1335,7 +1343,7 @@ struct
                   val f = fn (((v, k), i), fks) => M.RhsSumProj {typs = fks, sum = v, tag = k, idx = i}
                 in P.map (p, f)
                 end
-              | "SumGetTag" => 
+              | "SumGetTag" =>
                 let
                   val v = variable (state, env)
                   val fk = fieldKind (state, env)
@@ -1343,7 +1351,7 @@ struct
                   val f = fn (typ, sum) => M.RhsSumGetTag {typ = typ, sum = sum}
                 in P.map (p, f)
                 end
-              | "Tagged" => 
+              | "Tagged" =>
                 let
                   val k = constant (state, env)
                   val vs = angleBracketSeq (operand (state, env))
@@ -1394,7 +1402,7 @@ struct
   (* f should fail at least if sees Default or } *)
   fun switch (state : state, env : env) : M.transfer P.t =
       let
-        val seSum = 
+        val seSum =
             let
               val p = operand (state, env) &&- keycharS #":" && fieldKind (state, env)
               val p = keywordSF "tagof" -&& paren p
@@ -1447,7 +1455,7 @@ struct
 
   fun evalA (state : state, env : env, s : string) : M.eval P.t =
       let
-        val pv = 
+        val pv =
             (P.map (keycharSF #"!", fn _ => false)) || (P.map (keycharSF #"?", fn _ => true))
       in
         case s
@@ -1459,7 +1467,7 @@ struct
                    fn (vl, (v1, v2)) => M.EDirectThunk {thunk = v1, value = vl, code = v2})
           | _ => P.error "Expected eval"
       end
-                         
+
   fun eval (state : state, env : env) : M.eval P.t = P.bind identifierF (fn s => evalA (state, env, s))
 
   fun interProcA (state : state, env : env, s : string) : M.interProc P.t =
@@ -1686,7 +1694,7 @@ struct
       P.map (P.zeroOrMore (varGlobalF (state, env)), VD.fromList)
 
   fun includeKindF (state : state, env : env) : M.includeKind P.t =
-      P.bind (P.map (identifierF, MU.IncludeKind.fromString)) 
+      P.bind (P.map (identifierF, MU.IncludeKind.fromString))
              (fn ko => case ko of SOME k => P.succeed k | NONE => P.fail)
 
   fun includeKind (state : state, env : env) : M.includeKind P.t =
@@ -1874,7 +1882,7 @@ struct
                 fail ("parseFile", "Parse error: line " ^ Int.toString line ^ " col " ^ Int.toString col ^ ": " ^ e)
       in p
       end
-                     
+
   fun readFile (() : unit, pd : PassData.t, basename : Path.t) : M.t =
       let
         val config = PassData.getConfig pd

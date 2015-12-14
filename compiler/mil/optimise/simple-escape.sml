@@ -1,18 +1,18 @@
 (* The Haskell Research Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
-signature MIL_ESCAPE_ANALYSIS = 
+signature MIL_ESCAPE_ANALYSIS =
 sig
   val stats : (string * string) list
   val optimize : PassData.t * IMil.t -> unit
 end
 
 functor MilSimpleEscapeF (structure Chat : CHAT where type env = PassData.t
-                          val simplify : PassData.t 
+                          val simplify : PassData.t
                                          * IMil.t
                                          * IMil.WorkSet.ws
                                          -> unit)
-        :> MIL_ESCAPE_ANALYSIS = 
+        :> MIL_ESCAPE_ANALYSIS =
 struct
 
 
@@ -26,9 +26,9 @@ struct
   val || = Try.||
   val @@ = Utils.Function.@@
 
-  infix 3 << @@ oo om <! <\ 
+  infix 3 << @@ oo om <! <\
   infixr 3 />
-  infix 4 or || 
+  infix 4 or ||
 
   val stats = [("NonEscape",    "Functions marked non-escaping" )]
 
@@ -46,47 +46,46 @@ struct
 
   val fail = fn (f, msg) => Fail.fail ("simple-escape.sml", f, msg)
 
-  val closureUseIsNonEscaping = 
+  val closureUseIsNonEscaping =
    fn (d, imil, c, u) =>
       let
         val cOp = M.SVariable c
-        val isThisClosure = 
+        val isThisClosure =
          fn oper => MU.Operand.eq (oper, cOp)
-        val closureNotIn = 
+        val closureNotIn =
             fn ops => Vector.forall (ops, not o isThisClosure)
-        val closureNotIn2nd = 
+        val closureNotIn2nd =
             fn ops => Vector.forall (ops, not o isThisClosure o #2)
 
-        val doCall = 
-         fn call => 
+        val doCall =
+         fn call =>
             case call
              of M.CCode _                    => false
               | M.CClosure _                 => false
               | M.CDirectClosure {cls, ... } => isThisClosure (M.SVariable cls)
 
-        val doEval = 
-         fn eval => 
+        val doEval =
+         fn eval =>
             case eval
              of M.EThunk _                   => false
               | M.EDirectThunk {thunk, value, code} => isThisClosure (M.SVariable thunk)
 
-        val doTransfer = 
-         fn t => 
+        val doTransfer =
+         fn t =>
             (case t
-              of M.TInterProc {callee, ...} => 
-                 (case callee 
-                   of M.IpCall {call, args} => doCall call andalso closureNotIn args 
+              of M.TInterProc {callee, ...} =>
+                 (case callee
+                   of M.IpCall {call, args} => doCall call andalso closureNotIn args
                     | M.IpEval {eval, typ}  => doEval eval)
                | _ => false)
 
-        val doRhs = 
+        val doRhs =
          fn rhs =>
             (case rhs
               of M.RhsClosureInit {fvs, ...} => closureNotIn2nd fvs
                | M.RhsClosureGetFv _ => true
                | M.RhsThunkInit {fvs, ...} => closureNotIn2nd fvs
                | M.RhsThunkGetFv _ => true
-               | M.RhsObjectGetKind _ => true
                | _ => false)
 
         val doIInstr =
@@ -97,15 +96,15 @@ struct
                   | IMil.MLabel _ => false
                   | IMil.MDead => false)
 
-        val res = 
+        val res =
             (case u
               of IMil.UseGlobal g => false
                | IMil.UseInstr i => doIInstr i
                | IMil.Used => false)
       in res
-      end 
+      end
 
-  val closureIsNonEscaping = 
+  val closureIsNonEscaping =
    fn (d, imil, c) =>
       let
         val uses = Use.getUses (imil, c)
@@ -117,7 +116,7 @@ struct
    fn (d, imil, fname, iFunc) =>
       let
         val conv = IFunc.getCallConv (imil, iFunc)
-        val res = 
+        val res =
             case conv
              of M.CcClosure {cls, ...} => closureIsNonEscaping (d, imil, cls)
               | M.CcThunk {thunk, ...} => closureIsNonEscaping (d, imil, thunk)
@@ -129,25 +128,25 @@ struct
   val codePtrUseIsNonEscaping =
    fn (d, imil, fname, u) =>
       let
-        fun warn () = 
+        fun warn () =
             let
               val () = Chat.warn2 (d, "Unexpected use of function pointer (unless lowered)")
             in false
             end
-        val nonEscaping = 
+        val nonEscaping =
             case u
-             of IMil.UseInstr i => 
+             of IMil.UseInstr i =>
                 (case IInstr.getMil (imil, i)
-                  of IMil.MInstr (M.I {rhs, ...}) => 
+                  of IMil.MInstr (M.I {rhs, ...}) =>
                      (case rhs
                        of M.RhsClosureInit {cls = SOME cls, ...} => closureIsNonEscaping (d, imil, cls)
                         | M.RhsClosureInit {cls = NONE, ...}     => false
                         | M.RhsThunkInit {thunk = SOME thunk, ...} => closureIsNonEscaping (d, imil, thunk)
                         | M.RhsThunkInit {thunk = NONE, ...}       => false
                         | _ => warn ())
-                   | IMil.MTransfer (M.TInterProc {callee, ...}) => 
+                   | IMil.MTransfer (M.TInterProc {callee, ...}) =>
                      (case callee
-                       of M.IpCall {args, ...} => 
+                       of M.IpCall {args, ...} =>
                           not (Vector.contains (args, M.SVariable fname, MU.Operand.eq))
                         | M.IpEval _ => true)
                    | IMil.MTransfer _ => false
@@ -155,8 +154,8 @@ struct
                    | IMil.MDead => warn ())
               | IMil.UseGlobal g =>
                 (case IGlobal.toGlobal g
-                  of SOME (clos, M.GClosure {code = SOME f, fvs}) => 
-                     if f = fname then 
+                  of SOME (clos, M.GClosure {code = SOME f, fvs}) =>
+                     if f = fname then
                        closureIsNonEscaping (d, imil, clos)
                      else
                        fail ("codePtrUseIsNonEscaping", "Code pointer in free vars of closure")
@@ -165,7 +164,7 @@ struct
       in nonEscaping
       end
 
-  val noExternalEscapes = 
+  val noExternalEscapes =
    fn (d, imil, fname) =>
       let
         val uses = Use.getUses (imil, fname)
@@ -173,8 +172,8 @@ struct
       in ok
       end
 
-  val doFunction = 
-   Try.lift 
+  val doFunction =
+   Try.lift
      (fn ((d, imil), fname) =>
          let
            (* Function may have become dead before we get here *)
@@ -192,30 +191,30 @@ struct
          in ()
          end)
 
-  val doConnectedComponent = 
+  val doConnectedComponent =
    fn ((d, imil), nodes) =>
       let
-        val doOne = 
-         fn (node, changed) => 
+        val doOne =
+         fn (node, changed) =>
             (case PLG.Node.getLabel node
               of MCG.Graph.NUnknown => changed
                | MCG.Graph.NFun f => isSome (doFunction ((d, imil), f)))
 
-        val rec loop = 
-         fn changed => 
-            if List.fold (nodes, false, doOne) then 
+        val rec loop =
+         fn changed =>
+            if List.fold (nodes, false, doOne) then
               loop true
             else changed
 
-        val changed = 
+        val changed =
             (case nodes
               of [f] => doOne (f, false)
                | _ => loop false)
-            
+
       in ()
       end
 
-  val optimize = 
+  val optimize =
    fn (d, imil) =>
       let
         val MCG.Graph.G {unknown, known, graph} = IMil.T.callGraph imil

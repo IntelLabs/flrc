@@ -12,22 +12,22 @@
  * unless a pass needs to commit to an object model choice.
  *
  * The High structure includes the Common object model abstractions, and adds
- * abstractions that are only safe to use before lowering.  This structure 
- * should only be used in places where it can be guaranteed that lowering has 
+ * abstractions that are only safe to use before lowering.  This structure
+ * should only be used in places where it can be guaranteed that lowering has
  * not yet occurred, either through the observed presence of un-lowered constructs
  * or because of phase-ordering restrictions.
  *
  * The Low structure includes the Common object model abstractions, and adds
- * abstractions that are only safe to use after lowering.  This structure 
+ * abstractions that are only safe to use after lowering.  This structure
  * should only be used in places where it can be guaranteed that lowering has
  * occurred.  This is generally only possible via phase-ordering restrictions.
  *
- * Passes which require access to object model assumptions and cannot meet the 
+ * Passes which require access to object model assumptions and cannot meet the
  * the necessary guarantees as described above should be functorized over the
- * appropriate object model.  So for example, pass which intends to create 
+ * appropriate object model.  So for example, pass which intends to create
  * P functions from scratch and which will be run both before and after
  * lowering might need to be functorized over the object model.
- * 
+ *
  * To faciliate this, the signatures are proper (matching) extensions as follows:
  *
  * P_OBJECT_MODEL_LOW <# P_OBJECT_MODEL_HIGH <# P_OBJECT_MODEL_COMMON
@@ -36,7 +36,7 @@
 
 (*************** Common object model assumptions ******************************)
 
-signature P_OBJECT_MODEL_COMMON = 
+signature P_OBJECT_MODEL_COMMON =
 sig
 
   structure Double : sig
@@ -114,9 +114,9 @@ end
                   * Mil.variable option
                   * (Mil.fieldKind * Mil.operand) Vector.t
                   -> Mil.rhs
-     val mkGlobal : Config.t 
-                    * Mil.variable option 
-                    * (Mil.fieldKind * Mil.operand) Vector.t 
+     val mkGlobal : Config.t
+                    * Mil.variable option
+                    * (Mil.fieldKind * Mil.operand) Vector.t
                     -> Mil.global
      val init : Config.t
                 * Mil.variable
@@ -159,7 +159,7 @@ end
      val mkGlobal : unit -> Mil.global
    end
 
-signature P_OBJECT_MODEL_HIGH = 
+signature P_OBJECT_MODEL_HIGH =
 sig
   include P_OBJECT_MODEL_COMMON
   structure Function : P_OBJECT_MODEL_FUNCTION_HIGH
@@ -214,7 +214,7 @@ end
      val td : Mil.tupleDescriptor
    end
 
-signature P_OBJECT_MODEL_LOW = 
+signature P_OBJECT_MODEL_LOW =
 sig
   include P_OBJECT_MODEL_COMMON
   structure Function : P_OBJECT_MODEL_FUNCTION_LOW
@@ -227,7 +227,7 @@ end
 
 (*************** Object model implementations  **************************)
 
-structure PObjectModelCommon :> P_OBJECT_MODEL_COMMON = 
+structure PObjectModelCommon :> P_OBJECT_MODEL_COMMON =
 struct
 
   structure M = Mil
@@ -241,12 +241,12 @@ struct
 
     val td = B.td (M.FkDouble)
 
-    val typ = B.t (M.PokDouble, MU.Prims.NumericTyp.tDouble)
+    val typ = B.t (MU.Prims.NumericTyp.tDouble)
 
-    fun mk (c, opnd) = B.box (c, M.PokDouble, M.FkDouble, opnd)
+    fun mk (c, opnd) = B.box (c, M.FkDouble, opnd)
 
     fun mkGlobal (c, d) =
-        B.boxGlobal (c, M.PokDouble, M.FkDouble,
+        B.boxGlobal (c, M.FkDouble,
                      M.SConstant (M.CDouble d))
 
     val ofValIndex = B.ofValIndex
@@ -260,12 +260,12 @@ struct
 
     val td = B.td (M.FkFloat)
 
-    val typ = B.t (M.PokFloat, MU.Prims.NumericTyp.tFloat)
+    val typ = B.t (MU.Prims.NumericTyp.tFloat)
 
-    fun mk (c, opnd) = B.box (c, M.PokFloat, M.FkFloat, opnd)
+    fun mk (c, opnd) = B.box (c, M.FkFloat, opnd)
 
     fun mkGlobal (c, f) =
-        B.boxGlobal (c, M.PokFloat, M.FkFloat, M.SConstant (M.CFloat f))
+        B.boxGlobal (c, M.FkFloat, M.SConstant (M.CFloat f))
 
     val ofValIndex = B.ofValIndex
 
@@ -278,15 +278,15 @@ struct
 
     fun tdVar (c, fk) = IA.tdVar (c, fk)
 
-    fun fixedTyp (c, d, ts) = IA.fixedTyp (c, M.PokDict, d, ts)
+    fun fixedTyp (c, d, ts) = IA.fixedTyp (c, d, ts)
 
-    fun varTyp (c, t) = IA.varTyp (c, M.PokDict, t)
+    fun varTyp (c, t) = IA.varTyp (c, t)
 
     val lenIndex = IA.lenIndex
     val idxIndex = IA.idxIndex
 
     fun newFixed (c, d, fks, v, os) =
-        IA.newFixed (c, M.PokDict, d, fks, v, os)
+        IA.newFixed (c, d, fks, v, os)
 
     fun idxSub (c, fk, v, opnd) = IA.idxSub (c, fk, v, opnd)
 
@@ -297,15 +297,15 @@ struct
 
     fun tdVar (c, fk) = OA.tdVar (c, fk)
 
-    fun fixedTyp (c, ts) = OA.fixedTyp (c, M.PokArray, ts)
+    fun fixedTyp (c, ts) = OA.fixedTyp (c, ts)
 
-    fun varTyp (c, t) = OA.varTyp (c, M.PokArray, t)
+    fun varTyp (c, t) = OA.varTyp (c, t)
 
     val lenIndex = OA.lenIndex
 
-    fun newFixed (c, fks, os) = OA.newFixed (c, M.PokArray, fks, os)
+    fun newFixed (c, fks, os) = OA.newFixed (c, fks, os)
 
-    fun newVar (c, fk, opnd) = OA.newVar (c, M.PokArray, fk, opnd)
+    fun newVar (c, fk, opnd) = OA.newVar (c, fk, opnd)
 
     fun length (c, v) = OA.length (c, v)
 
@@ -313,7 +313,7 @@ struct
 
     fun update (c, fk, v, o1, o2) = OA.update (c, fk, v, o1, o2)
 
-    fun inited (c, fk, v) = OA.inited (c, M.PokArray, fk, v)
+    fun inited (c, fk, v) = OA.inited (c, fk, v)
 
   end
 
@@ -323,7 +323,7 @@ struct
     val (useUnsafeIntegersF, useUnsafeIntegers) =
        Config.Feature.mk ("PObjectModel:prats-use-ints", "p rats implemented with machine ints (unsafe)")
 
-    val fk = fn c => if useUnsafeIntegers c then 
+    val fk = fn c => if useUnsafeIntegers c then
                        MU.Sintp.fieldKind c
                      else
                        M.FkRef
@@ -332,14 +332,14 @@ struct
 
     val unboxTyp = fn c => if useUnsafeIntegers c then
                              MU.Sintp.t c
-                           else 
+                           else
                              MU.Prims.NumericTyp.tRat
 
-    val typ = fn c => B.t (M.PokRat, unboxTyp c)
+    val typ = fn c => B.t (unboxTyp c)
 
-    val mk = fn (c, opnd) => B.box (c, M.PokRat, fk c, opnd)
+    val mk = fn (c, opnd) => B.box (c, fk c, opnd)
 
-    val mkGlobal = fn (c, s) => B.boxGlobal (c, M.PokRat, fk c, s)
+    val mkGlobal = fn (c, s) => B.boxGlobal (c, fk c, s)
 
     val ofValIndex = fn c => B.ofValIndex
 
@@ -350,7 +350,7 @@ struct
   val features = [Rat.useUnsafeIntegersF]
 end (* structure PObjectModelCommon *)
 
-structure PObjectModelHigh :> P_OBJECT_MODEL_HIGH = 
+structure PObjectModelHigh :> P_OBJECT_MODEL_HIGH =
 struct
 
   structure M = Mil
@@ -410,14 +410,14 @@ struct
   structure Sum =
   struct
 
-    fun typ (tt, arms) = 
+    fun typ (tt, arms) =
         let
           val arms = Utils.SortedVectorMap.fromVector MU.Constant.compare arms
         in M.TSum {tag = tt, arms = arms}
         end
     fun mk (c, fk, tag, fks, ofVals) = M.RhsSum {tag = tag, typs = fks, ofVals = ofVals}
     fun mkEnum (c, fk, tag) = M.RhsEnum {typ = fk, tag = tag}
-    fun mkGlobal (c, fk, tag, fks, ofVals) = 
+    fun mkGlobal (c, fk, tag, fks, ofVals) =
         M.GSum {tag = tag, typs = fks, ofVals = ofVals}
     fun getVal (c, v, fk, fks, tag, idx) = M.RhsSumProj {typs = fks, sum = v, tag = tag, idx = idx}
 
@@ -436,7 +436,7 @@ struct
 
 end (* structure PObjectModelHigh *)
 
-structure PObjectModelLow :> P_OBJECT_MODEL_LOW = 
+structure PObjectModelLow :> P_OBJECT_MODEL_LOW =
 struct
 
   structure M = Mil
@@ -464,7 +464,7 @@ struct
           val ct = codeTyp (M.TRef, args, ress)
           val fts = Vector.new1 (ct, M.Vs8, M.FvReadOnly)
         in
-          MU.Typ.fixedArray (M.PokFunction, fts)
+          MU.Typ.fixedArray fts
         end
 
 
@@ -481,17 +481,16 @@ struct
 
     fun mdd (c, fks) =
       let
-        val pok = M.PokFunction
         val fks = Utils.Vector.cons (MU.FieldKind.nonRefPtr c, fks)
         val fds = Vector.map (fks, MU.FieldDescriptor.unalignedRO)
-        val mdd = M.MDD {pok = pok, pinned = false, fixed = fds, array = NONE}
+        val mdd = M.MDD {pinned = false, fixed = fds, array = NONE}
       in mdd
       end
 
     fun mkUninit (c, fks) =
         M.RhsTuple {mdDesc = mdd (c, fks), inits = Vector.new0 ()}
 
-    fun codeOptToCodePtr (c, vo) = 
+    fun codeOptToCodePtr (c, vo) =
         case vo
          of SOME v => M.SVariable v
           | NONE => M.SConstant (MU.Uintp.zero c)
@@ -560,7 +559,7 @@ struct
   structure OptionSet =
   struct
 
-    fun typ t = MU.Typ.fixedArray (M.PokOptionSet, Vector.new1 (t, M.Vs8, M.FvReadOnly))
+    fun typ t = MU.Typ.fixedArray (Vector.new1 (t, M.Vs8, M.FvReadOnly))
 
     val ofValIndex = B.ofValIndex
 
@@ -568,18 +567,16 @@ struct
 
     fun empty c =
         let
-          val pok = M.PokOptionSet
           val fd = MU.FieldDescriptor.unalignedRO M.FkRef
-          val mdd = M.MDD {pok = pok, pinned = false, fixed = Vector.new1 fd, array = NONE}
+          val mdd = M.MDD {pinned = false, fixed = Vector.new1 fd, array = NONE}
           val zero = M.SConstant (nulConst c)
         in M.RhsTuple {mdDesc = mdd, inits = Vector.new1 zero}
         end
 
     fun emptyGlobal c =
         let
-          val pok = M.PokOptionSet
           val fd = MU.FieldDescriptor.unalignedRO M.FkRef
-          val mdd = M.MDD {pok = pok, pinned = false, fixed = Vector.new1 fd, array = NONE}
+          val mdd = M.MDD {pinned = false, fixed = Vector.new1 fd, array = NONE}
           val zero = M.SConstant (nulConst c)
         in M.GTuple {mdDesc = mdd, inits = Vector.new1 zero}
         end
@@ -593,9 +590,8 @@ struct
 
     fun mdd c =
         let
-          val pok = M.PokOptionSet
           val fixed = Vector.new1 (MU.FieldDescriptor.unalignedRO M.FkRef)
-          val mdd = M.MDD {pok = pok, pinned = false, fixed = fixed, array = NONE}
+          val mdd = M.MDD {pinned = false, fixed = fixed, array = NONE}
         in mdd
         end
 
@@ -638,10 +634,10 @@ struct
 
   end
 
-  structure Sum = 
+  structure Sum =
   struct
 
-    fun typ (tt, _) = MU.Typ.fixedArray (M.PokTagged, Vector.new1 (tt, M.Vs8, M.FvReadOnly))
+    fun typ (tt, _) = MU.Typ.fixedArray (Vector.new1 (tt, M.Vs8, M.FvReadOnly))
 
     fun td (c, fk, fks) =
         let
@@ -655,7 +651,7 @@ struct
         let
           val fds = Utils.Vector.cons (MU.FieldDescriptor.unalignedRO fk,
                                       Vector.map (fks, MU.FieldDescriptor.unalignedRO))
-          val mdd = M.MDD {pok = M.PokTagged, pinned = false, fixed = fds, array = NONE}
+          val mdd = M.MDD {pinned = false, fixed = fds, array = NONE}
         in mdd
         end
 
@@ -707,18 +703,17 @@ struct
   structure Type =
   struct
 
-    fun typ t = MU.Typ.fixedArray (M.PokType, Vector.new0 ())
+    fun typ t = MU.Typ.fixedArray (Vector.new0 ())
 
     val td = M.TD {fixed = Vector.new0 (), array = NONE}
 
-    val mdd = M.MDD {pok = M.PokType, pinned = false, fixed = Vector.new0 (), array = NONE}
+    val mdd = M.MDD {pinned = false, fixed = Vector.new0 (), array = NONE}
 
     fun mk () = M.RhsTuple {mdDesc = mdd, inits = Vector.new0 ()}
-                    
+
     fun mkGlobal () = M.GTuple {mdDesc = mdd, inits = Vector.new0 ()}
-                    
+
   end
 
   val features = []
 end (* structure PObjectModelLow *)
-

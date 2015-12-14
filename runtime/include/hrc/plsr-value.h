@@ -16,7 +16,7 @@
  * not the case, the mutability property of the vtable must be
  * changed.
  */
-pLsrVTableStatic(pLsrPSetVTable_, VSetTag, "*option set*", pLsrPSetPadding);
+pLsrVTableStatic(pLsrPSetVTable_, "*option set*", pLsrPSetPadding);
 #define pLsrPSetVTable (&pLsrPSetVTable_)
 
 /* Generated code defines:
@@ -44,7 +44,7 @@ static PlsrPAny pLsrPSetNew(PlsrPAny v)
  * not the case, the mutability property of the vtable must be
  * changed.
  */
-pLsrVTableStatic(pLsrPTypeVTable_, VTypeTag, "*type*", pLsrPTypePadding);
+pLsrVTableStatic(pLsrPTypeVTable_, "*type*", pLsrPTypePadding);
 #define pLsrPTypeVTable (&pLsrPTypeVTable_)
 
 /**********************************************************************
@@ -56,7 +56,7 @@ pLsrVTableStatic(pLsrPTypeVTable_, VTypeTag, "*type*", pLsrPTypePadding);
  * not the case, the mutability property of the vtable must be
  * changed.
  */
-pLsrVTableStatic(pLsrPRatVTable_, VRatTag, "*rat*", pLsrPRatPadding);
+pLsrVTableStatic(pLsrPRatVTable_, "*rat*", pLsrPRatPadding);
 #define pLsrPRatVTable (&pLsrPRatVTable_)
 
 /* Generated code defines:
@@ -64,7 +64,7 @@ pLsrVTableStatic(pLsrPRatVTable_, VRatTag, "*rat*", pLsrPRatPadding);
  *   pLsrPRatOffset
  */
 
-#ifdef P_PRAT_IS_SINTP 
+#ifdef P_PRAT_IS_SINTP
 
 #define pLsrPRatContainsRef 0
 
@@ -173,7 +173,7 @@ pLsrVTableStatic(pLsrPRatVTable_, VRatTag, "*rat*", pLsrPRatPadding);
  * Names
  */
 
-pLsrVTableStatic(pLsrPNameVTable_, VNameTag, "*name*", 0);
+pLsrVTableStatic(pLsrPNameVTable_, "*name*", 0);
 #define pLsrPNameVTable (&pLsrPNameVTable_)
 
 /* PlsrObjectU must be a prefix of this structure */
@@ -219,7 +219,7 @@ typedef struct {
  * not the case, the mutability property of the vtable must be
  * changed.
  */
-pLsrVTableStatic(pLsrPFloatVTable_, VFloatTag, "*float*", pLsrPFloatPadding);
+pLsrVTableStatic(pLsrPFloatVTable_, "*float*", pLsrPFloatPadding);
 #define pLsrPFloatVTable (&pLsrPFloatVTable_)
 
 /* Boxed doubles based on this vtable must always be initialised
@@ -227,7 +227,7 @@ pLsrVTableStatic(pLsrPFloatVTable_, VFloatTag, "*float*", pLsrPFloatPadding);
  * not the case, the mutability property of the vtable must be
  * changed.
  */
-pLsrVTableStatic(pLsrPDoubleVTable_, VDoubleTag, "*double*", pLsrPDoublePadding);
+pLsrVTableStatic(pLsrPDoubleVTable_, "*double*", pLsrPDoublePadding);
 #define pLsrPDoubleVTable (&pLsrPDoubleVTable_)
 
 #define pLsrPFloatGet(v) (pLsrObjectField((v), pLsrPFloatOffset, float*))
@@ -251,7 +251,7 @@ typedef struct {
 } PlsrIdxU;
 
 #define pLsrIdxPadding (sizeof(PlsrIdxU) - (sizeof(PlsrVTable) + sizeof(uintp)))
-pLsrVTableStatic(pLsrIdxVTable_, VNoneTag, "*index*", pLsrIdxPadding);
+pLsrVTableStatic(pLsrIdxVTable_, "*index*", pLsrIdxPadding);
 #define pLsrIdxVTable (&pLsrIdxVTable_)
 
 typedef PlsrIdxU* PlsrIdxB;
@@ -340,7 +340,7 @@ static uintp pLsrIdxGet(PlsrIdxB idx, PlsrPAny n)
 
 /* This vtable should only be used with arrays of refs
  */
-pLsrVTableStatic(pLsrPArrayOVTable_, VArrayTag, "*ordinal array*", pLsrPArrayOPadding);
+pLsrVTableStatic(pLsrPArrayOVTable_, "*ordinal array*", pLsrPArrayOPadding);
 #define pLsrPArrayOVTable (&pLsrPArrayOVTable_)
 
 /* This function should only be used for arrays of references */
@@ -383,7 +383,7 @@ static PlsrObjectB pLsrPArrayOGet(PlsrPAny arr, PlsrPAny i)
  * determine its GC info unambiguously.  However, the runtime uses
  * it for arrays with all reference elements.
  */
-pLsrVTableStatic(pLsrPArrayIVTable_, VArrayIdxTag, "*indexed array*", pLsrPArrayIPadding);
+pLsrVTableStatic(pLsrPArrayIVTable_, "*indexed array*", pLsrPArrayIPadding);
 #define pLsrPArrayIVTable (&pLsrPArrayIVTable_)
 
 /* This function should only be used for arrays of references */
@@ -391,11 +391,11 @@ static PlsrPAny pLsrPArrayINew(uintp c, PlsrIdxB idx)
 {
     PlsrPAny res;
     noyield {
-        pLsrTupleNewVariable(res, 
+        pLsrTupleNewVariable(res,
                              pLsrPArrayIVTable,
                              pLsrPArrayIBaseSize,
                              sizeof(PlsrObjectB),
-                             c, 
+                             c,
                              sizeof(PlsrObjectB));
         pLsrObjectField(res, pLsrPArrayILenOffset, uintp*) = c;
         pLsrWriteBarrierRefOptBase(res,
@@ -438,7 +438,7 @@ static PlsrBoolean pLsrPArrayHasIdx(PlsrPAny arr)
 /* When using accurate GC, this vtable should be used only with closures
  * with no free variables.
  */
-pLsrVTableStatic(pLsrClosureVTable_, VFunctionTag, "*function*", pLsrPFunctionPadding);
+pLsrVTableStatic(pLsrClosureVTable_, "*function*", pLsrPFunctionPadding);
 #define pLsrClosureVTable (&pLsrClosureVTable_)
 
 /* Generated constants:
@@ -463,7 +463,7 @@ typedef PlsrObjectB (*PlsrPFunctionCodeRef)(PlsrObjectB);
  * without an intervening GC.  If this is not the case, the mutability
  * property of the vtable must be changed.
  */
-pLsrVTableStatic(pLsrPSumVTable_, VSumTag, "*sum*", pLsrPSumPadding);
+pLsrVTableStatic(pLsrPSumVTable_, "*sum*", pLsrPSumPadding);
 #define pLsrPSumVTable (&pLsrPSumVTable_)
 
 /* Generated constants:
@@ -687,7 +687,7 @@ static void pLsrValuePrint(PlsrObjectB v)
         {
             uintp i;
             bool first = 1;
-            
+
             printf("{");
             for(i=0; i < alen; i++) {
                 if (!first) printf(", ");
@@ -703,7 +703,7 @@ static void pLsrValuePrint(PlsrObjectB v)
     }
     case VSetTag:
         printf("SET{");
-        if (!pLsrPSetIsEmpty(v)) 
+        if (!pLsrPSetIsEmpty(v))
             pLsrValuePrint(pLsrPSetGet(v));
         printf("}");
         break;
@@ -739,7 +739,7 @@ static void pLsrValuePrint(PlsrObjectB v)
 #define pLsrIdxEltSize (sizeof(PlsrIdxE))
 #define pLsrThunkCutSize ()
 
-/* Note: for PgcIsRef arrays which are all zeroes, we rely on 
+/* Note: for PgcIsRef arrays which are all zeroes, we rely on
  * c99 static initialization semantics to initialize the fields to zero.
  * By convention, we write this as {0, } .
  */
@@ -863,7 +863,7 @@ static void pLsrValueRegisterVTables()
 
 #define pLsrValueGlobalRefsCount 1
 
-static PlsrRef* pLsrValueGlobalRefs[] = 
+static PlsrRef* pLsrValueGlobalRefs[] =
     {
         (PlsrRef *) &pLsrCoreCharOrd,
         (PlsrRef *) NULL /* This must be last */
@@ -925,13 +925,13 @@ static void pLsrValueCheck()
     if (pLsrPSumSize < pLsrPSumValOffset+sizeof(PlsrObjectB))
         pLsrRuntimeError("Bad object model!\n");
 #ifdef P_USE_TAGGED_RATIONALS
-    if (pLsrPSmallRationalMax != pLsrSmallRationalMax) 
+    if (pLsrPSmallRationalMax != pLsrSmallRationalMax)
         pLsrRuntimeError("Bad object model!\n");
     if (pLsrPSmallRationalMin != pLsrSmallRationalMin)
         pLsrRuntimeError("Bad object model!\n");
 #endif
 #ifdef P_USE_TAGGED_INTEGERS
-    if (pLsrPSmallIntegerMax != pLsrSmallIntegerMax) 
+    if (pLsrPSmallIntegerMax != pLsrSmallIntegerMax)
         pLsrRuntimeError("Bad object model!\n");
     if (pLsrPSmallIntegerMin != pLsrSmallIntegerMin)
         pLsrRuntimeError("Bad object model!\n");

@@ -130,7 +130,7 @@ PlsrTypesMk(Double, float64);
         return (PlsrThunkReturnType##name) 0;                           \
     }
 /* pLsrThunkUninitCodeRef, pLsrThunkUninitCode32, pLsrThunkUninitCode64
- * pLsrThunkUninitCodeFloat, pLsrThunkUninitCodeDouble 
+ * pLsrThunkUninitCodeFloat, pLsrThunkUninitCodeDouble
  */
 pLsrThunkUninitCodeMk(Ref);
 pLsrThunkUninitCodeMk(32);
@@ -145,7 +145,7 @@ pLsrThunkUninitCodeMk(Double);
         assert((vt)->tag==VThunkTag);                                   \
     } while (0)
 
-#ifdef PLSR_ZERO_REFS                                                   
+#ifdef PLSR_ZERO_REFS
 #define pLsrThunkNewRef(dv, vt, sz, algn)                               \
     do {                                                                \
         pLsrThunkNewMk(Ref, dv, vt, sz, algn);                          \
@@ -316,7 +316,7 @@ static PlsrThunkBRef pLsrThunkNewValRef(PlsrRef v)
         } else {                                                        \
             pLsrThunkTailCall##name(thunk);                             \
         }                                                               \
-    } while (0)                                                         
+    } while (0)
 #define pLsrThunkTailEvalDirectMk(name, code, thunk)                    \
     do {                                                                \
         if (pLsrThunkIsEvaled##name(thunk)) {                           \
@@ -324,11 +324,11 @@ static PlsrThunkBRef pLsrThunkNewValRef(PlsrRef v)
         } else {                                                        \
             pLsrThunkTailCallDirect##name(code, thunk);                 \
         }                                                               \
-    } while (0)                                                         
+    } while (0)
 
 #ifdef PLSR_THUNK_SUBSUMPTION
 #define pLsrThunkSubsumptiveEvalMk(name, thunk)                         \
-    (pLsrThunkIsUnboxed##name(thunk)) ? pLsrThunkCastToObject##name(thunk) : pLsrThunkEvalMk(name, thunk) 
+    (pLsrThunkIsUnboxed##name(thunk)) ? pLsrThunkCastToObject##name(thunk) : pLsrThunkEvalMk(name, thunk)
 #define pLsrThunkSubsumptiveEvalDirectMk(name, code, thunk)             \
     (pLsrThunkIsUnboxed##name(thunk)) ? pLsrThunkCastToObject##name(thunk) : pLsrThunkEvalDirectMk(name, code, thunk)
 #define pLsrThunkSubsumptiveTailEvalMk(name, thunk)                     \
@@ -338,7 +338,7 @@ static PlsrThunkBRef pLsrThunkNewValRef(PlsrRef v)
         } else {                                                        \
             pLsrThunkTailEvalMk(name, thunk);                            \
         }                                                               \
-    } while (0)                                                         
+    } while (0)
 #define pLsrThunkSubsumptiveTailEvalDirectMk(name, code, thunk)         \
     do {                                                                \
         if (pLsrThunkIsUnboxed##name(thunk)) {                          \
@@ -346,7 +346,7 @@ static PlsrThunkBRef pLsrThunkNewValRef(PlsrRef v)
         } else {                                                        \
             pLsrThunkTailEvalDirectMk(name, code, thunk);                \
         }                                                               \
-    } while (0)                                                         
+    } while (0)
 #else /* ! PLSR_THUNK_SUBSUMPTION */
 
 #define pLsrThunkSubsumptiveEvalMk pLsrThunkEvalMk
@@ -433,7 +433,7 @@ PlsrThunkReturnTypeRef pLsrThunkDoCut(PlsrThunkBRef t) {
 #endif
 }
 
-pLsrVTableStaticWithCustom(pLsrThunkCutVTable_, VThunkTag, "*thunk value (cut)*", 0, pLsrThunkDoCut);
+pLsrVTableStaticWithCustom(pLsrThunkCutVTable_, "*thunk value (cut)*", 0, pLsrThunkDoCut);
 #define pLsrThunkCutVTable (&pLsrThunkCutVTable_)
 
 #define pLsrThunkCutMk(name, thunk, cont)                                \
@@ -459,19 +459,19 @@ static void pLsrThunkPrintRef(PlsrThunkBRef t)
 
 /* VTables for black holed thunks */
 
-pLsrVTableStatic(pLsrThunkEvalVTableRef_, VThunkTag, "*evaled thunk (ref)*", pLsrThunkPaddingRef);
+pLsrVTableStatic(pLsrThunkEvalVTableRef_, "*evaled thunk (ref)*", pLsrThunkPaddingRef);
 #define pLsrThunkEvalVTableRef (&pLsrThunkEvalVTableRef_)
 
-pLsrVTableStatic(pLsrThunkEvalVTable32_, VThunkTag, "*evaled thunk (32)*", pLsrThunkPadding32);
+pLsrVTableStatic(pLsrThunkEvalVTable32_, "*evaled thunk (32)*", pLsrThunkPadding32);
 #define pLsrThunkEvalVTable32 (&pLsrThunkEvalVTable32_)
 
-pLsrVTableStatic(pLsrThunkEvalVTable64_, VThunkTag, "*evaled thunk (64)*", pLsrThunkPadding64);
+pLsrVTableStatic(pLsrThunkEvalVTable64_, "*evaled thunk (64)*", pLsrThunkPadding64);
 #define pLsrThunkEvalVTable64 (&pLsrThunkEvalVTable64_)
 
-pLsrVTableStatic(pLsrThunkEvalVTableFloat_, VThunkTag, "*evaled thunk (float)*", pLsrThunkPaddingFloat);
+pLsrVTableStatic(pLsrThunkEvalVTableFloat_, "*evaled thunk (float)*", pLsrThunkPaddingFloat);
 #define pLsrThunkEvalVTableFloat (&pLsrThunkEvalVTableFloat_)
 
-pLsrVTableStatic(pLsrThunkEvalVTableDouble_, VThunkTag, "*evaled thunk (double)*", pLsrThunkPaddingDouble);
+pLsrVTableStatic(pLsrThunkEvalVTableDouble_, "*evaled thunk (double)*", pLsrThunkPaddingDouble);
 #define pLsrThunkEvalVTableDouble (&pLsrThunkEvalVTableDouble_)
 
 #ifdef PLSR_THUNK_SYNCHRONIZE
@@ -538,10 +538,10 @@ do {                                                                    \
 
 static void pLsrThunkCheck()
 {
-    /*printf("Thunk check: %d/%d, %d/%d, %d/%d\n", pLsrThunkFixedSizeRef, 
+    /*printf("Thunk check: %d/%d, %d/%d, %d/%d\n", pLsrThunkFixedSizeRef,
            sizeof(PlsrThunkURef), pLsrThunkFixedSize32, sizeof(PlsrThunkU32),
            pLsrThunkFixedSize64, sizeof(PlsrThunkU64));*/
-    if (pLsrThunkFixedSizeRef != sizeof(PlsrThunkURef)) 
+    if (pLsrThunkFixedSizeRef != sizeof(PlsrThunkURef))
         pLsrRuntimeError("Bad thunk object model!\n");
     if (pLsrThunkFixedSize32  != sizeof(PlsrThunkU32))
         pLsrRuntimeError("Bad thunk object model!\n");
@@ -550,7 +550,7 @@ static void pLsrThunkCheck()
     if (pLsrThunkFixedSizeFloat  != sizeof(PlsrThunkUFloat))
         pLsrRuntimeError("Bad thunk object model!\n");
     if (pLsrThunkFixedSizeDouble  != sizeof(PlsrThunkUDouble))
-        pLsrRuntimeError("Bad thunk object model!\n"); 
+        pLsrRuntimeError("Bad thunk object model!\n");
 
     if (pLsrThunkResultOffsetRef != ((unsigned)(&pLsrThunkResultFieldRef(0))))
         pLsrRuntimeError("Bad thunk object model!\n");
@@ -561,7 +561,7 @@ static void pLsrThunkCheck()
     if (pLsrThunkResultOffsetFloat  != ((unsigned)(&pLsrThunkResultFieldFloat(0))))
         pLsrRuntimeError("Bad thunk object model!\n");
     if (pLsrThunkResultOffsetDouble  != ((unsigned)(&pLsrThunkResultFieldDouble(0))))
-        pLsrRuntimeError("Bad thunk object model!\n"); 
+        pLsrRuntimeError("Bad thunk object model!\n");
 
 }
 

@@ -33,7 +33,7 @@ typedef PlsrAPRatS* PlsrAPRat;
 
 #define pLsrAPRatPadding                                        \
     (sizeof(PlsrAPRatS) - sizeof(PlsrVTable) - sizeof(PlsrInteger) - sizeof(PlsrInteger))
-pLsrVTableStatic(pLsrAPRatVTable_, VNoneTag, "*rational*", pLsrAPRatPadding);
+pLsrVTableStatic(pLsrAPRatVTable_, "*rational*", pLsrAPRatPadding);
 #define pLsrAPRatVTable &pLsrAPRatVTable_
 
 /* Note: the parameter names are significant.  Using c0 and c1 breaks,
@@ -63,12 +63,12 @@ pLsrVTableStatic(pLsrAPRatVTable_, VNoneTag, "*rational*", pLsrAPRatPadding);
 /* Constants */
 
 static PlsrAPRatS pLsrAPRatZero_ = { .vtable = pLsrAPRatVTable,
-                                     .c0 = NULL, 
+                                     .c0 = NULL,
                                      .c1 = NULL };
 #define pLsrAPRatZero ((PlsrAPRat) &pLsrAPRatZero_)
 
 static PlsrAPRatS pLsrAPRatOne_ = { .vtable = pLsrAPRatVTable,
-                                    .c0 = NULL, 
+                                    .c0 = NULL,
                                     .c1 = NULL };
 #define pLsrAPRatOne ((PlsrAPRat) &pLsrAPRatOne_)
 
@@ -262,8 +262,8 @@ static PlsrBoolean pLsrAPRatGt(PlsrAPRat a, PlsrAPRat b);
 
 static uintp pLsrAPRatToUInt32Checked(PlsrAPRat r)
 {
-    if (!pLsrAPRatIsIntegral(r) 
-        || pLsrAPRatLt(r, pLsrAPRatZero) 
+    if (!pLsrAPRatIsIntegral(r)
+        || pLsrAPRatLt(r, pLsrAPRatZero)
         || pLsrAPRatGt(r, pLsrAPRatUInt32Max))
         return UINTP_MAX;
     return pLsrUInt32FromAPRat(r);
@@ -459,7 +459,7 @@ static sint32 pLsrAPRatCheckRangeSInt32(PlsrAPRat a, sint32 upper, sint32 lower)
         PlsrInteger i;
         pLsrIntegerNegate(i, im);
         return pLsrIntegerCheckRangeSInt32(i, upper, lower);
-    } 
+    }
     return SINT32_MIN;
 }
 
@@ -469,7 +469,7 @@ static sint32 pLsrAPRatCheckRangeSInt32(PlsrAPRat a, sint32 upper, sint32 lower)
 static void pLsrAPRatRegisterVTables()
 {
     static PgcIsRef pLsrAPRatRefs[pLsrAPRatSize/P_WORD_SIZE] = { 0, pLsrIntegerIsRef, pLsrIntegerIsRef };
- 
+
     assert(pLsrAPRatSize/P_WORD_SIZE == 3);
 
     pLsrVTableRegister(pLsrAPRatVTable, pLsrAPRatAlignment, pLsrAPRatSize, pLsrAPRatRefs, 0, 0, 0,
@@ -478,7 +478,7 @@ static void pLsrAPRatRegisterVTables()
 
 #define pLsrAPRatGlobalsCount 3
 
-static PlsrObjectB pLsrAPRatGlobals[] = 
+static PlsrObjectB pLsrAPRatGlobals[] =
     {
         (PlsrObjectB) pLsrAPRatZero,
         (PlsrObjectB) pLsrAPRatOne,

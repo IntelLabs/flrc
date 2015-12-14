@@ -1,7 +1,7 @@
 (* The Haskell Research Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
-signature MIL_CHECK = 
+signature MIL_CHECK =
 sig
   val program' : Config.t * Mil.t -> bool
   val program  : Config.t * Mil.t -> unit
@@ -14,7 +14,7 @@ end;
  *   Consistent typing
  *)
 
-structure MilCheck :> MIL_CHECK = 
+structure MilCheck :> MIL_CHECK =
 struct
 
   structure SS = StringSet
@@ -179,7 +179,7 @@ struct
       assert (s, MU.Rational.Opt.integerFits r,
               fn () => msg () ^ ": rat constant out of opt rep range")
 
-  fun validRefConstant (s, e, msg, i) = 
+  fun validRefConstant (s, e, msg, i) =
       assert (s, MU.HeapModel.validRefConstant (getConfig e, i),
               fn () => msg () ^ ": ref value not valid as ref constant")
 
@@ -210,8 +210,7 @@ struct
                              fn () => msg () ^ ": bad constant mask")
           in M.TViMask descriptor
           end
-        | M.CPok _ => MU.Uintp.t (getConfig e)
-        | M.CRef i => 
+        | M.CRef i =>
           let
             val () = validRefConstant (s, e, msg, i)
           in M.TRef
@@ -232,7 +231,6 @@ struct
               | M.CFloat _        => reportError (s, msg () ^ ": float used as sum tag")
               | M.CDouble _       => reportError (s, msg () ^ ": double used as sum tag")
               | M.CViMask _       => reportError (s, msg () ^ ": mask used as sum tag")
-              | M.CPok _          => ()
               | M.CRef _          => reportError (s, msg () ^ ": ref used as sum tag")
               | M.COptionSetEmpty => reportError (s, msg () ^ ": option set used as sum tag")
               | M.CTypePH         => reportError (s, msg () ^ ": type used as sum tag")
@@ -258,7 +256,7 @@ struct
                                             val () = typs (s, e, m, ress)
                                           in ()
                                           end
-        | M.TTuple {pok, fixed, array} => 
+        | M.TTuple {fixed, array} =>
           let
             val () = Vector.foreach (fixed, fn (t, _, _) => typ (s, e, m, t))
             val () = typ (s, e, m, #1 array)
@@ -274,7 +272,7 @@ struct
                                             val () = typs (s, e, m, ress)
                                           in ()
                                           end
-        | M.TSum {tag, arms}           => 
+        | M.TSum {tag, arms}           =>
           let
             fun checkOne (k, v) =
                 let
@@ -283,7 +281,7 @@ struct
                 in ()
                 end
             val () = typ (s, e, m, tag)
-            val () = if Utils.SortedVectorMap.isSorted MU.Constant.compare arms then () 
+            val () = if Utils.SortedVectorMap.isSorted MU.Constant.compare arms then ()
                      else reportError (s, m () ^ ": sum arms not sorted")
             val () = Vector.foreach (arms, checkOne)
           in ()
@@ -447,7 +445,7 @@ struct
       let
         val efd = MUT.traceabilitySize (getConfig e, t)
         fun err () = reportError (s, msg () ^ ": field kind mismatch, expect " ^
-                    MU.FieldKind.toString fd ^ " but got " ^ 
+                    MU.FieldKind.toString fd ^ " but got " ^
                     MU.TraceabilitySize.toString (getConfig e, efd)  ^ "\n")
       in
         case (fd, efd) (* MUT.traceabilitySize (getConfig e, t)) *)
@@ -487,7 +485,7 @@ struct
                   if n then
                     case kind
                      of M.FkRef => ()
-                      | _ => 
+                      | _ =>
                         consistentFieldKind (s, e, msgi i, kind, t)
                   else
                     consistentFieldKind (s, e, msgi i, kind, t)
@@ -518,7 +516,7 @@ struct
    *)
   fun consistentMdDesc (s, e, msg, vtd, ts) =
       let
-        val M.MDD {pok, pinned, fixed, array} = vtd
+        val M.MDD {pinned, fixed, array} = vtd
         fun tooManyFields () = reportError (s, msg () ^ ": not enough fields in vtable descriptor")
         fun msgi i () = msg () ^ ": " ^ Int.toString i
         fun checkOne (i, t) =
@@ -547,24 +545,24 @@ struct
         fun msg' () = msg () ^ ": init"
         val ts = operands (s, e, msg', inits)
         val () = consistentMdDesc (s, e, msg, mdd, ts)
-        val M.MDD {pok, fixed, array, ...} = mdd
+        val M.MDD {fixed, array, ...} = mdd
         val () =
             case array
              of NONE => ()
               | SOME (lenIdx, _) =>
                 assert (s, 0 <= lenIdx andalso lenIdx < Vector.length ts,
                         fn () => msg () ^ ": length field not inited")
-        val get = fn (i, t) => 
-                     let 
-                       val (var, a) = 
+        val get = fn (i, t) =>
+                     let
+                       val (var, a) =
                            case MU.MetaDataDescriptor.getField (mdd, i)
-                            of SOME fd => 
+                            of SOME fd =>
                                let
                                  val var = MU.FieldDescriptor.var fd
                                  val a = MU.FieldDescriptor.alignment fd
                                in (var, a)
                                end
-                             | NONE    => 
+                             | NONE    =>
                                let
                                  val () = reportError (s, msg () ^ ": not enough fields")
                                in (M.FvReadWrite, M.Vs8)
@@ -572,7 +570,7 @@ struct
                      in (t, a, var)
                      end
         val tvs = Vector.mapi (ts, get)
-        val t = MU.Typ.fixedArray (pok, tvs)
+        val t = MU.Typ.fixedArray tvs
       in t
       end
 
@@ -623,7 +621,7 @@ struct
                    of M.TTuple {array, ...} => #1 array
                     | _ =>  M.TNone
                 end
-              | M.FiVectorFixed {descriptor, mask, index} => 
+              | M.FiVectorFixed {descriptor, mask, index} =>
                 let
                   fun msg' () = msg () ^ ": index"
                   val _ = Option.map (mask, fn opnd => operand (s, e, msg', opnd))
@@ -643,15 +641,15 @@ struct
       if i < Vector.length v then ()
       else reportError (s, msg () ^ ": index not in range")
 
-  fun sameLength (s, e, msg, v1, v2) = 
+  fun sameLength (s, e, msg, v1, v2) =
       if Vector.length v1 = Vector.length v2 then ()
       else reportError (s, msg () ^ ": mismatched lengths")
 
   fun rhs (s, e, msg, r) =
       let
         val none = Vector.new0 ()
-        val some = Vector.new1 
-        val ts = 
+        val some = Vector.new1
+        val ts =
             (case r
               of M.RhsSimple simp => some (simple (s, e, msg, simp))
                | M.RhsPrim {prim = p, createThunks, typs, args} => prim (s, e, msg, p, typs, args)
@@ -704,7 +702,7 @@ struct
                  end
                | M.RhsCont l =>
                  let
-                   (* Dead blocks that get trimmed leave 
+                   (* Dead blocks that get trimmed leave
                     * unused labels here. Backend treats them
                     * as null.
                     *)
@@ -713,12 +711,6 @@ struct
                         of NONE => M.TNone
                          | SOME ts => M.TContinuation ts
                  in some t
-                 end
-               | M.RhsObjectGetKind v =>
-                 let
-                   fun msg' () = msg () ^ ": object"
-                   val _ = variableUse (s, e, msg', v)
-                 in some (MU.Uintp.t (getConfig e))
                  end
                | M.RhsThunkMk {typ, fvs} =>
                  let
@@ -765,7 +757,7 @@ struct
                          | SOME v => ignore (variableUse (s, e, msg1, v))
                    fun msg2 () = msg () ^ ": val"
                    val _ = operand (s, e, msg2, ofVal)
-                   val ts = 
+                   val ts =
                        case thunk
                         of SOME _ => none
                          | NONE => some M.TNone
@@ -807,7 +799,7 @@ struct
                        in ()
                        end
                    val () = Vector.foreachi (fvs, doOne)
-                   val ts = 
+                   val ts =
                        case cls
                         of SOME _ => none
                          | NONE => some M.TNone
@@ -857,7 +849,7 @@ struct
                    fun msg2 () = msg () ^ ": of vals"
                    val ts = operands (s, e, msg2, ofVals)
                    val () = sameLength (s, e, msg2, typs, ofVals)
-                   val () = Vector.foreach2 (typs, ts, 
+                   val () = Vector.foreach2 (typs, ts,
                                           fn (fk, t) => consistentFieldKind (s, e, msg2, fk, t))
                  in some M.TNone
                  end
@@ -931,7 +923,7 @@ struct
             in (NONE, NONE)
             end
           | M.TNonRefPtr => (NONE, NONE)
-          | M.TBits vs => 
+          | M.TBits vs =>
             let
               val () = if vs = MU.ValueSize.ptrSize (getConfig e)
                        then ()
@@ -984,7 +976,7 @@ struct
 
   fun call (s, e, msg, c) =
       case c
-       of M.CCode {ptr, code} => 
+       of M.CCode {ptr, code} =>
           let
             val ct = variableUse (s, e, msg, ptr)
             val (ats, rts) = getCodeType (s, e, msg, ct)
@@ -1123,12 +1115,12 @@ struct
 
   fun transfer (s, e, msg, t) =
       case t
-       of M.TGoto t => 
+       of M.TGoto t =>
           let
             val () = target (s, e, fn () => msg () ^ ": target", t)
           in e
           end
-        | M.TCase sw => 
+        | M.TCase sw =>
           let
             val () = switch (s, e, msg, sw)
           in e
@@ -1167,7 +1159,7 @@ struct
             fun badTyp () = reportError (s, msg () ^ ": exit code not SIntp")
             val () =
                 case t
-                 of M.TNumeric (MP.NtInteger (MP.IpFixed t)) => 
+                 of M.TNumeric (MP.NtInteger (MP.IpFixed t)) =>
                     if IntArb.equalTyps(t, MU.Sintp.intArbTyp (getConfig e)) then () else badTyp ()
                   | _ => badTyp ()
           in e
@@ -1190,7 +1182,7 @@ struct
         val e = block (s, e, l, b)
       in blockForest (s, e, trees)
       end
-  and blockForest (s, e, trees) = 
+  and blockForest (s, e, trees) =
       Vector.foreach (trees, fn tree => blockTree (s, e, tree))
 
   fun codeBody (s, e, msg, b as M.CB {entry, blocks}) =
@@ -1297,7 +1289,7 @@ struct
               | M.GIdx nis => index (s, e, msg, nis)
               | M.GTuple {mdDesc, inits} =>
                 let
-                  val M.MDD {pok, fixed, array, ...} = mdDesc
+                  val M.MDD {fixed, array, ...} = mdDesc
                   val t = tupleMake (s, e, msg, mdDesc, inits)
                   val fixedLen = Vector.length fixed
                   fun badLen () = reportError (s, msg () ^ ": bad length init")
@@ -1335,7 +1327,7 @@ struct
                       in ()
                       end
                   val () = Vector.foreachi (fvs, doOne)
-                  val t = 
+                  val t =
                       (case code
                         of NONE => getTyp (e, x)
                          | SOME v =>
@@ -1374,7 +1366,7 @@ struct
   fun includeFile (s, e, M.IF {name, kind, externs = evs}) =
       let
         val () = assert (s, not (isIncFile (s, name)), fn () => "file " ^ name ^ " include more than once")
-        val () = addIncFile (s, name) 
+        val () = addIncFile (s, name)
        val e = externs (s, e, evs)
       in e
       end
@@ -1428,7 +1420,7 @@ struct
 
   fun program (config, p) =
       (if program' (config, p) then () else Fail.fail ("MilCheck", "program", "Mil code not well formed"))
-      handle any => 
+      handle any =>
              let
                val () = MilLayout.print (config, p)
              in raise any

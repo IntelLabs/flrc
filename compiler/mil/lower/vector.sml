@@ -1,12 +1,12 @@
 (* The Haskell Research Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
-signature MIL_LOWER_VECTOR = 
+signature MIL_LOWER_VECTOR =
 sig
   val pass : (BothMil.t, BothMil.t) Pass.t
 end
 
-structure MilLowerVector :> MIL_LOWER_VECTOR = 
+structure MilLowerVector :> MIL_LOWER_VECTOR =
 struct
 
   val passname = "MilLowerVector"
@@ -40,29 +40,29 @@ struct
   val ((stateSetStm, stateGetStm))=
       let
         val r2t = fn S {stm} => (stm)
-        val t2r = fn (stm) => 
+        val t2r = fn (stm) =>
                      S {stm = stm}
       in FunctionalUpdate.mk1 (r2t, t2r)
       end
-        
+
   val ((envSetPd, envGetPd),
        (envSetTargetSize, envGetTargetSize),
        (envSetVars, envGetVars)
-      ) = 
+      ) =
       let
         val r2t = fn E {pd, targetSize, vars} => (pd, targetSize, vars)
         val t2r = fn (pd, targetSize, vars) => E {pd = pd, targetSize = targetSize, vars = vars}
       in FunctionalUpdate.mk3 (r2t, t2r)
       end
-        
+
   val envGetConfig = PD.getConfig o envGetPd
 
   fun stateGetSymbolInfo s = I.SymbolInfo.SiManager (stateGetStm s)
 
   fun getVarTyp (s, v) = MSTM.variableTyp (stateGetStm s, v)
 
-  val relatedSplitVar = 
-   fn (state, vo, t)  => 
+  val relatedSplitVar =
+   fn (state, vo, t)  =>
       let
         val stm = stateGetStm state
         val M.VI {typ, kind} = MSTM.variableInfo (stm, vo)
@@ -70,7 +70,7 @@ struct
       in v
       end
 
-  val splitVectorDescriptor = 
+  val splitVectorDescriptor =
    fn (s, e, MP.Vd {vectorSize, elementSize}) =>
       let
         val targetBits = MPU.VectorSize.numBits (envGetTargetSize e)
@@ -78,14 +78,14 @@ struct
                    fail ("splitVectorDescriptor", "Target vector size smaller than element size")
                  else
                    ()
-        val rec split = 
-         fn vectorSize => 
-             let 
+        val rec split =
+         fn vectorSize =>
+             let
                val bits = MPU.VectorSize.numBits vectorSize
-             in 
-               if bits <= targetBits then 
+             in
+               if bits <= targetBits then
                  vectorSize
-               else 
+               else
                  case MPU.VectorSize.halfSize vectorSize
                   of SOME vs => split vs
                    | NONE    => fail ("splitVectorDescriptor", "Can't divide vectorSize")
@@ -93,15 +93,15 @@ struct
       in MP.Vd {vectorSize = split vectorSize, elementSize = elementSize}
       end
 
-  val bindSplitVar = 
+  val bindSplitVar =
    fn (s, e, v) =>
       let
         val targetBits = MPU.VectorSize.numBits (envGetTargetSize e)
         val t = getVarTyp (s, v)
-        val mkVars = 
-         fn (vectorSize, count, mker) => 
+        val mkVars =
+         fn (vectorSize, count, mker) =>
             let
-              val typs = 
+              val typs =
                   List.tabulate (count, fn _ => mker vectorSize)
               val vars = List.map (typs, fn t => relatedSplitVar (s, v, t))
               val d = envGetVars e
@@ -109,38 +109,38 @@ struct
               val en = envSetVars (e, d)
             in (en, vars)
             end
-        val rec split = 
-         fn (vectorSize, count, mker) => 
-             let 
+        val rec split =
+         fn (vectorSize, count, mker) =>
+             let
                val bits = MPU.VectorSize.numBits vectorSize
-             in 
-               if bits <= targetBits then 
-                 mkVars (vectorSize, count, mker) 
-               else 
+             in
+               if bits <= targetBits then
+                 mkVars (vectorSize, count, mker)
+               else
                  case MPU.VectorSize.halfSize vectorSize
                   of SOME vs => split (vs, 2*count, mker)
                    | NONE    => fail ("bindSplitVar", "Can't divide vectorSize")
              end
       in case MU.Typ.Dec.tViVector t
-          of SOME {vectorSize, elementTyp} => 
+          of SOME {vectorSize, elementTyp} =>
              let val bits = MPU.VectorSize.numBits vectorSize
                  val mker  = fn vectorSize => M.TViVector {vectorSize = vectorSize, elementTyp = elementTyp}
              in if bits <= targetBits then (e, [v]) else split (vectorSize, 1, mker)
              end
-           | NONE => 
+           | NONE =>
              (case MU.Typ.Dec.tViMask t
-               of SOME (MP.Vd {vectorSize, elementSize}) => 
+               of SOME (MP.Vd {vectorSize, elementSize}) =>
                   let val bits = MPU.VectorSize.numBits vectorSize
-                      val mker = 
+                      val mker =
                        fn vectorSize => M.TViMask (MP.Vd {vectorSize = vectorSize, elementSize = elementSize})
                   in if bits <= targetBits then (e, [v]) else split (vectorSize, 1, mker)
                   end
                 | NONE  => (e, [v]))
       end
 
-        
-  val splitVar = 
-   fn (state, env, v) => 
+
+  val splitVar =
+   fn (state, env, v) =>
       (case VD.lookup (envGetVars env, v)
         of SOME l => l
          | NONE   => [v])
@@ -149,17 +149,17 @@ struct
   structure Chat = ChatF(struct type env = env
                                 val extract = envGetConfig
                                 val name = passname
-                                val indent = 2 
+                                val indent = 2
                          end)
 
   val rec doTyps =
    fn (state, env, ts) => Vector.map (ts, fn t => doTyp (state, env, t))
-  and rec doTyp = 
-   fn (state, env, t) => 
-      let 
+  and rec doTyp =
+   fn (state, env, t) =>
+      let
         val typs = fn ts => doTyps (state, env, ts)
         val typ = fn t => doTyp (state, env, t)
-        val t = 
+        val t =
             case t
              of M.TAny => t
               | M.TAnyS _ => t
@@ -172,7 +172,7 @@ struct
               | M.TName => t
               | M.TViVector _ => t
               | M.TViMask _ => t
-              | M.TCode {cc, args, ress} => 
+              | M.TCode {cc, args, ress} =>
                 let
                   val cc = MU.CallConv.map (cc, typ)
                   val aTyps = typs args
@@ -180,12 +180,12 @@ struct
                   val t = M.TCode {cc = cc, args = aTyps, ress = rTyps}
                 in t
                 end
-              | M.TTuple {pok, fixed, array} =>
+              | M.TTuple {fixed, array} =>
                 let
                   fun typVar (t, ag, v) = (typ t, ag, v)
                   val tvs = Vector.map (fixed, typVar)
                   val tv = typVar array
-                  val t = M.TTuple {pok = pok, fixed = tvs, array = tv}
+                  val t = M.TTuple {fixed = tvs, array = tv}
                 in t
                 end
               | M.TCString => t
@@ -222,21 +222,21 @@ struct
       in t
       end
 
-  val doOperand : state * env * M.operand -> M.operand List.t = 
-   fn (state, env, operand) => 
+  val doOperand : state * env * M.operand -> M.operand List.t =
+   fn (state, env, operand) =>
       (case operand
         of M.SVariable v => List.map (splitVar (state, env, v), M.SVariable)
          | M.SConstant _ => [operand])
 
-  val doOperands' : state * env * (M.operand Vector.t) -> M.operand List.t Vector.t = 
+  val doOperands' : state * env * (M.operand Vector.t) -> M.operand List.t Vector.t =
    fn (state, env, operands) => Vector.map (operands, fn operand => doOperand (state, env, operand))
 
-  val doOperands : state * env * (M.operand Vector.t) -> M.operand Vector.t = 
-   fn (state, env, operands) => 
+  val doOperands : state * env * (M.operand Vector.t) -> M.operand Vector.t =
+   fn (state, env, operands) =>
       Vector.concatV (Vector.map (doOperands' (state, env, operands), Vector.fromList))
 
-  val doOperandsPointwise : state * env * (M.operand Vector.t) -> M.operand Vector.t List.t = 
-   fn (state, env, operands) => 
+  val doOperandsPointwise : state * env * (M.operand Vector.t) -> M.operand Vector.t List.t =
+   fn (state, env, operands) =>
       let
         val opers = doOperands' (state, env, operands)
         val rec doIt =
@@ -251,10 +251,10 @@ struct
            doIt opers
       end
 
-  val doVariableBinders = 
-   fn (state, env, vs) => 
+  val doVariableBinders =
+   fn (state, env, vs) =>
       let
-        val folder = fn (v, env) => 
+        val folder = fn (v, env) =>
                         let
                           val (env, vs) = bindSplitVar (state, env, v)
                           val vs = Vector.fromList vs
@@ -265,28 +265,28 @@ struct
       end
 
   val doInstruction =
-   fn (state, env, i as M.I {dests, n, rhs}) => 
+   fn (state, env, i as M.I {dests, n, rhs}) =>
       let
         val checkDesc =
-         fn (desc, s, a) => 
+         fn (desc, s, a) =>
             let
               val targetBits = MPU.VectorSize.numBits (envGetTargetSize env)
               val bits = MPU.VectorSize.numBits (MPU.VectorDescriptor.vectorSize desc)
             in if bits <= targetBits then a
                else fail ("doInstruction:"^s, "Unimplemented")
             end
-        val (env, is) = 
+        val (env, is) =
             case rhs
              of M.RhsPrim {prim, createThunks, typs, args} =>
                 let
                   val typs = doTyps (state, env, typs)
                 in
                   case prim
-                   of MP.Vector v => 
-                      (case v 
-                        of MP.ViPointwise {descriptor, masked, operator} => 
+                   of MP.Vector v =>
+                      (case v
+                        of MP.ViPointwise {descriptor, masked, operator} =>
                            let
-                             val () = if masked then fail ("doInstruction:ViPointwise", "Masked unimplemented") 
+                             val () = if masked then fail ("doInstruction:ViPointwise", "Masked unimplemented")
                                       else ()
                              val desc = splitVectorDescriptor (state, env, descriptor)
                              val dest = Vector.sub (dests, 0)
@@ -294,9 +294,9 @@ struct
                              val (env, dests) = bindSplitVar (state, env, dest)
                              val pairs = List.zip (dests, argsL)
                              val p = MP.ViPointwise {descriptor = desc, masked = false, operator = operator}
-                             val mkRhs = fn args => M.RhsPrim {prim = MP.Vector p, 
-                                                               createThunks = createThunks, 
-                                                               typs = typs, 
+                             val mkRhs = fn args => M.RhsPrim {prim = MP.Vector p,
+                                                               createThunks = createThunks,
+                                                               typs = typs,
                                                                args = args}
                              val mk1 = fn (v, args) => M.I {dests = Vector.new1 v,
                                                             n = 0,
@@ -304,11 +304,11 @@ struct
                              val is = List.map (pairs, mk1)
                            in (env, is)
                            end
-                         | MP.ViConvert {to, from} => checkDesc(#descriptor to, "ViConvert", 
+                         | MP.ViConvert {to, from} => checkDesc(#descriptor to, "ViConvert",
                                                                 checkDesc (#descriptor from, "ViConvert", (env, [i])))
-                         | MP.ViCast {to, from} => checkDesc(#descriptor to, "ViCast", 
+                         | MP.ViCast {to, from} => checkDesc(#descriptor to, "ViCast",
                                                              checkDesc (#descriptor from, "ViCast", (env, [i])))
-                         | MP.ViCompare {descriptor, typ, operator} => 
+                         | MP.ViCompare {descriptor, typ, operator} =>
                            let
                              val desc = splitVectorDescriptor (state, env, descriptor)
                              val dest = Vector.sub (dests, 0)
@@ -316,9 +316,9 @@ struct
                              val (env, dests) = bindSplitVar (state, env, dest)
                              val pairs = List.zip (dests, argsL)
                              val p = MP.ViCompare {descriptor = desc, typ = typ, operator = operator}
-                             val mkRhs = fn args => M.RhsPrim {prim = MP.Vector p, 
-                                                               createThunks = createThunks, 
-                                                               typs = typs, 
+                             val mkRhs = fn args => M.RhsPrim {prim = MP.Vector p,
+                                                               createThunks = createThunks,
+                                                               typs = typs,
                                                                args = args}
                              val mk1 = fn (v, args) => M.I {dests = Vector.new1 v,
                                                             n = 0,
@@ -328,19 +328,19 @@ struct
                            end
 
                          | MP.ViReduction r => checkDesc(#descriptor r, "ViReduction", (env, [i]))
-                         | MP.ViData {descriptor, operator} => 
+                         | MP.ViData {descriptor, operator} =>
                            let
                              val desc = splitVectorDescriptor (state, env, descriptor)
                              val dest = Vector.sub (dests, 0)
                              val (env, dests) = bindSplitVar (state, env, dest)
                            in
                              case operator
-                              of MP.DBroadcast => 
+                              of MP.DBroadcast =>
                                  let
                                    val p = MP.ViData {descriptor = desc, operator = operator}
-                                   val rhs = M.RhsPrim {prim = MP.Vector p, 
-                                                        createThunks = createThunks, 
-                                                        typs = typs, 
+                                   val rhs = M.RhsPrim {prim = MP.Vector p,
+                                                        createThunks = createThunks,
+                                                        typs = typs,
                                                         args = args}
                                    val mk1 = fn v => M.I {dests = Vector.new1 v,
                                                           n = 0,
@@ -348,10 +348,10 @@ struct
                                    val is = List.map (dests, mk1)
                                  in (env, is)
                                  end
-                               | MP.DVector => 
+                               | MP.DVector =>
                                  let
                                    val p = MP.ViData {descriptor = desc, operator = operator}
-                                   val eltCount = 
+                                   val eltCount =
                                        let
                                          val dl = List.length dests
                                          val al = Vector.length args
@@ -361,13 +361,13 @@ struct
                                           else
                                             fail ("doInstruction:DVector", "Bad arg count")
                                        end
-                                   val argsL = 
+                                   val argsL =
                                        let
-                                         val rec split = 
-                                          fn l => 
+                                         val rec split =
+                                          fn l =>
                                              (case l
                                                of [] => []
-                                                | _  => 
+                                                | _  =>
                                                   let
                                                     val (elts, rest) = List.splitAt (l, eltCount)
                                                   in elts :: split rest
@@ -375,9 +375,9 @@ struct
                                        in split (Vector.toList args)
                                        end
                                    val pairs = List.zip (dests, argsL)
-                                   val mkRhs = fn args => M.RhsPrim {prim = MP.Vector p, 
-                                                                     createThunks = createThunks, 
-                                                                     typs = typs, 
+                                   val mkRhs = fn args => M.RhsPrim {prim = MP.Vector p,
+                                                                     createThunks = createThunks,
+                                                                     typs = typs,
                                                                      args = args}
                                    val mk1 = fn (v, args) => M.I {dests = Vector.new1 v,
                                                                   n = 0,
@@ -389,51 +389,51 @@ struct
                            end
                          | MP.ViMaskData r => checkDesc(#descriptor r, "ViMaskData", (env, [i]))
                          | MP.ViMaskBoolean r => checkDesc(#descriptor r, "ViMaskBoolean", (env, [i]))
-                         | MP.ViMaskConvert {to, from} => 
-                           checkDesc(to, "ViMaskConvert", 
+                         | MP.ViMaskConvert {to, from} =>
+                           checkDesc(to, "ViMaskConvert",
                                      checkDesc (from, "ViMaskConvert", (env, [i])))
                       )
                     | _ => (env, [i])
                 end
-              | M.RhsTupleSub tf => 
+              | M.RhsTupleSub tf =>
                 let
                   val dest = Vector.sub (dests, 0)
                   val (env, dests) = bindSplitVar (state, env, dest)
                   val v = case dests
                            of [v] => v
                             | _   => fail ("doInstruction:RhsTupleSub", "Splitting dests not supported")
-                  val tfs = 
+                  val tfs =
                       let
                         val M.TF {tupDesc, tup, field} = tf
-                        val nochange = 
-                         fn descriptor => MPU.VectorDescriptor.eq (descriptor, 
+                        val nochange =
+                         fn descriptor => MPU.VectorDescriptor.eq (descriptor,
                                                                    splitVectorDescriptor (state, env, descriptor))
-                        val tfs = 
+                        val tfs =
                             case field
                              of M.FiFixed _    => [tf]
                               | M.FiVariable _ => [tf]
-                              | M.FiVectorFixed {descriptor, mask, index} => 
+                              | M.FiVectorFixed {descriptor, mask, index} =>
                                 if nochange descriptor then
                                   [tf]
                                 else
                                   fail ("doTupleField", "VectorFixed not supported")
-                              | M.FiVectorVariable {descriptor, base, mask, index, kind} => 
+                              | M.FiVectorVariable {descriptor, base, mask, index, kind} =>
                                 if nochange descriptor then
                                   case (base, kind, doOperand (state, env, index))
                                    of (_, _, [_]) => [tf]
-                                    | (M.TbScalar, M.VikVector, [v0, v1]) => 
+                                    | (M.TbScalar, M.VikVector, [v0, v1]) =>
                                       let
-                                        val desc = 
+                                        val desc =
                                             let
                                               val MP.Vd {vectorSize, elementSize} = descriptor
                                               val vectorSize2 = valOf (MPU.VectorSize.halfSize vectorSize)
                                             in MP.Vd {vectorSize = vectorSize2, elementSize = elementSize}
                                             end
-                                        val field0 = 
-                                            M.FiVectorVariable {descriptor = desc, base = base, 
+                                        val field0 =
+                                            M.FiVectorVariable {descriptor = desc, base = base,
                                                                 mask = mask, index = v0, kind = kind}
-                                        val field1 = 
-                                            M.FiVectorVariable {descriptor = desc, base = base, 
+                                        val field1 =
+                                            M.FiVectorVariable {descriptor = desc, base = base,
                                                                 mask = mask, index = v1, kind = kind}
                                         val tf0 = M.TF {tupDesc = tupDesc, tup = tup, field = field0}
                                         val tf1 = M.TF {tupDesc = tupDesc, tup = tup, field = field1}
@@ -444,15 +444,15 @@ struct
                                   fail ("doTupleField", "VectorVariable not supported")
                       in tfs
                       end
-                  val is = 
+                  val is =
                       case tfs
                        of [tf] => [M.I {dests = Vector.new1 v,
                                         n = 0,
                                         rhs = M.RhsTupleSub tf}]
-                        | [tf0, tf1] => 
+                        | [tf0, tf1] =>
                           let
                             val t = getVarTyp (state, v)
-                            val {vectorSize, elementTyp} = 
+                            val {vectorSize, elementTyp} =
                                 case t
                                  of M.TViVector r => r
                                   | _ => fail ("doInstruction:RhsTupleSub", "Bad typ")
@@ -460,7 +460,7 @@ struct
                             val t2 = M.TViVector {vectorSize = vectorSize2, elementTyp = elementTyp}
                             val v0 = relatedSplitVar (state, v, t2)
                             val v1 = relatedSplitVar (state, v, t2)
-                            val concat = 
+                            val concat =
                                 let
                                   val config = envGetConfig env
                                   val descriptor = MP.Vd {vectorSize = vectorSize2,
@@ -471,10 +471,10 @@ struct
                                               typs = Vector.new1 elementTyp,
                                               args = Vector.new2 (M.SVariable v0, M.SVariable v1)}
                                 end
-                            val i0 = M.I {dests = Vector.new1 v0, 
+                            val i0 = M.I {dests = Vector.new1 v0,
                                           n = 0,
                                           rhs = M.RhsTupleSub tf0}
-                            val i1 = M.I {dests = Vector.new1 v1, 
+                            val i1 = M.I {dests = Vector.new1 v1,
                                           n = 0,
                                           rhs = M.RhsTupleSub tf1}
                             val i2 = M.I {dests = Vector.new1 v,
@@ -485,18 +485,18 @@ struct
                         | _ => fail ("doInstruction:RhsTupleSub", "Unsupported")
                 in (env, is)
                 end
-              | M.RhsTupleSet {tupField as M.TF {tupDesc, tup, field}, ofVal} => 
+              | M.RhsTupleSet {tupField as M.TF {tupDesc, tup, field}, ofVal} =>
                 let
-                  val tf = 
+                  val tf =
                       case field
                        of M.FiFixed _    => tupField
                         | M.FiVariable _ => tupField
-                        | M.FiVectorFixed {descriptor, mask, index} => 
+                        | M.FiVectorFixed {descriptor, mask, index} =>
                           if MPU.VectorDescriptor.eq (descriptor, splitVectorDescriptor (state, env, descriptor)) then
                             tupField
                           else
                             fail ("doTupleField", "VectorFixed not supported")
-                        | M.FiVectorVariable {descriptor, base, mask, index, kind} => 
+                        | M.FiVectorVariable {descriptor, base, mask, index, kind} =>
                           if MPU.VectorDescriptor.eq (descriptor, splitVectorDescriptor (state, env, descriptor)) then
                             tupField
                           else
@@ -507,19 +507,19 @@ struct
                               | _     => fail ("doTupleField", "Split tuple set not supported")
                   val i = M.I {dests = Vector.new0 (),
                                n = 0,
-                               rhs = M.RhsTupleSet {tupField = tf, 
+                               rhs = M.RhsTupleSet {tupField = tf,
                                                     ofVal = arg}}
                 in (env, [i])
                 end
               | _ => (env, [i])
-                                                   
+
       in (env, Vector.fromList is)
       end
 
-  val doInstructions = 
-   fn (state, env, is) => 
+  val doInstructions =
+   fn (state, env, is) =>
       let
-        val folder = fn (i, env) => 
+        val folder = fn (i, env) =>
                         let
                           val (env, is) = doInstruction (state, env, i)
                         in (is, env)
@@ -528,16 +528,16 @@ struct
       in (env, Vector.concatV iss)
       end
 
-  val doTransfer = 
-   fn (state, env, transfer) => 
+  val doTransfer =
+   fn (state, env, transfer) =>
       let
-        val doTarget = 
+        val doTarget =
          fn (M.T {block, arguments}) => M.T {block = block, arguments = doOperands (state, env, arguments)}
       in MU.Transfer.mapOverTargets (transfer, doTarget)
       end
 
   val doBlock =
-   fn (state, env, M.B {parameters, instructions, transfer}) => 
+   fn (state, env, M.B {parameters, instructions, transfer}) =>
       let
         val (env, parameters) = doVariableBinders (state, env, parameters)
         val (env, instructions) = doInstructions (state, env, instructions)
@@ -545,19 +545,19 @@ struct
       in (env, M.B {parameters = parameters, instructions = instructions, transfer = transfer})
       end
 
-  val rec doDomForest = 
+  val rec doDomForest =
    fn (state, env, children) => Vector.map (children, fn child => doDomTree (state, env, child))
 
-  and rec doDomTree = 
-   fn (state, env, Tree.T ((label, block), children)) => 
+  and rec doDomTree =
+   fn (state, env, Tree.T ((label, block), children)) =>
       let
         val (env, block) = doBlock (state, env, block)
         val children = doDomForest (state, env, children)
       in Tree.T ((label, block), children)
       end
 
-  val doCodeBody = 
-   fn (state, env, cb as M.CB {entry, blocks}) => 
+  val doCodeBody =
+   fn (state, env, cb as M.CB {entry, blocks}) =>
       let
         val cfg = MCFG.build (envGetConfig env, stateGetSymbolInfo state, cb)
         val tree = MCFG.getLabelBlockDomTree cfg
@@ -567,29 +567,29 @@ struct
       end
 
  (* No vectors in arguments, etc *)
-  val doCode = 
-   fn (state, env, M.F {fx, escapes, recursive, cc, args, rtyps, body}) => 
+  val doCode =
+   fn (state, env, M.F {fx, escapes, recursive, cc, args, rtyps, body}) =>
       let
         val body = doCodeBody (state, env, body)
-        val c = M.F {fx = fx, escapes = escapes, recursive = recursive, 
-                     cc = cc, args = args, rtyps = rtyps, 
-                     body = body} 
+        val c = M.F {fx = fx, escapes = escapes, recursive = recursive,
+                     cc = cc, args = args, rtyps = rtyps,
+                     body = body}
       in c
       end
 
-  val doGlobal = 
-   fn (state, env, v, g) => 
+  val doGlobal =
+   fn (state, env, v, g) =>
       case g
-       of M.GCode f => M.GCode (doCode (state, env, f)) 
+       of M.GCode f => M.GCode (doCode (state, env, f))
         | _         => g
-                         
-  val doGlobals = 
+
+  val doGlobals =
    fn (state, env, globals) => VD.map (globals, fn (v, g) => doGlobal (state, env, v, g))
-                                      
+
   val (targetSizeC, findTargetSize) =
       let
         val default = fn _ => MP.Vs1024
-                               
+
         val parser : string -> MP.vectorSize option =
          fn (s : string) =>
             case s
@@ -602,18 +602,18 @@ struct
         val description =
          fn () =>
             Layout.str (passname ^ " target vector size to lower to (64|128|256|512|1024)")
-                  
+
         val name = passname ^ ":target-size"
       in
-        Config.Control.mk (name, description, parser, default) 
+        Config.Control.mk (name, description, parser, default)
       end
 
-  val program = 
-   fn (p, pd) => 
+  val program =
+   fn (p, pd) =>
       (case findTargetSize (PD.getConfig pd)
         of MP.Vs1024 => p
-         | targetSize => 
-           let 
+         | targetSize =>
+           let
              val M.P {symbolTable = st, ...} = p
              val stm = IM.fromExistingAll st
              val state = S {stm = stm}
@@ -636,6 +636,6 @@ struct
 
   val pass =
       Pass.mkOptPass (description, associates,
-                      BothMil.mkMilPass program) 
+                      BothMil.mkMilPass program)
 
 end (* structure MilLowerVector *)

@@ -27,21 +27,6 @@ struct
 
   datatype typKind = TkI | TkE
 
-  datatype pObjKind =
-      PokNone
-    | PokRat
-    | PokFloat
-    | PokDouble
-    | PokName
-    | PokFunction
-    | PokArray
-    | PokDict
-    | PokTagged
-    | PokOptionSet
-    | PokPtr
-    | PokType
-    | PokCell
-
   datatype valueSize = Vs8 | Vs16 | Vs32 | Vs64 | Vs128 | Vs256 | Vs512 | Vs1024
 
   datatype fieldVariance = FvReadOnly | FvReadWrite
@@ -69,12 +54,11 @@ struct
     | CFloat    of Real32.t
     | CDouble   of Real64.t
     | CViMask   of {descriptor : Prims.vectorDescriptor, elts : bool Vector.t} (* see vector indexing conventions *)
-    | CPok      of pObjKind
     | CRef      of IntInf.t   (* Only gc-ignored refs *)
     (* HL *)
     | COptionSetEmpty
-    | CTypePH 
- 
+    | CTypePH
+
   datatype typ =
     (* Core *)
       TAny                        (* All values *)
@@ -90,16 +74,15 @@ struct
      * elementType must have definite fieldSize
      * can't appear in other code types
      *)
-    | TViVector     of {vectorSize : Prims.vectorSize, 
-                        elementTyp : typ} 
+    | TViVector     of {vectorSize : Prims.vectorSize,
+                        elementTyp : typ}
     (* Does not have definite size *)
-    | TViMask       of Prims.vectorDescriptor     
+    | TViMask       of Prims.vectorDescriptor
 
-    | TCode         of {cc : typ callConv, 
-                        args : typ Vector.t, 
+    | TCode         of {cc : typ callConv,
+                        args : typ Vector.t,
                         ress : typ Vector.t}
-    | TTuple        of {pok : pObjKind, 
-                        fixed : (typ * valueSize * fieldVariance) Vector.t, 
+    | TTuple        of {fixed : (typ * valueSize * fieldVariance) Vector.t,
                         array : (typ * valueSize * fieldVariance)}
     | TCString
     | TIdx
@@ -107,12 +90,12 @@ struct
     | TThunk        of typ
     (* HL *)
     | TPAny
-    | TClosure      of {args : typ Vector.t, 
+    | TClosure      of {args : typ Vector.t,
                         ress : typ Vector.t}
-    | TSum          of {tag : typ, 
-                        arms : (constant * (typ Vector.t)) Vector.t} 
+    | TSum          of {tag : typ,
+                        arms : (constant * (typ Vector.t)) Vector.t}
                         (* No duplicates, sorted. *)
-    | TPType        of {kind : typKind, 
+    | TPType        of {kind : typKind,
                         over : typ}
     | TPRef         of typ
 
@@ -128,34 +111,33 @@ struct
   }
 
   datatype metaDataDescriptor = MDD of {
-    pok    : pObjKind,
-    pinned : bool, 
+    pinned : bool,
     fixed  : fieldDescriptor Vector.t,
     array  : (int * fieldDescriptor) option
   }
 
-  datatype simple = 
+  datatype simple =
       SVariable of variable
     | SConstant of constant
 
   type operand = simple
 
-  datatype tupleBase = 
+  datatype tupleBase =
       TbScalar      (* Operation is on an array *)
     | TbVector      (* Operation is on a vector of arrays *)
 
-  datatype vectorIndexKind = 
+  datatype vectorIndexKind =
       VikStrided of int  (* Strided load:      X[i:i+(s*n)]. n *)
     | VikVector          (* General load:      X[av] *)
 
-  datatype fieldIdentifier = 
+  datatype fieldIdentifier =
       FiFixed          of int                                   (* a.i *)
     | FiVariable       of operand                               (* a[i] *)
-    | FiVectorFixed    of {descriptor : Prims.vectorDescriptor, 
+    | FiVectorFixed    of {descriptor : Prims.vectorDescriptor,
                            mask : operand option,
-                           index : int}  
+                           index : int}
     | FiVectorVariable of {descriptor : Prims.vectorDescriptor,  (* index[Y]. the tupleBase describes X *)
-                           base : tupleBase,  
+                           base : tupleBase,
                            mask : operand option,
                            index : operand,
                            kind: vectorIndexKind}          (* and the vectorIndexKind describes Y*)
@@ -173,9 +155,9 @@ struct
   datatype rhs =
     (* Core *)
       RhsSimple        of simple
-    | RhsPrim          of {prim : Prims.t, 
-                           createThunks : bool, 
-                           typs : typ Vector.t, 
+    | RhsPrim          of {prim : Prims.t,
+                           createThunks : bool,
+                           typs : typ Vector.t,
                            args : operand Vector.t}
     | RhsTuple         of {mdDesc : metaDataDescriptor,  (* Length field must be initialised *)
                            inits  : operand Vector.t}    (* Initialises a prefix of the fields;
@@ -183,25 +165,24 @@ struct
                                                           * can include some/all array elements
                                                           *)
     | RhsTupleSub      of tupleField
-    | RhsTupleSet      of {tupField : tupleField, 
+    | RhsTupleSet      of {tupField : tupleField,
                            ofVal : operand}
     | RhsTupleCAS      of {tupField : tupleField,        (* Only pointer sized fields allowed. *)
                            cmpVal : operand,             (* Returns the field's old value.     *)
                            newVal : operand}
     | RhsTupleWait     of {tupField : tupleField,
                            pred : waitPredicate}
-    | RhsTupleInited   of {mdDesc : metaDataDescriptor, 
+    | RhsTupleInited   of {mdDesc : metaDataDescriptor,
                            tup : variable}
-    | RhsIdxGet        of {idx : variable, 
+    | RhsIdxGet        of {idx : variable,
                            ofVal : operand}
     | RhsCont          of label
-    | RhsObjectGetKind of variable
-    | RhsThunkMk       of {typ : fieldKind, 
+    | RhsThunkMk       of {typ : fieldKind,
                            fvs : fieldKind Vector.t}
     | RhsThunkInit     of {typ   : fieldKind,
                            thunk : variable option,   (* if absent then create *)
                            fx    : effects,
-                           code  : variable option,   (* Must be function name. If absent then this is an environment, 
+                           code  : variable option,   (* Must be function name. If absent then this is an environment,
                                                        * which can only be projected from but not evaled.
                                                        *)
                            fvs   : (fieldKind * operand) Vector.t}
@@ -212,36 +193,36 @@ struct
     | RhsThunkValue    of {typ    : fieldKind,
                            thunk  : variable option, (* if absent then create *)
                            ofVal : operand}
-    | RhsThunkGetValue of {typ : fieldKind, 
+    | RhsThunkGetValue of {typ : fieldKind,
                            thunk : variable} (* thunk must be evaled *)
-    | RhsThunkSpawn    of {typ : fieldKind, 
-                           thunk : variable, 
+    | RhsThunkSpawn    of {typ : fieldKind,
+                           thunk : variable,
                            fx : effects}
     (* HL *)
     | RhsClosureMk     of {fvs : fieldKind Vector.t}
     | RhsClosureInit   of {cls  : variable option,                (* if absent, create;
                                                                    * if present, must be from ClosureMk
                                                                    *)
-                           code : variable option,   (* Must be function name. If absent then this is an environment, 
+                           code : variable option,   (* Must be function name. If absent then this is an environment,
                                                       * which can only be projected from but not called.  *)
                            fvs  : (fieldKind * operand) Vector.t}
-    | RhsClosureGetFv  of {fvs : fieldKind Vector.t, 
-                           cls : variable, 
+    | RhsClosureGetFv  of {fvs : fieldKind Vector.t,
+                           cls : variable,
                            idx : int}
     | RhsPSetNew       of operand
     | RhsPSetGet       of variable
-    | RhsPSetCond      of {bool : operand, 
+    | RhsPSetCond      of {bool : operand,
                            ofVal : operand} (* if bool then {ofVal} else {} *)
     | RhsPSetQuery     of operand (* {} => false | _ => true *)
     | RhsEnum          of {tag : operand, typ : fieldKind}  (* non value carrying sum object *)
-    | RhsSum           of {tag : constant, 
+    | RhsSum           of {tag : constant,
                            ofVals : operand Vector.t,
                            typs   : fieldKind Vector.t}
-    | RhsSumProj       of {typs : fieldKind Vector.t, 
+    | RhsSumProj       of {typs : fieldKind Vector.t,
                            sum : variable,
-                           tag : constant, 
+                           tag : constant,
                            idx : int}
-    | RhsSumGetTag     of {typ : fieldKind, 
+    | RhsSumGetTag     of {typ : fieldKind,
                            sum : variable}
 
   datatype instruction = I of {
@@ -250,10 +231,10 @@ struct
     rhs   : rhs
   }
 
-  datatype target = T of {block : label, 
+  datatype target = T of {block : label,
                           arguments : operand Vector.t}
-                      
-  datatype selector = 
+
+  datatype selector =
            SeSum of fieldKind (*HL*) (* dispatch on sum tag of the operand.  fieldKind is size of tag *)
          | SeConstant (* Core *)     (* dispatch on the operand itself *)
 
@@ -262,17 +243,17 @@ struct
 
   (* The code variable in CDirectClosure and in EDirectThunk must be
    * a function name.
-   *) 
+   *)
   datatype call =
       CCode          of {ptr : variable, code : codes}
     | CClosure       of {cls : variable, code : codes}
     | CDirectClosure of {cls : variable, code : variable}
 
-  (* The codes/code describe the set of code pointers that can possibly 
-   * reach here, or produce a value which reaches here.  
+  (* The codes/code describe the set of code pointers that can possibly
+   * reach here, or produce a value which reaches here.
    * Value is only guaranteed to be correct if the codes are exhaustive.
    * Value indicates whether or not a value reaching this point could have
-   * been created by a thunkvalue instruction.  
+   * been created by a thunkvalue instruction.
    * If value is false, then everything which reaches here is either unevaluated
    * or is a thunk value produced by running one of the code pointers in code.
    *)
@@ -284,7 +265,7 @@ struct
       IpCall of {call : call, args : operand Vector.t}
     | IpEval of {typ : fieldKind, eval : eval}
 
-  datatype cuts = C of {exits : bool, targets : LS.t}  
+  datatype cuts = C of {exits : bool, targets : LS.t}
 
   datatype return =
       RNormal of {rets : variable Vector.t, block : label, cuts : cuts}
@@ -294,8 +275,8 @@ struct
     (* Core *)
       TGoto      of target
     | TCase      of {select  : selector,
-                     on      : operand, 
-                     cases   : (constant * target) Vector.t, 
+                     on      : operand,
+                     cases   : (constant * target) Vector.t,
                      default : target option}
     | TInterProc of {callee : interProc, ret : return, fx : effects}
     | TReturn    of operand Vector.t
@@ -305,14 +286,14 @@ struct
   datatype block = B of {
     parameters   : variable Vector.t,
     instructions : instruction Vector.t,
-    transfer     : transfer  
+    transfer     : transfer
   }
 
   datatype codeBody = CB of {entry : label, blocks : block LD.t}
 
   (* f not escapes => no unknown calls
-   * f not recursive => 
-   *  calling f never leads to another call to f before the 
+   * f not recursive =>
+   *  calling f never leads to another call to f before the
    *  return of the first call.
    *)
   datatype code = F of {
@@ -338,13 +319,13 @@ struct
     | GRat        of Rat.t
     | GInteger    of IntInf.t
     | GCString    of string
-    | GThunkValue of {typ : fieldKind, 
+    | GThunkValue of {typ : fieldKind,
                       ofVal : simple}
     (* HL *)
     | GSimple     of simple
-    | GClosure    of {code : variable option, 
+    | GClosure    of {code : variable option,
                       fvs : (fieldKind * simple) Vector.t}
-    | GSum       of {tag    : constant, 
+    | GSum       of {tag    : constant,
                      ofVals : simple Vector.t,
                      typs   : fieldKind Vector.t}
     | GPSet       of simple

@@ -86,7 +86,7 @@ uint32 pLsrAllocREGC_signal = 0;
 #else
 #define pLsrAllocREGC()
 #define pLsrAllocREGCSet()
-#endif 
+#endif
 
 
 /**********************************************************************/
@@ -181,7 +181,7 @@ extern unsigned g_tls_offset_bytes;
 #ifdef TLS0
 #define pLsrGetAllocNursery() (GC_Nursery_Info *)orp_local_to_gc_local(*((void**)prtGetTaskHandle()))
 #define pLsrGetAllocNurseryTh(task) (GC_Nursery_Info *)orp_local_to_gc_local(*((void**)task))
-#else // TLS0 
+#else // TLS0
 #define pLsrGetAllocNursery() (GC_Nursery_Info *)orp_local_to_gc_local(*((void**)((char*)prtGetTaskHandle() + P_WORD_SIZE)))
 #define pLsrGetAllocNurseryTh(task) (GC_Nursery_Info *)orp_local_to_gc_local(*((void**)((char*)task + P_WORD_SIZE)))
 #endif
@@ -211,11 +211,11 @@ extern unsigned g_tls_offset_bytes;
         pLsrAllocFinish(dest, vtable, pLsrAllocSize);                   \
     } while(0)
 
-#define pLsrAlloc(t, dest, vtable, size)  pLsrAllocAligned(t, dest, vtable, size, 1) 
+#define pLsrAlloc(t, dest, vtable, size)  pLsrAllocAligned(t, dest, vtable, size, 1)
 
 /* Accurate GC, skip local nursery */
 #define pLsrAlloc_(t, dest, vtable, size)                           \
-    pLsrAllocInstrumentWrap(t, dest, vtable, size, pLsrAllocSlow) 
+    pLsrAllocInstrumentWrap(t, dest, vtable, size, pLsrAllocSlow)
 
 /* alignment is power of two */
 #define pLsrAllocNoGC(t, dest, vtable, size)                            \
@@ -234,12 +234,12 @@ extern unsigned g_tls_offset_bytes;
         }                                                               \
         pLsrAllocFinish(dest, vtable, pLsrAllocSize);                   \
     } while(0)
-      
+
 #else /* !P_USE_FAST_ALLOC */
 
 /* Accurate GC, slow path */
 #define pLsrAllocAligned(t, dest, vtable, size, alignment)      \
-    pLsrAllocInstrumentWrap(t, dest, vtable, size, pLsrAllocSlow) 
+    pLsrAllocInstrumentWrap(t, dest, vtable, size, pLsrAllocSlow)
 
 #define pLsrAlloc(t, dest, vtable, size) pLsrAllocAligned(t, dest, vtable, size, 1)
 
@@ -347,20 +347,20 @@ static void pLsrFreeC(void* obj)
 #pragma pillar_managed(off)
 static void pLsrRuntimeReportRoots(PrtRseCallback, void*);
 static void pLsrPPilerReportRoots(PrtRseCallback, void*);
-static void pLsrGcReportRoots(PrtRseCallback rse, void* env) 
+static void pLsrGcReportRoots(PrtRseCallback rse, void* env)
 {
 #ifdef PLSR_INSTRUMENT_GCS
-    printf("Total allocation: %I64u bytes (%I64u objects) managed, %I64u bytes (%I64u objects) unmanaged, %I64u objects freed\n", 
-           pLsrNumBytesAllocated, pLsrNumObjectsAllocated, 
+    printf("Total allocation: %I64u bytes (%I64u objects) managed, %I64u bytes (%I64u objects) unmanaged, %I64u objects freed\n",
+           pLsrNumBytesAllocated, pLsrNumObjectsAllocated,
            pLsrNumBytesAllocatedUnmanaged, pLsrNumObjectsAllocatedUnmanaged,
            pLsrNumObjectsFreedUnmanaged);
-    printf("Since last: %I64u bytes (%I64u objects) managed, %I64u bytes (%I64u objects) unmanaged, %I64u objects freed\n", 
-           pLsrNumBytesAllocatedSinceLast, pLsrNumObjectsAllocatedSinceLast, 
+    printf("Since last: %I64u bytes (%I64u objects) managed, %I64u bytes (%I64u objects) unmanaged, %I64u objects freed\n",
+           pLsrNumBytesAllocatedSinceLast, pLsrNumObjectsAllocatedSinceLast,
            pLsrNumBytesAllocatedUnmanagedSinceLast, pLsrNumObjectsAllocatedUnmanagedSinceLast,
            pLsrNumObjectsFreedUnmanagedSinceLast);
     pLsrNumBytesAllocatedSinceLast = 0;
     pLsrNumObjectsAllocatedSinceLast = 0;
-    pLsrNumBytesAllocatedUnmanagedSinceLast = 0; 
+    pLsrNumBytesAllocatedUnmanagedSinceLast = 0;
     pLsrNumObjectsAllocatedUnmanagedSinceLast = 0;
     pLsrNumObjectsFreedUnmanagedSinceLast = 0;
 #endif
@@ -437,7 +437,7 @@ static void pLsrIndirectionVTableRegister(PlsrVTable vt, uintp size, uintp offse
 
 static void pLsrVTableRegisterV(PlsrVTable vt, uintp alignment,
                                 uintp fs, PgcIsRef frefs[],
-                                uintp vs, uintp vlo, 
+                                uintp vs, uintp vlo,
                                 PgcIsRef vrefs[],
                                 enum PGC_MUTABILITY mutability,
                                 uintp pinned,
@@ -446,7 +446,7 @@ static void pLsrVTableRegisterV(PlsrVTable vt, uintp alignment,
 {
     /* alignment is a power of two, so just count shifts, offset by two */
     uintp powerOfTwoBaseFour = 0;
-    uintp adjusted = alignment >> 2;  
+    uintp adjusted = alignment >> 2;
     while ((adjusted >>=1) > 0) { powerOfTwoBaseFour++; }
     /* alignment requirement is 2^(2+powerOfTwoBaseFour).*/
     struct AlignmentInfo ai = {.alignArray = 0, .powerOfTwoBaseFour = powerOfTwoBaseFour};
@@ -455,12 +455,12 @@ static void pLsrVTableRegisterV(PlsrVTable vt, uintp alignment,
     vt->next = pLsrAllVTables;
     pLsrAllVTables = vt;
 #endif
-    pgc_new_object_format((struct VTable*)vt, 
-                          fs, 
-                          frefs, 
+    pgc_new_object_format((struct VTable*)vt,
+                          fs,
+                          frefs,
                           vs,
-                          vlo, 
-                          vrefs, 
+                          vlo,
+                          vrefs,
                           ai,
                           mutability,
                           pinned,
@@ -481,7 +481,7 @@ static void pLsrVTableRegisterV(PlsrVTable vt, uintp alignment,
  * mutability indicates the mutability of objects allocated with this vtable
  * finalizer is an unmanged code pointer to be run on finalization (NULL if none)
  */
-static void pLsrVTableRegisterFinalizable(PlsrVTable vt, uintp alignment, 
+static void pLsrVTableRegisterFinalizable(PlsrVTable vt, uintp alignment,
                                           uintp fs, PgcIsRef frefs[],
                                           uintp vs, uintp vlo, PgcIsRef vref,
                                           enum PGC_MUTABILITY mutability,
@@ -512,8 +512,8 @@ enum PGC_MUTABILITY {
 
 #define pLsrGcRegisterGlobals(gs, num)
 #define pLsrGcRegisterGlobalRefs(gs, num)
-#define pLsrIndirectionVTableRegister(vt, size, offset) 
-#define pLsrVTableRegister(vt, alignment, fs, frefs, vs, vlo, vref, m, pinned) 
+#define pLsrIndirectionVTableRegister(vt, size, offset)
+#define pLsrVTableRegister(vt, alignment, fs, frefs, vs, vlo, vref, m, pinned)
 #define pLsrVTableRegisterFinalizable(vt, alignment, fs, frefs, vs, vlo, vref, m, pinned, finalizer)
 #define pLsrVTableRegisterV(vt, alignment, fs, frefs, vs, vlo, vrefs, m, pinned, wrefs, finalizer)
 
@@ -604,19 +604,19 @@ typedef struct PlsrGCHeapMallocObjS_ {
 
 #define pLsrGCHeapMallocObjPadding \
     (sizeof(PlsrGCHeapMallocObjS) - sizeof(PlsrVTable) - 2*sizeof(struct PlsrGCHeapMallocObjS_*) - sizeof(uintp))
-pLsrVTableStatic(pLsrGCHeapMallocObjVTable_, VNoneTag, "*heap malloc*", pLsrGCHeapMallocObjPadding);
+pLsrVTableStatic(pLsrGCHeapMallocObjVTable_, "*heap malloc*", pLsrGCHeapMallocObjPadding);
 #define pLsrGCHeapMallocObjVTable (&pLsrGCHeapMallocObjVTable_)
 
 #define pLsrGCHeapMallocObjSize (sizeof(PlsrGCHeapMallocObjS))
 
-static PlsrGCHeapMallocObjS pLsrGCHeapMallocObjectList_ = 
+static PlsrGCHeapMallocObjS pLsrGCHeapMallocObjectList_ =
     {.vtable = pLsrGCHeapMallocObjVTable,
      .prev = NULL,
      .next = NULL,
      .length = 0};
 static PlsrGCHeapMallocObjS* pLsrGCHeapMallocObjList = &pLsrGCHeapMallocObjectList_;
 
-static void pLsrGCHeapMallocObjListInsert(PlsrGCHeapMallocObjS* list, PlsrGCHeapMallocObjS* node) 
+static void pLsrGCHeapMallocObjListInsert(PlsrGCHeapMallocObjS* list, PlsrGCHeapMallocObjS* node)
 {
     node->prev = list->prev;
     node->prev->next = node;
@@ -624,7 +624,7 @@ static void pLsrGCHeapMallocObjListInsert(PlsrGCHeapMallocObjS* list, PlsrGCHeap
     list->prev = node;
 }
 
-static void pLsrGCHeapMallocObjListRemove(PlsrGCHeapMallocObjS* node) 
+static void pLsrGCHeapMallocObjListRemove(PlsrGCHeapMallocObjS* node)
 {
     node->next->prev = node->prev;
     node->prev->next = node->next;
@@ -648,7 +648,7 @@ static void* pLsrGCHeapMalloc(uintp size)
 
 static void pLsrGCHeapFree(void *ptr)
 {
-    
+
     PlsrGCHeapMallocObjS *node = pLsrGCHeapPtrToObject(ptr);
     PlsrGCHeapMallocObjS *list = (PlsrGCHeapMallocObjS *) pLsrSynchAtomicTakeUIntp((volatile uintp*) &pLsrGCHeapMallocObjList, 1);
     pLsrGCHeapMallocObjListRemove(node);
@@ -671,32 +671,32 @@ static void* pLsrGCHeapReAlloc(void * ptr, uintp osize, uintp nsize)
     }
 }
 
-static void pLsrGCHeapMallocRegisterVTables() 
+static void pLsrGCHeapMallocRegisterVTables()
 {
     static PgcIsRef refs[pLsrGCHeapMallocObjSize/P_WORD_SIZE] = { 0, 1, 1, 0};
     uintp pinned = 1;
     assert(pLsrGCHeapMallocObjSize/P_WORD_SIZE == 4);
     assert((uintp)&(((PlsrGCHeapMallocObjS*)(0))->length) == 3*P_WORD_SIZE);
-    pLsrVTableRegister(pLsrGCHeapMallocObjVTable, pLsrDefaultAlignment, pLsrGCHeapMallocObjSize, 
+    pLsrVTableRegister(pLsrGCHeapMallocObjVTable, pLsrDefaultAlignment, pLsrGCHeapMallocObjSize,
                        refs, 1, 3*P_WORD_SIZE, 0, PGC_ALWAYS_MUTABLE, pinned);
 }
 
 #define pLsrGCHeapMallocGlobalsCount 1
 
-static PlsrObjectB pLsrGCHeapMallocGlobals[] = 
+static PlsrObjectB pLsrGCHeapMallocGlobals[] =
     {
         (PlsrObjectB) (&pLsrGCHeapMallocObjectList_),
         (PlsrObjectB) NULL /* This must be last */
     };
 
-static void pLsrGCHeapMallocRegisterGlobals() 
+static void pLsrGCHeapMallocRegisterGlobals()
 {
     assert(pLsrGCHeapMallocGlobals[pLsrGCHeapMallocGlobalsCount] == NULL);
     pLsrGcRegisterGlobals (pLsrGCHeapMallocGlobals, pLsrGCHeapMallocGlobalsCount);
 };
 
 
-static void pLsrGCHeapMallocInitialize() 
+static void pLsrGCHeapMallocInitialize()
 {
     pLsrGCHeapMallocObjList->prev=pLsrGCHeapMallocObjList;
     pLsrGCHeapMallocObjList->next=pLsrGCHeapMallocObjList;
@@ -714,15 +714,15 @@ static void pLsrGCHeapMallocInitialize() {}
 
 #endif /* P_USE_AGC */
 
-static void pLsrGCRegisterVTables() 
+static void pLsrGCRegisterVTables()
 {
     pLsrGCHeapMallocRegisterVTables();
 }
-static void pLsrGCRegisterGlobals() 
+static void pLsrGCRegisterGlobals()
 {
     pLsrGCHeapMallocRegisterGlobals();
 }
-static void pLsrGCInitialize() 
+static void pLsrGCInitialize()
 {
     pLsrGCHeapMallocInitialize();
 }

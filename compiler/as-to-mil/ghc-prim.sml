@@ -144,14 +144,14 @@ struct
   val mutableRefTF    = mutableTF M.TRef
   val mutableByteTF   = mutableTF byteTyp
 
-  val mutVarTyp         = M.TTuple { pok = M.PokNone, fixed = Vector.new1 mutableRefTF, array = noneTF }
-  val mVarTyp           = M.TTuple { pok = M.PokNone, fixed = Vector.new1 mutableRefTF, array = noneTF }
-  val immutVarTyp       = M.TTuple { pok = M.PokNone, fixed = Vector.new1 immutableRefTF, array = noneTF }
+  val mutVarTyp         = M.TTuple { fixed = Vector.new1 mutableRefTF, array = noneTF }
+  val mVarTyp           = M.TTuple { fixed = Vector.new1 mutableRefTF, array = noneTF }
+  val immutVarTyp       = M.TTuple { fixed = Vector.new1 immutableRefTF, array = noneTF }
   (* we use mutable Mil arrays for Array and ByteArray even when they are to be immutable in Haskell *)
-  fun arrayTyp ws     = M.TTuple { pok = M.PokNone, fixed = Vector.new1 (indexTF ws), array = mutableRefTF }
-  fun immutableArrayTyp (ws, t) = M.TTuple {pok = M.PokNone, fixed = Vector.new1 (indexTF ws), array = immutableTF t}
-  fun byteArrayTyp ws = M.TTuple { pok = M.PokNone, fixed = Vector.new1 (indexTF ws), array = mutableByteTF }
-  fun mutableArrayTyp ws typ = M.TTuple { pok = M.PokNone, fixed = Vector.new1 (indexTF ws), array = mutableTF typ }
+  fun arrayTyp ws     = M.TTuple { fixed = Vector.new1 (indexTF ws), array = mutableRefTF }
+  fun immutableArrayTyp (ws, t) = M.TTuple {fixed = Vector.new1 (indexTF ws), array = immutableTF t}
+  fun byteArrayTyp ws = M.TTuple { fixed = Vector.new1 (indexTF ws), array = mutableByteTF }
+  fun mutableArrayTyp ws typ = M.TTuple { fixed = Vector.new1 (indexTF ws), array = mutableTF typ }
 
   val threadIdTyp = M.TRef
 
@@ -175,14 +175,14 @@ struct
   val weakPtrTyp = M.TRef (* use non-reference pointer? *)
 
   val stableBoxTD = M.TD { fixed = stableBoxFD, array = NONE }
-  val stableBoxTyp = M.TTuple { pok = M.PokNone, fixed = stableBoxTV, array = noneTF }
+  val stableBoxTyp = M.TTuple { fixed = stableBoxTV, array = noneTF }
   val stablePtrTyp = M.TNonRefPtr (* use non-reference pointer because we don't want it to be traced by GC *)
 
 
   val stableRootTV = Vector.new1 (M.TRef, M.Vs8, M.FvReadWrite)
   val stableRootFD = Vector.new1 (M.FD { kind = M.FkRef, alignment = M.Vs8, var = M.FvReadWrite })
   val stableRootTD = M.TD { fixed = stableRootFD, array = NONE }
-  val stableRootTyp = M.TTuple { pok = M.PokNone, fixed = stableRootTV, array = noneTF }
+  val stableRootTyp = M.TTuple { fixed = stableRootTV, array = noneTF }
 
 
   (* number precisions *)
@@ -608,7 +608,7 @@ struct
         val valueFD =mutableFD vtyp cfg
         val ws = Config.targetWordSize cfg
         val atyp = mutableArrayTyp ws vtyp
-        val mdes = M.MDD { pok = M.PokNone , pinned = pinned , fixed = Vector.new1 (indexFD cfg) , array = SOME (0, valueFD) }
+        val mdes = M.MDD { pinned = pinned , fixed = Vector.new1 (indexFD cfg) , array = SOME (0, valueFD) }
       in
         (M.RhsTuple {mdDesc = mdes, inits = Vector.new1 size}, atyp)
       end
@@ -657,7 +657,7 @@ struct
             val blk0 = MS.bindRhs (szu, convert (intNumTyp ws, wordNumTyp ws) [(sz, szt)])
             val at = immutableArrayTyp (ws, et)
             val a = TMU.localVariableFresh0 (im, at)
-            val amd = M.MDD {pok = M.PokNone, pinned = false, fixed = Vector.new1 (indexFD cfg),
+            val amd = M.MDD {pinned = false, fixed = Vector.new1 (indexFD cfg),
                              array = SOME (0, immutableFD et cfg)}
             val blk1 = MS.bindRhs (a, M.RhsTuple {mdDesc = amd, inits = Vector.new1 (M.SVariable szu)})
             val blk2 = tupleSimple ((state, rvar), [(M.SVariable s, st), (M.SVariable a, at)])
@@ -677,7 +677,7 @@ struct
             val blk0 = MS.bindRhs (szu, convert (intNumTyp ws, wordNumTyp ws) [(sz, szt)])
             val at = immutableArrayTyp (ws, et)
             val a = TMU.localVariableFresh0 (im, at)
-            val amd = M.MDD {pok = M.PokNone, pinned = false, fixed = Vector.new1 (indexFD cfg),
+            val amd = M.MDD {pinned = false, fixed = Vector.new1 (indexFD cfg),
                              array = SOME (0, immutableFD et cfg)}
             val blk1 = MS.bindRhs (a, M.RhsTuple {mdDesc = amd, inits = Vector.new1 (M.SVariable szu)})
             val blk2 = tupleSimple ((state, rvar), [(M.SVariable s, st), (M.SVariable a, at)])
@@ -729,7 +729,7 @@ struct
       case argstyps
         of [(tup, ttyp)] =>
           (case (tup, ttyp)
-            of (M.SVariable arr, M.TTuple { pok, fixed, array }) =>
+            of (M.SVariable arr, M.TTuple { fixed, array }) =>
                let
                  val td = M.TD { fixed = Vector.new1 (indexFD cfg), array = SOME (mkFD cfg) }
                  val ws = Config.targetWordSize cfg
@@ -743,7 +743,7 @@ struct
       case argstyps
        of [(tup, ttyp)] =>
           (case (tup, ttyp)
-            of (M.SVariable arr, M.TTuple {pok, fixed, array}) =>
+            of (M.SVariable arr, M.TTuple {fixed, array}) =>
                let
                  val td = M.TD {fixed = Vector.new1 (indexFD cfg), array = NONE}
                in
@@ -761,7 +761,7 @@ struct
       case argstyps
         of [(tup, ttyp)] =>
           (case (tup, ttyp)
-            of (M.SVariable arr, M.TTuple { pok, fixed, array }) =>
+            of (M.SVariable arr, M.TTuple { fixed, array }) =>
                let
                  val { im, cfg, ... } = state
                  val ws = Config.targetWordSize cfg
@@ -787,7 +787,7 @@ struct
       case argstyps
         of (tup, ttyp) :: (idx, ityp) :: more =>
           (case (tup, ttyp)
-            of (M.SVariable arr, M.TTuple { pok, fixed, array }) =>
+            of (M.SVariable arr, M.TTuple { fixed, array }) =>
                let
                  val { im, cfg, ... } = state
                  val td = M.TD { fixed = Vector.new1 (indexFD cfg), array = SOME (mutableFD typ cfg) }
@@ -890,7 +890,7 @@ struct
       case argstyps
         of [(tup, ttyp), (idx, ityp), (dat, dty), (v, t)] =>
           (case (tup, ttyp)
-            of (M.SVariable arr, M.TTuple { pok, fixed, array }) =>
+            of (M.SVariable arr, M.TTuple { fixed, array }) =>
                let
                  val { im, cfg, ... } = state
                  val td = M.TD { fixed = Vector.new1 (indexFD cfg), array = SOME (mutableFD typ cfg) }
@@ -981,7 +981,7 @@ struct
           (case (a, at)
             of (M.SVariable a, M.TTuple {array = (et, _, _), ...}) =>
                let
-                 val mdd = M.MDD {pok = M.PokNone, pinned = false, fixed = Vector.new1 (indexFD cfg),
+                 val mdd = M.MDD {pinned = false, fixed = Vector.new1 (indexFD cfg),
                                   array = SOME (0, immutableFD et cfg)}
                  val blk1 = MS.doRhs (M.RhsTupleInited {mdDesc = mdd, tup = a})
                  val blk2 = tupleSimple ((state, rvar), [(s, st), (M.SVariable a, at)])
@@ -1058,7 +1058,7 @@ struct
       case argstyps
        of [(arg, typ)] =>
           let
-            val mdes = M.MDD {pok = M.PokNone, pinned = false, fixed = Vector.new1 (mutableRefFD cfg), array = NONE}
+            val mdes = M.MDD {pinned = false, fixed = Vector.new1 (mutableRefFD cfg), array = NONE}
           in
             (M.RhsTuple {mdDesc = mdes, inits  = Vector.new1 arg}, mutVarTyp)
           end
@@ -1068,7 +1068,7 @@ struct
       case argstyps
         of [(arg, typ)] =>
           (case (arg, typ)
-            of (M.SVariable arr, M.TTuple { pok, fixed, array }) =>
+            of (M.SVariable arr, M.TTuple { fixed, array }) =>
                let
                  val (ty, _, _) = Vector.sub (fixed, 0)
                  val td = M.TD { fixed = Vector.new1 (mutableRefFD cfg), array = NONE }
@@ -1082,7 +1082,7 @@ struct
       case argstyps
         of [(arg, typ), (dat, dty)] =>
           (case (arg, typ)
-            of (M.SVariable arr, M.TTuple { pok, fixed, array }) =>
+            of (M.SVariable arr, M.TTuple { fixed, array }) =>
                let
                  val (ty, _, _) = Vector.sub (fixed, 0)
                  val td = M.TD { fixed = Vector.new1 (mutableRefFD cfg), array = NONE }
@@ -1096,7 +1096,7 @@ struct
       case argstyps
         of [(arg, typ), (cv, _), (nv, _), (s, st)] =>
           (case (arg, typ)
-            of (M.SVariable arr, M.TTuple { pok, fixed, array }) =>
+            of (M.SVariable arr, M.TTuple { fixed, array }) =>
                let
                  val (ty, _, _) = Vector.sub (fixed, 0)
                  val td = M.TD { fixed = Vector.new1 (mutableRefFD cfg), array = NONE }
@@ -1474,7 +1474,7 @@ struct
        of [] =>
           let
             val et = M.TRef
-            val mdd = M.MDD {pok = M.PokNone, pinned = false, fixed = Vector.new1 (mutableRefFD cfg), array = NONE}
+            val mdd = M.MDD {pinned = false, fixed = Vector.new1 (mutableRefFD cfg), array = NONE}
             val rhs = M.RhsTuple {mdDesc = mdd, inits  = Vector.new1 null}
           in (rhs, mVarTyp)
           end
@@ -1708,7 +1708,7 @@ struct
       let
         val sintp = intTyp (Config.targetWordSize cfg)
         val f = (sintp, M.Vs8, M.FvReadOnly)
-        val t = M.TTuple {pok = M.PokNone, fixed = Vector.new2 (f, f), array = (M.TNone, M.Vs8, M.FvReadOnly)}
+        val t = M.TTuple {fixed = Vector.new2 (f, f), array = (M.TNone, M.Vs8, M.FvReadOnly)}
       in (sintp, t)
       end
 
@@ -1904,9 +1904,9 @@ struct
         val ws = Config.targetWordSize cfg
         val wordArbTyp = wordArbTyp ws
         val zero = TMU.simpleInt (0, SOME wordArbTyp)
-        val rtyp = M.TTuple { pok = M.PokNone, fixed = stableRootTV, array = noneTF }
+        val rtyp = M.TTuple { fixed = stableRootTV, array = noneTF }
         val rvar = IM.variableFresh (im, "stableRoot", M.VI { typ = stableRootTyp, kind = M.VkGlobal })
-        val mdd  = M.MDD { pok = M.PokNone, pinned = false, fixed = stableRootFD, array = NONE }
+        val mdd  = M.MDD { pinned = false, fixed = stableRootFD, array = NONE }
         val rval = M.GTuple { mdDesc = mdd, inits = Vector.new1 null }
       in
         (rvar, rval)
@@ -1920,12 +1920,12 @@ struct
    *)
   fun insertToStableRoot (im, cfg, root, vval) =
       let
-        val btyp = M.TTuple { pok = M.PokNone, fixed = stableBoxTV, array = noneTF }
+        val btyp = M.TTuple { fixed = stableBoxTV, array = noneTF }
         val isNull = TMU.localVariableFresh0 (im, M.TBoolean)
         val bvar = TMU.localVariableFresh0 (im, btyp)
         val rvar = TMU.localVariableFresh (im, "stableRoot", btyp)
         val blk0 = MS.bindRhs (rvar, M.RhsTupleSub (M.TF { tupDesc = stableRootTD, tup = root, field = M.FiFixed 0 }))
-        val mdd  = M.MDD { pok = M.PokNone, pinned = true, fixed = stableBoxFD, array = NONE }
+        val mdd  = M.MDD { pinned = true, fixed = stableBoxFD, array = NONE }
         val blk1 = MS.bindRhs (bvar, M.RhsTuple { mdDesc = mdd, inits = Vector.new3 (null, vval, M.SVariable rvar) })
         val blk2 = MS.bindRhs (isNull, rhsPrim (MP.Prim MP.PPtrEq) [(M.SVariable rvar, M.TRef), (null, M.TRef)])
         val blkR = MS.doRhs (M.RhsTupleSet { tupField = M.TF { tupDesc = stableBoxTD, tup = rvar, field = M.FiFixed 0 }
@@ -1947,7 +1947,7 @@ struct
    *)
   fun removeFromStableRoot (im, cfg, root, bvar) =
       let
-        val btyp = M.TTuple { pok = M.PokNone, fixed = stableBoxTV, array = noneTF }
+        val btyp = M.TTuple { fixed = stableBoxTV, array = noneTF }
         val rvar = TMU.localVariableFresh (im, "stableRoot", btyp)
         val next = TMU.localVariableFresh (im, "next", btyp)
         val prev = TMU.localVariableFresh (im, "prev", btyp)
@@ -2650,4 +2650,3 @@ struct
         prims cfg v ((state, rvar), argstyps)
       end
 end
-

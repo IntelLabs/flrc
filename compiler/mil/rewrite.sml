@@ -1,14 +1,14 @@
 (* The Haskell Research Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
-structure MilRewriterClient = 
+structure MilRewriterClient =
 struct
-  datatype 'a change = Stop | Continue | StopWith of 'a | ContinueWith of 'a 
+  datatype 'a change = Stop | Continue | StopWith of 'a | ContinueWith of 'a
   type ('s, 'e, 'o) rewriter = 's * 'e * 'o -> ('e * 'o) change
   type ('s, 'e, 'o) binder = 's * 'e * 'o  -> ('e * 'o option)
 end;
 
-signature MIL_REWRITER = 
+signature MIL_REWRITER =
 sig
 
   type state
@@ -21,7 +21,7 @@ sig
   val simple      : Mil.simple                  rewriter
   val operand     : Mil.operand                 rewriter
   val instruction : Mil.instruction             rewriterE
-  val transfer    : (Mil.label option * Mil.transfer)  rewriter  
+  val transfer    : (Mil.label option * Mil.transfer)  rewriter
   val block       : (Mil.label * Mil.block)     rewriter
   val codeBody    : Mil.codeBody                rewriter
   val code        : Mil.code                    rewriter
@@ -49,7 +49,7 @@ functor MilRewriterF (
   val cfgEnum     : state * env * Mil.codeBody
                     -> (Mil.label * Mil.block) Tree.t Vector.t
   val indent      : int
-) :> MIL_REWRITER where type state = state and type env = env = 
+) :> MIL_REWRITER where type state = state and type env = env =
 struct
 
   structure M = Mil
@@ -67,7 +67,7 @@ struct
   val getConfig         = config
   val clientLabel       = label
   val clientVariable    = variable
-  val clientBlock       = block                          
+  val clientBlock       = block
   val clientOperand     = operand
   val clientTransfer    = transfer
   val clientGlobal      = global
@@ -75,14 +75,14 @@ struct
   val clientBind        = bind
   val clientBindLabel   = bindLabel
 
-  fun bindVar (state, env, v) = 
+  fun bindVar (state, env, v) =
       let
 	val (env, vo) = clientBind (state, env, v)
 	val v = Pervasive.Option.getOpt (vo, v)
       in (env, v)
       end
 
-  fun bindLabel (state, env, l) = 
+  fun bindLabel (state, env, l) =
       let
 	val (env, lo) = clientBindLabel (state, env, l)
 	val l = Pervasive.Option.getOpt (lo, l)
@@ -96,11 +96,11 @@ struct
       in (env, vs)
       end
 
-  fun callClientCode (itemhandler, doitem, state, env, item) = 
+  fun callClientCode (itemhandler, doitem, state, env, item) =
       case itemhandler (state, env, item)
 	of StopWith     (env, i) => i
 	 | ContinueWith (env, i) => doitem (state, env, i)
-	 | Continue              => doitem (state, env, item)     
+	 | Continue              => doitem (state, env, item)
 	 | Stop                  => item
 
   fun label (state, env, l) =
@@ -110,17 +110,17 @@ struct
         callClientCode (clientLabel, dolabel, state, env, l)
       end
 
-  fun variable (state, env, v) = 
+  fun variable (state, env, v) =
       let
         fun dovariable (state, env, v) = v
       in
         callClientCode (clientVariable, dovariable, state, env, v)
       end
 
-  fun simple (state, env, s) = 
+  fun simple (state, env, s) =
       let
         fun doSimple (state, env, s) =
-            case s 
+            case s
              of M.SVariable v => M.SVariable (variable (state, env, v))
               | M.SConstant _ => s
       in
@@ -143,7 +143,7 @@ struct
             case fi
              of M.FiFixed _ => fi
               | M.FiVariable opnd => M.FiVariable (doOp opnd)
-              | M.FiVectorFixed {descriptor, mask, index} => 
+              | M.FiVectorFixed {descriptor, mask, index} =>
                 M.FiVectorFixed {descriptor = descriptor, mask = doOpO mask, index = index}
               | M.FiVectorVariable {descriptor, base, mask, index, kind} =>
                 M.FiVectorVariable {descriptor = descriptor, base = base, mask = doOpO mask, index = doOp index,
@@ -152,7 +152,7 @@ struct
             M.TF {tupDesc = tupDesc, tup = doVar tup, field = doFi field}
         fun doFkOps fkos = Vector.map (fkos, fn (fk, opnd) => (fk, doOp opnd))
       in
-        case rhs 
+        case rhs
          of M.RhsSimple s => M.RhsSimple (simple (state, env, s))
           | M.RhsPrim {prim, createThunks, typs, args} =>
             M.RhsPrim {prim = prim, createThunks = createThunks, typs = typs, args = doOps args}
@@ -169,7 +169,6 @@ struct
           | M.RhsIdxGet {idx, ofVal} =>
             M.RhsIdxGet {idx = doVar idx, ofVal = doOp ofVal}
           | M.RhsCont l => M.RhsCont (label (state, env, l))
-          | M.RhsObjectGetKind v => M.RhsObjectGetKind (doVar v)
           | M.RhsThunkMk {typ, fvs} => rhs
           | M.RhsThunkInit {typ, thunk, fx, code, fvs} =>
             M.RhsThunkInit {typ   = typ, thunk = doVarO thunk, fx    = fx, code  = doVarO code, fvs   = doFkOps fvs}
@@ -201,9 +200,9 @@ struct
             M.RhsSumGetTag {typ = typ, sum = doVar sum}
       end
 
-  fun instruction (state, env, i) = 
+  fun instruction (state, env, i) =
       let
-        fun bindInstr (env, M.I {dests, n, rhs}) = 
+        fun bindInstr (env, M.I {dests, n, rhs}) =
             let
               val (env, dests) = bindVars (state, env, dests)
             in (env, M.I {dests = dests, n = n, rhs = rhs})
@@ -215,7 +214,7 @@ struct
               val i = M.I {dests = dests, n = n, rhs = rhs}
             in (env, i)
             end
-        fun doInstrs (env, instrs) = 
+        fun doInstrs (env, instrs) =
             Utils.Function.flipOut Vector.mapAndFold (instrs, env, Utils.Function.flip doInstr)
       in
 	case clientInstruction (state, env, i)
@@ -225,14 +224,14 @@ struct
 	  | Stop                  => bindInstr (env, i)
       end
 
-  fun instructions (state, env, is) = 
+  fun instructions (state, env, is) =
       let
         fun doOne (i, env) = Utils.Function.flipOut instruction (state, env, i)
         val (is, env) = Vector.mapAndFold (is, env, doOne)
       in (env, is)
-      end       
+      end
 
-  fun target (state, env, M.T {block, arguments}) = 
+  fun target (state, env, M.T {block, arguments}) =
       let
         val block = label (state, env, block)
         val arguments = operands (state, env, arguments)
@@ -258,14 +257,14 @@ struct
       in codes
       end
 
-  fun call (state, env, call) = 
-      case call 
+  fun call (state, env, call) =
+      case call
        of M.CCode {ptr, code} => M.CCode {ptr = variable (state, env, ptr), code = codes (state, env, code)}
         | M.CClosure {cls, code} => M.CClosure {cls = variable (state, env, cls), code = codes (state, env, code)}
         | M.CDirectClosure {cls, code} =>
           M.CDirectClosure {cls = variable (state, env, cls), code = variable (state, env, code)}
 
-  fun eval (state, env, eval) = 
+  fun eval (state, env, eval) =
       case eval
        of M.EThunk {thunk, value, code} =>
           M.EThunk {thunk = variable (state, env, thunk),
@@ -284,7 +283,7 @@ struct
         | M.IpEval {typ, eval = e} =>
           M.IpEval {typ = typ, eval = eval (state, env, e)}
 
-  fun cuts (state, env, M.C {exits, targets}) = 
+  fun cuts (state, env, M.C {exits, targets}) =
       let
         fun doOne (l, ls) = LS.insert (ls, label (state, env, l))
         val targets = LS.fold (targets, LS.empty, doOne)
@@ -303,12 +302,12 @@ struct
           in r
           end
         | M.RTail {exits} => r
-                                       
-  fun transfer (state, env, (l, transfer)) = 
+
+  fun transfer (state, env, (l, transfer)) =
       let
-        fun doTransfer (state, env, (l, transfer)) = 
+        fun doTransfer (state, env, (l, transfer)) =
             let
-              val t = 
+              val t =
                   case transfer
                    of M.TGoto t => M.TGoto (target (state, env, t))
                     | M.TCase s => M.TCase (switch (state, env, s))
@@ -342,7 +341,7 @@ struct
       in
         callClientCode (clientBlock, doBlock, state, env, labelled_blk)
       end
-      
+
   fun codeBody (state, env, cb) =
       let
         val entry = MilUtils.CodeBody.entry cb
@@ -354,7 +353,7 @@ struct
               val (children, env) = Vector.mapAndFold (children, env, bind)
             in
               (Tree.T ((l, blk), children), env)
-            end 
+            end
         and binds (children, env) = Vector.mapAndFold (children, env, bind)
 
         val (lbts, env) = binds (lbts, env)
@@ -379,7 +378,7 @@ struct
       in cb
       end
 
-  fun callConv (state, env, cc) = 
+  fun callConv (state, env, cc) =
       case cc
        of M.CcCode => (env, M.CcCode)
         | M.CcUnmanaged _ => (env, cc)
@@ -417,13 +416,13 @@ struct
   (* Variables already bound *)
   fun global (state, env, xg) =
       let
-        fun doGlobal (state, env, (x, global)) = 
+        fun doGlobal (state, env, (x, global)) =
             let
               fun doOp opnd = operand (state, env, opnd)
               fun doOps opnds = Vector.map (opnds, doOp)
               fun doVarO vo = Option.map (vo, fn v => variable (state, env, v))
               fun doFkOps fkos = Vector.map (fkos, fn (fk, opnd) => (fk, doOp opnd))
-              val global = 
+              val global =
                   case global
                    of M.GCode f => M.GCode (code (state, env, f))
                     | M.GErrorVal _ => global
@@ -446,9 +445,9 @@ struct
         callClientCode (clientGlobal, doGlobal, state, env, xg)
       end
 
-  fun globals (state, env, gs) = 
+  fun globals (state, env, gs) =
       let
-        fun bindGlobal (x, g, (gs, env)) = 
+        fun bindGlobal (x, g, (gs, env)) =
             let
               val (env, x) = bindVar (state, env, x)
             in ((x, g)::gs, env)
@@ -465,7 +464,7 @@ struct
         (env, gs)
       end
 
-  fun program (state, env, M.P {includes, externs, globals = gs, symbolTable, entry})  = 
+  fun program (state, env, M.P {includes, externs, globals = gs, symbolTable, entry})  =
       let
         val (env, gs) = globals (state, env, gs)
         val entry = variable (state, env, entry)
@@ -474,4 +473,3 @@ struct
       end
 
 end; (* Functor MilRewriterF*)
-

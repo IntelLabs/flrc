@@ -8,15 +8,13 @@ sig
 
   structure MD :
   sig
-    val static : Pil.identifier 
-    val staticCustom : Pil.identifier 
-    val isRefTyp : Pil.identifier 
-    val pObjKindTag : Mil.pObjKind -> Pil.identifier
-    val pObjKindMetaData : Mil.pObjKind -> Pil.identifier
-    val alwaysMutable   : Pil.identifier 
-    val createdMutable  : Pil.identifier 
-    val alwaysImmutable : Pil.identifier 
-    val register : Pil.identifier 
+    val static : Pil.identifier
+    val staticCustom : Pil.identifier
+    val isRefTyp : Pil.identifier
+    val alwaysMutable   : Pil.identifier
+    val createdMutable  : Pil.identifier
+    val alwaysImmutable : Pil.identifier
+    val register : Pil.identifier
   end
 
   structure GC :
@@ -208,32 +206,32 @@ sig
   structure Thunk :
   sig
 
-    val boxedTyp       : Mil.fieldKind -> Pil.identifier 
-    val unboxedTyp     : Mil.fieldKind -> Pil.identifier 
+    val boxedTyp       : Mil.fieldKind -> Pil.identifier
+    val unboxedTyp     : Mil.fieldKind -> Pil.identifier
     val returnTyp      : Mil.fieldKind -> Pil.identifier
 
-    val castToObject   : Mil.fieldKind -> Pil.identifier 
-    val staticValue    : Mil.fieldKind -> Pil.identifier 
-    val new            : Mil.fieldKind -> Pil.identifier 
-    val newValue       : Mil.fieldKind -> Pil.identifier 
-    val init           : Mil.fieldKind -> Pil.identifier 
-    val initValue      : Mil.fieldKind -> Pil.identifier 
-    val isUnboxed      : Mil.fieldKind -> Pil.identifier 
-    val setValue       : Mil.fieldKind -> Pil.identifier 
-    val spawn          : Mil.fieldKind -> Pil.identifier 
-    val isEvaled       : Mil.fieldKind -> Pil.identifier 
-    val eval           : Mil.fieldKind -> Pil.identifier 
-    val evalDirect     : Mil.fieldKind -> Pil.identifier 
-    val call           : Mil.fieldKind -> Pil.identifier 
-    val callDirect     : Mil.fieldKind -> Pil.identifier 
-    val tailCall       : Mil.fieldKind -> Pil.identifier 
-    val tailCallDirect : Mil.fieldKind -> Pil.identifier 
-    val return         : Mil.fieldKind -> Pil.identifier 
-    val cut            : Mil.fieldKind -> Pil.identifier 
-    val fixedSize      : Mil.fieldKind -> Pil.identifier 
-    val fixedPadding   : Mil.fieldKind -> Pil.identifier 
-    val resultOffset   : Mil.fieldKind -> Pil.identifier 
-    val vTable         : Mil.fieldKind -> Pil.identifier 
+    val castToObject   : Mil.fieldKind -> Pil.identifier
+    val staticValue    : Mil.fieldKind -> Pil.identifier
+    val new            : Mil.fieldKind -> Pil.identifier
+    val newValue       : Mil.fieldKind -> Pil.identifier
+    val init           : Mil.fieldKind -> Pil.identifier
+    val initValue      : Mil.fieldKind -> Pil.identifier
+    val isUnboxed      : Mil.fieldKind -> Pil.identifier
+    val setValue       : Mil.fieldKind -> Pil.identifier
+    val spawn          : Mil.fieldKind -> Pil.identifier
+    val isEvaled       : Mil.fieldKind -> Pil.identifier
+    val eval           : Mil.fieldKind -> Pil.identifier
+    val evalDirect     : Mil.fieldKind -> Pil.identifier
+    val call           : Mil.fieldKind -> Pil.identifier
+    val callDirect     : Mil.fieldKind -> Pil.identifier
+    val tailCall       : Mil.fieldKind -> Pil.identifier
+    val tailCallDirect : Mil.fieldKind -> Pil.identifier
+    val return         : Mil.fieldKind -> Pil.identifier
+    val cut            : Mil.fieldKind -> Pil.identifier
+    val fixedSize      : Mil.fieldKind -> Pil.identifier
+    val fixedPadding   : Mil.fieldKind -> Pil.identifier
+    val resultOffset   : Mil.fieldKind -> Pil.identifier
+    val vTable         : Mil.fieldKind -> Pil.identifier
     val blackHole      : Mil.fieldKind -> Pil.identifier
     val claim          : Mil.fieldKind -> Pil.identifier
     val zeroFV         : unit -> Pil.identifier
@@ -248,11 +246,11 @@ sig
     val casRef      : Pil.identifier
   end
 
-  val exit      : Pil.identifier 
+  val exit      : Pil.identifier
   val halt      : Pil.identifier
   val haltV     : Pil.identifier
-  val pmain     : Pil.identifier 
-  val gErrorVal : Pil.identifier 
+  val pmain     : Pil.identifier
+  val gErrorVal : Pil.identifier
   val runtimeError : Pil.identifier
   val memzero   : Pil.identifier
 
@@ -273,40 +271,6 @@ struct
     val staticCustom = Pil.identifier "pLsrVTableStaticWithCustom"
 
     val isRefTyp = Pil.identifier "PgcIsRef"
-
-    fun pObjKindTag pok =
-        Pil.identifier
-          (case pok
-            of M.PokNone      => "VNoneTag"
-             | M.PokRat       => "VRatTag"
-             | M.PokFloat     => "VFloatTag"
-             | M.PokDouble    => "VDoubleTag"
-             | M.PokName      => "VNameTag"
-             | M.PokFunction  => "VFunctionTag"
-             | M.PokArray     => "VArrayTag"
-             | M.PokDict      => "VArrayIdxTag"
-             | M.PokTagged    => "VSumTag"
-             | M.PokOptionSet => "VSetTag"
-             | M.PokType      => "VTypeTag"
-             | M.PokPtr       => "VPtrTag"
-             | M.PokCell      => "VThunkTag")
-        
-    fun pObjKindMetaData pok =
-        Pil.identifier
-          (case pok
-            of M.PokNone      => "pLsrVTableNone"
-             | M.PokRat       => "pLsrPRatVTable"
-             | M.PokFloat     => "pLsrPFloatVTable"
-             | M.PokDouble    => "pLsrPDoubleVTable"
-             | M.PokName      => "pLsrPNameVTable"
-             | M.PokFunction  => "pLsrClosureVTable"
-             | M.PokArray     => "pLsrPArrayOVTable"
-             | M.PokDict      => "pLsrPArrayIVTable"
-             | M.PokTagged    => "pLsrPSumVTable"
-             | M.PokOptionSet => "pLsrPSetVTable"
-             | M.PokType      => "pLsrPTypeVTable"
-             | M.PokPtr       => "pLsrPRefVTable"
-             | M.PokCell      => Fail.fail ("Runtime", "pObjKindVtable", "Must use Thunk.vTable"))
 
     val alwaysMutable   = Pil.identifier "PGC_ALWAYS_MUTABLE"
     val createdMutable  = Pil.identifier "PGC_CREATED_MUTABLE"
@@ -433,13 +397,13 @@ struct
     val staticUnboxed = Pil.identifier "pLsrIntegerStaticUnboxed"
     val staticInit    = Pil.identifier "pLsrIntegerStaticGlobalInit"
 
-    val staticConsUnboxedDef   
+    val staticConsUnboxedDef
       = Pil.identifier "pLsrIntegerDigitListStaticConsUnboxedDef"
-    val staticConsRef   
+    val staticConsRef
       = Pil.identifier "pLsrIntegerDigitListStaticConsRef"
-    val staticDef   
+    val staticDef
       = Pil.identifier "pLsrIntegerStaticUnboxedDef"
-    val staticRef    
+    val staticRef
       = Pil.identifier "pLsrIntegerStaticRef"
 
   end
@@ -449,9 +413,9 @@ struct
     structure P = Mil.Prims
     structure PU = MilUtils.Prims.Utils
 
-    val getFieldKindName = 
-        fn (config, fk) => 
-           (case fk 
+    val getFieldKindName =
+        fn (config, fk) =>
+           (case fk
              of M.FkRef         => "Ref"
               | M.FkBits M.Fs8  => "B8"
               | M.FkBits M.Fs16 => "B16"
@@ -460,7 +424,7 @@ struct
               | M.FkFloat       => "F32"
               | M.FkDouble      => "F64")
 
-    val getFieldSizeName = 
+    val getFieldSizeName =
         fn (config, fs) =>
            (case fs
              of M.Fs8  => "Fs8"
@@ -468,24 +432,24 @@ struct
               | M.Fs32 => "Fs32"
               | M.Fs64 => "Fs64")
 
-    val getVectorSizeName : Config.t * Mil.Prims.vectorSize -> string = PU.ToString.vectorSize 
-    val getVectorTypName : Config.t * Mil.Prims.vectorSize -> string = 
+    val getVectorSizeName : Config.t * Mil.Prims.vectorSize -> string = PU.ToString.vectorSize
+    val getVectorTypName : Config.t * Mil.Prims.vectorSize -> string =
         fn (config, vs) => "PlsrVector" ^ getVectorSizeName (config, vs)
 
-    val getMaskTypName : Config.t * Mil.Prims.vectorSize -> string = 
+    val getMaskTypName : Config.t * Mil.Prims.vectorSize -> string =
         fn (config, vs) => "PlsrVectorMask" ^ getVectorSizeName (config, vs)
 
-    val maskTyp : Config.t * Mil.Prims.vectorSize * Mil.fieldSize -> Pil.T.t = 
+    val maskTyp : Config.t * Mil.Prims.vectorSize * Mil.fieldSize -> Pil.T.t =
      fn (config, vs, fs) => Pil.T.named (Pil.identifier (getMaskTypName (config, vs) ^ getFieldSizeName (config, fs)))
 
-    val vectorTyp : Config.t * Mil.Prims.vectorSize * Mil.fieldKind -> Pil.T.t = 
+    val vectorTyp : Config.t * Mil.Prims.vectorSize * Mil.fieldKind -> Pil.T.t =
      fn (config, vs, fk) => Pil.T.named (Pil.identifier (getVectorTypName (config, vs) ^ getFieldKindName (config, fk)))
 
-    val numericTyp : Config.t * Mil.Prims.numericTyp -> Pil.T.t = 
-     fn (config, nt) => 
+    val numericTyp : Config.t * Mil.Prims.numericTyp -> Pil.T.t =
+     fn (config, nt) =>
         (case nt
           of P.NtRat                                  => Pil.T.named T.rat
-           | P.NtInteger ip                           => 
+           | P.NtInteger ip                           =>
              (case ip
                of P.IpArbitrary                       => Pil.T.named T.integer
                 | P.IpFixed (IntArb.T x)              =>
@@ -498,7 +462,7 @@ struct
                      | (IntArb.S16,  IntArb.Unsigned) => Pil.T.uint16
                      | (IntArb.S32,  IntArb.Unsigned) => Pil.T.uint32
                      | (IntArb.S64,  IntArb.Unsigned) => Pil.T.uint64))
-           | P.NtFloat fp                             => 
+           | P.NtFloat fp                             =>
              (case fp
                of P.FpSingle                          => Pil.T.float
                 | P.FpDouble                          => Pil.T.double))
@@ -506,14 +470,14 @@ struct
 
     fun thnk t = if t then "T" else ""
 
-    val getFloatPrecisionName = 
-     fn (config, fp) => 
+    val getFloatPrecisionName =
+     fn (config, fp) =>
         (case fp
           of P.FpSingle => "Float32"
            | P.FpDouble => "Float64")
 
-    val getIntPrecisionName = 
-        fn (config, ip) => 
+    val getIntPrecisionName =
+        fn (config, ip) =>
            (case ip
              of P.IpArbitrary => "Integer"
               | P.IpFixed t   => IntArb.stringOfTyp t)
@@ -527,7 +491,7 @@ struct
 
     val getDivKindName = PU.ToString.divKind
 
-    val getArithOpName = PU.ToString.arithOp 
+    val getArithOpName = PU.ToString.arithOp
 
     val getFloatOpName = PU.ToString.floatOp
 
@@ -539,8 +503,8 @@ struct
 
     val getStringOpName = PU.ToString.stringOp
 
-    val getDataOpName = 
-     fn (config, d, typs) => 
+    val getDataOpName =
+     fn (config, d, typs) =>
         let
           val d = PU.ToString.dataOp (config, d)
           val typs = Vector.map (typs, fn t => getFieldKindName (config, t))
@@ -551,14 +515,14 @@ struct
     val getAssocName = PU.ToString.assoc
 
     val getCompareOpName =
-     fn (config, c) => 
+     fn (config, c) =>
         case c
          of P.CEq => "EQ"
           | P.CNe => "NE"
           | P.CLt => "LT"
           | P.CLe => "LE"
 
-    val getNumArithName 
+    val getNumArithName
       = fn (config, {typ, operator}) =>
         (getNumericTypName (config, typ)) ^ (getArithOpName (config, operator))
 
@@ -566,38 +530,38 @@ struct
      fn (config, {typ, operator}) =>
         (getFloatPrecisionName (config, typ)) ^ (getFloatOpName (config, operator))
 
-    val getNumCompareName = 
+    val getNumCompareName =
      fn (config, {typ, operator}) =>
         (getNumericTypName (config, typ)) ^ (getCompareOpName (config, operator))
 
-    val getNumConvertName = 
+    val getNumConvertName =
      fn (config, {to, from}) =>
         (getNumericTypName (config, to)) ^ "From" ^ (getNumericTypName (config, from))
 
-    val getNumCastName = 
+    val getNumCastName =
      fn (config, {to, from}) =>
         (getNumericTypName (config, from)) ^ "Cast" ^ (getNumericTypName (config, to))
 
-    val getBitwiseName = 
+    val getBitwiseName =
      fn (config, {typ, operator}) =>
         (getIntPrecisionName (config, typ)) ^ (getBitwiseOpName (config, operator))
 
-    val getBooleanName = 
+    val getBooleanName =
      fn (config, l) =>
         "Boolean" ^ (getLogicOpName (config, l))
 
     fun getNameName (config, no) = "Name" ^ getNameOpName (config, no)
 
-    val getCStringName = 
+    val getCStringName =
      fn (config, s) =>
         "CString" ^ (getStringOpName (config, s))
 
-    val getPrimName = 
+    val getPrimName =
      fn (config, p) =>
         (case p
           of P.PNumArith r            => getNumArithName(config, r)
            | P.PFloatOp r             => getFloatOpName(config, r)
-           | P.PNumCompare r          => getNumCompareName(config, r) 
+           | P.PNumCompare r          => getNumCompareName(config, r)
            | P.PNumConvert r          => getNumConvertName(config, r)
            | P.PNumCast r             => getNumCastName(config, r)
            | P.PBitwise r             => getBitwiseName(config, r)
@@ -607,13 +571,13 @@ struct
            | P.PPtrEq                 => "PtrEq"
            | P.PCondMov               => "CondMov")
 
-    val getRuntimeName = 
+    val getRuntimeName =
      fn (config, rt, t) => PU.ToString.runtime (config, rt) ^ thnk t
 
-    val getVectorName = 
-     fn (config, v, typs) => 
+    val getVectorName =
+     fn (config, v, typs) =>
         let
-          val doOne = 
+          val doOne =
            fn (name, descriptor1, descriptor2O, operator) =>
               let
                 val vsName = fn desc => getVectorSizeName (config, PU.VectorDescriptor.vectorSize desc)
@@ -623,40 +587,40 @@ struct
                             | NONE => ""
               in sz1 ^ sz2 ^ name ^ operator
               end
-          val res = 
+          val res =
               (case v
                 of P.ViPointwise {descriptor, masked, operator} =>
                    let
                      val name = if masked then "PointwiseM" else "Pointwise"
                    in doOne (name, descriptor, NONE, getPrimName (config, operator))
                    end
-	         | Mil.Prims.ViConvert {to, from}     => 
+	         | Mil.Prims.ViConvert {to, from}     =>
                    let
                      val operator = Mil.Prims.PNumConvert {to = #typ to, from = #typ from}
                    in doOne ("Convert", #descriptor to, SOME (#descriptor from), getPrimName (config, operator))
                    end
-	         | Mil.Prims.ViCast {to, from}     => 
+	         | Mil.Prims.ViCast {to, from}     =>
                    let
                      val operator = getNumericTypName (config, #typ from) ^ "To" ^ getNumericTypName (config, #typ to)
                    in doOne ("Cast", #descriptor to, SOME (#descriptor from), operator)
                    end
-	         | Mil.Prims.ViCompare {descriptor, typ, operator}     => 
+	         | Mil.Prims.ViCompare {descriptor, typ, operator}     =>
                    let
                      val operator = Mil.Prims.PNumCompare {typ = typ, operator = operator}
                    in doOne ("Compare", descriptor, NONE, getPrimName (config, operator))
                    end
-	         | Mil.Prims.ViReduction {descriptor, associativity, operator}   => 
+	         | Mil.Prims.ViReduction {descriptor, associativity, operator}   =>
                    let
                      val name = "Reduce" ^ getAssocName (config, associativity)
                    in doOne (name, descriptor, NONE, getPrimName (config, operator))
                    end
-	         | Mil.Prims.ViData {descriptor, operator}        => 
+	         | Mil.Prims.ViData {descriptor, operator}        =>
                    doOne ("Data", descriptor, NONE, getDataOpName (config, operator, typs))
-	         | Mil.Prims.ViMaskData {descriptor, operator}    => 
+	         | Mil.Prims.ViMaskData {descriptor, operator}    =>
                    doOne ("MaskData", descriptor, NONE, getDataOpName (config, operator, typs))
-	         | Mil.Prims.ViMaskBoolean {descriptor, operator} => 
+	         | Mil.Prims.ViMaskBoolean {descriptor, operator} =>
                    doOne ("MaskBool", descriptor, NONE, getLogicOpName (config, operator))
-	         | Mil.Prims.ViMaskConvert {to, from} => 
+	         | Mil.Prims.ViMaskConvert {to, from} =>
                    doOne ("MaskConvert", to, SOME from, ""))
         in res
         end
@@ -671,10 +635,10 @@ struct
         in Pil.identifier s
         end
 
-    fun call (config, ds, p, t, typs, args) = 
+    fun call (config, ds, p, t, typs, args) =
       let
         val m = Pil.E.namedConstant (getName (config, p, t, typs))
-        val e = 
+        val e =
             case (p, Vector.length ds)
              of (P.Prim _, _)   => Pil.E.call (m, (Vector.toList ds)@args)
               | (P.Vector _, _) => Pil.E.call (m, (Vector.toList ds)@args)
@@ -685,15 +649,15 @@ struct
       in s
       end
 
-    val vectorLoadStoreHelp : string -> Config.t * Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier = 
-     fn name => 
-     fn (config, vd, fk) => 
+    val vectorLoadStoreHelp : string -> Config.t * Mil.Prims.vectorDescriptor * Mil.fieldKind -> Pil.identifier =
+     fn name =>
+     fn (config, vd, fk) =>
         let
           val vs = getVectorSizeName (config, PU.VectorDescriptor.vectorSize vd)
           val fk = getFieldKindName (config, fk)
         in Pil.identifier ("pLsrPrimV" ^ vs ^ fk ^ name)
         end
-        
+
     val vectorLoadF   = vectorLoadStoreHelp "LoadF"
     val vectorLoadVS  = vectorLoadStoreHelp "LoadVS"
     val vectorLoadVI  = vectorLoadStoreHelp "LoadVI"
@@ -764,7 +728,7 @@ struct
 
     fun chooseLen len =
         let
-          fun loop dlen = 
+          fun loop dlen =
               if 2*dlen < 3*len then loop (dlen *2)
               else dlen
         in (loop 1)
