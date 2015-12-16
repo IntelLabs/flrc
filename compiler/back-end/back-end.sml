@@ -32,26 +32,26 @@ struct
   val runtimeDirectory =
    fn config => Path.snoc (Config.home config, "runtime")
 
-  val iflcLibDirectory =
-   fn config => Config.iflcLibDirectory config
+  val flrcLibDirectory =
+   fn config => Config.flrcLibDirectory config
 
-  val iflcLibLibDirectory =
-   fn config => Path.snoc (iflcLibDirectory config, "lib")
+  val flrcLibLibDirectory =
+   fn config => Path.snoc (flrcLibDirectory config, "lib")
 
-  val iflcLibIncludeDirectory =
-   fn config => Path.snoc (iflcLibDirectory config, "include")
+  val flrcLibIncludeDirectory =
+   fn config => Path.snoc (flrcLibDirectory config, "include")
 
-  val iflcLibBinDirectory =
-   fn config => Path.snoc (iflcLibDirectory config, "bin")
+  val flrcLibBinDirectory =
+   fn config => Path.snoc (flrcLibDirectory config, "bin")
 
-  val iflcLibLibrary =
-   fn (config, file) => Path.snoc (iflcLibDirectory config, file)
+  val flrcLibLibrary =
+   fn (config, file) => Path.snoc (flrcLibDirectory config, file)
 
-  val iflcLibInclude =
-   fn (config, file) => Path.snoc (iflcLibIncludeDirectory config, file)
+  val flrcLibInclude =
+   fn (config, file) => Path.snoc (flrcLibIncludeDirectory config, file)
 
-  val iflcLibExe =
-   fn (config, exe) => Path.snoc (iflcLibBinDirectory config, exe)
+  val flrcLibExe =
+   fn (config, exe) => Path.snoc (flrcLibBinDirectory config, exe)
   *)
 
   fun useFutures (config : Config.t) =
@@ -130,7 +130,7 @@ struct
                          "gather allocation statistics per vtable")
 
   val (p2cUseTryF, p2cUseTry) =
-      Config.Feature.mk ("IFLC:p2c-use-try",
+      Config.Feature.mk ("FLRC:p2c-use-try",
                          "Use try/except for continuations")
 
   val (vtableChangeF, vtableChange) =

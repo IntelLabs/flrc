@@ -10,7 +10,7 @@
 #endif /* !PLSR_GMP_USE_DEFAULT */
 
 #ifdef PLSR_NO_GMP_INTEGERS
-#include "hrc/plsr-iflc-integer.h"
+#include "hrc/plsr-flrc-integer.h"
 #else /* !PLSR_NO_GMP_INTEGERS */
 #ifdef PLSR_GMP_USE_GALLOCATE
 #include "hrc/plsr-gmp-integer-gallocate.h"

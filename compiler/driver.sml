@@ -166,7 +166,7 @@ struct
   fun printVersion () =
       let
         val version =
-            "Haskell Research Compiler " ^ Version.iflcVersion ^ (if Config.debug then " (DEBUG)" else "")
+            "Haskell Research Compiler " ^ Version.flrcVersion ^ (if Config.debug then " (DEBUG)" else "")
         val () = Out.outputl (Out.standard, version)
         val () = List.foreach (langVersions, fn s => Out.outputl (Out.standard, s))
         val () = Out.outputl (Out.standard, "Build " ^ Version.build)
@@ -184,12 +184,12 @@ struct
       let
         (*
         val initLibDir =
-            case Process.getEnv "IFLCLIB"
+            case Process.getEnv "FLRCLIB"
              of SOME d => d
               | _ => OS.Path.getParent (OS.Path.dir (CommandLine.name ()))
         val initLibDir = Path.fromString (OS.Path.mkCanonical initLibDir)
         val initHomeDir =
-            case Process.getEnv "IFLCHOME"
+            case Process.getEnv "FLRCHOME"
              of SOME d => Path.fromString (OS.Path.mkCanonical d)
               | _ => initLibDir
         *)
@@ -426,7 +426,7 @@ struct
 
         val pilDebug = ref false
         val pilOpt = ref 3
-        val iflcOpt = ref 3
+        val flrcOpt = ref 3
         val ghcOpt = ref []
         val pilcStr = ref []
         val linkStr = ref []
@@ -524,17 +524,17 @@ struct
                                  | "mingw"  => host := Config.OsMinGW
                                  | _ => usage ("invalid -host arg: " ^ s))),
 
-                   (* (Popt.Normal, "iflcLib", " directory", "use alternate iflc library",
+                   (* (Popt.Normal, "flrcLib", " directory", "use alternate flrc library",
                     Popt.SpaceString (fn s => libDir := Path.fromString (OS.Path.mkCanonical s))), *)
 
-                   (Popt.Normal, "iflcO", " {0|1|2|3}",
-                    "set iflc optimization level",
+                   (Popt.Normal, "flrcO", " {0|1|2|3}",
+                    "set flrc optimization level",
                     Popt.Int
                       (fn i =>
                           if i <= 3 then
-                            (iflcOpt := i)
+                            (flrcOpt := i)
                           else
-                            usage ("invalid -iflcO arg: " ^ (Int.toString i)))),
+                            usage ("invalid -flrcO arg: " ^ (Int.toString i)))),
 
                    (Popt.Normal, "keep",
                     let
@@ -562,7 +562,7 @@ struct
                     Popt.Int
                       (fn i =>
                           if i <= 3 then
-                            (pilOpt := i; iflcOpt := i)
+                            (pilOpt := i; flrcOpt := i)
                           else
                             usage ("invalid -O arg: " ^ (Int.toString i)))),
 
@@ -714,7 +714,7 @@ struct
           let
             (*
             val home =
-                case Process.getEnv "IFLCHOME"
+                case Process.getEnv "FLRCHOME"
                  of SOME d => Path.fromString (OS.Path.mkCanonical d)
                   | _ => !libDir
             *)
@@ -794,8 +794,8 @@ struct
               gc               = gci,
               home             = home,
               host             = !host,
-              (* iflcLibDirectory = !libDir, *)
-              iflcOpt          = !iflcOpt,
+              (* flrcLibDirectory = !libDir, *)
+              flrcOpt          = !flrcOpt,
               keep             = !keep,
               linkStr          = List.rev (!linkStr),
               linkDirectories  = [],

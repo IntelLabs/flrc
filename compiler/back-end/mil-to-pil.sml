@@ -2227,12 +2227,12 @@ struct
       end
 
   val (backendYieldsF, backendYields) =
-      Config.Feature.mk ("IFLC:use-backend-yields",
+      Config.Feature.mk ("FLRC:use-backend-yields",
                          "Backend compiler inserts yields")
 
-  val (iflcYieldsF, iflcYields) =
-      Config.Feature.mk ("IFLC:use-iflc-yields",
-                         "IFLC inserts yields")
+  val (flrcYieldsF, flrcYields) =
+      Config.Feature.mk ("FLRC:use-flrc-yields",
+                         "FLRC inserts yields")
 
   val isBackEdge =
    fn (state, env, e) => LLS.member (getBackEdges env, e)
@@ -2240,7 +2240,7 @@ struct
   fun genGoto (state, env, cb, src, M.T {block, arguments}) =
       let
         val pre =
-            if iflcYields (getConfig env) andalso isBackEdge (state, env, (src, block)) then
+            if flrcYields (getConfig env) andalso isBackEdge (state, env, (src, block)) then
               Pil.S.yield
             else
               Pil.S.empty
@@ -2836,7 +2836,7 @@ struct
                  end
                | NONE    => [])
         val decs = decs @ outDecs
-        val ls0 = if iflcYields (getConfig env) then [(Pil.yieldDec, NONE)] else []
+        val ls0 = if flrcYields (getConfig env) then [(Pil.yieldDec, NONE)] else []
         val (ls, b) = genCB (state, env, body)
         val (ls2, b) =
             case rewriteThunks (env, cc)
@@ -3373,7 +3373,7 @@ struct
        instrumentFunctionsF,
        assertSmallIntsF,
        backendYieldsF,
-       iflcYieldsF,
+       flrcYieldsF,
        interceptCutsF,
        lightweightThunksF,
        noGMPF,

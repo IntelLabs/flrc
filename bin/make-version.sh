@@ -1,10 +1,10 @@
 #!/bin/bash
 # COPYRIGHT_NOTICE_1
 
-# Make a version.sml file with brief version and build information for the iflc.
+# Make a version.sml file with brief version and build information for the flrc.
 # usage: make-version.sh version outfile
 # where:
-#   version is the iflc version string
+#   version is the flrc version string
 #   outfile is the filename to put the output into
 
 version=$1
@@ -17,7 +17,7 @@ rm -f $out
 
 echo "structure Version =" >> $out
 echo "struct" >> $out
-echo "  val iflcVersion = \"$version\"" >> $out
+echo "  val flrcVersion = \"$version\"" >> $out
 echo "  val build = \"$build\"" >> $out
 echo "  val prefix = Path.fromString \"$prefix\"" >> $out
 echo "end" >> $out

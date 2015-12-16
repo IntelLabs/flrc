@@ -29,7 +29,7 @@ CC = gcc
 AR = ar
 
 ARFLAGS  = rvs
-CPPFLAGS = -I"$(RUNDIR_INCLUDEDIR)" $(PLATFORM_CPPFLAGS) `pkg-config --cflags iflc-lib` -Wall
+CPPFLAGS = -I"$(RUNDIR_INCLUDEDIR)" $(PLATFORM_CPPFLAGS) `pkg-config --cflags flrc-lib` -Wall
 CFLAGS   = $(CPPFLAGS)
 
 HRC_GHC_RUNTIMEDIR = $(RUNDIR)/ghc
@@ -98,7 +98,7 @@ $(RR_EXE): $(RR_SRCS)
 
 ### Main part of the compiler
 
-IFLC_VERSION = v1.0
+HRC_VERSION = v1.0
 
 # keep these in alpabetic order
 COMPILER_SRCS = \
@@ -377,23 +377,7 @@ P_SRCS = \
 
 # make-version
 make-version: $(BINDIR)/make-version.sh
-	$(BINDIR)/make-version.sh "$(IFLC_VERSION)" compiler/version.sml $(HRC_PREFIX)
-
-# iflc
-
-IFLC = iflc
-IFLC_EXE = $(BINDIR)/$(IFLC)$(EXE)
-
-IFLC_SRCS = $(COMPILER_SRCS) $(HASKELL_SRCS) $(P_SRCS) compiler/iflc.mlb compiler/iflc.sml
-
-iflc: $(IFLC_EXE)
-
-$(IFLC_EXE): make-version $(IFLC_SRCS)
-	cd compiler; \
-	rm -f iflc.*.c iflc.*.s; \
-	mlton $(COMPILER_OPTS) -stop g iflc.mlb && \
-	mlton $(COMPILER_OPTS) -output ../$(IFLC_EXE) iflc.*.c iflc.*.s && \
-	rm -f iflc.*.c iflc.*.s;
+	$(BINDIR)/make-version.sh "$(HRC_VERSION)" compiler/version.sml $(HRC_PREFIX)
 
 ### hrc
 
@@ -430,7 +414,7 @@ PLSR_SRCS = \
   $(RUNDIR_INCLUDEDIR)/hrc/plsr-gc.h \
   $(RUNDIR_INCLUDEDIR)/hrc/plsr-gmp-integer.h \
   $(RUNDIR_INCLUDEDIR)/hrc/plsr-gmp-integer-gallocate.h \
-  $(RUNDIR_INCLUDEDIR)/hrc/plsr-iflc-integer.h \
+  $(RUNDIR_INCLUDEDIR)/hrc/plsr-flrc-integer.h \
   $(RUNDIR_INCLUDEDIR)/hrc/plsr-integer.h \
   $(RUNDIR_INCLUDEDIR)/hrc/plsr-lightweight-thunk.h \
   $(RUNDIR_INCLUDEDIR)/hrc/plsr-main.h \
@@ -453,8 +437,6 @@ PLSR_SRCS = \
   $(RUNDIR_INCLUDEDIR)/hrc/plsr.h
 
 ### Main stuff
-
-iflc-all: nfe iflc npr
 
 all2: hrc-ghc-runtime hrc
 
@@ -485,17 +467,17 @@ partclean:
 	rm -f mlmon.out gc.log root_map.txt *.ppm compiler/version.sml
 
 clean: partclean
-	rm -f $(OFE_EXE) $(NFE_EXE) $(IFLC_EXE) $(HRC_EXE) $(NP_RUNTIME) regressions.log smvp.res
+	rm -f $(OFE_EXE) $(NFE_EXE) $(HRC_EXE) $(NP_RUNTIME) regressions.log smvp.res
 
 ### Testing
 
-test: iflc-all
+test: all
 	$(BINDIR)/regress.sh -short -nomake
 
-regress: iflc-all
+regress: all
 	$(BINDIR)/regress.sh -nomake
 
-torture: iflc-all
+torture: all
 	$(BINDIR)/regress.sh -torture -nomake
 
 ### ML-Yacc and ML-Lex

@@ -1,19 +1,19 @@
 (* The Haskell Research Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
-signature MIL_COMPILE = 
+signature MIL_COMPILE =
 sig
   val pass : (BothMil.t, BothMil.t) Pass.t
 end
 
-structure MilCompile :> MIL_COMPILE = 
+structure MilCompile :> MIL_COMPILE =
 struct
 
   val passname = "MilCompile"
 
   structure L = Layout
   structure LU = LayoutUtils
-  structure Parse = StringParser 
+  structure Parse = StringParser
 
   val passes =
       [
@@ -58,7 +58,7 @@ struct
         infixr && ||
         val $ = Parse.$
 
-        val simple : controlItem Parse.t = 
+        val simple : controlItem Parse.t =
             let
               fun matchPass c (c', p) = if c = c' then SOME (CiPass p) else NONE
               fun doOne c =
@@ -79,23 +79,23 @@ struct
         val lbrace = consume #"{"
         val rbrace = consume #"}"
 
-        val whitespace = 
+        val whitespace =
             let
-              val whiteChar = 
+              val whiteChar =
                fn c => c = Char.space orelse c = Char.newline orelse c = #"\t" orelse c = #"\r"
               val white = Parse.satisfy whiteChar
             in Parse.ignore (Parse.oneOrMore white)
             end
 
         val delimited : unit Parse.t * 'a Parse.t * unit Parse.t -> 'a Parse.t =
-         fn (left, item, right) => 
+         fn (left, item, right) =>
             let
               val p = left && item && right
               val f = fn ((), (i, ())) => i
             in Parse.map (p, f)
             end
 
-        val nat : int Parse.t = 
+        val nat : int Parse.t =
             let
               val p = Parse.oneOrMore (Parse.satisfy Char.isDigit)
               val f = Int.fromString o String.implode
@@ -103,30 +103,30 @@ struct
               val p = Parse.required (p, "Expected natural number")
             in p
             end
-        val exponentiated : 'a Parse.t -> 'a list Parse.t = 
-         fn p => 
+        val exponentiated : 'a Parse.t -> 'a list Parse.t =
+         fn p =>
             let
               val suffix = (consume #"^") && nat
               val p = p && (Parse.optional suffix)
-              val f = fn (p, opt) => 
+              val f = fn (p, opt) =>
                          (case opt
                            of SOME ((), n) => List.duplicate (n, fn () => p)
                             | NONE => [p])
               val p = Parse.map (p, f)
             in p
             end
-        val rec pass' : unit -> controlItem list Parse.t = 
+        val rec pass' : unit -> controlItem list Parse.t =
          fn () => Parse.map ($passSeq', List.concat)
-        and rec passSeq' : unit -> controlItem list list Parse.t = 
+        and rec passSeq' : unit -> controlItem list list Parse.t =
          fn () => Parse.oneOrMore ($passHead')
         and rec passHead' : unit -> controlItem list Parse.t =
          fn () => Parse.oneOrMore simple || $iterated'  || $constructed' || (whitespace -&& $passHead')
-        and rec iterated' : unit -> controlItem list Parse.t = 
+        and rec iterated' : unit -> controlItem list Parse.t =
          fn () => Parse.map(exponentiated ($parenthesized'), List.concat)
-        and rec parenthesized' : unit -> controlItem list Parse.t = 
+        and rec parenthesized' : unit -> controlItem list Parse.t =
          fn () => delimited (lparen, $pass', rparen)
         and rec constructed' : unit -> controlItem list Parse.t =
-         fn () => 
+         fn () =>
             let
               val p = $interleave' && $pass' && $interleave'
               val p = delimited (lbracket, p, rbracket)
@@ -182,7 +182,7 @@ struct
   val dftControls =
       Vector.fromList [o0Control, o1Control, o2Control, o3Control]
 
-  fun dftControl c = Vector.sub (dftControls, Config.iflcOpt c)
+  fun dftControl c = Vector.sub (dftControls, Config.flrcOpt c)
 
   fun describePass (c, p) =
       L.seq [Char.layout c, L.str " => ", L.str (Pass.getName p), L.str ": ",
@@ -217,12 +217,12 @@ struct
   val (control, controlGet) =
       Config.Control.mk (passname, describeControl, parseControl, dftControl)
 
-  fun check (pd, p) = 
+  fun check (pd, p) =
       case p
        of BothMil.Mil mil   => MilCheck.program (PassData.getConfig pd, mil)
         | BothMil.IMil imil => IMil.T.check imil
 
-  fun printMil (pd, p) = 
+  fun printMil (pd, p) =
       let
         val p = BothMil.toMil (pd, p)
         val config = PassData.getConfig pd
@@ -304,7 +304,7 @@ struct
         val () = PassData.report (pd, passname)
       in p
       end
-      
+
   val description = {name        = passname,
                      description = "Mil optimise/lower",
                      inIr        = BothMil.irHelpers,

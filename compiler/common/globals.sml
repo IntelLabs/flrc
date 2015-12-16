@@ -1,7 +1,7 @@
 (* The Haskell Research Compiler *)
 (* COPYRIGHT_NOTICE_1 *)
 
-signature GLOBALS = 
+signature GLOBALS =
 sig
 
   val disableOptimizedRationals    : Config.t -> bool
@@ -13,15 +13,15 @@ sig
 
 end;
 
-structure Globals :> GLOBALS = 
+structure Globals :> GLOBALS =
 struct
 
   val (disableOptimizedRationalsF, disableOptimizedRationals) =
-      Config.Feature.mk ("IFLC:disable-optimized-rationals",
+      Config.Feature.mk ("FLRC:disable-optimized-rationals",
                          "disable optimized rational rep")
 
   val (disableOptimizedIntegersF, disableOptimizedIntegers) =
-      Config.Feature.mk ("IFLC:disable-optimized-integers",
+      Config.Feature.mk ("FLRC:disable-optimized-integers",
                          "disable optimized integer rep")
 
   val features = [disableOptimizedRationalsF, disableOptimizedIntegersF]

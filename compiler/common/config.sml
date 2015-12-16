@@ -60,8 +60,8 @@ sig
 		     ghcOpt : string list,
 		     home : Path.t,
                      host : os,
-                     (* iflcLibDirectory : Path.t, *)
-		     iflcOpt : int,
+                     (* flrcLibDirectory : Path.t, *)
+		     flrcOpt : int,
 		     keep: StringSet.t,
 		     linkStr: string list,
 		     linkDirectories: string list,
@@ -98,8 +98,8 @@ sig
   val ghcOpt: t -> string list
   val home : t -> Path.t
   val host : t -> os
-  (* val iflcLibDirectory : t -> Path.t *)
-  val iflcOpt: t -> int
+  (* val flrcLibDirectory : t -> Path.t *)
+  val flrcOpt: t -> int
   val keep: t * string -> bool
   val linkStr: t -> string list
   val linkDirectories: t -> string list
@@ -184,7 +184,7 @@ end
 structure Config :> CONFIG =
 struct
 
-    (* Static debug or production build of iflc *)
+    (* Static debug or production build of flrc *)
     val debug : bool = true
 
     datatype outputKind = OkC | OkPillar
@@ -247,8 +247,8 @@ struct
          ghcOpt           : string list,
          home             : Path.t,
          host             : os,
-         (* iflcLibDirectory : Path.t, *)
-         iflcOpt          : int,
+         (* flrcLibDirectory : Path.t, *)
+         flrcOpt          : int,
          keep             : StringSet.t,
          linkStr          : string list,
          linkDirectories  : string list,
@@ -280,8 +280,8 @@ struct
     fun ghcOpt c                      = get (c, #ghcOpt)
     fun home c                        = get (c, #home)
     fun host c                        = get (c, #host)
-    (* fun iflcLibDirectory c            = get (c, #iflcLibDirectory) *)
-    fun iflcOpt c                     = get (c, #iflcOpt)
+    (* fun flrcLibDirectory c            = get (c, #flrcLibDirectory) *)
+    fun flrcOpt c                     = get (c, #flrcOpt)
     fun linkStr c                     = get (c, #linkStr)
     fun linkDirectories c             = get (c, #linkDirectories)
     fun linkLibraries c               = get (c, #linkLibraries)

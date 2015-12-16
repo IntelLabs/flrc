@@ -5,7 +5,7 @@
 
 signature CHAT = sig
 
-  type env 
+  type env
   type level = int
 
   val error : env * string -> unit
@@ -30,16 +30,16 @@ functor ChatF(type env
               val extract : env -> Config.t
               val name : string
               val indent : int)
-  :> CHAT where type env = env = 
+  :> CHAT where type env = env =
 struct
 
     type env = env
     type level = int
 
     fun error (env, s) =
-        Out.output (Out.error, "iflc: error: " ^ s ^ "\n")
+        Out.output (Out.error, "flrc: error: " ^ s ^ "\n")
 
-    fun say (cfg, s) = 
+    fun say (cfg, s) =
         let
           val i = StringCvt.padLeft #" " indent ""
         in
@@ -76,4 +76,3 @@ struct
     fun log3 (cfg, msg) = log (cfg, 3, msg)
 
 end;
-

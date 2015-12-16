@@ -45,6 +45,7 @@ config.sub
 configure
 depcomp
 install-sh
+ltmain.sh
 missing
 stamp-h
 stamp-h1
@@ -56,8 +57,6 @@ ylwrap
 # /
 /bin/frontend-new
 /bin/hrc
-/bin/iflc
-/bin/ihc
 
 # /compiler
 compiler/core-hs/core-hs.grm.desc
