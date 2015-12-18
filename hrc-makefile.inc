@@ -312,27 +312,6 @@ P_SRCS = \
   compiler/core-p/raw-utils.sml \
   compiler/core-p/raw.sml \
   compiler/core-p/type.sml \
-  compiler/cop-to-old-hil/acp.sml \
-  compiler/cop-to-old-hil/analysis.sml \
-  compiler/cop-to-old-hil/compute-work.sml \
-  compiler/cop-to-old-hil/cop-to-hil.mlb \
-  compiler/cop-to-old-hil/cp-to-acp.sml \
-  compiler/cop-to-old-hil/cp-to-hil.sml \
-  compiler/cop-to-old-hil/direct.sml \
-  compiler/cop-to-old-hil/effect-analysis.sml \
-  compiler/cop-to-old-hil/evaled.sml \
-  compiler/cop-to-old-hil/hil-builder.sml \
-  compiler/cop-to-old-hil/hybrid.sml \
-  compiler/cop-to-old-hil/thunks.sml \
-  compiler/cop-to-old-hil/transform.sml \
-  compiler/cop-to-old-hil/two-version-analysis.sml \
-  compiler/cop-to-old-hil/two-version-compute-work.sml \
-  compiler/cop-to-old-hil/two-version-transform.sml \
-  compiler/cop-to-old-hil/two-version-utils.sml \
-  compiler/cop-to-old-hil/two-version-version-analysis.sml \
-  compiler/cop-to-old-hil/two-version.sml \
-  compiler/cop-to-old-hil/type-analyse.sml \
-  compiler/cop-to-old-hil/utils.sml \
   compiler/cp-to-hil/analyse.sml \
   compiler/cp-to-hil/check.sml \
   compiler/cp-to-hil/cp-to-hil.mlb \
@@ -350,29 +329,6 @@ P_SRCS = \
   compiler/hil/optimise.sml \
   compiler/hil/simplifier.sml \
   compiler/hil/utils.sml \
-  compiler/hil-to-mil/analyze.sml \
-  compiler/hil-to-mil/hil-to-mil.mlb \
-  compiler/hil-to-mil/hil-to-mil.sml \
-  compiler/hil-to-mil/interface.sml \
-  compiler/hil-to-mil/rewrite.sml \
-  compiler/hil-to-mil/simple-analyze.sml \
-  compiler/old-hil/check.sml \
-  compiler/old-hil/duplicate.sml \
-  compiler/old-hil/free-vars.sml \
-  compiler/old-hil/hil.mlb \
-  compiler/old-hil/hil.sml \
-  compiler/old-hil/inline.sml \
-  compiler/old-hil/layout.sml \
-  compiler/old-hil/optimise.sml \
-  compiler/old-hil/stats.sml \
-  compiler/old-hil/utils.sml \
-  compiler/old-hil-to-mil/analyze.sml \
-  compiler/old-hil-to-mil/hil-in-mil.sml \
-  compiler/old-hil-to-mil/hil-to-mil.mlb \
-  compiler/old-hil-to-mil/hil-to-mil.sml \
-  compiler/old-hil-to-mil/interface.sml \
-  compiler/old-hil-to-mil/rewrite.sml \
-  compiler/old-hil-to-mil/simple-analyze.sml \
   compiler/p.sml
 
 # make-version
@@ -394,15 +350,6 @@ $(HRC_EXE): make-version $(HRC_SRCS) compiler/hrc.mlb
 	mlton $(COMPILER_OPTS) -stop g $(HRC).mlb && \
 	mlton $(COMPILER_OPTS) -output ../$(HRC_EXE) hrc.*.c hrc.*.s && \
 	rm -f hrc.*.c hrc.*.s
-
-### New P Runtime Support
-
-NP_RUNTIME = $(RUNDIR)/hil.mil
-
-npr: $(NP_RUNTIME)
-
-$(RUNDIR)/hil.mil: compiler/hil-to-mil/hil.mil
-	cp $< $@
 
 ### P LSR
 
@@ -467,7 +414,7 @@ partclean:
 	rm -f mlmon.out gc.log root_map.txt *.ppm compiler/version.sml
 
 clean: partclean
-	rm -f $(OFE_EXE) $(NFE_EXE) $(HRC_EXE) $(NP_RUNTIME) regressions.log smvp.res
+	rm -f $(OFE_EXE) $(NFE_EXE) $(HRC_EXE) regressions.log smvp.res
 
 ### Testing
 
