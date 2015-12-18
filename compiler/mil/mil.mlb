@@ -21,7 +21,7 @@ local
         stats.sml
         free-vars.sml
         bound-vars.sml
-        rename.sml      
+        rename.sml
         code-copy.sml
         stream.sml
         stream2.sml
@@ -32,7 +32,7 @@ local
         call-graph.sml
         utils2.sml
         parse.sml
-        profile.sml 
+        profile.sml
         dataflow-analysis.sml
         dependence-analysis.sml
 in

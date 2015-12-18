@@ -312,13 +312,6 @@ P_SRCS = \
   compiler/core-p/raw-utils.sml \
   compiler/core-p/raw.sml \
   compiler/core-p/type.sml \
-  compiler/cp-to-hil/analyse.sml \
-  compiler/cp-to-hil/check.sml \
-  compiler/cp-to-hil/cp-to-hil.mlb \
-  compiler/cp-to-hil/cp-to-hil.sml \
-  compiler/cp-to-hil/interface.sml \
-  compiler/cp-to-hil/transform.sml \
-  compiler/cp-to-hil/simple-analyse.sml \
   compiler/hil/analyse.sml \
   compiler/hil/check.sml \
   compiler/hil/dce.sml \
@@ -328,8 +321,7 @@ P_SRCS = \
   compiler/hil/layout.sml \
   compiler/hil/optimise.sml \
   compiler/hil/simplifier.sml \
-  compiler/hil/utils.sml \
-  compiler/p.sml
+  compiler/hil/utils.sml
 
 # make-version
 make-version: $(BINDIR)/make-version.sh
