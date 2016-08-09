@@ -575,10 +575,10 @@ struct
   fun futureLibraries (config) =
       let
         val nm =
-            if synchronizeThunks config then
-              ifDebug (config, "paralleld", "parallel")
-            else
-              ifDebug (config, "sequentiald", "sequential")
+            if synchronizeThunks config then "paralllel"
+              (* ifDebug (config, "paralleld", "parallel") *)
+            else "sequential"
+              (* ifDebug (config, "sequentiald", "sequential") *)
 
         val gcs =
             (case #style (Config.gc config)
@@ -611,9 +611,11 @@ struct
 
   fun libraries (config) =
       let
-        val (prtBegin, prtEnd) =
+        val (prtBegin, prtEnd) = (["pillar2c_crt_begin.obj"], ["pillar2c_crt_end.obj"])
+          (*
           ([ifDebug (config, "pillar2c_crt_begind.obj", "pillar2c_crt_begin.obj")],
            [ifDebug (config, "pillar2c_crt_endd.obj", "pillar2c_crt_end.obj")])
+	  *)
         val gcLibs = gcLibraries config
         val futureLibs = futureLibraries config
         val runtimeLibs = runtimeLibraries config
