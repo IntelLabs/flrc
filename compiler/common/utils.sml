@@ -693,7 +693,7 @@ struct
         let
           val l = RBT.listItems s
           val ls = List.map (l, f)
-          val s = Layout.sequence ("{", "}", ",") ls
+          val s = LayoutUtils.sequence ("{", "}", ",") ls
         in s
         end
 
@@ -814,7 +814,7 @@ struct
     fun map2 (d1, d2, f) =
         RBT.mergeWithi f (d1, d2)
     fun layout (d, f) =
-        Layout.sequence ("{", "}", ",") (List.map (RBT.listItemsi d, f))
+        LayoutUtils.sequence ("{", "}", ",") (List.map (RBT.listItemsi d, f))
 
     val choose : 'a t -> ('a t * key * 'a) option = 
         fn d => 

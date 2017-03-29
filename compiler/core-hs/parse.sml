@@ -688,7 +688,7 @@ struct
               | SOME def =>
                 let
                   val (_, traced, _) = traceDef (mainVar, def, (defd, QD.empty, scanned))
-                  val () = debug ("traced = " ^ Layout.toString (Layout.sequence ("{", "}", ",")
+                  val () = debug ("traced = " ^ Layout.toString (LayoutUtils.sequence ("{", "}", ",")
                                   (List.map (QD.domain traced, fn n => CoreHsLayout.layoutQName (config, n)))))
                   val (tdefs, vdefs) = QD.fold (traced, ([], []), fn (_, (TDef d, _), (ts, vs)) => (d :: ts, vs)
                                                                    | (n, (VDef d, s), (ts, vs)) => (ts, (n, (d, s)) :: vs)

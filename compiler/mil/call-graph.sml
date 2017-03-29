@@ -125,7 +125,7 @@ struct
         val callee = layoutVariable (config, si, f)
         val known = List.map (LS.toList knownCallers, caller)
         val all = if unknownCallers then str "unknown"::known else known
-        val calls = sequence ("{", "}", ",") all
+        val calls = LU.sequence ("{", "}", ",") all
         val l = mayAlign [seq [callee, str " is called by "], LU.indent calls]
       in l
       end
@@ -136,7 +136,7 @@ struct
         val callee = fn v => layoutVariable (config, si, v)
         val known = List.map (VS.toList knownCallees, callee)
         val all = if unknownCallees then str "unknown"::known else known
-        val calls = sequence ("{", "}", ",") all
+        val calls = LU.sequence ("{", "}", ",") all
         val l = mayAlign [seq [caller, str " calls "], LU.indent calls]
       in l
       end

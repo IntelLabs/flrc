@@ -41,6 +41,7 @@ struct
                                          val layoutTy = ANormLazyLayout.layoutTy
                                   end)
   structure L = Layout
+  structure LU = LayoutUtils
   structure GP = GHCPrimType
   structure VD = I.VariableDict
   
@@ -64,7 +65,7 @@ struct
       case t
         of S => L.str "S"
          | L => L.str "L"
-         | U ds => L.seq [L.str "U", L.sequence ("[", "]", "") (List.map (ds, fn d => layoutDemand (env, d)))]
+         | U ds => L.seq [L.str "U", LU.sequence ("[", "]", "") (List.map (ds, fn d => layoutDemand (env, d)))]
 
   structure ADL = AbsCoreLayoutF (struct structure AbsCore = AC 
                                          type ty = demand

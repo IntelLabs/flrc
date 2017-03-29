@@ -279,6 +279,7 @@ structure GHCPrimTypeLayout :> GHC_PRIM_TYPE_LAYOUT =
 struct
   open GHCPrimType
   structure L = Layout
+  structure LU = LayoutUtils
 
   fun layoutPrimTy layoutTy 
     = fn Int                    => L.str "#int"
@@ -321,5 +322,5 @@ struct
       |  MutVar (a, b)          => L.seq [L.str "#mutvar ", layoutTy a, layoutTy b]
       |  ThreadId               => L.str "#threadId"
       |  EqTy (a, b, c)         => L.seq [L.str "#eq ", layoutTy a, layoutTy b, layoutTy c]
-      |  Tuple tys              => L.seq [L.str "#tuple ", L.sequence ("(", ")", ",") (List.map (tys, layoutTy))]
+      |  Tuple tys              => L.seq [L.str "#tuple ", LU.sequence ("(", ")", ",") (List.map (tys, layoutTy))]
 end 

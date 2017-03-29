@@ -164,8 +164,8 @@ struct
   val vBinds = fn (env, vbs) => List.map (vbs, fn vb => vBind (env, vb))
 
   val vBindsWithFVS = fn (env, (fvs, vbs)) =>
-                         L.seq [ L.sequence ("<", ";", ",") (List.map (fvs, fn v => variable (env, v)))
-                               , L.sequence (" ", ">", ",") (vBinds (env, vbs))]
+                         L.seq [ LU.sequence ("<", ";", ",") (List.map (fvs, fn v => variable (env, v)))
+                               , LU.sequence (" ", ">", ",") (vBinds (env, vbs))]
 
   val literal = fn (env, l) => CL.layoutCoreLit (getConfig env, l)
 
@@ -232,7 +232,7 @@ struct
            end
          | ANS.Case (v, alternatives) =>
            L.align [ L.seq [L.str "%case ", variable (env, v), L.str " of "]
-                   , indent (L.sequence ("{", "}", ";") (alts (env, alternatives)))]
+                   , indent (LU.sequence ("{", "}", ";") (alts (env, alternatives)))]
          | e => aExp (env, e))
 
   and rec vDef =

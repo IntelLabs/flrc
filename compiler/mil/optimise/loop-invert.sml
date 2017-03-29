@@ -219,7 +219,7 @@ struct
           L.seq [ L.str "(",
                 I.layoutLabel label,
                 L.str " => ",
-                L.sequence ("{","}",",") (map I.layoutLabel (LS.toList blocks)),
+                LU.sequence ("{","}",",") (map I.layoutLabel (LS.toList blocks)),
                 LU.layoutBool exits,
                 L.str ")"],
           LU.indent (L.align (map layoutTree (V.toList children)))]
@@ -229,7 +229,7 @@ struct
         val si = I.SymbolInfo.SiManager sm
         fun layoutBlock (l, b) = ML.layoutBlock (config, si, (l, b))
       in
-        L.sequence ("","","\n") (List.map (LD.toList blks, layoutBlock))
+        LU.sequence ("","","\n") (List.map (LD.toList blks, layoutBlock))
       end
   end
 
@@ -380,7 +380,7 @@ struct
         val maxR1Size = Control.getMaxR1Size config
         fun prints s           = Debug.detailDebug config print s
         fun printLayout (m, l) = LU.printLayout (L.seq [L.str m, l])
-        fun printList   (m, l) = Debug.detailDebug config printLayout (m, L.sequence ("{","}",",") l)
+        fun printList   (m, l) = Debug.detailDebug config printLayout (m, LU.sequence ("{","}",",") l)
         fun printRegion (m, r) = Debug.detailDebug config printLayout (m, Debug.layoutBlocks (config, sm, r))
 
         val headerlabel = treeLabel header

@@ -139,6 +139,7 @@ struct
   structure CL = CoreHsLayout
   structure U = Utils
   structure L = Layout
+  structure LU = LayoutUtils
   structure I = Identifier
   structure IS = Identifier.SymbolInfo
 
@@ -147,7 +148,7 @@ struct
   val getIM  : env -> ty Identifier.SymbolInfo.t = #2
 
   fun indent t = L.indent (t, 2)
-  fun angleList l = L.sequence ("<", ">", ",") l
+  fun angleList l = LU.sequence ("<", ">", ",") l
 
   fun semiMap (l, f)
     = (case l
@@ -157,7 +158,7 @@ struct
 
   fun layoutVBind (env, v) = IS.layoutVariable (v, getIM env)
 
-  fun layoutVBinds (env, vbs) = L.sequence ("", "", " ") (List.map (vbs, fn b => layoutVBind (env, b)))
+  fun layoutVBinds (env, vbs) = LU.sequence ("", "", " ") (List.map (vbs, fn b => layoutVBind (env, b)))
 
   fun layoutVBinds1 (env, vbs) = 
       let
@@ -167,7 +168,7 @@ struct
           in
             if s then L.seq [L.str "!", l] else l
           end
-      in L.sequence ("", "", " ") (List.map (vbs, layoutVBind1))
+      in LU.sequence ("", "", " ") (List.map (vbs, layoutVBind1))
       end
 
   fun layoutVariables (env, vs) = angleList (List.map (vs, fn v => IS.layoutVariable (v, getIM env)))

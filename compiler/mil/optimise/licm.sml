@@ -328,7 +328,7 @@ struct
         val () = LU.printLayout (Loop.layout (config, sti, ls))
         fun doOne (l, ls) =
             L.mayAlign [L.seq [I.layoutLabel l, L.str ":"],
-                        L.sequence ("{", "}", ",") (List.map (LS.toList ls, I.layoutLabel))]
+                        LU.sequence ("{", "}", ",") (List.map (LS.toList ls, I.layoutLabel))]
         val le' = List.map (LD.toList (Loop.allExits ls), doOne)
         val le = L.align [L.str "Exits:", LU.indent (L.align le')]
         val () = LU.printLayout le

@@ -166,7 +166,7 @@ struct
 
   val modulename = "ANormLazyLayout"
   val indent = LU.indent 
-  fun angleList l = L.sequence ("<", ">", ",") l
+  fun angleList l = LU.sequence ("<", ">", ",") l
 
   type options = {
        showBinderTypes : bool,
@@ -235,7 +235,7 @@ struct
                 if strict then L.seq [L.str "!", layoutTy (env, ty)] else layoutTy (env, ty)
             fun layCon ((con, _), tys) = L.seq [IS.layoutName (con, getIM env), L.str " ", angleList (map layoutTy1 tys)]
           in
-            L.sequence ("{", "}", ",") (List.map (cons, layCon))
+            LU.sequence ("{", "}", ",") (List.map (cons, layCon))
           end)
 
   fun layoutTDef (env, (v, t)) = L.seq [L.str "%data ", IS.layoutVariable (v, getIM env), L.str  " = ", layoutTy (env, t)]
@@ -250,7 +250,7 @@ struct
       else IS.layoutVariable (v, getIM env)
 
   fun layoutVBinds (env, vbs) 
-    = L.sequence ("", "", " ") (List.map (vbs, fn b => layoutVBind (env, b)))
+    = LU.sequence ("", "", " ") (List.map (vbs, fn b => layoutVBind (env, b)))
 
   fun layoutVBinds1 (env, vbs) = 
       let
@@ -260,7 +260,7 @@ struct
           in
             if s then L.seq [L.str "!", l] else l
           end
-      in L.sequence ("", "", " ") (List.map (vbs, layoutVBind1))
+      in LU.sequence ("", "", " ") (List.map (vbs, layoutVBind1))
       end
 
   fun layoutLiteral (env, l) = CL.layoutCoreLit (getCfg env, l)
@@ -314,7 +314,7 @@ struct
          | Case (e, (v, vty), ty, alts) =>
            L.align [ L.seq [L.str "%case ", layoutTy (env, ty), L.str " ", layoutExp (env, e), 
                      L.str " of ", layoutVBind (env, (v, vty, true)) ]
-                   , indent (L.sequence ("{", "}", ";") (List.map (alts, fn a => layoutAlt (env, a))))]
+                   , indent (LU.sequence ("{", "}", ";") (List.map (alts, fn a => layoutAlt (env, a))))]
          | e => layoutAExp (env, e))
 
   and layoutVDef (env, Vdef (bind, e)) = 

@@ -92,7 +92,7 @@ struct
          | [x] => [f x]
          | l => List.map (l, fn v => L.seq [f v, L.str ";"]))
 
-  val separate = L.sequence ("", "", " ") 
+  val separate = LU.sequence ("", "", " ") 
 
   fun layoutNameAux (d, n) = L.str (if d then CU.zDecodeString n else n)
   fun layoutName (env, n) = layoutNameAux (useDecodedNames env, n)
@@ -234,12 +234,12 @@ struct
       L.paren (L.seq[layoutCoreLit (env, l), L.str " :: ", layoutTy (env, t)])
 
   fun layoutCoercionKind (env, DefinedCoercion (tbs, t1, t2)) =
-      L.sequence ("<C", ">", " ") 
+      LU.sequence ("<C", ">", " ") 
         (List.map (tbs, fn b => layoutTBind (env, b)) @ [L.paren (layoutKind (env, Keq (t1, t2)))])
 
   fun layoutKindOrCoercion (env, k) 
     = (case k
-        of Kind k => L.sequence ("<K", ">", " ") [layoutKind (env, k)]
+        of Kind k => LU.sequence ("<K", ">", " ") [layoutKind (env, k)]
          | Coercion ck =>  layoutCoercionKind (env, ck))
 
   fun layoutAlt (env, alt)
@@ -295,7 +295,7 @@ struct
          | Case (e, vb, t, alts) =>
            L.mayAlign [ L.seq [L.str "%case ", separate [layoutATy (env, t), layoutAExp (env, e)]]
                       , L.seq [L.str "%of ", layoutVBind (env, vb)]
-                      , LU.indent ( L.sequence ("{", "}", ";") (List.map (alts, fn a => layoutAlt (env, a))))]
+                      , LU.indent ( LU.sequence ("{", "}", ";") (List.map (alts, fn a => layoutAlt (env, a))))]
          | Cast (e, t) =>
            L.mayAlign [ L.seq [L.str "%cast ", L.paren (layoutExp (env, e))]
                       , layoutATy (env, t)]

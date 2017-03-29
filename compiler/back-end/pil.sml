@@ -467,7 +467,7 @@ struct
         if outputKind config = Config.OkPillar andalso
            not (List.isEmpty cuts) then
           let
-            val cuts = L.sequence ("", "", ",") cuts
+            val cuts = LU.sequence ("", "", ",") cuts
             val cuts = L.paren cuts
             val ls = [LU.indent (L.seq [L.str "also cuts to ", cuts])]
           in ls
@@ -502,7 +502,7 @@ struct
         (L.mayAlign [inPrec (e1, 15), LU.indent (LU.bracket (layout e2))], 15)
 
     fun strctInit es =
-        (L.sequence ("{","}", ",") (List.map (es, fn e => inPrec (e, 1))), 16)
+        (LU.sequence ("{","}", ",") (List.map (es, fn e => inPrec (e, 1))), 16)
 
     fun hackTyp t = (T.abs t, 1)
 

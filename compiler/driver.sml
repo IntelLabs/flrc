@@ -407,7 +407,7 @@ struct
               val l =
                   Layout.align
                     [Layout.str "Compiler controls:",
-                     LayoutUtils.indent (Layout.sequence ("", "", ",") ls)]
+                     LayoutUtils.indent (LayoutUtils.sequence ("", "", ",") ls)]
               val s = LayoutUtils.toString l ^ "\n"
             in s
             end

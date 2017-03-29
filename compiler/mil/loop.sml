@@ -1379,7 +1379,7 @@ struct
       let
         val blks = LD.toList blks
         fun doOne (l, _) = I.layoutLabel l
-        val l = L.sequence ("{", "}", ",") (List.map (blks, doOne))
+        val l = LU.sequence ("{", "}", ",") (List.map (blks, doOne))
       in l
       end
 

@@ -439,7 +439,7 @@ struct
         let
           val header = L.tuple (Vector.toListMap (parameters, fn p => layoutParameter (c, si, p)))
           val locals = L.seq [L.str "locals ",
-                              L.sequence ("", ",", "")
+                              LU.sequence ("", ",", "")
                                          (Vector.toListMap (locals, fn v => ML.layoutVariable (c, si , v)))]
           val items = L.align (Vector.toListMap (items, fn ti => layoutTemplateItem (c, si, ti)))
           val body = L.align [L.str "{", LU.indent locals, LU.indent items, L.str "}"]

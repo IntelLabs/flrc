@@ -81,7 +81,7 @@ struct
   fun layout Top = Layout.str "%top"
     | layout Bottom = Layout.str "%bot"
     | layout (Func f) = Layout.str "%func"
-    | layout (Tuple l) = Layout.sequence ("<", ">", ",") (List.map (l, layout))
+    | layout (Tuple l) = LayoutUtils.sequence ("<", ">", ",") (List.map (l, layout))
 
 end
 
