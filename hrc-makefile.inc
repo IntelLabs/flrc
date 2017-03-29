@@ -338,7 +338,7 @@ P_SRCS = \
 
 # make-version
 make-version: $(BINDIR)/make-version.sh
-	$(BINDIR)/make-version.sh "$(HRC_VERSION)" compiler/version.sml $(HRC_PREFIX)
+	sh $(BINDIR)/make-version.sh "$(HRC_VERSION)" compiler/version.sml $(HRC_PREFIX)
 
 ### hrc
 
