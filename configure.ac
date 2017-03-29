@@ -6,7 +6,7 @@ AC_INIT([hrc], [0.1], [BUG-REPORT-ADDRESS])
 
 AC_CHECK_HEADERS([assert.h float.h immintrin.h limits.h locale.h malloc.h math.h nmmintrin.h signal.h stdarg.h stdio.h stdlib.h string.h time.h sys/time.h sys/timeb.h termios.h])
 
-PKG_CHECK_MODULES([FLRC_LIB], [FLRC-lib])
+PKG_CHECK_MODULES([FLRC_LIB], [flrc-lib])
 
 PLATFORM_CPPFLAGS=
 AC_CANONICAL_HOST
