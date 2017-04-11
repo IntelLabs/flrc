@@ -19,7 +19,6 @@
 local
         $(SML_LIB)/mlton/sources.mlb
         ../common/common.mlb
-        ../core-p/core-p.mlb
         prims.sml
         mil.sml
         prims-utils.sml

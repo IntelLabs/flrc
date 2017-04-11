@@ -209,13 +209,15 @@ functor MilProfilerF (type env
     structure BranchProb = 
     struct
 
+      datatype compare = CEq | CNe | CLt | CLe
+
       (* EB: This datatype is imcomplete. However, since it is
        * only used by the opcode heuristic and it is not finished yet,
        * I decided to keep it in this way until we decide if we need
        * or not the opcode heuristic. *)
       datatype comparisonType = 
                None
-             | IntCmp of Prims.compare * Mil.operand * Mil.operand
+             | IntCmp of compare * Mil.operand * Mil.operand
              | Other (* Other comparisons. *)
                
       datatype info = Helpers of
@@ -360,15 +362,15 @@ functor MilProfilerF (type env
       val OpcodeHeuristic : probabilityHeuristic = 
        fn (info, n, s1, s2) => 
           case getComparison (info, n)
-           of IntCmp (Prims.CLt, Mil.SVariable _, Mil.SConstant c) =>
+           of IntCmp (CLt, Mil.SVariable _, Mil.SConstant c) =>
               if (isZero (info, c)) then SOME (1.0 - hitRate LHH)
               else NONE
-            | IntCmp (Prims.CLe, Mil.SVariable _, Mil.SConstant c) =>
+            | IntCmp (CLe, Mil.SVariable _, Mil.SConstant c) =>
               if (isZero (info, c)) then SOME (1.0 - hitRate LHH)
               else NONE
-            | IntCmp (Prims.CEq, Mil.SVariable _, Mil.SConstant _) =>
+            | IntCmp (CEq, Mil.SVariable _, Mil.SConstant _) =>
               SOME (1.0 - hitRate LHH)
-            | IntCmp (Prims.CEq, Mil.SConstant _, Mil.SVariable _) =>
+            | IntCmp (CEq, Mil.SConstant _, Mil.SVariable _) =>
               SOME (1.0 - hitRate LHH)
             | _ => NONE
           

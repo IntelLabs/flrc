@@ -143,7 +143,6 @@ functor MilDataFlowAnalysisF (
   structure LS = Identifier.LabelSet
   structure LD = Identifier.LabelDict
   structure VD = Identifier.VariableDict
-  structure P = Prims
  
   (*
    * local environment structure

@@ -1405,11 +1405,11 @@ struct
         (* Build the state and environment *)
         val s = stateMk ()
         val (ord, st) =
-            ((I.nameFromString (symbolTable, Prims.ordString), symbolTable)
+            ((I.nameFromString (symbolTable, "ord"), symbolTable)
              handle _ =>
                let
                  val stm = IM.fromExistingAll symbolTable
-                 val ord = IM.nameMake (stm, Prims.ordString)
+                 val ord = IM.nameMake (stm, "ord")
                  val st = MU.SymbolTableManager.finish stm
                in (ord, st)
                end)

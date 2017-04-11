@@ -241,7 +241,7 @@ COMPILER_SRCS = \
 COMPILER_STD_OPTS = @MLton -- \
 	-verbose 1 -runtime 'use-mmap true' \
 	-codegen native \
-	-native-split 900000
+	-native-split 900000 -mlb-path-map /opt/mlton-20130715/sml-lib/mlb-path-map
 # The following don't work on 64-bit
 #       -ieee-fp true -max-heap 800m
 
@@ -290,51 +290,6 @@ HASKELL_SRCS = \
   compiler/core-hs/core-hs.grm.sig \
   compiler/core-hs/core-hs.grm.sml \
   compiler/haskell.sml
-
-# keep these in alpabetic order
-P_SRCS = \
-  compiler/core-op/core-op.mlb \
-  compiler/core-op/core-p.sml \
-  compiler/core-op/fix-up.sml \
-  compiler/core-op/layout.sml \
-  compiler/core-op/parse.sml \
-  compiler/core-op/prims.sml \
-  compiler/core-op/stats.sml \
-  compiler/core-op/utils.sml \
-  compiler/core-p/common.sml \
-  compiler/core-p/common-utils.sml \
-  compiler/core-p/core-p.mlb \
-  compiler/core-p/linear.sml \
-  compiler/core-p/linear-analyse.sml \
-  compiler/core-p/linear-dce.sml \
-  compiler/core-p/linear-free-variables.sml \
-  compiler/core-p/linear-layout.sml \
-  compiler/core-p/linear-optimise.sml \
-  compiler/core-p/linear-simplify.sml \
-  compiler/core-p/linear-sink1.sml \
-  compiler/core-p/linear-sink2.sml \
-  compiler/core-p/linear-stats.sml \
-  compiler/core-p/linear-type.sml \
-  compiler/core-p/linear-utils.sml \
-  compiler/core-p/natives.sml \
-  compiler/core-p/parse.sml \
-  compiler/core-p/prims.sml \
-  compiler/core-p/raw-layout.sml \
-  compiler/core-p/raw-stats.sml \
-  compiler/core-p/raw-to-linear.sml \
-  compiler/core-p/raw-utils.sml \
-  compiler/core-p/raw.sml \
-  compiler/core-p/type.sml \
-  compiler/hil/analyse.sml \
-  compiler/hil/check.sml \
-  compiler/hil/dce.sml \
-  compiler/hil/free-vars.sml \
-  compiler/hil/hil.mlb \
-  compiler/hil/hil.sml \
-  compiler/hil/layout.sml \
-  compiler/hil/optimise.sml \
-  compiler/hil/simplifier.sml \
-  compiler/hil/utils.sml
 
 # make-version
 make-version: $(BINDIR)/make-version.sh

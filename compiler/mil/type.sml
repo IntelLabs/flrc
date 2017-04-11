@@ -651,7 +651,7 @@ struct
      val tString =
       fn (c, si) =>
          let
-           val ord = M.CName (Prims.getOrd si)
+           val ord = fail ("tString", "this feature (getting the internal name of ord function) has been removed")
            val char = MU.Boxed.t tRat
            val sum = POM.Sum.typ (M.TName, Vector.new1 (ord, Vector.new1 char))
            val str = OA.varTyp (c, char)

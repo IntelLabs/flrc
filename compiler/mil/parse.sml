@@ -1731,7 +1731,7 @@ struct
 
   fun program (config : Config.t) : M.t P.t =
       let
-        val stm = IM.new Prims.ordString
+        val stm = IM.new "ord"
         val state = stateMk stm
         val env = envMk config
         val includes = P.map (keywordS "Includes:" && P.zeroOrMoreV (includeFileF (state, env)), #2)

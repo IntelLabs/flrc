@@ -3263,7 +3263,7 @@ struct
   fun genInit (state, env, entry, globals) =
       let
         (* The runtime needs to know the \core\char\ord name *)
-        val ord = IM.nameMake (getStm state, Prims.ordString)
+        val ord = IM.nameMake (getStm state, "ord")
         val ord = genName (state, env, ord)
         val or = Pil.E.call (Pil.E.variable RT.Name.registerCoreCharOrd, [ord])
         val () = addReg1 (state, Pil.S.expr or)
