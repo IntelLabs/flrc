@@ -241,7 +241,8 @@ COMPILER_SRCS = \
 COMPILER_STD_OPTS = @MLton -- \
 	-verbose 1 -runtime 'use-mmap true' \
 	-codegen native \
-	-native-split 900000 -mlb-path-map /opt/mlton-20130715/sml-lib/mlb-path-map
+	-native-split 900000 \
+	-mlb-path-map $(PWD)/sml-lib/mlb-path-map \
 # The following don't work on 64-bit
 #       -ieee-fp true -max-heap 800m
 
@@ -304,14 +305,15 @@ HRC_SRCS = $(COMPILER_SRCS) $(HASKELL_SRCS) compiler/hrc.mlb compiler/hrc.sml
 
 hrc: $(HRC_EXE)
 
-$(HRC_EXE): make-version $(HRC_SRCS) compiler/hrc.mlb
+$(HRC_EXE): make-version $(HRC_SRCS) compiler/hrc.mlb sml-lib/mlb-path-map
 	cd compiler; \
 	rm -f hrc.*.c hrc.*.s; \
 	mlton $(COMPILER_OPTS) -stop g $(HRC).mlb && \
 	mlton $(COMPILER_OPTS) -output ../$(HRC_EXE) hrc.*.c hrc.*.s && \
 	rm -f hrc.*.c hrc.*.s
 
-### P LSR
+sml-lib/mlb-path-map:
+	$(MAKE) -C sml-lib
 
 # Keep these in alphabetic order
 PLSR_SRCS = \
