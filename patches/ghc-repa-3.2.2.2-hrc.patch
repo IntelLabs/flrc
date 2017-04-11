@@ -1,0 +1,432 @@
+diff -Naur repa-3.2.2.2/Data/Array/Repa/Eval/Cursored.hs repa/Data/Array/Repa/Eval/Cursored.hs
+--- repa-3.2.2.2/Data/Array/Repa/Eval/Cursored.hs	2012-10-12 20:51:17.000000000 -0700
++++ repa/Data/Array/Repa/Eval/Cursored.hs	2017-04-11 09:43:10.421425012 -0700
+@@ -162,27 +162,26 @@
+ 	makeCursor shiftCursor getElem
+ 	!imageWidth !x0 !y0 !w0 h0
+ 
+- = do   fillBlock y0
++ = do   fillBlock4 y0
+  where	!x1     = x0 +# w0
+         !y1     = y0 +# h0
+ 
+-        {-# INLINE fillBlock #-}
+-	fillBlock !y
+-	 | y >=# y1	= return ()
+-	 | otherwise
+-	 = do	fillLine4 x0
+-		fillBlock (y +# 1#)
+-
+-	 where	{-# INLINE fillLine4 #-}
++        {-# INLINE fillBlock4 #-}
++        fillBlock4 !y
++         | y +# 4# >=# y1    = fillBlock y
++         | otherwise
++	 = do fillLine4 x0
++	      fillBlock4 (y +# 4#)
++ 	 where	{-# INLINE fillLine4 #-}
+ 		fillLine4 !x
+- 	   	 | x +# 4# >=# x1 	= fillLine1 x
++ 	   	 | x >=# x1 	= return ()
+ 	   	 | otherwise
+ 	   	 = do   -- Compute each source cursor based on the previous one so that
+ 			-- the variable live ranges in the generated code are shorter.
+ 			let srcCur0	= makeCursor  (Z :. (I# y) :. (I# x))
+-			let srcCur1	= shiftCursor (Z :. 0 :. 1) srcCur0
+-			let srcCur2	= shiftCursor (Z :. 0 :. 1) srcCur1
+-			let srcCur3	= shiftCursor (Z :. 0 :. 1) srcCur2
++			let srcCur1	= shiftCursor (Z :. 1 :. 0) srcCur0
++			let srcCur2	= shiftCursor (Z :. 1 :. 0) srcCur1
++			let srcCur3	= shiftCursor (Z :. 1 :. 0) srcCur2
+ 
+ 			-- Get the result value for each cursor.
+ 			let val0	= getElem srcCur0
+@@ -201,13 +200,22 @@
+ 
+ 			-- Compute cursor into destination array.
+ 			let !dstCur0	= x +# (y *# imageWidth)
+-			write (I# dstCur0)         val0
+-			write (I# (dstCur0 +# 1#)) val1
+-			write (I# (dstCur0 +# 2#)) val2
+-			write (I# (dstCur0 +# 3#)) val3
+-			fillLine4 (x +# 4#)
++			let !dstCur1	= dstCur0 +# imageWidth
++			let !dstCur2	= dstCur1 +# imageWidth
++			let !dstCur3	= dstCur2 +# imageWidth
++			write (I# dstCur0) val0
++			write (I# dstCur1) val1
++			write (I# dstCur2) val2
++			write (I# dstCur3) val3
++			fillLine4 (x +# 1#)
+ 
+-		{-# INLINE fillLine1 #-}
++        {-# INLINE fillBlock #-}
++	fillBlock !y
++	 | y >=# y1	= return ()
++	 | otherwise
++	 = do	fillLine1 x0
++		fillBlock (y +# 1#)
++	 where  {-# INLINE fillLine1 #-}
+ 		fillLine1 !x
+  	   	 | x >=# x1		= return ()
+ 	   	 | otherwise
+diff -Naur repa-3.2.2.2/Data/Array/Repa/Eval/Load.hs repa/Data/Array/Repa/Eval/Load.hs
+--- repa-3.2.2.2/Data/Array/Repa/Eval/Load.hs	2012-10-12 20:51:17.000000000 -0700
++++ repa/Data/Array/Repa/Eval/Load.hs	2017-04-11 09:43:10.421425012 -0700
+@@ -21,7 +21,9 @@
+  -- | Fill an entire array in parallel.
+  loadP          :: Target r2 e => Array r1 sh e -> MVec r2 e -> IO ()
+ 
+-
++ -- | Fill an entire array in parallel by dispatching computation to GPU.
++ loadG          :: Target r2 e => Array r1 sh e -> MVec r2 e -> IO ()
++ 
+ -- FillRange ------------------------------------------------------------------
+ -- | Compute a range of elements defined by an array and write them to a fillable
+ --   representation.
+@@ -31,6 +33,9 @@
+ 
+  -- | Fill a range of an array in parallel.
+  loadRangeP     :: Target r2 e => Array r1 sh e -> MVec r2 e -> sh -> sh -> IO ()
++ 
++  -- | Fill a range of an array in parallel by dispatching computation to GPU.
++ loadRangeG     :: Target r2 e => Array r1 sh e -> MVec r2 e -> sh -> sh -> IO ()
+ 
+ 
+                         
+diff -Naur repa-3.2.2.2/Data/Array/Repa/Eval.hs repa/Data/Array/Repa/Eval.hs
+--- repa-3.2.2.2/Data/Array/Repa/Eval.hs	2012-10-12 20:51:17.000000000 -0700
++++ repa/Data/Array/Repa/Eval.hs	2017-04-11 09:43:10.421425012 -0700
+@@ -12,6 +12,7 @@
+         , fromList
+         
+         -- * Converting between representations
++        , computeG 
+         , computeS, computeP, suspendedComputeP
+         , copyS,    copyP,    suspendedCopyP
+         , now
+@@ -81,6 +82,17 @@
+ {-# INLINE [4] computeS #-}
+ 
+ 
++computeG 
++        :: (Load r1 sh e, Target r2 e, Source r2 e, Monad m)
++        => Array r1 sh e -> m (Array r2 sh e)
++computeG arr1 
++ = return (arr1 `deepSeqArray` 
++   unsafePerformIO 
++ $ do mvec2 <- newMVec (size $ extent arr1)
++      loadG arr1 mvec2
++      unsafeFreezeMVec (extent arr1) mvec2)
++
++
+ -- | Suspended parallel computation of array elements.
+ --
+ --   This version creates a thunk that will evaluate the array on demand.
+diff -Naur repa-3.2.2.2/Data/Array/Repa/Repr/Cursored.hs repa/Data/Array/Repa/Repr/Cursored.hs
+--- repa-3.2.2.2/Data/Array/Repa/Repr/Cursored.hs	2012-10-12 20:51:17.000000000 -0700
++++ repa/Data/Array/Repa/Repr/Cursored.hs	2017-04-11 09:43:10.421425012 -0700
+@@ -85,6 +85,11 @@
+         traceEventIO "Repa.loadS[Cursored]: end"
+  {-# INLINE loadS #-}
+         
++ loadG (ACursored (Z :. (I# h) :. (I# w)) makec shiftc loadc) marr 
++  = do  traceEventIO "Repa.loadG[Cursored]: start"
++        error "fillCursoredBlock2G (unsafeWriteMVec marr) makec shiftc loadc w 0# 0# w h"
++        traceEventIO "Repa.loadG[Cursored]: end"
++ {-# INLINE loadG #-}
+ 
+ -- | Compute a range of elements in a rank-2 array.
+ instance Elt e => LoadRange C DIM2 e where
+@@ -110,6 +115,14 @@
+         touchMVec marr
+         traceEventIO "Repa.loadRangeS[Cursored]: end"
+  {-# INLINE loadRangeS #-}
++ 
++ loadRangeG  (ACursored (Z :. _h :. (I# w)) makec shiftc loadc) marr
++             (Z :. (I# y0) :. (I# x0))
++             (Z :. (I# h0) :. (I# w0))
++  = do  traceEventIO "Repa.loadRangeG[Cursored]: start"
++        error "fillCursoredBlock2G (unsafeWriteMVec marr) makec shiftc loadc w x0 y0 w0 h0"
++        traceEventIO "Repa.loadRangeG[Cursored]: end"
++ {-# INLINE loadRangeG #-}
+         
+ 
+ -- Conversions ----------------------------------------------------------------
+diff -Naur repa-3.2.2.2/Data/Array/Repa/Repr/Delayed.hs repa/Data/Array/Repa/Repr/Delayed.hs
+--- repa-3.2.2.2/Data/Array/Repa/Repr/Delayed.hs	2012-10-12 20:51:17.000000000 -0700
++++ repa/Data/Array/Repa/Repr/Delayed.hs	2017-04-11 09:43:10.421425012 -0700
+@@ -1,4 +1,4 @@
+-{-# LANGUAGE MagicHash #-}
++{-# LANGUAGE MagicHash, UnboxedTuples #-}
+ module Data.Array.Repa.Repr.Delayed
+         ( D, Array(..)
+         , fromFunction, toFunction
+@@ -14,6 +14,7 @@
+ import Data.Array.Repa.Base
+ import Debug.Trace
+ import GHC.Exts
++import GHC.IO
+ 
+ -- | Delayed arrays are represented as functions from the index to element value.
+ --
+@@ -61,6 +62,18 @@
+         touchMVec mvec
+         traceEventIO "Repa.loadS[Delayed]: end"
+  {-# INLINE [4] loadS #-}
++ 
++ loadG (ADelayed sh getElem) mvec
++  = mvec `deepSeqMVec`
++     do traceEventIO "Repa.loadG[Delayed]: start"
++        IO $ \s -> 
++            let I# n = size sh 
++                f i = unsafePerformIO ((unsafeWriteMVec mvec) (I# i) ((getElem . fromIndex sh) (I# i))) 
++                      `seq` 0#
++            in (# offload# n f s, () #)
++        touchMVec mvec
++        traceEventIO "Repa.loadG[Delayed]: end"
++ {-# INLINE [4] loadG #-}
+ 
+ 
+ -- | Compute a range of elements in a rank-2 array.
+@@ -86,7 +99,14 @@
+         touchMVec mvec
+         traceEventIO "Repa.loadRangeS[Delayed]: end"
+  {-# INLINE [1] loadRangeS #-}
+-
++ 
++ loadRangeG  (ADelayed (Z :. _h :. (I# w)) getElem) mvec
++             (Z :. (I# y0) :. (I# x0)) (Z :. (I# h0) :. (I# w0))
++  = mvec `deepSeqMVec`
++    do  traceEventIO "Repa.loadRangeG[Delayed]: start"
++        error "Need to define a fillBlock2 variant!"
++        traceEventIO "Repa.loadRangeG[Delayed]: end"
++ {-# INLINE [1] loadRangeG #-}
+ 
+ -- Conversions ----------------------------------------------------------------
+ -- | O(1). Wrap a function as a delayed array.
+diff -Naur repa-3.2.2.2/Data/Array/Repa/Repr/HintInterleave.hs repa/Data/Array/Repa/Repr/HintInterleave.hs
+--- repa-3.2.2.2/Data/Array/Repa/Repr/HintInterleave.hs	2012-10-12 20:51:17.000000000 -0700
++++ repa/Data/Array/Repa/Repr/HintInterleave.hs	2017-04-11 09:43:10.421425012 -0700
+@@ -74,3 +74,10 @@
+   = loadS arr marr
+  {-# INLINE loadS #-}
+ 
++ loadG (AInterleave (ADelayed sh getElem)) marr
++  = marr `deepSeqMVec`
++    do  traceEventIO "Repa.loadG[Interleaved]: start"
++        error "fillInterleavedG (size sh) (unsafeWriteMVec marr) (getElem . fromIndex sh)"
++        touchMVec marr
++        traceEventIO "Repa.loadG[Interleaved]: end"
++ {-# INLINE [4] loadG #-}
+\ No newline at end of file
+diff -Naur repa-3.2.2.2/Data/Array/Repa/Repr/HintSmall.hs repa/Data/Array/Repa/Repr/HintSmall.hs
+--- repa-3.2.2.2/Data/Array/Repa/Repr/HintSmall.hs	2012-10-12 20:51:17.000000000 -0700
++++ repa/Data/Array/Repa/Repr/HintSmall.hs	2017-04-11 09:43:10.421425012 -0700
+@@ -63,6 +63,10 @@
+  loadS (ASmall arr) marr
+   = loadS arr marr
+  {-# INLINE loadS #-}
++ 
++ loadG (ASmall arr) marr
++  = loadG arr marr
++ {-# INLINE loadG #-}
+ 
+ 
+ -- LoadRange ------------------------------------------------------------------
+@@ -75,3 +79,7 @@
+  loadRangeS (ASmall arr) marr ix1 ix2
+   = loadRangeS arr marr ix1 ix2
+  {-# INLINE loadRangeS #-}
++
++ loadRangeG (ASmall arr) marr ix1 ix2
++  = loadRangeG arr marr ix1 ix2
++ {-# INLINE loadRangeG #-}
+\ No newline at end of file
+diff -Naur repa-3.2.2.2/Data/Array/Repa/Repr/Partitioned.hs repa/Data/Array/Repa/Repr/Partitioned.hs
+--- repa-3.2.2.2/Data/Array/Repa/Repr/Partitioned.hs	2012-10-12 20:51:17.000000000 -0700
++++ repa/Data/Array/Repa/Repr/Partitioned.hs	2017-04-11 09:43:10.421425012 -0700
+@@ -80,5 +80,9 @@
+         loadS arr2 marr
+  {-# INLINE loadS #-}
+ 
++ loadG (APart _ (Range ix sz _) arr1 arr2) marr
++  = do   loadRangeG arr1 marr ix sz
++         loadG arr2 marr
++ {-# INLINE loadG #-}
+ 
+ 
+diff -Naur repa-3.2.2.2/Data/Array/Repa/Repr/Unboxed.hs repa/Data/Array/Repa/Repr/Unboxed.hs
+--- repa-3.2.2.2/Data/Array/Repa/Repr/Unboxed.hs	2012-10-12 20:51:17.000000000 -0700
++++ repa/Data/Array/Repa/Repr/Unboxed.hs	2017-04-11 09:43:10.421425012 -0700
+@@ -14,6 +14,8 @@
+ import Data.Array.Repa.Repr.Delayed     as R
+ import qualified Data.Vector.Unboxed              as U
+ import qualified Data.Vector.Unboxed.Mutable      as UM
++import qualified Data.Vector.Unboxed.Base	  as UB
++import qualified Data.Vector.Generic              as UG
+ import Control.Monad
+ import Prelude hiding (zip, zip3, unzip, unzip3)
+ 
+@@ -60,18 +62,18 @@
+ -- | Filling of unboxed vector arrays.
+ instance U.Unbox e => Target U e where
+  data MVec U e 
+-  = UMVec (UM.IOVector e)
++  = UMVec (UB.Vector e)
+ 
+  newMVec n
+-  = liftM UMVec (UM.new n)
++  = liftM UMVec (UG.basicUnsafeCreate n)
+  {-# INLINE newMVec #-}
+ 
+  unsafeWriteMVec (UMVec v) ix
+-  = UM.unsafeWrite v ix
++  = UG.basicUnsafeInitElem v ix
+  {-# INLINE unsafeWriteMVec #-}
+ 
+  unsafeFreezeMVec sh (UMVec mvec)     
+-  = do  vec     <- U.unsafeFreeze mvec
++  = do  vec    <-  UG.basicUnsafeInited mvec
+         return  $  AUnboxed sh vec
+  {-# INLINE unsafeFreezeMVec #-}
+ 
+diff -Naur repa-3.2.2.2/Data/Array/Repa/Repr/Undefined.hs repa/Data/Array/Repa/Repr/Undefined.hs
+--- repa-3.2.2.2/Data/Array/Repa/Repr/Undefined.hs	2012-10-12 20:51:17.000000000 -0700
++++ repa/Data/Array/Repa/Repr/Undefined.hs	2017-04-11 09:43:10.421425012 -0700
+@@ -47,5 +47,6 @@
+ instance (Shape sh, Num e) => Load X sh e where
+  loadS _ _ = return ()
+  loadP _ _ = return ()
++ loadG _ _ = return ()
+ 
+ 
+diff -Naur repa-3.2.2.2/Data/Array/Repa/Repr/Vector.hs repa/Data/Array/Repa/Repr/Vector.hs
+--- repa-3.2.2.2/Data/Array/Repa/Repr/Vector.hs	2012-10-12 20:51:17.000000000 -0700
++++ repa/Data/Array/Repa/Repr/Vector.hs	2017-04-11 09:43:10.421425012 -0700
+@@ -10,7 +10,7 @@
+ import Data.Array.Repa.Base
+ import Data.Array.Repa.Eval
+ import qualified Data.Vector            as V
+-import qualified Data.Vector.Mutable    as VM
++import qualified Data.Vector.Generic    as VG
+ import Control.Monad
+ 
+ -- | Arrays represented as boxed vectors.
+@@ -53,18 +53,18 @@
+ -- | Filling of boxed vector arrays.
+ instance Target V e where
+  data MVec V e 
+-  = MVector (VM.IOVector e)
++  = MVector (V.Vector e)
+ 
+  newMVec n
+-  = liftM MVector (VM.new n)
++  = liftM MVector (VG.basicUnsafeCreate n)
+  {-# INLINE newMVec #-}
+ 
+  unsafeWriteMVec (MVector v) ix
+-  = VM.unsafeWrite v ix
++  = VG.basicUnsafeInitElem v ix
+  {-# INLINE unsafeWriteMVec #-}
+ 
+  unsafeFreezeMVec sh (MVector mvec)     
+-  = do  vec     <- V.unsafeFreeze mvec
++  = do  vec     <- VG.basicUnsafeInited mvec
+         return  $  AVector sh vec
+  {-# INLINE unsafeFreezeMVec #-}
+ 
+diff -Naur repa-3.2.2.2/Data/Array/Repa/Stencil/Dim2.hs repa/Data/Array/Repa/Stencil/Dim2.hs
+--- repa-3.2.2.2/Data/Array/Repa/Stencil/Dim2.hs	2012-10-12 20:51:17.000000000 -0700
++++ repa/Data/Array/Repa/Stencil/Dim2.hs	2017-04-11 09:43:10.421425012 -0700
+@@ -149,11 +149,9 @@
+ 
+ 		-- Build a function to pass data from the array to our stencil.
+ 		{-# INLINE oload #-}
+-		oload oy ox
+-		 = let	!cur' = shift (Z :. oy :. ox) cur0
+-		   in	loads (Z :. oy :. ox) (getData cur')
++		oload oy ox cur' = loads (Z :. oy :. ox) (getData cur')
+ 
+-	   in	template7x7 oload zero
++	   in	template7x7 oload shift cur0 zero
+ 
+         | otherwise
+         = error $ unlines 
+@@ -199,11 +197,9 @@
+ 
+                 -- Build a function to pass data from the array to our stencil.
+                 {-# INLINE oload #-}
+-                oload oy ox
+-                 = let  !cur' = shift (Z :. oy :. ox) cur
+-                   in   loads (Z :. oy :. ox) (getData cur')
++                oload oy ox cur' = loads (Z :. oy :. ox) (getData cur')
+ 
+-           in   template7x7 oload zero
++           in   template7x7 oload shift cur zero
+ 
+         | otherwise
+         = error $ unlines 
+@@ -257,11 +253,9 @@
+ 
+ 		-- Build a function to pass data from the array to our stencil.
+ 		{-# INLINE oload #-}
+-		oload oy ox
+-		 = let	!cur' = shift (Z :. oy :. ox) cur
+-		   in	loads (Z :. oy :. ox) (getData cur')
++		oload oy ox cur' = loads (Z :. oy :. ox) (getData cur')
+ 
+-	   in	template7x7 oload zero
++	   in	template7x7 oload shift cur zero
+ 
+         | otherwise
+         = error $ unlines 
+@@ -270,18 +264,27 @@
+ 
+ 
+ -- | Data template for stencils up to 7x7.
++{-
+ template7x7
+ 	:: (Int -> Int -> a -> a)
+ 	-> a -> a
++-}
+ 
+ {-# INLINE template7x7 #-}
+-template7x7 f zero
+- 	= f (-3) (-3)  $  f (-3) (-2)  $  f (-3) (-1)  $  f (-3)   0  $  f (-3)   1  $  f (-3)   2  $ f (-3) 3
+- 	$ f (-2) (-3)  $  f (-2) (-2)  $  f (-2) (-1)  $  f (-2)   0  $  f (-2)   1  $  f (-2)   2  $ f (-2) 3
+-	$ f (-1) (-3)  $  f (-1) (-2)  $  f (-1) (-1)  $  f (-1)   0  $  f (-1)   1  $  f (-1)   2  $ f (-1) 3
+-	$ f   0  (-3)  $  f   0  (-2)  $  f   0  (-1)  $  f   0    0  $  f   0    1  $  f   0    2  $ f   0  3
+-	$ f   1  (-3)  $  f   1  (-2)  $  f   1  (-1)  $  f   1    0  $  f   1    1  $  f   1    2  $ f   1  3
+-	$ f   2  (-3)  $  f   2  (-2)  $  f   2  (-1)  $  f   2    0  $  f   2    1  $  f   2    2  $ f   2  3
+-	$ f   3  (-3)  $  f   3  (-2)  $  f   3  (-1)  $  f   3    0  $  f   3    1  $  f   3    2  $ f   3  3
+-	$ zero
++template7x7 f shift cur0 zero = 
++        let cur1 = shift (Z :. -1 :. 0) cur0
++            cur2 = shift (Z :. -1 :. 0) cur1
++            cur3 = shift (Z :. -1 :. 0) cur2
++            cur4 = shift (Z :.  1 :. 0) cur0
++            cur5 = shift (Z :.  1 :. 0) cur4
++            cur6 = shift (Z :.  1 :. 0) cur5
++	    {-# INLINE row #-}
++ 	    row y cur = f y (-3) (shift (Z :. 0 :. -3) cur) .
++		        f y (-2) (shift (Z :. 0 :. -2) cur) . 
++			f y (-1) (shift (Z :. 0 :. -1) cur) .  
++			f y    0                     cur  .
++			f y    1 (shift (Z :. 0 :.  1) cur) .  
++		        f y    2 (shift (Z :. 0 :.  2) cur) . 
++			f y    3 (shift (Z :. 0 :.  3) cur) 
++ 	in row (-3) cur3 $ row (-2) cur2 $ row (-1) cur1 $ row 0 cur0 $ row 1 cur4 $ row 2 cur5 $ row 3 cur6 $ zero
+ 
+diff -Naur repa-3.2.2.2/Data/Array/Repa.hs repa/Data/Array/Repa.hs
+--- repa-3.2.2.2/Data/Array/Repa.hs	2012-10-12 20:51:17.000000000 -0700
++++ repa/Data/Array/Repa.hs	2017-04-11 09:43:10.421425012 -0700
+@@ -110,7 +110,7 @@
+         , deepSeqArrays
+ 
+         -- * Computation
+-        , computeP, computeS
++        , computeP, computeS, computeG
+         , copyP,    copyS
+ 
+         -- * Concrete array representations

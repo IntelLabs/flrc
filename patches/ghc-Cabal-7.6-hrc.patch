@@ -1,0 +1,241 @@
+diff --git a/Cabal/Cabal.cabal b/Cabal/Cabal.cabal
+index f284ef9..0572932 100644
+--- a/Cabal/Cabal.cabal
++++ b/Cabal/Cabal.cabal
+@@ -1,5 +1,5 @@
+ Name: Cabal
+-Version: 1.16.0
++Version: 1.16.1
+ Copyright: 2003-2006, Isaac Jones
+            2005-2011, Duncan Coutts
+ License: BSD3
+diff --git a/Cabal/Distribution/Simple/BuildPaths.hs b/Cabal/Distribution/Simple/BuildPaths.hs
+index 575545f..2b56316 100644
+--- a/Cabal/Distribution/Simple/BuildPaths.hs
++++ b/Cabal/Distribution/Simple/BuildPaths.hs
+@@ -50,6 +50,7 @@ module Distribution.Simple.BuildPaths (
+     haddockName,
+ 
+     mkLibName,
++    mkHRCLibName,
+     mkProfLibName,
+     mkSharedLibName,
+ 
+@@ -112,6 +113,9 @@ haddockName pkg_descr = display (packageName pkg_descr) <.> "haddock"
+ mkLibName :: PackageIdentifier -> String
+ mkLibName lib = "libHS" ++ display lib <.> "a"
+ 
++mkHRCLibName :: PackageIdentifier -> String
++mkHRCLibName lib =  "libHS" ++ display lib ++ "_hrc" <.> "a"
++
+ mkProfLibName :: PackageIdentifier -> String
+ mkProfLibName lib =  "libHS" ++ display lib ++ "_p" <.> "a"
+ 
+diff --git a/Cabal/Distribution/Simple/Configure.hs b/Cabal/Distribution/Simple/Configure.hs
+index 1aba63a..cbf7d24 100644
+--- a/Cabal/Distribution/Simple/Configure.hs
++++ b/Cabal/Distribution/Simple/Configure.hs
+@@ -544,6 +544,7 @@ configure (pkg_descr0, pbi) cfg
+                     pkgDescrFile        = Nothing,
+                     localPkgDescr       = pkg_descr',
+                     withPrograms        = programsConfig''',
++                    withHRCLib          = fromFlag $ configHRCLib cfg,
+                     withVanillaLib      = fromFlag $ configVanillaLib cfg,
+                     withProfLib         = fromFlag $ configProfLib cfg,
+                     withSharedLib       = fromFlag $ configSharedLib cfg,
+diff --git a/Cabal/Distribution/Simple/GHC.hs b/Cabal/Distribution/Simple/GHC.hs
+index 1b4c4d8..75a7283 100644
+--- a/Cabal/Distribution/Simple/GHC.hs
++++ b/Cabal/Distribution/Simple/GHC.hs
+@@ -612,6 +612,7 @@ buildLib verbosity pkg_descr lbi lib clbi = do
+   let pref = buildDir lbi
+       pkgid = packageId pkg_descr
+       ifVanillaLib forceVanilla = when (forceVanilla || withVanillaLib lbi)
++      ifHRCLib = when (withHRCLib lbi)
+       ifProfLib = when (withProfLib lbi)
+       ifSharedLib = when (withSharedLib lbi)
+       ifGHCiLib = when (withGHCiLib lbi && withVanillaLib lbi)
+@@ -637,6 +638,11 @@ buildLib verbosity pkg_descr lbi lib clbi = do
+                       ghcOptInputModules = libModules lib
+                     }
+ 
++      hrcOpts     = vanillaOpts `mappend` mempty {
++                      ghcOptHiSuffix      = toFlag "hrc_hi",
++                      ghcOptExtra         = ["-fstub-only"]
++                    }
++
+       profOpts    = vanillaOpts `mappend` mempty {
+                       ghcOptProfilingMode = toFlag True,
+                       ghcOptHiSuffix      = toFlag "p_hi",
+@@ -654,6 +660,7 @@ buildLib verbosity pkg_descr lbi lib clbi = do
+ 
+   unless (null (libModules lib)) $
+     do ifVanillaLib forceVanillaLib (runGhcProg vanillaOpts)
++       ifHRCLib (runGhcProg hrcOpts)
+        ifProfLib (runGhcProg profOpts)
+        ifSharedLib (runGhcProg sharedOpts)
+ 
+@@ -681,6 +688,7 @@ buildLib verbosity pkg_descr lbi lib clbi = do
+   let cObjs = map (`replaceExtension` objExtension) (cSources libBi)
+       cSharedObjs = map (`replaceExtension` ("dyn_" ++ objExtension)) (cSources libBi)
+       vanillaLibFilePath = libTargetDir </> mkLibName pkgid
++      hrcLibFilePath     = libTargetDir </> mkHRCLibName pkgid
+       profileLibFilePath = libTargetDir </> mkProfLibName pkgid
+       sharedLibFilePath  = libTargetDir </> mkSharedLibName pkgid
+                                               (compilerId (compiler lbi))
+@@ -707,6 +715,8 @@ buildLib verbosity pkg_descr lbi lib clbi = do
+ 
+   hObjs     <- getHaskellObjects lib lbi
+                     pref objExtension True
++  hHRCObjs  <- getHaskellObjects lib lbi
++                    pref ("hrc_" ++ objExtension) True
+   hProfObjs <-
+     if (withProfLib lbi)
+             then getHaskellObjects lib lbi
+@@ -722,13 +732,17 @@ buildLib verbosity pkg_descr lbi lib clbi = do
+     -- first remove library files if they exists
+     sequence_
+       [ removeFile libFilePath `catchIO` \_ -> return ()
+-      | libFilePath <- [vanillaLibFilePath, profileLibFilePath
++      | libFilePath <- [vanillaLibFilePath, hrcLibFilePath, profileLibFilePath
+                        ,sharedLibFilePath,  ghciLibFilePath] ]
+ 
+     let staticObjectFiles =
+                hObjs
+             ++ map (pref </>) cObjs
+             ++ stubObjs
++        hrcObjectFiles =
++               hHRCObjs
++            ++ map (pref </>) cObjs
++            ++ stubObjs
+         profObjectFiles =
+                hProfObjs
+             ++ map (pref </>) cObjs
+@@ -768,6 +782,11 @@ buildLib verbosity pkg_descr lbi lib clbi = do
+       Ar.createArLibArchive verbosity arProg
+         vanillaLibFilePath staticObjectFiles
+ 
++    ifHRCLib $ do
++      (arProg, _) <- requireProgram verbosity arProgram (withPrograms lbi)
++      Ar.createArLibArchive verbosity arProg
++        hrcLibFilePath hrcObjectFiles
++
+     ifProfLib $ do
+       (arProg, _) <- requireProgram verbosity arProgram (withPrograms lbi)
+       Ar.createArLibArchive verbosity arProg
+@@ -1068,18 +1087,23 @@ installLib verbosity lbi targetDir dynlibTargetDir builtDir pkg lib = do
+ 
+   -- copy the built library files over:
+   ifVanilla $ copy builtDir targetDir vanillaLibName
++  ifHRC     $ copy builtDir targetDir hrcLibName
+   ifProf    $ copy builtDir targetDir profileLibName
+   ifGHCi    $ copy builtDir targetDir ghciLibName
+   ifShared  $ copyShared builtDir dynlibTargetDir sharedLibName
++  catchIO (copyModuleFiles "hcr") (const $ return ())
+ 
+   -- run ranlib if necessary:
+   ifVanilla $ updateLibArchive verbosity lbi
+                                (targetDir </> vanillaLibName)
++  ifHRC     $ updateLibArchive verbosity lbi
++                               (targetDir </> hrcLibName)
+   ifProf    $ updateLibArchive verbosity lbi
+                                (targetDir </> profileLibName)
+ 
+   where
+     vanillaLibName = mkLibName pkgid
++    hrcLibName     = mkHRCLibName pkgid
+     profileLibName = mkProfLibName pkgid
+     ghciLibName    = mkGHCiLibName pkgid
+     sharedLibName  = mkSharedLibName pkgid (compilerId (compiler lbi))
+@@ -1089,6 +1113,7 @@ installLib verbosity lbi targetDir dynlibTargetDir builtDir pkg lib = do
+     hasLib    = not $ null (libModules lib)
+                    && null (cSources (libBuildInfo lib))
+     ifVanilla = when (hasLib && withVanillaLib lbi)
++    ifHRC     = when (hasLib && withHRCLib     lbi)
+     ifProf    = when (hasLib && withProfLib    lbi)
+     ifGHCi    = when (hasLib && withGHCiLib    lbi)
+     ifShared  = when (hasLib && withSharedLib  lbi)
+diff --git a/Cabal/Distribution/Simple/LocalBuildInfo.hs b/Cabal/Distribution/Simple/LocalBuildInfo.hs
+index b757a89..2fddff6 100644
+--- a/Cabal/Distribution/Simple/LocalBuildInfo.hs
++++ b/Cabal/Distribution/Simple/LocalBuildInfo.hs
+@@ -129,6 +129,7 @@ data LocalBuildInfo = LocalBuildInfo {
+                 -- any conditionals.
+         withPrograms  :: ProgramConfiguration, -- ^Location and args for all programs
+         withPackageDB :: PackageDBStack,  -- ^What package database to use, global\/user
++        withHRCLib    :: Bool,  -- ^Whether to build libs for HRC.
+         withVanillaLib:: Bool,  -- ^Whether to build normal libs.
+         withProfLib   :: Bool,  -- ^Whether to build profiling versions of libs.
+         withSharedLib :: Bool,  -- ^Whether to build shared versions of libs.
+diff --git a/Cabal/Distribution/Simple/Program/GHC.hs b/Cabal/Distribution/Simple/Program/GHC.hs
+index c0c6868..c7b5bdb 100644
+--- a/Cabal/Distribution/Simple/Program/GHC.hs
++++ b/Cabal/Distribution/Simple/Program/GHC.hs
+@@ -283,6 +283,10 @@ renderGhcOptions version@(Version ver _) opts =
+   , ["-L" ++ dir     | dir <- flags ghcOptLinkLibPath ]
+   , concat [ ["-framework", fmwk] | fmwk <- flags ghcOptLinkFrameworks ]
+ 
++  -----------------------
++  -- Always Emit Ext Core 
++  , [ "-fext-core" ]
++
+   -------------
+   -- Packages
+ 
+diff --git a/Cabal/Distribution/Simple/Setup.hs b/Cabal/Distribution/Simple/Setup.hs
+index eac71ca..d79435b 100644
+--- a/Cabal/Distribution/Simple/Setup.hs
++++ b/Cabal/Distribution/Simple/Setup.hs
+@@ -268,6 +268,7 @@ data ConfigFlags = ConfigFlags {
+     configHcFlavor      :: Flag CompilerFlavor, -- ^The \"flavor\" of the compiler, sugh as GHC or Hugs.
+     configHcPath        :: Flag FilePath, -- ^given compiler location
+     configHcPkg         :: Flag FilePath, -- ^given hc-pkg location
++    configHRCLib        :: Flag Bool,     -- ^Enable library build for HRC
+     configVanillaLib    :: Flag Bool,     -- ^Enable vanilla library
+     configProfLib       :: Flag Bool,     -- ^Enable profiling in the library
+     configSharedLib     :: Flag Bool,     -- ^Build shared library
+@@ -302,6 +303,7 @@ defaultConfigFlags :: ProgramConfiguration -> ConfigFlags
+ defaultConfigFlags progConf = emptyConfigFlags {
+     configPrograms     = progConf,
+     configHcFlavor     = maybe NoFlag Flag defaultCompilerFlavor,
++    configHRCLib       = Flag True,
+     configVanillaLib   = Flag True,
+     configProfLib      = Flag False,
+     configSharedLib    = Flag False,
+@@ -380,6 +382,11 @@ configureOptions showOrParseArgs =
+           configProgSuffix (\v flags -> flags { configProgSuffix = v } )
+           (reqPathTemplateArgFlag "SUFFIX")
+ 
++      ,option "i" ["library-hrc"]
++         "Libraries for HRC"
++         configHRCLib (\v flags -> flags { configHRCLib = v })
++         (boolOpt "i" [])
++
+       ,option "" ["library-vanilla"]
+          "Vanilla libraries"
+          configVanillaLib (\v flags -> flags { configVanillaLib = v })
+@@ -582,6 +589,7 @@ instance Monoid ConfigFlags where
+     configHcFlavor      = mempty,
+     configHcPath        = mempty,
+     configHcPkg         = mempty,
++    configHRCLib        = mempty,
+     configVanillaLib    = mempty,
+     configProfLib       = mempty,
+     configSharedLib     = mempty,
+@@ -615,6 +623,7 @@ instance Monoid ConfigFlags where
+     configHcFlavor      = combine configHcFlavor,
+     configHcPath        = combine configHcPath,
+     configHcPkg         = combine configHcPkg,
++    configHRCLib        = combine configHRCLib,
+     configVanillaLib    = combine configVanillaLib,
+     configProfLib       = combine configProfLib,
+     configSharedLib     = combine configSharedLib,
+@@ -1096,7 +1105,7 @@ haddockCommand = makeCommand name shortDesc longDesc defaultHaddockFlags options
+          "Use PATH as the HsColour stylesheet"
+          haddockHscolourCss (\v flags -> flags { haddockHscolourCss = v })
+          (reqArgFlag "PATH")
+-      
++
+       ,option "" ["contents-location"]
+          "Bake URL in as the location for the contents page"
+          haddockContents (\v flags -> flags { haddockContents = v })

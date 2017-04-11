@@ -1,0 +1,977 @@
+diff --git a/GHC/Event/Clock.hsc b/GHC/Event/Clock.hsc
+index 37e26cd..ddaabd7 100644
+--- a/GHC/Event/Clock.hsc
++++ b/GHC/Event/Clock.hsc
+@@ -14,4 +14,3 @@ getMonotonicTime = do w <- getMonotonicNSec
+ 
+ foreign import ccall unsafe "getMonotonicNSec"
+     getMonotonicNSec :: IO Word64
+-
+diff --git a/GHC/Exts.hs b/GHC/Exts.hs
+old mode 100755
+new mode 100644
+diff --git a/GHC/ForeignPtr.hs b/GHC/ForeignPtr.hs
+index 2fbdeac..3d1a853 100644
+--- a/GHC/ForeignPtr.hs
++++ b/GHC/ForeignPtr.hs
+@@ -381,7 +381,11 @@ touchForeignPtr :: ForeignPtr a -> IO ()
+ touchForeignPtr (ForeignPtr _ r) = touch r
+ 
+ touch :: ForeignPtrContents -> IO ()
+-touch r = IO $ \s -> case touch# r s of s' -> (# s', () #)
++touch r = IO $ \s ->
++  case r of
++    PlainForeignPtr _ -> (# s, () #)
++    MallocPtr arr# _  -> case touch# arr# s of s' -> (# s', () #)
++    PlainPtr arr#     -> case touch# arr# s of s' -> (# s', () #)
+ 
+ unsafeForeignPtrToPtr :: ForeignPtr a -> Ptr a
+ -- ^This function extracts the pointer component of a foreign
+diff --git a/GHC/IO/FD.hs b/GHC/IO/FD.hs
+index 1b47ee9..0983ce0 100644
+--- a/GHC/IO/FD.hs
++++ b/GHC/IO/FD.hs
+@@ -568,13 +568,11 @@ foreign import ccall unsafe "fdReady"
+ 
+ readRawBufferPtr :: String -> FD -> Ptr Word8 -> Int -> CSize -> IO CInt
+ readRawBufferPtr loc !fd buf off len
+-  | threaded  = blockingReadRawBufferPtr loc fd buf off len
+-  | otherwise = asyncReadRawBufferPtr    loc fd buf off len
++  = blockingReadRawBufferPtr loc fd buf off len
+ 
+ writeRawBufferPtr :: String -> FD -> Ptr Word8 -> Int -> CSize -> IO CInt
+ writeRawBufferPtr loc !fd buf off len
+-  | threaded  = blockingWriteRawBufferPtr loc fd buf off len
+-  | otherwise = asyncWriteRawBufferPtr    loc fd buf off len
++  = blockingWriteRawBufferPtr loc fd buf off len
+ 
+ readRawBufferPtrNoBlock :: String -> FD -> Ptr Word8 -> Int -> CSize -> IO CInt
+ readRawBufferPtrNoBlock = readRawBufferPtr
+@@ -582,6 +580,7 @@ readRawBufferPtrNoBlock = readRawBufferPtr
+ writeRawBufferPtrNoBlock :: String -> FD -> Ptr Word8 -> Int -> CSize -> IO CInt
+ writeRawBufferPtrNoBlock = writeRawBufferPtr
+ 
++{-
+ -- Async versions of the read/write primitives, for the non-threaded RTS
+ 
+ asyncReadRawBufferPtr :: String -> FD -> Ptr Word8 -> Int -> CSize -> IO CInt
+@@ -601,7 +600,7 @@ asyncWriteRawBufferPtr loc !fd buf off len = do
+       then 
+         ioError (errnoToIOError loc (Errno (fromIntegral rc)) Nothing Nothing)
+       else return (fromIntegral l)
+-
++-}
+ -- Blocking versions of the read/write primitives, for the threaded RTS
+ 
+ blockingReadRawBufferPtr :: String -> FD -> Ptr Word8 -> Int -> CSize -> IO CInt
+@@ -662,13 +661,16 @@ throwErrnoIfMinus1RetryOnBlock loc f on_block  =
+ -- -----------------------------------------------------------------------------
+ -- Locking/unlocking
+ 
+-foreign import ccall unsafe "lockFile"
+-  lockFile :: CInt -> Word64 -> Word64 -> CInt -> IO CInt
+-
+-foreign import ccall unsafe "unlockFile"
+-  unlockFile :: CInt -> IO CInt
+-
+ #ifdef mingw32_HOST_OS
+ foreign import ccall unsafe "get_unique_file_info"
+   c_getUniqueFileInfo :: CInt -> Ptr Word64 -> Ptr Word64 -> IO ()
++
++#else
++
++{-# NOINLINE lockFile #-}
++lockFile fd dev ino for_writing = return 0
++
++{-# NOINLINE unlockFile #-}
++unlockFile fd = return 0
++
+ #endif
+diff --git a/GHC/IORef.hs b/GHC/IORef.hs
+index a0ed082..c601917 100644
+--- a/GHC/IORef.hs
++++ b/GHC/IORef.hs
+@@ -48,6 +48,7 @@ readIORef  (IORef var) = stToIO (readSTRef var)
+ writeIORef  :: IORef a -> a -> IO ()
+ writeIORef (IORef var) v = stToIO (writeSTRef var v)
+ 
++{-# NOINLINE atomicModifyIORef #-}
+ atomicModifyIORef :: IORef a -> (a -> (a,b)) -> IO b
+ atomicModifyIORef (IORef (STRef r#)) f = IO $ \s -> atomicModifyMutVar# r# f s
+ 
+diff --git a/GHC/IORefMod.hs b/GHC/IORefMod.hs
+new file mode 100644
+index 0000000..4ea66b3
+--- /dev/null
++++ b/GHC/IORefMod.hs
+@@ -0,0 +1,56 @@
++{-# LANGUAGE NoImplicitPrelude, MagicHash #-}
++{-# OPTIONS_GHC -funbox-strict-fields #-}
++{-# OPTIONS_HADDOCK hide #-}
++
++-----------------------------------------------------------------------------
++-- |
++-- Module      :  GHC.IORef
++-- Copyright   :  (c) The University of Glasgow 2008
++-- License     :  see libraries/base/LICENSE
++--
++-- Maintainer  :  cvs-ghc@haskell.org
++-- Stability   :  internal
++-- Portability :  non-portable (GHC Extensions)
++--
++-- The IORef type
++--
++-----------------------------------------------------------------------------
++module GHC.IORefMod (
++        IORef(..),
++        newIORef, readIORef, writeIORef, atomicModifyIORef
++    ) where
++
++import GHC.Base
++import GHC.STRef
++import GHC.IO
++
++-- ---------------------------------------------------------------------------
++-- IORefs
++
++-- |A mutable variable in the 'IO' monad
++newtype IORef a = IORef (STRef RealWorld a)
++
++-- explicit instance because Haddock can't figure out a derived one
++instance Eq (IORef a) where
++  IORef x == IORef y = x == y
++
++-- |Build a new 'IORef'
++newIORef    :: a -> IO (IORef a)
++newIORef v = stToIO (newSTRef v) >>= \ var -> return (IORef var)
++
++-- |Read the value of an 'IORef'
++readIORef   :: IORef a -> IO a
++readIORef  (IORef var) = stToIO (readSTRef var)
++
++-- |Write a new value into an 'IORef'
++writeIORef  :: IORef a -> a -> IO ()
++writeIORef (IORef var) v = stToIO (writeSTRef var v)
++
++{-# NOINLINE atomicModifyIORef #-}
++atomicModifyIORef :: IORef a -> (a -> (a,b)) -> IO b
++atomicModifyIORef v f = do
++  x <- readIORef v 
++  let (x', y) = f x
++  writeIORef v x'
++  return y
++
+diff --git a/GHC/Stable.lhs b/GHC/Stable.lhs
+index e660917..549d062 100644
+--- a/GHC/Stable.lhs
++++ b/GHC/Stable.lhs
+@@ -77,7 +77,8 @@ deRefStablePtr (StablePtr sp) = IO $ \s -> deRefStablePtr# sp s
+ -- it may be 'Foreign.Ptr.nullPtr').  Nevertheless, the call
+ -- to 'castStablePtrToPtr' is guaranteed not to diverge.
+ --
+-foreign import ccall unsafe "hs_free_stable_ptr" freeStablePtr :: StablePtr a -> IO ()
++-- foreign import ccall unsafe "hs_free_stable_ptr" freeStablePtr :: StablePtr a -> IO ()
++freeStablePtr (StablePtr sp) = IO $ \s -> (# freeStablePtr# sp s, () #)
+ 
+ -- |
+ -- Coerce a stable pointer to an address. No guarantees are made about
+diff --git a/GHC/TopHandler.lhs b/GHC/TopHandler.lhs
+index f1b0cbf..b8cf081 100644
+--- a/GHC/TopHandler.lhs
++++ b/GHC/TopHandler.lhs
+@@ -59,6 +59,7 @@ import GHC.ConsoleHandler
+ -- | 'runMainIO' is wrapped around 'Main.main' (or whatever main is
+ -- called in the program).  It catches otherwise uncaught exceptions,
+ -- and also flushes stdout\/stderr before exiting.
++{-# NOINLINE runMainIO #-}
+ runMainIO :: IO a -> IO a
+ runMainIO main = 
+     do 
+diff --git a/GHC/TopHandlerMod.lhs b/GHC/TopHandlerMod.lhs
+new file mode 100644
+index 0000000..3013aeb
+--- /dev/null
++++ b/GHC/TopHandlerMod.lhs
+@@ -0,0 +1,233 @@
++\begin{code}
++{-# LANGUAGE Trustworthy #-}
++{-# LANGUAGE CPP
++           , NoImplicitPrelude
++           , ForeignFunctionInterface
++           , MagicHash
++           , UnboxedTuples
++           , PatternGuards
++  #-}
++{-# OPTIONS_GHC -fno-warn-unused-imports #-}
++{-# OPTIONS_HADDOCK hide #-}
++
++-----------------------------------------------------------------------------
++-- |
++-- Module      :  GHC.TopHandler
++-- Copyright   :  (c) The University of Glasgow, 2001-2002
++-- License     :  see libraries/base/LICENSE
++-- 
++-- Maintainer  :  cvs-ghc@haskell.org
++-- Stability   :  internal
++-- Portability :  non-portable (GHC Extensions)
++--
++-- Support for catching exceptions raised during top-level computations
++-- (e.g. @Main.main@, 'Control.Concurrent.forkIO', and foreign exports)
++--
++-----------------------------------------------------------------------------
++
++-- #hide
++module GHC.TopHandlerMod (
++        runMainIO, runIO, runIOFastExit, runNonIO,
++        topHandler, topHandlerFastExit,
++        reportStackOverflow, reportError,
++    ) where
++
++#include "HsBaseConfig.h"
++
++import Control.Exception
++import Data.Maybe
++import Data.Dynamic (toDyn)
++
++import Foreign
++import Foreign.C
++import GHC.Base
++import GHC.Conc hiding (throwTo)
++import GHC.Num
++import GHC.Real
++import GHC.MVar
++import GHC.IO
++import GHC.IO.Handle.FD
++import GHC.IO.Handle
++import GHC.IO.Exception
++import GHC.Weak
++import Data.Typeable
++#if defined(mingw32_HOST_OS)
++import GHC.ConsoleHandler
++#endif
++
++-- | 'runMainIO' is wrapped around 'Main.main' (or whatever main is
++-- called in the program).  It catches otherwise uncaught exceptions,
++-- and also flushes stdout\/stderr before exiting.
++{-# NOINLINE runMainIO #-}
++runMainIO :: IO a -> IO a
++runMainIO main = 
++  do
++    a <- main 
++    cleanUp
++    return a
++  `catch`
++    dumpHandler
++  where
++    dumpHandler :: SomeException -> IO a
++    dumpHandler e = reportError e >> cleanUp >> return undefined
++    undefined = undefined
++
++{-
++    do 
++      main_thread_id <- myThreadId
++      weak_tid <- mkWeakThreadId main_thread_id
++      install_interrupt_handler $ do
++           m <- deRefWeak weak_tid 
++           case m of
++               Nothing  -> return ()
++               Just tid -> throwTo tid (toException UserInterrupt)
++      a <- main
++      cleanUp
++      return a
++    `catch`
++      topHandler
++-}
++install_interrupt_handler :: IO () -> IO ()
++#ifdef mingw32_HOST_OS
++install_interrupt_handler handler = do
++  _ <- GHC.ConsoleHandler.installHandler $
++     Catch $ \event -> 
++        case event of
++           ControlC -> handler
++           Break    -> handler
++           Close    -> handler
++           _ -> return ()
++  return ()
++#else
++#include "rts/Signals.h"
++-- specialised version of System.Posix.Signals.installHandler, which
++-- isn't available here.
++install_interrupt_handler handler = do
++   let sig = CONST_SIGINT :: CInt
++   _ <- setHandler sig (Just (const handler, toDyn handler))
++   _ <- stg_sig_install sig STG_SIG_RST nullPtr
++     -- STG_SIG_RST: the second ^C kills us for real, just in case the
++     -- RTS or program is unresponsive.
++   return ()
++
++foreign import ccall unsafe
++  stg_sig_install
++	:: CInt				-- sig no.
++	-> CInt				-- action code (STG_SIG_HAN etc.)
++	-> Ptr ()			-- (in, out) blocked
++	-> IO CInt			-- (ret) old action code
++#endif
++
++-- make a weak pointer to a ThreadId: holding the weak pointer doesn't
++-- keep the thread alive and prevent it from being identified as
++-- deadlocked.  Vitally important for the main thread.
++mkWeakThreadId :: ThreadId -> IO (Weak ThreadId)
++mkWeakThreadId t@(ThreadId t#) = IO $ \s ->
++   case mkWeak# t# t (unsafeCoerce# 0#) s of 
++      (# s1, w #) -> (# s1, Weak w #)
++
++-- | 'runIO' is wrapped around every @foreign export@ and @foreign
++-- import \"wrapper\"@ to mop up any uncaught exceptions.  Thus, the
++-- result of running 'System.Exit.exitWith' in a foreign-exported
++-- function is the same as in the main thread: it terminates the
++-- program.
++--
++runIO :: IO a -> IO a
++runIO main = catch main topHandler
++
++-- | Like 'runIO', but in the event of an exception that causes an exit,
++-- we don't shut down the system cleanly, we just exit.  This is
++-- useful in some cases, because the safe exit version will give other
++-- threads a chance to clean up first, which might shut down the
++-- system in a different way.  For example, try 
++--
++--   main = forkIO (runIO (exitWith (ExitFailure 1))) >> threadDelay 10000
++--
++-- This will sometimes exit with "interrupted" and code 0, because the
++-- main thread is given a chance to shut down when the child thread calls
++-- safeExit.  There is a race to shut down between the main and child threads.
++--
++runIOFastExit :: IO a -> IO a
++runIOFastExit main = catch main topHandlerFastExit
++        -- NB. this is used by the testsuite driver
++
++-- | The same as 'runIO', but for non-IO computations.  Used for
++-- wrapping @foreign export@ and @foreign import \"wrapper\"@ when these
++-- are used to export Haskell functions with non-IO types.
++--
++runNonIO :: a -> IO a
++runNonIO a = catch (a `seq` return a) topHandler
++
++topHandler :: SomeException -> IO a
++topHandler err = catch (real_handler safeExit err) topHandler
++
++topHandlerFastExit :: SomeException -> IO a
++topHandlerFastExit err = 
++  catchException (real_handler fastExit err) topHandlerFastExit
++
++-- Make sure we handle errors while reporting the error!
++-- (e.g. evaluating the string passed to 'error' might generate
++--  another error, etc.)
++--
++real_handler :: (Int -> IO a) -> SomeException -> IO a
++real_handler exit se@(SomeException exn) =
++  cleanUp >>
++  case cast exn of
++      Just StackOverflow -> do
++           reportStackOverflow
++           exit 2
++
++      Just UserInterrupt  -> exitInterrupted
++
++      _ -> case cast exn of
++           -- only the main thread gets ExitException exceptions
++           Just ExitSuccess     -> exit 0
++           Just (ExitFailure n) -> exit n
++
++           -- EPIPE errors received for stdout are ignored (#2699)
++           _ -> case cast exn of
++                Just IOError{ ioe_type = ResourceVanished,
++                              ioe_errno = Just ioe,
++                              ioe_handle = Just hdl }
++                   | Errno ioe == ePIPE, hdl == stdout -> exit 0
++                _ -> do reportError se
++                        exit 1
++           
++
++-- try to flush stdout/stderr, but don't worry if we fail
++-- (these handles might have errors, and we don't want to go into
++-- an infinite loop).
++cleanUp :: IO ()
++cleanUp = do
++  hFlush stdout `catchAny` \_ -> return ()
++  hFlush stderr `catchAny` \_ -> return ()
++
++-- we have to use unsafeCoerce# to get the 'IO a' result type, since the
++-- compiler doesn't let us declare that as the result type of a foreign export.
++safeExit :: Int -> IO a
++safeExit r = unsafeCoerce# (shutdownHaskellAndExit $ fromIntegral r)
++
++exitInterrupted :: IO a
++exitInterrupted = 
++#ifdef mingw32_HOST_OS
++  safeExit 252
++#else
++  -- we must exit via the default action for SIGINT, so that the
++  -- parent of this process can take appropriate action (see #2301)
++  unsafeCoerce# (shutdownHaskellAndSignal CONST_SIGINT)
++
++foreign import ccall "shutdownHaskellAndSignal"
++  shutdownHaskellAndSignal :: CInt -> IO ()
++#endif
++
++-- NOTE: shutdownHaskellAndExit must be called "safe", because it *can*
++-- re-enter Haskell land through finalizers.
++foreign import ccall "Rts.h shutdownHaskellAndExit"
++  shutdownHaskellAndExit :: CInt -> IO ()
++
++fastExit :: Int -> IO a
++fastExit r = unsafeCoerce# (stg_exit (fromIntegral r))
++
++foreign import ccall "Rts.h stg_exit"
++  stg_exit :: CInt -> IO ()
++\end{code}
+diff --git a/System/CPUTime.hsc b/System/CPUTime.hsc
+index 8934a7e..f6d6d14 100644
+--- a/System/CPUTime.hsc
++++ b/System/CPUTime.hsc
+@@ -122,7 +122,7 @@ getCPUTime = do
+                 * 1000000)
+ 
+ type CRUsage = ()
+-foreign import capi unsafe "HsBase.h getrusage" getrusage :: CInt -> Ptr CRUsage -> IO CInt
++foreign import ccall unsafe "HsBase.h getrusage" getrusage :: CInt -> Ptr CRUsage -> IO CInt
+ #elif defined(HAVE_TIMES)
+     allocaBytes (#const sizeof(struct tms)) $ \ p_tms -> do
+     _ <- times p_tms
+diff --git a/System/Environment.hs b/System/Environment.hs
+index 1f33213..687a8c8 100644
+--- a/System/Environment.hs
++++ b/System/Environment.hs
+@@ -130,6 +130,7 @@ dropRTSArgs (arg:rest)     = arg : dropRTSArgs rest
+ 
+ -- | Computation 'getArgs' returns a list of the program's command
+ -- line arguments (not including the program name).
++{-# NOINLINE getArgs #-}
+ getArgs :: IO [String]
+ 
+ #ifdef mingw32_HOST_OS
+@@ -158,6 +159,7 @@ of the program as invoked. Even then there are some differences
+ between platforms: on Windows, for example, a program invoked as foo
+ is probably really @FOO.EXE@, and that is what 'getProgName' will return.
+ -}
++{-# NOINLINE getProgName #-}
+ getProgName :: IO String
+ #ifdef mingw32_HOST_OS
+ -- Ignore the arguments to hs_init on Windows for the sake of Unicode compat
+@@ -201,7 +203,7 @@ basename f = go f f
+ --
+ --  * 'System.IO.Error.isDoesNotExistError' if the environment variable
+ --    does not exist.
+-
++{-# NOINLINE getEnv #-}
+ getEnv :: String -> IO String
+ getEnv name = lookupEnv name >>= maybe handleError return
+   where
+@@ -226,6 +228,7 @@ foreign import WINDOWS_CCONV unsafe "windows.h GetLastError"
+ -- there is no such value.
+ --
+ -- For POSIX users, this is equivalent to 'System.Posix.Env.getEnv'.
++{-# NOINLINE lookupEnv #-}
+ lookupEnv :: String -> IO (Maybe String)
+ #ifdef mingw32_HOST_OS
+ lookupEnv name = withCWString name $ \s -> try_size s 256
+@@ -261,6 +264,7 @@ ioe_missingEnvVar name = ioException (IOError Nothing NoSuchThing "getEnv"
+ 'withArgs' @args act@ - while executing action @act@, have 'getArgs'
+ return @args@.
+ -}
++{-# NOINLINE withArgs #-}
+ withArgs :: [String] -> IO a -> IO a
+ withArgs xs act = do
+    p <- System.Environment.getProgName
+@@ -270,6 +274,7 @@ withArgs xs act = do
+ 'withProgName' @name act@ - while executing action @act@,
+ have 'getProgName' return @name@.
+ -}
++{-# NOINLINE withProgName #-}
+ withProgName :: String -> IO a -> IO a
+ withProgName nm act = do
+    xs <- System.Environment.getArgs
+@@ -320,6 +325,7 @@ foreign import ccall unsafe "setProgArgv"
+ --
+ -- If an environment entry does not contain an @\'=\'@ character,
+ -- the @key@ is the whole entry and the @value@ is the empty string.
++{-# NOINLINE getEnvironment #-}
+ getEnvironment :: IO [(String, String)]
+ 
+ #ifdef mingw32_HOST_OS
+diff --git a/System/EnvironmentMod.hs b/System/EnvironmentMod.hs
+new file mode 100644
+index 0000000..d6209c1
+--- /dev/null
++++ b/System/EnvironmentMod.hs
+@@ -0,0 +1,343 @@
++{-# LANGUAGE Safe #-}
++{-# LANGUAGE CPP, ForeignFunctionInterface #-}
++
++-----------------------------------------------------------------------------
++-- |
++-- Module      :  System.Environment
++-- Copyright   :  (c) The University of Glasgow 2001
++-- License     :  BSD-style (see the file libraries/base/LICENSE)
++-- 
++-- Maintainer  :  libraries@haskell.org
++-- Stability   :  provisional
++-- Portability :  portable
++--
++-- Miscellaneous information about the system environment.
++--
++-----------------------------------------------------------------------------
++
++module System.EnvironmentMod
++    (
++      getArgs,       -- :: IO [String]
++      getProgName,   -- :: IO String
++      getEnv,        -- :: String -> IO String
++#ifndef __NHC__
++      withArgs,
++      withProgName,
++#endif
++#ifdef __GLASGOW_HASKELL__
++      getEnvironment,
++#endif
++  ) where
++
++import Prelude
++
++#ifdef __GLASGOW_HASKELL__
++import Foreign.Safe
++import Foreign.C
++import Control.Exception.Base   ( bracket )
++-- import GHC.IO
++import GHC.IO.Exception
++import GHC.IO.Encoding (getFileSystemEncoding)
++import qualified GHC.Foreign as GHC
++import Data.List
++#ifdef mingw32_HOST_OS
++import GHC.Environment
++import GHC.Windows
++#endif
++import Control.Monad
++#endif
++
++#ifdef __HUGS__
++import Hugs.System
++#endif
++
++#ifdef __NHC__
++import System
++  ( getArgs
++  , getProgName
++  , getEnv
++  )
++#endif
++
++#ifdef __GLASGOW_HASKELL__
++-- ---------------------------------------------------------------------------
++-- getArgs, getProgName, getEnv
++
++#ifdef mingw32_HOST_OS_commented_out
++
++-- Ignore the arguments to hs_init on Windows for the sake of Unicode compat
++
++getWin32ProgArgv_certainly :: IO [String]
++getWin32ProgArgv_certainly = do
++	mb_argv <- getWin32ProgArgv
++	case mb_argv of
++	  Nothing   -> fmap dropRTSArgs getFullArgs
++	  Just argv -> return argv
++
++withWin32ProgArgv :: [String] -> IO a -> IO a
++withWin32ProgArgv argv act = bracket begin setWin32ProgArgv (\_ -> act)
++  where
++    begin = do
++	  mb_old_argv <- getWin32ProgArgv
++	  setWin32ProgArgv (Just argv)
++	  return mb_old_argv
++
++getWin32ProgArgv :: IO (Maybe [String])
++getWin32ProgArgv = alloca $ \p_argc -> alloca $ \p_argv -> do
++	c_getWin32ProgArgv p_argc p_argv
++	argc <- peek p_argc
++	argv_p <- peek p_argv
++	if argv_p == nullPtr
++	 then return Nothing
++	 else do
++	  argv_ps <- peekArray (fromIntegral argc) argv_p
++	  fmap Just $ mapM peekCWString argv_ps
++
++setWin32ProgArgv :: Maybe [String] -> IO ()
++setWin32ProgArgv Nothing = c_setWin32ProgArgv 0 nullPtr
++setWin32ProgArgv (Just argv) = withMany withCWString argv $ \argv_ps -> withArrayLen argv_ps $ \argc argv_p -> do
++	c_setWin32ProgArgv (fromIntegral argc) argv_p
++
++foreign import ccall unsafe "getWin32ProgArgv"
++  c_getWin32ProgArgv :: Ptr CInt -> Ptr (Ptr CWString) -> IO ()
++
++foreign import ccall unsafe "setWin32ProgArgv"
++  c_setWin32ProgArgv :: CInt -> Ptr CWString -> IO ()
++
++dropRTSArgs :: [String] -> [String]
++dropRTSArgs []             = []
++dropRTSArgs ("+RTS":rest)  = dropRTSArgs (dropWhile (/= "-RTS") rest)
++dropRTSArgs ("--RTS":rest) = rest
++dropRTSArgs ("-RTS":rest)  = dropRTSArgs rest
++dropRTSArgs (arg:rest)     = arg : dropRTSArgs rest
++
++#endif
++
++-- | Computation 'getArgs' returns a list of the program's command
++-- line arguments (not including the program name).
++{-# NOINLINE getArgs #-}
++getArgs :: IO [String]
++
++#ifdef mingw32_HOST_OS_commented_out
++getArgs =  fmap tail getWin32ProgArgv_certainly
++#else
++getArgs =
++  alloca $ \ p_argc ->
++  alloca $ \ p_argv -> do
++   getProgArgv p_argc p_argv
++   p    <- fromIntegral `liftM` peek p_argc
++   argv <- peek p_argv
++   enc <- getFileSystemEncoding
++   peekArray (p - 1) (advancePtr argv 1) >>= mapM (GHC.peekCString enc)
++
++
++foreign import ccall unsafe "getProgArgv"
++  getProgArgv :: Ptr CInt -> Ptr (Ptr CString) -> IO ()
++#endif
++
++{-|
++Computation 'getProgName' returns the name of the program as it was
++invoked.
++
++However, this is hard-to-impossible to implement on some non-Unix
++OSes, so instead, for maximum portability, we just return the leafname
++of the program as invoked. Even then there are some differences
++between platforms: on Windows, for example, a program invoked as foo
++is probably really @FOO.EXE@, and that is what 'getProgName' will return.
++-}
++{-# NOINLINE getProgName #-}
++getProgName :: IO String
++#ifdef mingw32_HOST_OS_commented_out
++-- Ignore the arguments to hs_init on Windows for the sake of Unicode compat
++getProgName = fmap (basename . head) getWin32ProgArgv_certainly
++#else
++getProgName =
++  alloca $ \ p_argc ->
++  alloca $ \ p_argv -> do
++     getProgArgv p_argc p_argv
++     argv <- peek p_argv
++     unpackProgName argv
++
++unpackProgName  :: Ptr (Ptr CChar) -> IO String   -- argv[0]
++unpackProgName argv = do
++  enc <- getFileSystemEncoding
++  s <- peekElemOff argv 0 >>= GHC.peekCString enc
++  return (basename s)
++#endif
++
++basename :: FilePath -> FilePath
++basename f = go f f
++ where
++  go acc [] = acc
++  go acc (x:xs)
++    | isPathSeparator x = go xs xs
++    | otherwise         = go acc xs
++
++  isPathSeparator :: Char -> Bool
++  isPathSeparator '/'  = True
++#ifdef mingw32_HOST_OS
++  isPathSeparator '\\' = True
++#endif
++  isPathSeparator _    = False
++
++
++-- | Computation 'getEnv' @var@ returns the value
++-- of the environment variable @var@.  
++--
++-- This computation may fail with:
++--
++--  * 'System.IO.Error.isDoesNotExistError' if the environment variable
++--    does not exist.
++
++getEnv :: String -> IO String
++#ifdef mingw32_HOST_OS
++getEnv name = withCWString name $ \s -> try_size s 256
++  where
++    try_size s size = allocaArray (fromIntegral size) $ \p_value -> do
++      res <- c_GetEnvironmentVariable s p_value size
++      case res of
++        0 -> do
++		  err <- c_GetLastError
++		  if err == eRROR_ENVVAR_NOT_FOUND
++		   then ioe_missingEnvVar name
++		   else throwGetLastError "getEnv"
++        _ | res > size -> try_size s res -- Rare: size increased between calls to GetEnvironmentVariable
++          | otherwise  -> peekCWString p_value
++
++eRROR_ENVVAR_NOT_FOUND :: DWORD
++eRROR_ENVVAR_NOT_FOUND = 203
++
++foreign import stdcall unsafe "windows.h GetLastError"
++  c_GetLastError:: IO DWORD
++
++foreign import stdcall unsafe "windows.h GetEnvironmentVariableW"
++  c_GetEnvironmentVariable :: LPTSTR -> LPTSTR -> DWORD -> IO DWORD
++#else
++getEnv name =
++    withCString name $ \s -> do
++      litstring <- c_getenv s
++      if litstring /= nullPtr
++        then getFileSystemEncoding >>= \enc -> GHC.peekCString enc litstring
++        else ioe_missingEnvVar name
++
++foreign import ccall unsafe "getenv"
++   c_getenv :: CString -> IO (Ptr CChar)
++#endif
++
++ioe_missingEnvVar :: String -> IO a
++ioe_missingEnvVar name = ioException (IOError Nothing NoSuchThing "getEnv"
++											  "no environment variable" Nothing (Just name))
++
++{-|
++'withArgs' @args act@ - while executing action @act@, have 'getArgs'
++return @args@.
++-}
++withArgs :: [String] -> IO a -> IO a
++withArgs xs act = do
++   p <- System.EnvironmentMod.getProgName
++   withArgv (p:xs) act
++
++{-|
++'withProgName' @name act@ - while executing action @act@,
++have 'getProgName' return @name@.
++-}
++withProgName :: String -> IO a -> IO a
++withProgName nm act = do
++   xs <- System.EnvironmentMod.getArgs
++   withArgv (nm:xs) act
++
++-- Worker routine which marshals and replaces an argv vector for
++-- the duration of an action.
++
++withArgv :: [String] -> IO a -> IO a
++
++#ifdef mingw32_HOST_OS_commented_out
++-- We have to reflect the updated arguments in the RTS-side variables as
++-- well, because the RTS still consults them for error messages and the like.
++-- If we don't do this then ghc-e005 fails.
++withArgv new_args act = withWin32ProgArgv new_args $ withProgArgv new_args act
++#else
++withArgv = withProgArgv
++#endif
++
++withProgArgv :: [String] -> IO a -> IO a
++withProgArgv new_args act = do
++  pName <- System.EnvironmentMod.getProgName
++  existing_args <- System.EnvironmentMod.getArgs
++  bracket (setProgArgv new_args)
++          (\argv -> do _ <- setProgArgv (pName:existing_args)
++                       freeProgArgv argv)
++          (const act)
++
++freeProgArgv :: Ptr CString -> IO ()
++freeProgArgv argv = do
++  size <- lengthArray0 nullPtr argv
++  sequence_ [peek (argv `advancePtr` i) >>= free | i <- [size, size-1 .. 0]]
++  free argv
++
++setProgArgv :: [String] -> IO (Ptr CString)
++setProgArgv argv = do
++  vs <- mapM newCAString argv >>= newArray0 nullPtr
++  c_setProgArgv (genericLength argv) vs
++  return vs
++
++foreign import ccall unsafe "setProgArgv" 
++  c_setProgArgv  :: CInt -> Ptr CString -> IO ()
++
++-- |'getEnvironment' retrieves the entire environment as a
++-- list of @(key,value)@ pairs.
++--
++-- If an environment entry does not contain an @\'=\'@ character,
++-- the @key@ is the whole entry and the @value@ is the empty string.
++getEnvironment :: IO [(String, String)]
++
++#ifdef mingw32_HOST_OS
++getEnvironment = bracket c_GetEnvironmentStrings c_FreeEnvironmentStrings $ \pBlock ->
++    if pBlock == nullPtr then return []
++     else go pBlock
++  where
++    go pBlock = do
++        -- The block is terminated by a null byte where there
++        -- should be an environment variable of the form X=Y
++        c <- peek pBlock
++        if c == 0 then return []
++         else do
++          -- Seek the next pair (or terminating null):
++          pBlock' <- seekNull pBlock False
++          -- We now know the length in bytes, but ignore it when
++          -- getting the actual String:
++          str <- peekCWString pBlock
++          fmap (divvy str :) $ go pBlock'
++    
++    -- Returns pointer to the byte *after* the next null
++    seekNull pBlock done = do
++        let pBlock' = pBlock `plusPtr` sizeOf (undefined :: CWchar)
++        if done then return pBlock'
++         else do
++           c <- peek pBlock'
++           seekNull pBlock' (c == (0 :: Word8 ))
++
++foreign import stdcall unsafe "windows.h GetEnvironmentStringsW"
++  c_GetEnvironmentStrings :: IO (Ptr CWchar)
++
++foreign import stdcall unsafe "windows.h FreeEnvironmentStringsW"
++  c_FreeEnvironmentStrings :: Ptr CWchar -> IO Bool
++#else
++getEnvironment = do
++   pBlock <- getEnvBlock
++   if pBlock == nullPtr then return []
++    else do
++      enc <- getFileSystemEncoding
++      stuff <- peekArray0 nullPtr pBlock >>= mapM (GHC.peekCString enc)
++      return (map divvy stuff)
++
++foreign import ccall unsafe "__hscore_environ" 
++  getEnvBlock :: IO (Ptr CString)
++#endif
++
++divvy :: String -> (String, String)
++divvy str =
++  case break (=='=') str of
++    (xs,[])        -> (xs,[]) -- don't barf (like Posix.getEnvironment)
++    (name,_:value) -> (name,value)
++#endif  /* __GLASGOW_HASKELL__ */
+diff --git a/System/Posix/Internals.hs b/System/Posix/Internals.hs
+index 5583c3b..38d99eb 100644
+--- a/System/Posix/Internals.hs
++++ b/System/Posix/Internals.hs
+@@ -467,13 +467,13 @@ foreign import ccall unsafe "HsBase.h getpid"
+    c_getpid :: IO CPid
+ 
+ #if !defined(mingw32_HOST_OS) && !defined(__MINGW32__)
+-foreign import capi unsafe "HsBase.h fcntl"
++foreign import ccall unsafe "HsBase.h fcntl_read"
+    c_fcntl_read  :: CInt -> CInt -> IO CInt
+ 
+-foreign import capi unsafe "HsBase.h fcntl"
++foreign import ccall unsafe "HsBase.h fcntl_write"
+    c_fcntl_write :: CInt -> CInt -> CLong -> IO CInt
+ 
+-foreign import capi unsafe "HsBase.h fcntl"
++foreign import ccall unsafe "HsBase.h fcntl_lock"
+    c_fcntl_lock  :: CInt -> CInt -> Ptr CFLock -> IO CInt
+ 
+ foreign import ccall unsafe "HsBase.h fork"
+@@ -503,7 +503,7 @@ foreign import ccall unsafe "HsBase.h tcgetattr"
+ foreign import ccall unsafe "HsBase.h tcsetattr"
+    c_tcsetattr :: CInt -> CInt -> Ptr CTermios -> IO CInt
+ 
+-foreign import capi unsafe "HsBase.h utime"
++foreign import ccall unsafe "HsBase.h utime"
+    c_utime :: CString -> Ptr CUtimbuf -> IO CInt
+ 
+ foreign import ccall unsafe "HsBase.h waitpid"
+diff --git a/base.cabal b/base.cabal
+index 7433df1..3fee486 100644
+--- a/base.cabal
++++ b/base.cabal
+@@ -86,6 +86,7 @@ Library {
+             GHC.IOBase,
+             GHC.IORef,
+             GHC.IP,
++            GHC.IORefMod,
+             GHC.Int,
+             GHC.List,
+             GHC.MVar,
+@@ -104,6 +105,7 @@ Library {
+             GHC.STRef,
+             GHC.TypeLits,
+             GHC.TopHandler,
++            GHC.TopHandlerMod,
+             GHC.Unicode,
+             GHC.Weak,
+             GHC.Word,
+@@ -194,6 +196,7 @@ Library {
+         System.Console.GetOpt
+         System.CPUTime,
+         System.Environment,
++        System.EnvironmentMod,
+         System.Exit,
+         System.IO,
+         System.IO.Error,
+diff --git a/cbits/PrelIOUtils.c b/cbits/PrelIOUtils.c
+index 9e05f08..d32c8cd 100644
+--- a/cbits/PrelIOUtils.c
++++ b/cbits/PrelIOUtils.c
+@@ -16,12 +16,14 @@
+ 
+ void errorBelch2(const char*s, char *t)
+ {
+-    errorBelch(s,t);
++    //errorBelch(s,t);
++    fprintf(stderr, s, t);
+ }
+ 
+ void debugBelch2(const char*s, char *t)
+ {
+-    debugBelch(s,t);
++    //debugBelch(s,t);
++    fprintf(stderr, s, t);
+ }
+ 
+ #if defined(HAVE_LIBCHARSET)
+@@ -33,7 +35,9 @@ void debugBelch2(const char*s, char *t)
+ #if !defined(mingw32_HOST_OS)
+ const char* localeEncoding(void)
+ {
+-#if defined(HAVE_LIBCHARSET)
++#if defined (__KNC__)
++    return "UTF-8";
++#elif defined(HAVE_LIBCHARSET)
+     return locale_charset();
+ 
+ #elif defined(HAVE_LANGINFO_H)
+diff --git a/include/HsBase.h b/include/HsBase.h
+index 99efde5..48a627d 100644
+--- a/include/HsBase.h
++++ b/include/HsBase.h
+@@ -562,9 +562,11 @@ INLINE char **__hscore_environ(void) { return *(_NSGetEnviron()); }
+ #else
+ /* ToDo: write a feature test that doesn't assume 'environ' to
+  *    be in scope at link-time. */
++#if !defined(__MINGW32__)
+ extern char** environ;
+ INLINE char **__hscore_environ(void) { return environ; }
+ #endif
++#endif
+ 
+ /* lossless conversions between pointers and integral types */
+ INLINE void *    __hscore_from_uintptr(uintptr_t n) { return (void *)n; }
+@@ -575,5 +577,19 @@ INLINE intptr_t  __hscore_to_intptr   (void *p)     { return (intptr_t)p; }
+ void errorBelch2(const char*s, char *t);
+ void debugBelch2(const char*s, char *t);
+ 
++#if !defined(mingw32_HOST_OS) && !defined(__MINGW32__)
++
++INLINE int fcntl_read(int fd, int cmd) {
++    return fcntl(fd, cmd);
++}
++INLINE int fcntl_write(int fd, int cmd, long arg) {
++    return fcntl(fd, cmd, arg);
++}
++INLINE int fcntl_lock(int fd, int cmd, struct flock *lock) {
++    return fcntl(fd, cmd, lock);
++}
++
++#endif
++
+ #endif /* __HSBASE_H__ */
+ 

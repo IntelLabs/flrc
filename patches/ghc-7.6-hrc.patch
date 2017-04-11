@@ -1,0 +1,2679 @@
+diff --git a/boot b/boot
+index 5d0973d..67f8403 100755
+--- a/boot
++++ b/boot
+@@ -226,8 +226,8 @@ EOF
+     }
+ }
+ 
+-&sanity_check_line_endings();
+-&sanity_check_tree();
++#&sanity_check_line_endings();
++#&sanity_check_tree();
+ &boot_pkgs();
+ &autoreconf();
+ &checkBuildMk();
+diff --git a/compiler/codeGen/CgPrimOp.hs b/compiler/codeGen/CgPrimOp.hs
+index 7f8a9d3..2e178c9 100644
+--- a/compiler/codeGen/CgPrimOp.hs
++++ b/compiler/codeGen/CgPrimOp.hs
+@@ -281,6 +281,60 @@ emitPrimOp []  WriteArrayArrayOp_MutableByteArray  [obj,ix,v] _  = doWritePtrArr
+ emitPrimOp []  WriteArrayArrayOp_ArrayArray        [obj,ix,v] _  = doWritePtrArrayOp obj ix v
+ emitPrimOp []  WriteArrayArrayOp_MutableArrayArray [obj,ix,v] _  = doWritePtrArrayOp obj ix v
+ 
++emitPrimOp []  InitImmutableArrayOp  [obj,ix,v] _ = doWritePtrArrayOp obj ix v
++emitPrimOp [r] IndexImmutableArrayOp [obj,ix]   _ = doReadPtrArrayOp r obj ix
++
++emitPrimOp []  InitStrictImmutableArrayOp  [obj,ix,v] _ = doWritePtrArrayOp obj ix v
++emitPrimOp [r] IndexStrictImmutableArrayOp [obj,ix]   _ = doReadPtrArrayOp r obj ix
++
++emitPrimOp [r] ImmutableArrayInitedOp       [arg] _ = stmtsC [ CmmAssign (CmmLocal r) arg ]
++emitPrimOp [r] StrictImmutableArrayInitedOp [arg] _ = stmtsC [ CmmAssign (CmmLocal r) arg ]
++
++emitPrimOp res InitUnboxedCharArrayOp      args _ = doWriteByteArrayOp (Just mo_u_8ToWord) b8 res args
++emitPrimOp res InitUnboxedIntArrayOp       args _ = doWriteByteArrayOp Nothing bWord res args
++emitPrimOp res InitUnboxedWordArrayOp      args _ = doWriteByteArrayOp Nothing bWord res args
++emitPrimOp res InitUnboxedAddrArrayOp      args _ = doWriteByteArrayOp Nothing bWord res args
++emitPrimOp res InitUnboxedFloatArrayOp     args _ = doWriteByteArrayOp Nothing f32 res args
++emitPrimOp res InitUnboxedDoubleArrayOp    args _ = doWriteByteArrayOp Nothing f64 res args
++emitPrimOp res InitUnboxedInt8ArrayOp      args _ = doWriteByteArrayOp (Just mo_s_8ToWord) b8  res args
++emitPrimOp res InitUnboxedInt16ArrayOp     args _ = doWriteByteArrayOp (Just mo_s_16ToWord) b16  res args
++emitPrimOp res InitUnboxedInt32ArrayOp     args _ = doWriteByteArrayOp (Just mo_s_32ToWord) b32  res args
++emitPrimOp res InitUnboxedInt64ArrayOp     args _ = doWriteByteArrayOp Nothing b64  res args
++emitPrimOp res InitUnboxedWord8ArrayOp     args _ = doWriteByteArrayOp (Just mo_u_8ToWord) b8  res args
++emitPrimOp res InitUnboxedWord16ArrayOp    args _ = doWriteByteArrayOp (Just mo_u_16ToWord) b16  res args
++emitPrimOp res InitUnboxedWord32ArrayOp    args _ = doWriteByteArrayOp (Just mo_u_32ToWord) b32  res args
++emitPrimOp res InitUnboxedWord64ArrayOp    args _ = doWriteByteArrayOp Nothing b64  res args
++
++emitPrimOp res IndexUnboxedCharArrayOp      args _ = doIndexByteArrayOp (Just mo_WordTo8) b8 res args
++emitPrimOp res IndexUnboxedIntArrayOp       args _ = doIndexByteArrayOp Nothing bWord res args
++emitPrimOp res IndexUnboxedWordArrayOp      args _ = doIndexByteArrayOp Nothing bWord res args
++emitPrimOp res IndexUnboxedAddrArrayOp      args _ = doIndexByteArrayOp Nothing bWord res args
++emitPrimOp res IndexUnboxedFloatArrayOp     args _ = doIndexByteArrayOp Nothing f32 res args
++emitPrimOp res IndexUnboxedDoubleArrayOp    args _ = doIndexByteArrayOp Nothing f64 res args
++emitPrimOp res IndexUnboxedInt8ArrayOp      args _ = doIndexByteArrayOp (Just mo_WordTo8) b8  res args
++emitPrimOp res IndexUnboxedInt16ArrayOp     args _ = doIndexByteArrayOp (Just mo_WordTo16) b16  res args
++emitPrimOp res IndexUnboxedInt32ArrayOp     args _ = doIndexByteArrayOp (Just mo_WordTo32) b32  res args
++emitPrimOp res IndexUnboxedInt64ArrayOp     args _ = doIndexByteArrayOp Nothing b64  res args
++emitPrimOp res IndexUnboxedWord8ArrayOp     args _ = doIndexByteArrayOp (Just mo_WordTo8) b8  res args
++emitPrimOp res IndexUnboxedWord16ArrayOp    args _ = doIndexByteArrayOp (Just mo_WordTo16) b16  res args
++emitPrimOp res IndexUnboxedWord32ArrayOp    args _ = doIndexByteArrayOp (Just mo_WordTo32) b32  res args
++emitPrimOp res IndexUnboxedWord64ArrayOp    args _ = doIndexByteArrayOp Nothing b64  res args
++
++emitPrimOp [r] UnboxedWordArrayInitedOp   [arg] _ = stmtsC [ CmmAssign (CmmLocal r) arg ]
++emitPrimOp [r] UnboxedWord8ArrayInitedOp  [arg] _ = stmtsC [ CmmAssign (CmmLocal r) arg ]
++emitPrimOp [r] UnboxedWord16ArrayInitedOp [arg] _ = stmtsC [ CmmAssign (CmmLocal r) arg ]
++emitPrimOp [r] UnboxedWord32ArrayInitedOp [arg] _ = stmtsC [ CmmAssign (CmmLocal r) arg ]
++emitPrimOp [r] UnboxedWord64ArrayInitedOp [arg] _ = stmtsC [ CmmAssign (CmmLocal r) arg ]
++emitPrimOp [r] UnboxedIntArrayInitedOp    [arg] _ = stmtsC [ CmmAssign (CmmLocal r) arg ]
++emitPrimOp [r] UnboxedInt8ArrayInitedOp   [arg] _ = stmtsC [ CmmAssign (CmmLocal r) arg ]
++emitPrimOp [r] UnboxedInt16ArrayInitedOp  [arg] _ = stmtsC [ CmmAssign (CmmLocal r) arg ]
++emitPrimOp [r] UnboxedInt32ArrayInitedOp  [arg] _ = stmtsC [ CmmAssign (CmmLocal r) arg ]
++emitPrimOp [r] UnboxedInt64ArrayInitedOp  [arg] _ = stmtsC [ CmmAssign (CmmLocal r) arg ]
++emitPrimOp [r] UnboxedFloatArrayInitedOp  [arg] _ = stmtsC [ CmmAssign (CmmLocal r) arg ]
++emitPrimOp [r] UnboxedDoubleArrayInitedOp [arg] _ = stmtsC [ CmmAssign (CmmLocal r) arg ]
++emitPrimOp [r] UnboxedCharArrayInitedOp   [arg] _ = stmtsC [ CmmAssign (CmmLocal r) arg ]
++emitPrimOp [r] UnboxedAddrArrayInitedOp   [arg] _ = stmtsC [ CmmAssign (CmmLocal r) arg ]
++
+ emitPrimOp [res] SizeofArrayOp [arg] _
+    = stmtC $
+        CmmAssign (CmmLocal res) (cmmLoadIndexW arg (fixedHdrSize + oFFSET_StgMutArrPtrs_ptrs) bWord)
+@@ -291,6 +345,39 @@ emitPrimOp [res] SizeofArrayArrayOp [arg] live
+ emitPrimOp [res] SizeofMutableArrayArrayOp [arg] live
+    = emitPrimOp [res] SizeofArrayOp [arg] live
+ 
++emitPrimOp [res] SizeofImmutableArrayOp [arg] live
++   = emitPrimOp [res] SizeofArrayOp [arg] live
++emitPrimOp [res] SizeofStrictImmutableArrayOp [arg] live
++   = emitPrimOp [res] SizeofArrayOp [arg] live
++emitPrimOp [res] SizeofUnboxedWordArrayOp [arg] live
++   = emitPrimOp [res] SizeofArrayOp [arg] live
++emitPrimOp [res] SizeofUnboxedWord8ArrayOp [arg] live
++   = emitPrimOp [res] SizeofArrayOp [arg] live
++emitPrimOp [res] SizeofUnboxedWord16ArrayOp [arg] live
++   = emitPrimOp [res] SizeofArrayOp [arg] live
++emitPrimOp [res] SizeofUnboxedWord32ArrayOp [arg] live
++   = emitPrimOp [res] SizeofArrayOp [arg] live
++emitPrimOp [res] SizeofUnboxedWord64ArrayOp [arg] live
++   = emitPrimOp [res] SizeofArrayOp [arg] live
++emitPrimOp [res] SizeofUnboxedIntArrayOp [arg] live
++   = emitPrimOp [res] SizeofArrayOp [arg] live
++emitPrimOp [res] SizeofUnboxedInt8ArrayOp [arg] live
++   = emitPrimOp [res] SizeofArrayOp [arg] live
++emitPrimOp [res] SizeofUnboxedInt16ArrayOp [arg] live
++   = emitPrimOp [res] SizeofArrayOp [arg] live
++emitPrimOp [res] SizeofUnboxedInt32ArrayOp [arg] live
++   = emitPrimOp [res] SizeofArrayOp [arg] live
++emitPrimOp [res] SizeofUnboxedInt64ArrayOp [arg] live
++   = emitPrimOp [res] SizeofArrayOp [arg] live
++emitPrimOp [res] SizeofUnboxedFloatArrayOp [arg] live
++   = emitPrimOp [res] SizeofArrayOp [arg] live
++emitPrimOp [res] SizeofUnboxedDoubleArrayOp [arg] live
++   = emitPrimOp [res] SizeofArrayOp [arg] live
++emitPrimOp [res] SizeofUnboxedCharArrayOp [arg] live
++   = emitPrimOp [res] SizeofArrayOp [arg] live
++emitPrimOp [res] SizeofUnboxedAddrArrayOp [arg] live
++   = emitPrimOp [res] SizeofArrayOp [arg] live
++
+ -- IndexXXXoffAddr
+ 
+ emitPrimOp res IndexOffAddrOp_Char      args _ = doIndexOffAddrOp (Just mo_u_8ToWord) b8 res args
+diff --git a/compiler/coreSyn/ExternalCore.lhs b/compiler/coreSyn/ExternalCore.lhs
+index 3d416f7..e280c31 100644
+--- a/compiler/coreSyn/ExternalCore.lhs
++++ b/compiler/coreSyn/ExternalCore.lhs
+@@ -10,6 +10,9 @@
+ -- for details
+ 
+ module ExternalCore where
++import BasicTypes (StrictnessMark)
++import FastString
++import TypeRep (TyLit)
+ 
+ data Module 
+  = Module Mname [Tdef] [Vdefg]
+@@ -19,7 +22,7 @@ data Tdef
+   | Newtype (Qual Tcon) (Qual Tcon) [Tbind] Ty
+ 
+ data Cdef 
+-  = Constr (Qual Dcon) [Tbind] [Ty]
++  = Constr (Qual Dcon) [Tbind] [(Ty, StrictnessMark)]
+   | GadtConstr (Qual Dcon) Ty
+ 
+ data Vdefg 
+@@ -72,6 +75,7 @@ data Ty
+   | UnsafeCoercion Ty Ty
+   | InstCoercion Ty Ty
+   | NthCoercion Int Ty
++  | Tlit TyLit
+ 
+ data Kind 
+   = Klifted
+@@ -84,8 +88,7 @@ data Lit
+   = Lint Integer Ty
+   | Lrational Rational Ty
+   | Lchar Char Ty
+-  | Lstring String Ty
+-  
++  | Lstring FastString Ty
+ 
+ type Mname = Id
+ type Var = Id
+diff --git a/compiler/coreSyn/MkExternalCore.lhs b/compiler/coreSyn/MkExternalCore.lhs
+index 6005be0..8aa3b92 100644
+--- a/compiler/coreSyn/MkExternalCore.lhs
++++ b/compiler/coreSyn/MkExternalCore.lhs
+@@ -16,10 +16,14 @@ module MkExternalCore (
+ #include "HsVersions.h"
+ 
+ import qualified ExternalCore as C
++import PrelNames
+ import Module
+ import CoreSyn
+ import HscTypes	
+ import TyCon
++import TysWiredIn
++import MkCore (mkListExpr)
++import Data.Bits
+ -- import Class
+ import TypeRep
+ import Type
+@@ -80,7 +84,7 @@ mkExternalCore :: DynFlags -> CgGuts -> C.Module
+ -- We don't include the strange data-con *workers* because they are
+ -- implicit in the data type declaration itself
+ mkExternalCore dflags (CgGuts {cg_module=this_mod, cg_tycons = tycons,
+-                               cg_binds = binds})
++                                          cg_binds = binds})
+ {- Note that modules can be mutually recursive, but even so, we
+    print out dependency information within each module. -}
+   = C.Module (mname dflags) tdefs (runCoreM (mapM (make_vdef True) binds) initialState)
+@@ -115,12 +119,16 @@ qcc :: DynFlags -> CoAxiom -> C.Qual C.Tcon
+ qcc dflags = make_con_qid dflags . co_ax_name
+ 
+ make_cdef :: DynFlags -> DataCon -> C.Cdef
+-make_cdef dflags dcon =  C.Constr dcon_name existentials tys
++make_cdef dflags dcon =  C.Constr dcon_name existentials $ zip' tys bangs
+   where 
+     dcon_name    = make_qid dflags False False (dataConName dcon)
+     existentials = map make_tbind ex_tyvars
+     ex_tyvars    = dataConExTyVars dcon
+     tys 	 = map (make_ty dflags) (dataConRepArgTys dcon)
++    bangs        = dataConRepStrictness dcon
++    zip' (x:xs) (y:ys) = (x, y) : zip' xs ys
++    zip' [] [] = []
++    zip' _ _ = error "arity of dataConRepArgTys doesn't match dataConRepStrictness"
+ 
+ make_tbind :: TyVar -> C.Tbind
+ make_tbind tv = (make_var_id (tyVarName tv), make_kind (tyVarKind tv))
+@@ -163,12 +171,17 @@ make_exp (Var v) = do
+        DataConWrapId _ -> C.Var (make_var_qid dflags False vName)
+        _ -> C.Var (make_var_qid dflags isLocal vName)
+ make_exp (Lit (MachLabel s _ _)) = return $ C.Label (unpackFS s)
++make_exp (Lit (LitInteger i _)) = do
++    dFlags <- getDynFlags
++    cvtLitInteger dFlags i
+ make_exp (Lit l) = do dflags <- getDynFlags
+                       return $ C.Lit (make_lit dflags l)
+ make_exp (App e (Type t)) = do b <- make_exp e
+                                dflags <- getDynFlags
+                                return $ C.Appt b (make_ty dflags t)
+-make_exp (App _e (Coercion _co)) = error "make_exp (App _ (Coercion _))"    -- TODO
++make_exp (App _e (Coercion _co)) = do b <- make_exp _e 
++                                      dflags <- getDynFlags
++                                      return $ C.Appt b (make_co dflags _co) -- TODO: PaulLiu
+ make_exp (App e1 e2) = do
+    rator <- make_exp e1
+    rand <- make_exp e2
+@@ -221,7 +234,7 @@ make_lit dflags l =
+     -- For a character bigger than 0xff, we represent it in ext-core
+     -- as an int lit with a char type.
+     MachChar i             -> C.Lint (fromIntegral $ ord i) t 
+-    MachStr s -> C.Lstring (unpackFS s) t
++    MachStr s -> C.Lstring s t
+     MachNullAddr -> C.Lint 0 t
+     MachInt i -> C.Lint i t
+     MachInt64 i -> C.Lint i t
+@@ -243,11 +256,11 @@ make_ty dflags t = make_ty' dflags t
+ -- note calls to make_ty so as to expand types recursively
+ make_ty' :: DynFlags -> Type -> C.Ty
+ make_ty' _      (TyVarTy tv)     = C.Tvar (make_var_id (tyVarName tv))
+-make_ty' dflags (AppTy t1 t2) 	  = C.Tapp (make_ty dflags t1) (make_ty dflags t2)
+-make_ty' dflags (FunTy t1 t2) 	  = make_ty dflags (TyConApp funTyCon [t1,t2])
++make_ty' dflags (AppTy t1 t2) 	 = C.Tapp (make_ty dflags t1) (make_ty dflags t2)
++make_ty' dflags (FunTy t1 t2) 	 = make_ty dflags (TyConApp funTyCon [t1,t2])
+ make_ty' dflags (ForAllTy tv t)  = C.Tforall (make_tbind tv) (make_ty dflags t)
+ make_ty' dflags (TyConApp tc ts) = make_tyConApp dflags tc ts
+-make_ty' _      (LitTy {})       = panic "MkExernalCore can't do literal types yet"
++make_ty' _      (LitTy t)        = C.Tlit t
+ 
+ -- Newtypes are treated just like any other type constructor; not expanded
+ -- Reason: predTypeRep does substitution and, while substitution deals
+@@ -272,7 +285,7 @@ make_kind k
+   | isLiftedTypeKind k   = C.Klifted
+   | isUnliftedTypeKind k = C.Kunlifted
+   | isOpenTypeKind k     = C.Kopen
+-make_kind _ = error "MkExternalCore died: make_kind"
++make_kind _ = C.Kopen -- error "MkExternalCore died: make_kind"
+ 
+ {- Id generation. -}
+ 
+@@ -343,6 +356,29 @@ isALocal vName = do
+              -- in the External Core sense; need to re-read the spec.
+              Just m | m == modName -> isInternalName vName
+              _                     -> False
++
++cvtLitInteger :: DynFlags -> Integer -> CoreM C.Exp 
++-- Here we convert a literal Integer to the low-level
++-- represenation. Exactly how we do this depends on the
++-- library that implements Integer.  If it's GMP we
++-- use the S# data constructor for small literals.
++-- See Note [Integer literals] in Literal
++cvtLitInteger dynFlags i
++    = do
++    nonNeg <- make_exp isNonNegative
++    intList <- make_exp ints
++    return $ C.App (C.App (C.Var (make_var_qid dynFlags False mkIntegerName))
++                          nonNeg) intList
++  where isNonNegative = if i < 0 then mkConApp falseDataCon []
++                                 else mkConApp trueDataCon  []
++        ints = mkListExpr intTy (f (abs i))
++        f 0 = []
++        f x = let low  = x .&. mask
++                  high = x `shiftR` bits
++              in mkConApp intDataCon [Lit (mkMachInt low)] : f high
++        bits = 31
++        mask = 2 ^ bits - 1
++
+ \end{code}
+ 
+ 
+diff --git a/compiler/coreSyn/PprExternalCore.lhs b/compiler/coreSyn/PprExternalCore.lhs
+index 5495ff6..db4746a 100644
+--- a/compiler/coreSyn/PprExternalCore.lhs
++++ b/compiler/coreSyn/PprExternalCore.lhs
+@@ -13,11 +13,14 @@
+ module PprExternalCore () where
+ 
+ import Encoding
++import FastString
+ import ExternalCore
+ 
+ import Pretty
+ import Data.Char
+ import Data.Ratio
++import BasicTypes (isMarkedStrict)
++import TypeRep (TyLit(..))
+ 
+ instance Show Module where
+   showsPrec _ m = shows (pmodule m)
+@@ -68,7 +71,9 @@ ptdef (Newtype tcon coercion tbinds rep) =
+ 
+ pcdef :: Cdef -> Doc
+ pcdef (Constr dcon tbinds tys)  =
+-  (pqname dcon) <+> (sep [hsep (map pattbind tbinds),sep (map paty tys)])
++  (pqname dcon) <+> (sep [hsep (map pattbind tbinds),sep (map paty' tys)])
++  where
++    paty' (ty, bang) = let s = paty ty in if isMarkedStrict bang then char '!' <> s else s
+ pcdef (GadtConstr dcon ty)  =
+   (pqname dcon) <+> text "::" <+> pty ty
+ 
+@@ -100,6 +105,8 @@ paty, pbty, pty :: Ty -> Doc
+ -- pty:  not in parens
+ paty (Tvar n) = pname n
+ paty (Tcon c) = pqname c
++paty (Tlit (NumTyLit n)) = integer n 
++paty (Tlit (StrTyLit s)) = pfstring s
+ paty t = parens (pty t)
+ 
+ pbty (Tapp(Tapp(Tcon tc) t1) t2) | tc == tcArrow = parens(fsep [pbty t1, text "->",pty t2])
+@@ -202,27 +209,30 @@ plit (Lint i t) = parens (integer i <> text "::" <> pty t)
+ -- like "((-1)/5)" which isn't either (it should be "(-1/5)").
+ plit (Lrational r t) = parens (text (show (numerator r)) <+> char '%'
+    <+> text (show (denominator r)) <>  text "::" <> pty t)
+-plit (Lchar c t) = parens (text ("\'" ++ escape [c] ++ "\'") <> text "::" <> pty t)
+-plit (Lstring s t) = parens (pstring s <> text "::" <> pty t)
++plit (Lchar c t) = parens (text ("\'" ++ escapeChar c ++ "\'") <> text "::" <> pty t)
++plit (Lstring s t) = parens (pfstring s <> text "::" <> pty t)
++
++pfstring :: FastString -> Doc
++pfstring s = doubleQuotes(text (escape s))
+ 
+ pstring :: String -> Doc
+-pstring s = doubleQuotes(text (escape s))
++pstring = pfstring . mkFastString
+ 
+-escape :: String -> String
+-escape s = foldr f [] (map ord s)
++escape :: FastString -> String
++escape s = foldr f [] (bytesFS s) -- (map ord s)
+     where 
+      f cv rest
+-	| cv > 0xFF = '\\':'x':hs ++ rest
+ 	| (cv < 0x20 || cv > 0x7e || cv == 0x22 || cv == 0x27 || cv == 0x5c) = 
+ 	 '\\':'x':h1:h0:rest
+-           where (q1,r1) = quotRem cv 16
++           where (q1,r1) = quotRem (fromIntegral cv) 16
+ 		 h1 = intToDigit q1
+                  h0 = intToDigit r1
+-		 hs = dropWhile (=='0') $ reverse $ mkHex cv
+-		 mkHex 0 = ""
+-		 mkHex cv = intToDigit r : mkHex q
+-		    where (q,r) = quotRem cv 16
+-     f cv rest = (chr cv):rest
++     f cv rest = (chr (fromIntegral cv)):rest
++
++escapeChar :: Char -> String
++escapeChar c | (d < 0x20 || d > 0x7e || d == 0x22 || d == 0x27 || d == 0x5c) = "\\" ++ show d
++             | otherwise = [c]
++  where d = ord c
+ 
+ \end{code}
+ 
+diff --git a/compiler/main/CodeOutput.lhs b/compiler/main/CodeOutput.lhs
+index e92eb4f..ec7efe2 100644
+--- a/compiler/main/CodeOutput.lhs
++++ b/compiler/main/CodeOutput.lhs
+@@ -73,7 +73,8 @@ codeOutput dflags this_mod location foreign_stubs pkg_deps cmm_stream
+         ; showPass dflags "CodeOutput"
+         ; let filenm = hscOutName dflags 
+         ; stubs_exist <- outputForeignStubs dflags this_mod location foreign_stubs
+-        ; case hscTarget dflags of {
++        ; let tgt = if dopt Opt_StubOnly dflags then HscInterpreted else hscTarget dflags
++        ; case tgt of {
+              HscInterpreted -> return ();
+              HscAsm         -> outputAsm dflags filenm linted_cmm_stream;
+              HscC           -> outputC dflags filenm linted_cmm_stream pkg_deps;
+@@ -187,6 +188,7 @@ outputForeignStubs :: DynFlags -> Module -> ModLocation -> ForeignStubs
+ outputForeignStubs dflags mod location stubs
+  = do
+    let stub_h = mkStubPaths dflags (moduleName mod) location
++       stub_only = dopt Opt_StubOnly dflags
+    stub_c <- newTempName dflags "c"
+ 
+    case stubs of
+@@ -194,7 +196,11 @@ outputForeignStubs dflags mod location stubs
+         -- When compiling External Core files, may need to use stub
+         -- files from a previous compilation
+         stub_h_exists <- doesFileExist stub_h
+-        return (stub_h_exists, Nothing)
++        if stub_only
++          then do
++            writeFile stub_c ""
++            return (stub_h_exists, Just stub_c)
++          else return (stub_h_exists, Nothing)
+ 
+      ForeignStubs h_code c_code -> do
+         let
+@@ -227,7 +233,7 @@ outputForeignStubs dflags mod location stubs
+         dumpIfSet_dyn dflags Opt_D_dump_foreign
+                       "Foreign export stubs" stub_c_output_d
+ 
+-        stub_c_file_exists
++        stub_c_file_exists'
+            <- outputForeignStubs_help stub_c stub_c_output_w
+                 ("#define IN_STG_CODE 0\n" ++ 
+                  "#include \"Rts.h\"\n" ++
+@@ -239,6 +245,10 @@ outputForeignStubs dflags mod location stubs
+            -- isn't really HC code, so we need to define IN_STG_CODE==0 to
+            -- avoid the register variables etc. being enabled.
+ 
++        stub_c_file_exists <- if not stub_c_file_exists' && stub_only
++                                then writeFile stub_c "" >> return True
++                                else return stub_c_file_exists'
++
+         return (stub_h_file_exists, if stub_c_file_exists
+                                        then Just stub_c
+                                        else Nothing )
+diff --git a/compiler/main/DriverPipeline.hs b/compiler/main/DriverPipeline.hs
+index 6c35f71..452014e 100644
+--- a/compiler/main/DriverPipeline.hs
++++ b/compiler/main/DriverPipeline.hs
+@@ -106,7 +106,7 @@ compile :: HscEnv
+ 
+ compile = compile' (hscCompileNothing, hscCompileInteractive, hscCompileBatch)
+ 
+-compile' :: 
++compile' ::
+            (Compiler (HscStatus, ModIface, ModDetails),
+             Compiler (InteractiveStatus, ModIface, ModDetails),
+             Compiler (HscStatus, ModIface, ModDetails))
+@@ -150,9 +150,11 @@ compile' (nothingCompiler, interactiveCompiler, batchCompiler)
+    output_fn <- getOutputFilename next_phase
+                         Temporary basename dflags next_phase (Just location)
+ 
++   let extCoreFile = replaceExtension (ml_obj_file location) "hcr"
++   createDirectoryIfMissing True $ takeDirectory extCoreFile
+    let dflags' = dflags { hscTarget = hsc_lang,
+                                 hscOutName = output_fn,
+-                                extCoreName = basename ++ ".hcr" }
++                                extCoreName = extCoreFile }
+    let hsc_env' = hsc_env { hsc_dflags = dflags' }
+ 
+    -- -fforce-recomp should also work with --make
+@@ -192,7 +194,7 @@ compile' (nothingCompiler, interactiveCompiler, batchCompiler)
+                                   -- The object filename comes from the ModLocation
+                             o_time <- getModificationUTCTime object_filename
+                             return ([DotO object_filename], o_time)
+-                    
++
+                     let linkable = LM unlinked_time this_mod hs_unlinked
+                     return (Just linkable)
+ 
+@@ -554,7 +556,7 @@ runPipeline stop_phase hsc_env0 (input_fn, mb_phase)
+   case output of
+     Temporary ->
+         return (dflags', output_fn)
+-    _other -> 
++    _other ->
+         do final_fn <- get_output_fn dflags' stop_phase maybe_loc
+            when (final_fn /= output_fn) $ do
+               let msg = ("Copying `" ++ output_fn ++"' to `" ++ final_fn ++ "'")
+@@ -929,7 +931,7 @@ runPhase (Hsc src_flavour) input_fn dflags0
+ 
+         let dflags' = dflags { hscTarget = hsc_lang,
+                                hscOutName = output_fn,
+-                               extCoreName = basename ++ ".hcr" }
++                               extCoreName = replaceExtension o_file "hcr" }
+ 
+         setDynFlags dflags'
+         PipeState{hsc_env=hsc_env'} <- getPipeState
+@@ -996,7 +998,7 @@ runPhase Cmm input_fn dflags
+ 
+         let dflags' = dflags { hscTarget = hsc_lang,
+                                hscOutName = output_fn,
+-                               extCoreName = src_basename ++ ".hcr" }
++                               extCoreName = replaceExtension output_fn "hcr" }
+ 
+         setDynFlags dflags'
+         PipeState{hsc_env} <- getPipeState
+@@ -1235,6 +1237,7 @@ runPhase SplitAs _input_fn dflags
+ 
+         let base_o = dropExtension output_fn
+             osuf = objectSuf dflags
++            output_stub_fn = base_o <.> ("hrc_" ++ osuf)
+             split_odir  = base_o ++ "_" ++ osuf ++ "_split"
+ 
+         io $ createDirectoryIfMissing True split_odir
+@@ -1295,16 +1298,12 @@ runPhase SplitAs _input_fn dflags
+ 
+         PipeState{maybe_stub_o} <- getPipeState
+         case maybe_stub_o of
+-            Nothing     -> return ()
+-            Just stub_o -> io $ do
+-                     tmp_split_1 <- newTempName dflags osuf
+-                     let split_1 = split_obj 1
+-                     copyFile split_1 tmp_split_1
+-                     removeFile split_1
+-                     joinObjectFiles dflags [tmp_split_1, stub_o] split_1
+-
+-        -- join them into a single .o file
+-        io $ joinObjectFiles dflags (map split_obj [1..n]) output_fn
++            Nothing     -> io $ joinObjectFiles dflags (map split_obj [1..n]) output_fn
++            Just stub_o -> io $
++              if dopt Opt_StubOnly dflags
++                then copyFile stub_o output_stub_fn
++                else joinObjectFiles dflags objs output_fn
++                       where objs = [split_obj 1, stub_o] ++ map split_obj [2..n]
+ 
+         return (next_phase, output_fn)
+ 
+@@ -1340,7 +1339,7 @@ runPhase LlvmOpt input_fn dflags
+                 ++ map SysTools.Option lo_opts)
+ 
+     return (LlvmLlc, output_fn)
+-  where 
++  where
+         -- we always (unless -optlo specified) run Opt since we rely on it to
+         -- fix up some pretty big deficiencies in the code we generate
+         llvmOpts = ["-mem2reg", "-O1", "-O2"]
+@@ -1366,7 +1365,7 @@ runPhase LlvmLlc input_fn dflags
+                          False                            -> LlvmMangle
+                          True | dopt Opt_SplitObjs dflags -> Splitter
+                          True                             -> As
+-                        
++
+     output_fn <- phaseOutputFilename next_phase
+ 
+     io $ SysTools.runLlvmLlc dflags
+@@ -1388,7 +1387,7 @@ runPhase LlvmLlc input_fn dflags
+         -- On ARMv7 using LLVM, LLVM fails to allocate floating point registers
+         -- while compiling GHC source code. It's probably due to fact that it
+         -- does not enable VFP by default. Let's do this manually here
+-        fpOpts = case platformArch (targetPlatform dflags) of 
++        fpOpts = case platformArch (targetPlatform dflags) of
+                    ArchARM ARMv7 ext _ -> if (elem VFPv3 ext)
+                                       then ["-mattr=+v7,+vfp3"]
+                                       else if (elem VFPv3D16 ext)
+@@ -1420,11 +1419,16 @@ runPhase MergeStub input_fn dflags
+  = do
+      PipeState{maybe_stub_o} <- getPipeState
+      output_fn <- phaseOutputFilename StopLn
++     let stubOnly = dopt Opt_StubOnly dflags
++         base_o = dropExtension output_fn
++         osuf = objectSuf dflags
++         output_stub_fn = base_o <.> ("hrc_" ++ osuf)
+      case maybe_stub_o of
+        Nothing ->
+          panic "runPhase(MergeStub): no stub"
+        Just stub_o -> do
+-         io $ joinObjectFiles dflags [input_fn, stub_o] output_fn
++         io $ if stubOnly then copyFile stub_o output_stub_fn
++                else joinObjectFiles dflags [input_fn, stub_o] output_fn
+          return (StopLn, output_fn)
+ 
+ -- warning suppression
+diff --git a/compiler/main/DynFlags.hs b/compiler/main/DynFlags.hs
+index c1dc88d..74e19e0 100644
+--- a/compiler/main/DynFlags.hs
++++ b/compiler/main/DynFlags.hs
+@@ -289,6 +289,7 @@ data DynFlag
+    -- misc opts
+    | Opt_Pp
+    | Opt_ForceRecomp
++   | Opt_StubOnly
+    | Opt_ExcessPrecision
+    | Opt_EagerBlackHoling
+    | Opt_NoHsMain
+@@ -2003,6 +2004,7 @@ fFlags = [
+   ( "eager-blackholing",                Opt_EagerBlackHoling, nop ),
+   ( "print-bind-result",                Opt_PrintBindResult, nop ),
+   ( "force-recomp",                     Opt_ForceRecomp, nop ),
++  ( "stub-only",                        Opt_StubOnly, nop ),
+   ( "hpc-no-auto",                      Opt_Hpc_No_Auto, nop ),
+   ( "rewrite-rules",                    Opt_EnableRewriteRules, useInstead "enable-rewrite-rules" ),
+   ( "enable-rewrite-rules",             Opt_EnableRewriteRules, nop ),
+diff --git a/compiler/prelude/PrelNames.lhs b/compiler/prelude/PrelNames.lhs
+old mode 100644
+new mode 100755
+index 3174974..65397e7
+--- a/compiler/prelude/PrelNames.lhs
++++ b/compiler/prelude/PrelNames.lhs
+@@ -344,7 +344,7 @@ pRELUDE         = mkBaseModule_ pRELUDE_NAME
+ gHC_PRIM, gHC_TYPES, gHC_GENERICS,
+     gHC_MAGIC,
+     gHC_CLASSES, gHC_BASE, gHC_ENUM, gHC_GHCI, gHC_CSTRING,
+-    gHC_SHOW, gHC_READ, gHC_NUM, gHC_INTEGER_TYPE, gHC_LIST,
++    gHC_SHOW, gHC_READ, gHC_NUM, gHC_INTEGER_TYPE, gHC_INTEGER, gHC_INTEGER_INTERNALS, gHC_LIST,
+     gHC_TUPLE, dATA_TUPLE, dATA_EITHER, dATA_STRING, dATA_FOLDABLE, dATA_TRAVERSABLE,
+     gHC_CONC, gHC_IO, gHC_IO_Exception,
+     gHC_ST, gHC_ARR, gHC_STABLE, gHC_PTR, gHC_ERR, gHC_REAL,
+@@ -365,7 +365,9 @@ gHC_GHCI        = mkBaseModule (fsLit "GHC.GHCi")
+ gHC_SHOW        = mkBaseModule (fsLit "GHC.Show")
+ gHC_READ        = mkBaseModule (fsLit "GHC.Read")
+ gHC_NUM         = mkBaseModule (fsLit "GHC.Num")
++gHC_INTEGER_INTERNALS= mkIntegerModule (fsLit "GHC.Integer.Internals")
+ gHC_INTEGER_TYPE= mkIntegerModule (fsLit "GHC.Integer.Type")
++gHC_INTEGER     = mkIntegerModule (fsLit "GHC.Integer")
+ gHC_LIST        = mkBaseModule (fsLit "GHC.List")
+ gHC_TUPLE       = mkPrimModule (fsLit "GHC.Tuple")
+ dATA_TUPLE      = mkBaseModule (fsLit "Data.Tuple")
+@@ -863,51 +865,50 @@ integerTyConName, mkIntegerName,
+     compareIntegerName, quotRemIntegerName, divModIntegerName,
+     quotIntegerName, remIntegerName,
+     floatFromIntegerName, doubleFromIntegerName,
+-    encodeFloatIntegerName, encodeDoubleIntegerName,
+-    decodeDoubleIntegerName,
++    encodeFloatIntegerName, encodeDoubleIntegerName, decodeDoubleIntegerName,
+     gcdIntegerName, lcmIntegerName,
+     andIntegerName, orIntegerName, xorIntegerName, complementIntegerName,
+     shiftLIntegerName, shiftRIntegerName :: Name
+ integerTyConName      = tcQual  gHC_INTEGER_TYPE (fsLit "Integer")           integerTyConKey
+-mkIntegerName         = varQual gHC_INTEGER_TYPE (fsLit "mkInteger")         mkIntegerIdKey
+-integerToWord64Name   = varQual gHC_INTEGER_TYPE (fsLit "integerToWord64")   integerToWord64IdKey
+-integerToInt64Name    = varQual gHC_INTEGER_TYPE (fsLit "integerToInt64")    integerToInt64IdKey
+-word64ToIntegerName   = varQual gHC_INTEGER_TYPE (fsLit "word64ToInteger")   word64ToIntegerIdKey
+-int64ToIntegerName    = varQual gHC_INTEGER_TYPE (fsLit "int64ToInteger")    int64ToIntegerIdKey
+-plusIntegerName       = varQual gHC_INTEGER_TYPE (fsLit "plusInteger")       plusIntegerIdKey
+-timesIntegerName      = varQual gHC_INTEGER_TYPE (fsLit "timesInteger")      timesIntegerIdKey
+-smallIntegerName      = varQual gHC_INTEGER_TYPE (fsLit "smallInteger")      smallIntegerIdKey
+-wordToIntegerName     = varQual gHC_INTEGER_TYPE (fsLit "wordToInteger")     wordToIntegerIdKey
+-integerToWordName     = varQual gHC_INTEGER_TYPE (fsLit "integerToWord")     integerToWordIdKey
+-integerToIntName      = varQual gHC_INTEGER_TYPE (fsLit "integerToInt")      integerToIntIdKey
+-minusIntegerName      = varQual gHC_INTEGER_TYPE (fsLit "minusInteger")      minusIntegerIdKey
+-negateIntegerName     = varQual gHC_INTEGER_TYPE (fsLit "negateInteger")     negateIntegerIdKey
+-eqIntegerName         = varQual gHC_INTEGER_TYPE (fsLit "eqInteger")         eqIntegerIdKey
+-neqIntegerName        = varQual gHC_INTEGER_TYPE (fsLit "neqInteger")        neqIntegerIdKey
+-absIntegerName        = varQual gHC_INTEGER_TYPE (fsLit "absInteger")        absIntegerIdKey
+-signumIntegerName     = varQual gHC_INTEGER_TYPE (fsLit "signumInteger")     signumIntegerIdKey
+-leIntegerName         = varQual gHC_INTEGER_TYPE (fsLit "leInteger")         leIntegerIdKey
+-gtIntegerName         = varQual gHC_INTEGER_TYPE (fsLit "gtInteger")         gtIntegerIdKey
+-ltIntegerName         = varQual gHC_INTEGER_TYPE (fsLit "ltInteger")         ltIntegerIdKey
+-geIntegerName         = varQual gHC_INTEGER_TYPE (fsLit "geInteger")         geIntegerIdKey
+-compareIntegerName    = varQual gHC_INTEGER_TYPE (fsLit "compareInteger")    compareIntegerIdKey
+-quotRemIntegerName    = varQual gHC_INTEGER_TYPE (fsLit "quotRemInteger")    quotRemIntegerIdKey
+-divModIntegerName     = varQual gHC_INTEGER_TYPE (fsLit "divModInteger")     divModIntegerIdKey
+-quotIntegerName       = varQual gHC_INTEGER_TYPE (fsLit "quotInteger")       quotIntegerIdKey
+-remIntegerName        = varQual gHC_INTEGER_TYPE (fsLit "remInteger")        remIntegerIdKey
+-floatFromIntegerName  = varQual gHC_INTEGER_TYPE (fsLit "floatFromInteger")      floatFromIntegerIdKey
+-doubleFromIntegerName = varQual gHC_INTEGER_TYPE (fsLit "doubleFromInteger")     doubleFromIntegerIdKey
+-encodeFloatIntegerName  = varQual gHC_INTEGER_TYPE (fsLit "encodeFloatInteger")  encodeFloatIntegerIdKey
+-encodeDoubleIntegerName = varQual gHC_INTEGER_TYPE (fsLit "encodeDoubleInteger") encodeDoubleIntegerIdKey
+-decodeDoubleIntegerName = varQual gHC_INTEGER_TYPE (fsLit "decodeDoubleInteger") decodeDoubleIntegerIdKey
+-gcdIntegerName        = varQual gHC_INTEGER_TYPE (fsLit "gcdInteger")        gcdIntegerIdKey
+-lcmIntegerName        = varQual gHC_INTEGER_TYPE (fsLit "lcmInteger")        lcmIntegerIdKey
+-andIntegerName        = varQual gHC_INTEGER_TYPE (fsLit "andInteger")        andIntegerIdKey
+-orIntegerName         = varQual gHC_INTEGER_TYPE (fsLit "orInteger")         orIntegerIdKey
+-xorIntegerName        = varQual gHC_INTEGER_TYPE (fsLit "xorInteger")        xorIntegerIdKey
+-complementIntegerName = varQual gHC_INTEGER_TYPE (fsLit "complementInteger") complementIntegerIdKey
+-shiftLIntegerName     = varQual gHC_INTEGER_TYPE (fsLit "shiftLInteger")     shiftLIntegerIdKey
+-shiftRIntegerName     = varQual gHC_INTEGER_TYPE (fsLit "shiftRInteger")     shiftRIntegerIdKey
++mkIntegerName         = varQual gHC_INTEGER (fsLit "mkInteger")         mkIntegerIdKey
++integerToWord64Name   = varQual gHC_INTEGER_INTERNALS (fsLit "integerToWord64")   integerToWord64IdKey
++integerToInt64Name    = varQual gHC_INTEGER_INTERNALS (fsLit "integerToInt64")    integerToInt64IdKey
++word64ToIntegerName   = varQual gHC_INTEGER_INTERNALS (fsLit "word64ToInteger")   word64ToIntegerIdKey
++int64ToIntegerName    = varQual gHC_INTEGER_INTERNALS (fsLit "int64ToInteger")    int64ToIntegerIdKey
++plusIntegerName       = varQual gHC_INTEGER_INTERNALS (fsLit "plusInteger")       plusIntegerIdKey
++timesIntegerName      = varQual gHC_INTEGER_INTERNALS (fsLit "timesInteger")      timesIntegerIdKey
++smallIntegerName      = varQual gHC_INTEGER_INTERNALS (fsLit "smallInteger")      smallIntegerIdKey
++wordToIntegerName     = varQual gHC_INTEGER_INTERNALS (fsLit "wordToInteger")     wordToIntegerIdKey
++integerToWordName     = varQual gHC_INTEGER_INTERNALS (fsLit "integerToWord")     integerToWordIdKey
++integerToIntName      = varQual gHC_INTEGER_INTERNALS (fsLit "integerToInt")      integerToIntIdKey
++minusIntegerName      = varQual gHC_INTEGER_INTERNALS (fsLit "minusInteger")      minusIntegerIdKey
++negateIntegerName     = varQual gHC_INTEGER_INTERNALS (fsLit "negateInteger")     negateIntegerIdKey
++eqIntegerName         = varQual gHC_INTEGER_INTERNALS (fsLit "eqInteger")         eqIntegerIdKey
++neqIntegerName        = varQual gHC_INTEGER_INTERNALS (fsLit "neqInteger")        neqIntegerIdKey
++absIntegerName        = varQual gHC_INTEGER_INTERNALS (fsLit "absInteger")        absIntegerIdKey
++signumIntegerName     = varQual gHC_INTEGER_INTERNALS (fsLit "signumInteger")     signumIntegerIdKey
++leIntegerName         = varQual gHC_INTEGER_INTERNALS (fsLit "leInteger")         leIntegerIdKey
++gtIntegerName         = varQual gHC_INTEGER_INTERNALS (fsLit "gtInteger")         gtIntegerIdKey
++ltIntegerName         = varQual gHC_INTEGER_INTERNALS (fsLit "ltInteger")         ltIntegerIdKey
++geIntegerName         = varQual gHC_INTEGER_INTERNALS (fsLit "geInteger")         geIntegerIdKey
++compareIntegerName    = varQual gHC_INTEGER_INTERNALS (fsLit "compareInteger")    compareIntegerIdKey
++quotRemIntegerName    = varQual gHC_INTEGER_INTERNALS (fsLit "quotRemInteger")    quotRemIntegerIdKey
++divModIntegerName     = varQual gHC_INTEGER_INTERNALS (fsLit "divModInteger")     divModIntegerIdKey
++quotIntegerName       = varQual gHC_INTEGER_INTERNALS (fsLit "quotInteger")       quotIntegerIdKey
++remIntegerName        = varQual gHC_INTEGER_INTERNALS (fsLit "remInteger")        remIntegerIdKey
++floatFromIntegerName  = varQual gHC_INTEGER_INTERNALS (fsLit "floatFromInteger")      floatFromIntegerIdKey
++doubleFromIntegerName = varQual gHC_INTEGER_INTERNALS (fsLit "doubleFromInteger")     doubleFromIntegerIdKey
++encodeFloatIntegerName  = varQual gHC_INTEGER_INTERNALS (fsLit "encodeFloatInteger")  encodeFloatIntegerIdKey
++encodeDoubleIntegerName = varQual gHC_INTEGER_INTERNALS (fsLit "encodeDoubleInteger") encodeDoubleIntegerIdKey
++decodeDoubleIntegerName = varQual gHC_INTEGER_INTERNALS (fsLit "decodeDoubleInteger") decodeDoubleIntegerIdKey
++gcdIntegerName        = varQual gHC_INTEGER_INTERNALS (fsLit "gcdInteger")        gcdIntegerIdKey
++lcmIntegerName        = varQual gHC_INTEGER_INTERNALS (fsLit "lcmInteger")        lcmIntegerIdKey
++andIntegerName        = varQual gHC_INTEGER_INTERNALS (fsLit "andInteger")        andIntegerIdKey
++orIntegerName         = varQual gHC_INTEGER_INTERNALS (fsLit "orInteger")         orIntegerIdKey
++xorIntegerName        = varQual gHC_INTEGER_INTERNALS (fsLit "xorInteger")        xorIntegerIdKey
++complementIntegerName = varQual gHC_INTEGER_INTERNALS (fsLit "complementInteger") complementIntegerIdKey
++shiftLIntegerName     = varQual gHC_INTEGER_INTERNALS (fsLit "shiftLInteger")     shiftLIntegerIdKey
++shiftRIntegerName     = varQual gHC_INTEGER_INTERNALS (fsLit "shiftRInteger")     shiftRIntegerIdKey
+ 
+ -- GHC.Real types and classes
+ rationalTyConName, ratioTyConName, ratioDataConName, realClassName,
+@@ -1240,6 +1241,14 @@ addrPrimTyConKey, arrayPrimTyConKey, arrayArrayPrimTyConKey, boolTyConKey, byteA
+     mutableArrayPrimTyConKey, mutableArrayArrayPrimTyConKey, mutableByteArrayPrimTyConKey,
+     orderingTyConKey, mVarPrimTyConKey, ratioTyConKey, rationalTyConKey,
+     realWorldTyConKey, stablePtrPrimTyConKey, stablePtrTyConKey,
++    immutableArrayPrimTyConKey, strictImmutableArrayPrimTyConKey,
++    unboxedWordArrayPrimTyConKey, unboxedWord8ArrayPrimTyConKey,
++    unboxedWord16ArrayPrimTyConKey, unboxedWord32ArrayPrimTyConKey,
++    unboxedWord64ArrayPrimTyConKey, unboxedIntArrayPrimTyConKey,
++    unboxedInt8ArrayPrimTyConKey, unboxedInt16ArrayPrimTyConKey,
++    unboxedInt32ArrayPrimTyConKey, unboxedInt64ArrayPrimTyConKey,
++    unboxedFloatArrayPrimTyConKey, unboxedDoubleArrayPrimTyConKey,
++    unboxedCharArrayPrimTyConKey, unboxedAddrArrayPrimTyConKey,
+     anyTyConKey, eqTyConKey :: Unique
+ addrPrimTyConKey                        = mkPreludeTyConUnique  1
+ arrayPrimTyConKey                       = mkPreludeTyConUnique  3
+@@ -1278,6 +1287,22 @@ anyTyConKey                             = mkPreludeTyConUnique 37
+ eqTyConKey                              = mkPreludeTyConUnique 38
+ arrayArrayPrimTyConKey                  = mkPreludeTyConUnique 39
+ mutableArrayArrayPrimTyConKey           = mkPreludeTyConUnique 40
++immutableArrayPrimTyConKey              = mkPreludeTyConUnique 41
++strictImmutableArrayPrimTyConKey        = mkPreludeTyConUnique 42
++unboxedWordArrayPrimTyConKey            = mkPreludeTyConUnique 43
++unboxedWord8ArrayPrimTyConKey           = mkPreludeTyConUnique 44
++unboxedWord16ArrayPrimTyConKey          = mkPreludeTyConUnique 45
++unboxedWord32ArrayPrimTyConKey          = mkPreludeTyConUnique 46
++unboxedWord64ArrayPrimTyConKey          = mkPreludeTyConUnique 47
++unboxedIntArrayPrimTyConKey             = mkPreludeTyConUnique 48
++unboxedInt8ArrayPrimTyConKey            = mkPreludeTyConUnique 49
++unboxedInt16ArrayPrimTyConKey           = mkPreludeTyConUnique 50
++unboxedInt32ArrayPrimTyConKey           = mkPreludeTyConUnique 51
++unboxedInt64ArrayPrimTyConKey           = mkPreludeTyConUnique 52
++unboxedFloatArrayPrimTyConKey           = mkPreludeTyConUnique 53
++unboxedDoubleArrayPrimTyConKey          = mkPreludeTyConUnique 54
++unboxedCharArrayPrimTyConKey            = mkPreludeTyConUnique 55
++unboxedAddrArrayPrimTyConKey            = mkPreludeTyConUnique 56
+ 
+ statePrimTyConKey, stableNamePrimTyConKey, stableNameTyConKey,
+     mutVarPrimTyConKey, ioTyConKey,
+@@ -1286,73 +1311,73 @@ statePrimTyConKey, stableNamePrimTyConKey, stableNameTyConKey,
+     liftedConKey, unliftedConKey, anyBoxConKey, kindConKey, boxityConKey,
+     typeConKey, threadIdPrimTyConKey, bcoPrimTyConKey, ptrTyConKey,
+     funPtrTyConKey, tVarPrimTyConKey, eqPrimTyConKey :: Unique
+-statePrimTyConKey                       = mkPreludeTyConUnique 50
+-stableNamePrimTyConKey                  = mkPreludeTyConUnique 51
+-stableNameTyConKey                      = mkPreludeTyConUnique 52
+-eqPrimTyConKey                          = mkPreludeTyConUnique 53
+-mutVarPrimTyConKey                      = mkPreludeTyConUnique 55
+-ioTyConKey                              = mkPreludeTyConUnique 56
+-wordPrimTyConKey                        = mkPreludeTyConUnique 58
+-wordTyConKey                            = mkPreludeTyConUnique 59
+-word8TyConKey                           = mkPreludeTyConUnique 60
+-word16TyConKey                          = mkPreludeTyConUnique 61
+-word32PrimTyConKey                      = mkPreludeTyConUnique 62
+-word32TyConKey                          = mkPreludeTyConUnique 63
+-word64PrimTyConKey                      = mkPreludeTyConUnique 64
+-word64TyConKey                          = mkPreludeTyConUnique 65
+-liftedConKey                            = mkPreludeTyConUnique 66
+-unliftedConKey                          = mkPreludeTyConUnique 67
+-anyBoxConKey                            = mkPreludeTyConUnique 68
+-kindConKey                              = mkPreludeTyConUnique 69
+-boxityConKey                            = mkPreludeTyConUnique 70
+-typeConKey                              = mkPreludeTyConUnique 71
+-threadIdPrimTyConKey                    = mkPreludeTyConUnique 72
+-bcoPrimTyConKey                         = mkPreludeTyConUnique 73
+-ptrTyConKey                             = mkPreludeTyConUnique 74
+-funPtrTyConKey                          = mkPreludeTyConUnique 75
+-tVarPrimTyConKey                        = mkPreludeTyConUnique 76
++statePrimTyConKey                       = mkPreludeTyConUnique 60
++stableNamePrimTyConKey                  = mkPreludeTyConUnique 61
++stableNameTyConKey                      = mkPreludeTyConUnique 62
++eqPrimTyConKey                          = mkPreludeTyConUnique 63
++mutVarPrimTyConKey                      = mkPreludeTyConUnique 65
++ioTyConKey                              = mkPreludeTyConUnique 66
++wordPrimTyConKey                        = mkPreludeTyConUnique 68
++wordTyConKey                            = mkPreludeTyConUnique 69
++word8TyConKey                           = mkPreludeTyConUnique 71
++word16TyConKey                          = mkPreludeTyConUnique 73 
++word32PrimTyConKey                      = mkPreludeTyConUnique 74 
++word32TyConKey                          = mkPreludeTyConUnique 75
++word64PrimTyConKey                      = mkPreludeTyConUnique 76
++word64TyConKey                          = mkPreludeTyConUnique 77
++liftedConKey                            = mkPreludeTyConUnique 78
++unliftedConKey                          = mkPreludeTyConUnique 79
++anyBoxConKey                            = mkPreludeTyConUnique 80
++kindConKey                              = mkPreludeTyConUnique 81
++boxityConKey                            = mkPreludeTyConUnique 82
++typeConKey                              = mkPreludeTyConUnique 83
++threadIdPrimTyConKey                    = mkPreludeTyConUnique 84
++bcoPrimTyConKey                         = mkPreludeTyConUnique 85
++ptrTyConKey                             = mkPreludeTyConUnique 86
++funPtrTyConKey                          = mkPreludeTyConUnique 87
++tVarPrimTyConKey                        = mkPreludeTyConUnique 88
+ 
+ -- Parallel array type constructor
+ parrTyConKey :: Unique
+-parrTyConKey                            = mkPreludeTyConUnique 82
++parrTyConKey                            = mkPreludeTyConUnique 92
+ 
+ -- dotnet interop
+ objectTyConKey :: Unique
+-objectTyConKey                          = mkPreludeTyConUnique 83
++objectTyConKey                          = mkPreludeTyConUnique 93
+ 
+ eitherTyConKey :: Unique
+-eitherTyConKey                          = mkPreludeTyConUnique 84
++eitherTyConKey                          = mkPreludeTyConUnique 94
+ 
+ -- Super Kinds constructors
+ superKindTyConKey :: Unique
+-superKindTyConKey                     = mkPreludeTyConUnique 85
++superKindTyConKey                     = mkPreludeTyConUnique 95
+ 
+ -- Kind constructors
+ liftedTypeKindTyConKey, anyKindTyConKey, openTypeKindTyConKey,
+   unliftedTypeKindTyConKey, constraintKindTyConKey :: Unique
+-anyKindTyConKey                         = mkPreludeTyConUnique 86
+-liftedTypeKindTyConKey                  = mkPreludeTyConUnique 87
+-openTypeKindTyConKey                    = mkPreludeTyConUnique 88
+-unliftedTypeKindTyConKey                = mkPreludeTyConUnique 89
+-constraintKindTyConKey                  = mkPreludeTyConUnique 92
++anyKindTyConKey                         = mkPreludeTyConUnique 96
++liftedTypeKindTyConKey                  = mkPreludeTyConUnique 97
++openTypeKindTyConKey                    = mkPreludeTyConUnique 98
++unliftedTypeKindTyConKey                = mkPreludeTyConUnique 99
++constraintKindTyConKey                  = mkPreludeTyConUnique 100
+ 
+ -- Coercion constructors
+ symCoercionTyConKey, transCoercionTyConKey, leftCoercionTyConKey,
+     rightCoercionTyConKey, instCoercionTyConKey, unsafeCoercionTyConKey,
+     csel1CoercionTyConKey, csel2CoercionTyConKey, cselRCoercionTyConKey
+     :: Unique
+-symCoercionTyConKey                     = mkPreludeTyConUnique 93
+-transCoercionTyConKey                   = mkPreludeTyConUnique 94
+-leftCoercionTyConKey                    = mkPreludeTyConUnique 95
+-rightCoercionTyConKey                   = mkPreludeTyConUnique 96
+-instCoercionTyConKey                    = mkPreludeTyConUnique 97
+-unsafeCoercionTyConKey                  = mkPreludeTyConUnique 98
+-csel1CoercionTyConKey                   = mkPreludeTyConUnique 99
+-csel2CoercionTyConKey                   = mkPreludeTyConUnique 100
+-cselRCoercionTyConKey                   = mkPreludeTyConUnique 101
++symCoercionTyConKey                     = mkPreludeTyConUnique 103
++transCoercionTyConKey                   = mkPreludeTyConUnique 104
++leftCoercionTyConKey                    = mkPreludeTyConUnique 105
++rightCoercionTyConKey                   = mkPreludeTyConUnique 106
++instCoercionTyConKey                    = mkPreludeTyConUnique 107
++unsafeCoercionTyConKey                  = mkPreludeTyConUnique 108
++csel1CoercionTyConKey                   = mkPreludeTyConUnique 109
++csel2CoercionTyConKey                   = mkPreludeTyConUnique 110
++cselRCoercionTyConKey                   = mkPreludeTyConUnique 111
+ 
+ pluginTyConKey :: Unique
+-pluginTyConKey                          = mkPreludeTyConUnique 102
++pluginTyConKey                          = mkPreludeTyConUnique 112
+ 
+ unknownTyConKey, unknown1TyConKey, unknown2TyConKey, unknown3TyConKey,
+     opaqueTyConKey :: Unique
+@@ -1635,7 +1660,7 @@ during type checking.
+ \begin{code}
+         -- Just a place holder for  unbound variables  produced by the renamer:
+ unboundKey :: Unique
+-unboundKey                    = mkPreludeMiscIdUnique 160
++unboundKey                    = mkPreludeMiscIdUnique 157
+ 
+ fromIntegerClassOpKey, minusClassOpKey, fromRationalClassOpKey,
+     enumFromClassOpKey, enumFromThenClassOpKey, enumFromToClassOpKey,
+diff --git a/compiler/prelude/PrimOp.lhs b/compiler/prelude/PrimOp.lhs
+index b055376..2ba7502 100644
+--- a/compiler/prelude/PrimOp.lhs
++++ b/compiler/prelude/PrimOp.lhs
+@@ -219,8 +219,8 @@ routines.
+ 
+ \begin{verbatim}
+ makeStablePtr#  :: a -> State# RealWorld -> (# State# RealWorld, StablePtr# a #)
+-freeStablePtr   :: StablePtr# a -> State# RealWorld -> State# RealWorld
+ deRefStablePtr# :: StablePtr# a -> State# RealWorld -> (# State# RealWorld, a #)
++freeStablePtr#  :: StablePtr# a -> State# RealWorld -> State# RealWorld
+ eqStablePtr#    :: StablePtr# a -> StablePtr# a -> Int#
+ \end{verbatim}
+ 
+diff --git a/compiler/prelude/TysPrim.lhs b/compiler/prelude/TysPrim.lhs
+old mode 100644
+new mode 100755
+index 1b8d96d..587cad9
+--- a/compiler/prelude/TysPrim.lhs
++++ b/compiler/prelude/TysPrim.lhs
+@@ -57,6 +57,23 @@ module TysPrim(
+ 	mutableArrayArrayPrimTyCon, mkMutableArrayArrayPrimTy,
+ 	mutVarPrimTyCon, mkMutVarPrimTy,
+ 
++        immutableArrayPrimTyCon,        mkImmutableArrayPrimTy,
++        strictImmutableArrayPrimTyCon,  mkStrictImmutableArrayPrimTy,
++        unboxedWordArrayPrimTyCon,      unboxedWordArrayPrimTy,
++        unboxedWord8ArrayPrimTyCon,     unboxedWord8ArrayPrimTy,
++        unboxedWord16ArrayPrimTyCon,    unboxedWord16ArrayPrimTy,
++        unboxedWord32ArrayPrimTyCon,    unboxedWord32ArrayPrimTy,
++        unboxedWord64ArrayPrimTyCon,    unboxedWord64ArrayPrimTy,
++        unboxedIntArrayPrimTyCon,       unboxedIntArrayPrimTy,
++        unboxedInt8ArrayPrimTyCon,      unboxedInt8ArrayPrimTy,
++        unboxedInt16ArrayPrimTyCon,     unboxedInt16ArrayPrimTy,
++        unboxedInt32ArrayPrimTyCon,     unboxedInt32ArrayPrimTy,
++        unboxedInt64ArrayPrimTyCon,     unboxedInt64ArrayPrimTy,
++        unboxedFloatArrayPrimTyCon,     unboxedFloatArrayPrimTy,
++        unboxedDoubleArrayPrimTyCon,    unboxedDoubleArrayPrimTy,
++        unboxedCharArrayPrimTyCon,      unboxedCharArrayPrimTy,
++        unboxedAddrArrayPrimTyCon,      unboxedAddrArrayPrimTy,
++
+ 	mVarPrimTyCon,			mkMVarPrimTy,	
+         tVarPrimTyCon,                  mkTVarPrimTy,
+ 	stablePtrPrimTyCon,		mkStablePtrPrimTy,
+@@ -108,6 +125,7 @@ primTyCons
+     , charPrimTyCon
+     , doublePrimTyCon
+     , floatPrimTyCon
++    , immutableArrayPrimTyCon
+     , intPrimTyCon
+     , int32PrimTyCon
+     , int64PrimTyCon
+@@ -123,7 +141,22 @@ primTyCons
+     , stablePtrPrimTyCon
+     , stableNamePrimTyCon
+     , statePrimTyCon
++    , strictImmutableArrayPrimTyCon
+     , threadIdPrimTyCon
++    , unboxedWordArrayPrimTyCon
++    , unboxedWord8ArrayPrimTyCon
++    , unboxedWord16ArrayPrimTyCon
++    , unboxedWord32ArrayPrimTyCon
++    , unboxedWord64ArrayPrimTyCon
++    , unboxedIntArrayPrimTyCon
++    , unboxedInt8ArrayPrimTyCon
++    , unboxedInt16ArrayPrimTyCon
++    , unboxedInt32ArrayPrimTyCon
++    , unboxedInt64ArrayPrimTyCon
++    , unboxedFloatArrayPrimTyCon
++    , unboxedDoubleArrayPrimTyCon
++    , unboxedCharArrayPrimTyCon
++    , unboxedAddrArrayPrimTyCon
+     , wordPrimTyCon
+     , word32PrimTyCon
+     , word64PrimTyCon
+@@ -146,6 +179,7 @@ mkPrimTc fs unique tycon
+ 		  UserSyntax		-- None are built-in syntax
+ 
+ charPrimTyConName, intPrimTyConName, int32PrimTyConName, int64PrimTyConName, wordPrimTyConName, word32PrimTyConName, word64PrimTyConName, addrPrimTyConName, floatPrimTyConName, doublePrimTyConName, statePrimTyConName, realWorldTyConName, arrayPrimTyConName, arrayArrayPrimTyConName, byteArrayPrimTyConName, mutableArrayPrimTyConName, mutableByteArrayPrimTyConName, mutableArrayArrayPrimTyConName, mutVarPrimTyConName, mVarPrimTyConName, tVarPrimTyConName, stablePtrPrimTyConName, stableNamePrimTyConName, bcoPrimTyConName, weakPrimTyConName, threadIdPrimTyConName, eqPrimTyConName :: Name
++immutableArrayPrimTyConName, strictImmutableArrayPrimTyConName, unboxedWordArrayPrimTyConName, unboxedWord8ArrayPrimTyConName, unboxedWord16ArrayPrimTyConName, unboxedWord32ArrayPrimTyConName, unboxedWord64ArrayPrimTyConName, unboxedIntArrayPrimTyConName, unboxedInt8ArrayPrimTyConName, unboxedInt16ArrayPrimTyConName, unboxedInt32ArrayPrimTyConName, unboxedInt64ArrayPrimTyConName, unboxedFloatArrayPrimTyConName, unboxedDoubleArrayPrimTyConName, unboxedCharArrayPrimTyConName, unboxedAddrArrayPrimTyConName :: Name
+ charPrimTyConName    	      = mkPrimTc (fsLit "Char#") charPrimTyConKey charPrimTyCon
+ intPrimTyConName     	      = mkPrimTc (fsLit "Int#") intPrimTyConKey  intPrimTyCon
+ int32PrimTyConName	      = mkPrimTc (fsLit "Int32#") int32PrimTyConKey int32PrimTyCon
+@@ -160,6 +194,37 @@ statePrimTyConName            = mkPrimTc (fsLit "State#") statePrimTyConKey stat
+ eqPrimTyConName               = mkPrimTc (fsLit "~#") eqPrimTyConKey eqPrimTyCon
+ realWorldTyConName            = mkPrimTc (fsLit "RealWorld") realWorldTyConKey realWorldTyCon
+ arrayPrimTyConName   	      = mkPrimTc (fsLit "Array#") arrayPrimTyConKey arrayPrimTyCon
++immutableArrayPrimTyConName   = mkPrimTc (fsLit "ImmutableArray#") immutableArrayPrimTyConKey immutableArrayPrimTyCon
++strictImmutableArrayPrimTyConName
++  = mkPrimTc (fsLit "StrictImmutableArray#") strictImmutableArrayPrimTyConKey strictImmutableArrayPrimTyCon
++unboxedWordArrayPrimTyConName
++  = mkPrimTc (fsLit "UnboxedWordArray#") unboxedWordArrayPrimTyConKey unboxedWordArrayPrimTyCon
++unboxedWord8ArrayPrimTyConName
++  = mkPrimTc (fsLit "UnboxedWord8Array#") unboxedWord8ArrayPrimTyConKey unboxedWord8ArrayPrimTyCon
++unboxedWord16ArrayPrimTyConName
++  = mkPrimTc (fsLit "UnboxedWord16Array#") unboxedWord16ArrayPrimTyConKey unboxedWord16ArrayPrimTyCon
++unboxedWord32ArrayPrimTyConName
++  = mkPrimTc (fsLit "UnboxedWord32Array#") unboxedWord32ArrayPrimTyConKey unboxedWord32ArrayPrimTyCon
++unboxedWord64ArrayPrimTyConName
++  = mkPrimTc (fsLit "UnboxedWord64Array#") unboxedWord64ArrayPrimTyConKey unboxedWord64ArrayPrimTyCon
++unboxedIntArrayPrimTyConName
++  = mkPrimTc (fsLit "UnboxedIntArray#") unboxedIntArrayPrimTyConKey unboxedIntArrayPrimTyCon
++unboxedInt8ArrayPrimTyConName
++  = mkPrimTc (fsLit "UnboxedInt8Array#") unboxedInt8ArrayPrimTyConKey unboxedInt8ArrayPrimTyCon
++unboxedInt16ArrayPrimTyConName
++  = mkPrimTc (fsLit "UnboxedInt16Array#") unboxedInt16ArrayPrimTyConKey unboxedInt16ArrayPrimTyCon
++unboxedInt32ArrayPrimTyConName
++  = mkPrimTc (fsLit "UnboxedInt32Array#") unboxedInt32ArrayPrimTyConKey unboxedInt32ArrayPrimTyCon
++unboxedInt64ArrayPrimTyConName
++  = mkPrimTc (fsLit "UnboxedInt64Array#") unboxedInt64ArrayPrimTyConKey unboxedInt64ArrayPrimTyCon
++unboxedFloatArrayPrimTyConName
++  = mkPrimTc (fsLit "UnboxedFloatArray#") unboxedFloatArrayPrimTyConKey unboxedFloatArrayPrimTyCon
++unboxedDoubleArrayPrimTyConName
++  = mkPrimTc (fsLit "UnboxedDoubleArray#") unboxedDoubleArrayPrimTyConKey unboxedDoubleArrayPrimTyCon
++unboxedCharArrayPrimTyConName
++  = mkPrimTc (fsLit "UnboxedCharArray#") unboxedCharArrayPrimTyConKey unboxedCharArrayPrimTyCon
++unboxedAddrArrayPrimTyConName
++  = mkPrimTc (fsLit "UnboxedAddrArray#") unboxedAddrArrayPrimTyConKey unboxedAddrArrayPrimTyCon
+ byteArrayPrimTyConName	      = mkPrimTc (fsLit "ByteArray#") byteArrayPrimTyConKey byteArrayPrimTyCon
+ arrayArrayPrimTyConName   	  = mkPrimTc (fsLit "ArrayArray#") arrayArrayPrimTyConKey arrayArrayPrimTyCon
+ mutableArrayPrimTyConName     = mkPrimTc (fsLit "MutableArray#") mutableArrayPrimTyConKey mutableArrayPrimTyCon
+@@ -497,17 +562,71 @@ defined in \tr{TysWiredIn.lhs}, not here.
+ %************************************************************************
+ 
+ \begin{code}
+-arrayPrimTyCon, mutableArrayPrimTyCon, mutableByteArrayPrimTyCon,
+-    byteArrayPrimTyCon, arrayArrayPrimTyCon, mutableArrayArrayPrimTyCon :: TyCon
+-arrayPrimTyCon             = pcPrimTyCon  arrayPrimTyConName             1 PtrRep
+-mutableArrayPrimTyCon      = pcPrimTyCon  mutableArrayPrimTyConName      2 PtrRep
+-mutableByteArrayPrimTyCon  = pcPrimTyCon  mutableByteArrayPrimTyConName  1 PtrRep
+-byteArrayPrimTyCon         = pcPrimTyCon0 byteArrayPrimTyConName           PtrRep
+-arrayArrayPrimTyCon        = pcPrimTyCon0 arrayArrayPrimTyConName          PtrRep
+-mutableArrayArrayPrimTyCon = pcPrimTyCon  mutableArrayArrayPrimTyConName 1 PtrRep
++arrayPrimTyCon, mutableArrayPrimTyCon, immutableArrayPrimTyCon, strictImmutableArrayPrimTyCon,
++    unboxedWordArrayPrimTyCon, unboxedWord8ArrayPrimTyCon, unboxedWord16ArrayPrimTyCon,
++    unboxedWord32ArrayPrimTyCon, unboxedWord64ArrayPrimTyCon, unboxedIntArrayPrimTyCon,
++    unboxedInt8ArrayPrimTyCon, unboxedInt16ArrayPrimTyCon, unboxedInt32ArrayPrimTyCon,
++    unboxedInt64ArrayPrimTyCon, unboxedFloatArrayPrimTyCon, unboxedDoubleArrayPrimTyCon,
++    unboxedCharArrayPrimTyCon, unboxedAddrArrayPrimTyCon,
++    mutableByteArrayPrimTyCon, byteArrayPrimTyCon, 
++    arrayArrayPrimTyCon, mutableArrayArrayPrimTyCon :: TyCon
++arrayPrimTyCon		      = pcPrimTyCon  arrayPrimTyConName	               1 PtrRep
++mutableArrayPrimTyCon	      = pcPrimTyCon  mutableArrayPrimTyConName         2 PtrRep
++immutableArrayPrimTyCon       = pcPrimTyCon  immutableArrayPrimTyConName       1 PtrRep
++strictImmutableArrayPrimTyCon = pcPrimTyCon  strictImmutableArrayPrimTyConName 1 PtrRep
++unboxedWordArrayPrimTyCon     = pcPrimTyCon0 unboxedWordArrayPrimTyConName       PtrRep
++unboxedWord8ArrayPrimTyCon    = pcPrimTyCon0 unboxedWord8ArrayPrimTyConName      PtrRep
++unboxedWord16ArrayPrimTyCon   = pcPrimTyCon0 unboxedWord16ArrayPrimTyConName     PtrRep
++unboxedWord32ArrayPrimTyCon   = pcPrimTyCon0 unboxedWord32ArrayPrimTyConName     PtrRep
++unboxedWord64ArrayPrimTyCon   = pcPrimTyCon0 unboxedWord64ArrayPrimTyConName     PtrRep
++unboxedIntArrayPrimTyCon      = pcPrimTyCon0 unboxedIntArrayPrimTyConName        PtrRep
++unboxedInt8ArrayPrimTyCon     = pcPrimTyCon0 unboxedInt8ArrayPrimTyConName       PtrRep
++unboxedInt16ArrayPrimTyCon    = pcPrimTyCon0 unboxedInt16ArrayPrimTyConName      PtrRep
++unboxedInt32ArrayPrimTyCon    = pcPrimTyCon0 unboxedInt32ArrayPrimTyConName      PtrRep
++unboxedInt64ArrayPrimTyCon    = pcPrimTyCon0 unboxedInt64ArrayPrimTyConName      PtrRep
++unboxedFloatArrayPrimTyCon    = pcPrimTyCon0 unboxedFloatArrayPrimTyConName      PtrRep
++unboxedDoubleArrayPrimTyCon   = pcPrimTyCon0 unboxedDoubleArrayPrimTyConName     PtrRep
++unboxedCharArrayPrimTyCon     = pcPrimTyCon0 unboxedCharArrayPrimTyConName       PtrRep
++unboxedAddrArrayPrimTyCon     = pcPrimTyCon0 unboxedAddrArrayPrimTyConName       PtrRep
++mutableByteArrayPrimTyCon     = pcPrimTyCon  mutableByteArrayPrimTyConName     1 PtrRep
++byteArrayPrimTyCon	      = pcPrimTyCon0 byteArrayPrimTyConName	         PtrRep
++arrayArrayPrimTyCon           = pcPrimTyCon0 arrayArrayPrimTyConName          PtrRep
++mutableArrayArrayPrimTyCon    = pcPrimTyCon  mutableArrayArrayPrimTyConName 1 PtrRep
+ 
+ mkArrayPrimTy :: Type -> Type
+ mkArrayPrimTy elt    	    = mkNakedTyConApp arrayPrimTyCon [elt]
++mkImmutableArrayPrimTy :: Type -> Type
++mkImmutableArrayPrimTy elt  = mkNakedTyConApp immutableArrayPrimTyCon [elt]
++mkStrictImmutableArrayPrimTy :: Type -> Type
++mkStrictImmutableArrayPrimTy elt = mkNakedTyConApp strictImmutableArrayPrimTyCon [elt]
++unboxedWordArrayPrimTy :: Type
++unboxedWordArrayPrimTy      = mkTyConTy unboxedWordArrayPrimTyCon
++unboxedWord8ArrayPrimTy :: Type
++unboxedWord8ArrayPrimTy     = mkTyConTy unboxedWord8ArrayPrimTyCon
++unboxedWord16ArrayPrimTy :: Type
++unboxedWord16ArrayPrimTy    = mkTyConTy unboxedWord16ArrayPrimTyCon
++unboxedWord32ArrayPrimTy :: Type
++unboxedWord32ArrayPrimTy    = mkTyConTy unboxedWord32ArrayPrimTyCon
++unboxedWord64ArrayPrimTy :: Type
++unboxedWord64ArrayPrimTy    = mkTyConTy unboxedWord64ArrayPrimTyCon
++unboxedIntArrayPrimTy :: Type
++unboxedIntArrayPrimTy       = mkTyConTy unboxedIntArrayPrimTyCon
++unboxedInt8ArrayPrimTy :: Type
++unboxedInt8ArrayPrimTy      = mkTyConTy unboxedInt8ArrayPrimTyCon
++unboxedInt16ArrayPrimTy :: Type
++unboxedInt16ArrayPrimTy     = mkTyConTy unboxedInt16ArrayPrimTyCon
++unboxedInt32ArrayPrimTy :: Type
++unboxedInt32ArrayPrimTy     = mkTyConTy unboxedInt32ArrayPrimTyCon
++unboxedInt64ArrayPrimTy :: Type
++unboxedInt64ArrayPrimTy     = mkTyConTy unboxedInt64ArrayPrimTyCon
++unboxedFloatArrayPrimTy :: Type
++unboxedFloatArrayPrimTy     = mkTyConTy unboxedFloatArrayPrimTyCon
++unboxedDoubleArrayPrimTy :: Type
++unboxedDoubleArrayPrimTy    = mkTyConTy unboxedDoubleArrayPrimTyCon
++unboxedCharArrayPrimTy :: Type
++unboxedCharArrayPrimTy      = mkTyConTy unboxedCharArrayPrimTyCon
++unboxedAddrArrayPrimTy :: Type
++unboxedAddrArrayPrimTy      = mkTyConTy unboxedAddrArrayPrimTyCon
+ byteArrayPrimTy :: Type
+ byteArrayPrimTy	    	    = mkTyConTy byteArrayPrimTyCon
+ mkArrayArrayPrimTy :: Type
+diff --git a/compiler/prelude/primops.txt.pp b/compiler/prelude/primops.txt.pp
+index cddb62a..8d85a27 100644
+--- a/compiler/prelude/primops.txt.pp
++++ b/compiler/prelude/primops.txt.pp
+@@ -750,6 +750,501 @@ primop  ThawArrayOp "thawArray#" GenPrimOp
+   code_size = { primOpCodeSizeForeignCall + 4 }
+ 
+ ------------------------------------------------------------------------
++section "Immutable Arrays"
++	{Operations on {\tt ImmutableArray\#} and {\tt StrictImmutableArray\#}.}
++------------------------------------------------------------------------
++
++primtype ImmutableArray# a
++primtype StrictImmutableArray# a
++
++primop  NewImmutableArrayOp "newImmutableArray#" GenPrimOp
++   Int# -> State# s -> (# State# s, ImmutableArray# a #)
++   {Create a new immutable array with the specified number of elements,
++    in the specified state thread.
++    The elements are uninitialised and should be initialised exactly
++    once each with the init primop.}
++   with
++   out_of_line = True
++   has_side_effects = True
++
++primop  NewStrictImmutableArrayOp "newStrictImmutableArray#" GenPrimOp
++   Int# -> State# s -> (# State# s, StrictImmutableArray# a #)
++   {Create a new strict immutable array with the specified number of elements,
++    in the specified state thread.
++    The elements are uninitialised and should be initialised exactly
++    once each with the init primop.}
++   with
++   out_of_line = True
++   has_side_effects = True
++
++primop  InitImmutableArrayOp "initImmutableArray#" GenPrimOp
++   ImmutableArray# a -> Int# -> a -> State# s -> State# s
++   {Initialise specified index of an immutable array.}
++   with
++   has_side_effects = True
++   code_size = 2 -- card update too
++
++primop  InitStrictImmutableArrayOp "initStrictImmutableArray#" GenPrimOp
++   StrictImmutableArray# a -> Int# -> a -> State# s -> State# s
++   {Initialise specified index of a strict immutable array.}
++   with
++   has_side_effects = True
++   code_size = 2 -- card update too
++
++primop  ImmutableArrayInitedOp "immutableArrayInited#" GenPrimOp
++   ImmutableArray# a -> State# s -> (# State# s, ImmutableArray# a #)
++   with
++   has_side_effects = True
++
++primop  StrictImmutableArrayInitedOp "strictImmutableArrayInited#" GenPrimOp
++   StrictImmutableArray# a -> State# s -> (# State# s, StrictImmutableArray# a #)
++   with
++   has_side_effects = True
++
++primop  SizeofImmutableArrayOp "sizeofImmutableArray#" GenPrimOp
++   ImmutableArray# a -> Int#
++   {Return the number of elements in the immutable array.}
++
++primop  SizeofStrictImmutableArrayOp "sizeofStrictImmutableArray#" GenPrimOp
++   StrictImmutableArray# a -> Int#
++   {Return the number of elements in the strict immutable array.}
++
++primop  IndexImmutableArrayOp "indexImmutableArray#" GenPrimOp
++   ImmutableArray# a -> Int# -> (# a #)
++   {Read from the specified index of an immutable array. Result is packaged into
++    an unboxed singleton; the result itself is not yet evaluated.}
++
++primop  IndexStrictImmutableArrayOp "indexStrictImmutableArray#" GenPrimOp
++   StrictImmutableArray# a -> Int# -> (# a #)
++   {Read from the specified index of a strict immutable array.}
++
++------------------------------------------------------------------------
++section "Unboxed Arrays"
++	{Operations on {\tt UnboxedArray\#}.}
++------------------------------------------------------------------------
++
++primtype UnboxedWordArray#
++primtype UnboxedWord8Array#
++primtype UnboxedWord16Array#
++primtype UnboxedWord32Array#
++primtype UnboxedWord64Array#
++primtype UnboxedIntArray#
++primtype UnboxedInt8Array#
++primtype UnboxedInt16Array#
++primtype UnboxedInt32Array#
++primtype UnboxedInt64Array#
++primtype UnboxedFloatArray#
++primtype UnboxedDoubleArray#
++primtype UnboxedCharArray#
++primtype UnboxedAddrArray#
++
++primop  NewUnboxedWordArrayOp "newUnboxedWordArray#" GenPrimOp
++   Int# -> State# s -> (# State# s, UnboxedWordArray# #)
++   {Create a new unboxed immutable array with the specified number of elements,
++    in the specified state thread.
++    The elements are uninitialised and should be initialised exactly
++    once each with the init primop.}
++   with
++   out_of_line = True
++   has_side_effects = True
++
++primop  NewUnboxedWord8ArrayOp "newUnboxedWord8Array#" GenPrimOp
++   Int# -> State# s -> (# State# s, UnboxedWord8Array# #)
++   {Create a new unboxed immutable array with the specified number of elements,
++    in the specified state thread.
++    The elements are uninitialised and should be initialised exactly
++    once each with the init primop.}
++   with
++   out_of_line = True
++   has_side_effects = True
++
++primop  NewUnboxedWord16ArrayOp "newUnboxedWord16Array#" GenPrimOp
++   Int# -> State# s -> (# State# s, UnboxedWord16Array# #)
++   {Create a new unboxed immutable array with the specified number of elements,
++    in the specified state thread.
++    The elements are uninitialised and should be initialised exactly
++    once each with the init primop.}
++   with
++   out_of_line = True
++   has_side_effects = True
++
++primop  NewUnboxedWord32ArrayOp "newUnboxedWord32Array#" GenPrimOp
++   Int# -> State# s -> (# State# s, UnboxedWord32Array# #)
++   {Create a new unboxed immutable array with the specified number of elements,
++    in the specified state thread.
++    The elements are uninitialised and should be initialised exactly
++    once each with the init primop.}
++   with
++   out_of_line = True
++   has_side_effects = True
++
++primop  NewUnboxedWord64ArrayOp "newUnboxedWord64Array#" GenPrimOp
++   Int# -> State# s -> (# State# s, UnboxedWord64Array# #)
++   {Create a new unboxed immutable array with the specified number of elements,
++    in the specified state thread.
++    The elements are uninitialised and should be initialised exactly
++    once each with the init primop.}
++   with
++   out_of_line = True
++   has_side_effects = True
++
++primop  NewUnboxedIntArrayOp "newUnboxedIntArray#" GenPrimOp
++   Int# -> State# s -> (# State# s, UnboxedIntArray# #)
++   {Create a new unboxed immutable array with the specified number of elements,
++    in the specified state thread.
++    The elements are uninitialised and should be initialised exactly
++    once each with the init primop.}
++   with
++   out_of_line = True
++   has_side_effects = True
++
++primop  NewUnboxedInt8ArrayOp "newUnboxedInt8Array#" GenPrimOp
++   Int# -> State# s -> (# State# s, UnboxedInt8Array# #)
++   {Create a new unboxed immutable array with the specified number of elements,
++    in the specified state thread.
++    The elements are uninitialised and should be initialised exactly
++    once each with the init primop.}
++   with
++   out_of_line = True
++   has_side_effects = True
++
++primop  NewUnboxedInt16ArrayOp "newUnboxedInt16Array#" GenPrimOp
++   Int# -> State# s -> (# State# s, UnboxedInt16Array# #)
++   {Create a new unboxed immutable array with the specified number of elements,
++    in the specified state thread.
++    The elements are uninitialised and should be initialised exactly
++    once each with the init primop.}
++   with
++   out_of_line = True
++   has_side_effects = True
++
++primop  NewUnboxedInt32ArrayOp "newUnboxedInt32Array#" GenPrimOp
++   Int# -> State# s -> (# State# s, UnboxedInt32Array# #)
++   {Create a new unboxed immutable array with the specified number of elements,
++    in the specified state thread.
++    The elements are uninitialised and should be initialised exactly
++    once each with the init primop.}
++   with
++   out_of_line = True
++   has_side_effects = True
++
++primop  NewUnboxedInt64ArrayOp "newUnboxedInt64Array#" GenPrimOp
++   Int# -> State# s -> (# State# s, UnboxedInt64Array# #)
++   {Create a new unboxed immutable array with the specified number of elements,
++    in the specified state thread.
++    The elements are uninitialised and should be initialised exactly
++    once each with the init primop.}
++   with
++   out_of_line = True
++   has_side_effects = True
++
++primop  NewUnboxedFloatArrayOp "newUnboxedFloatArray#" GenPrimOp
++   Int# -> State# s -> (# State# s, UnboxedFloatArray# #)
++   {Create a new unboxed immutable array with the specified number of elements,
++    in the specified state thread.
++    The elements are uninitialised and should be initialised exactly
++    once each with the init primop.}
++   with
++   out_of_line = True
++   has_side_effects = True
++
++primop  NewUnboxedDoubleArrayOp "newUnboxedDoubleArray#" GenPrimOp
++   Int# -> State# s -> (# State# s, UnboxedDoubleArray# #)
++   {Create a new unboxed immutable array with the specified number of elements,
++    in the specified state thread.
++    The elements are uninitialised and should be initialised exactly
++    once each with the init primop.}
++   with
++   out_of_line = True
++   has_side_effects = True
++
++primop  NewUnboxedCharArrayOp "newUnboxedCharArray#" GenPrimOp
++   Int# -> State# s -> (# State# s, UnboxedCharArray# #)
++   {Create a new unboxed immutable array with the specified number of elements,
++    in the specified state thread.
++    The elements are uninitialised and should be initialised exactly
++    once each with the init primop.}
++   with
++   out_of_line = True
++   has_side_effects = True
++
++primop  NewUnboxedAddrArrayOp "newUnboxedAddrArray#" GenPrimOp
++   Int# -> State# s -> (# State# s, UnboxedAddrArray# #)
++   {Create a new unboxed immutable array with the specified number of elements,
++    in the specified state thread.
++    The elements are uninitialised and should be initialised exactly
++    once each with the init primop.}
++   with
++   out_of_line = True
++   has_side_effects = True
++
++primop  InitUnboxedWordArrayOp "initUnboxedWordArray#" GenPrimOp
++   UnboxedWordArray# -> Int# -> Word# -> State# s -> State# s
++   {Initialise specified index of an unboxed array.}
++   with
++   has_side_effects = True
++
++primop  InitUnboxedWord8ArrayOp "initUnboxedWord8Array#" GenPrimOp
++   UnboxedWord8Array# -> Int# -> Word# -> State# s -> State# s
++   {Initialise specified index of an unboxed array.}
++   with
++   has_side_effects = True
++
++primop  InitUnboxedWord16ArrayOp "initUnboxedWord16Array#" GenPrimOp
++   UnboxedWord16Array# -> Int# -> Word# -> State# s -> State# s
++   {Initialise specified index of an unboxed array.}
++   with
++   has_side_effects = True
++
++primop  InitUnboxedWord32ArrayOp "initUnboxedWord32Array#" GenPrimOp
++   UnboxedWord32Array# -> Int# -> WORD32 -> State# s -> State# s
++   {Initialise specified index of an unboxed array.}
++   with
++   has_side_effects = True
++
++primop  InitUnboxedWord64ArrayOp "initUnboxedWord64Array#" GenPrimOp
++   UnboxedWord64Array# -> Int# -> WORD64 -> State# s -> State# s
++   {Initialise specified index of an unboxed array.}
++   with
++   has_side_effects = True
++
++primop  InitUnboxedIntArrayOp "initUnboxedIntArray#" GenPrimOp
++   UnboxedIntArray# -> Int# -> Int# -> State# s -> State# s
++   {Initialise specified index of an unboxed array.}
++   with
++   has_side_effects = True
++
++primop  InitUnboxedInt8ArrayOp "initUnboxedInt8Array#" GenPrimOp
++   UnboxedInt8Array# -> Int# -> Int# -> State# s -> State# s
++   {Initialise specified index of an unboxed array.}
++   with
++   has_side_effects = True
++
++primop  InitUnboxedInt16ArrayOp "initUnboxedInt16Array#" GenPrimOp
++   UnboxedInt16Array# -> Int# -> Int# -> State# s -> State# s
++   {Initialise specified index of an unboxed array.}
++   with
++   has_side_effects = True
++
++primop  InitUnboxedInt32ArrayOp "initUnboxedInt32Array#" GenPrimOp
++   UnboxedInt32Array# -> Int# -> INT32 -> State# s -> State# s
++   {Initialise specified index of an unboxed array.}
++   with
++   has_side_effects = True
++
++primop  InitUnboxedInt64ArrayOp "initUnboxedInt64Array#" GenPrimOp
++   UnboxedInt64Array# -> Int# -> INT64 -> State# s -> State# s
++   {Initialise specified index of an unboxed array.}
++   with
++   has_side_effects = True
++
++primop  InitUnboxedFloatArrayOp "initUnboxedFloatArray#" GenPrimOp
++   UnboxedFloatArray# -> Int# -> Float# -> State# s -> State# s
++   {Initialise specified index of an unboxed array.}
++   with
++   has_side_effects = True
++
++primop  InitUnboxedDoubleArrayOp "initUnboxedDoubleArray#" GenPrimOp
++   UnboxedDoubleArray# -> Int# -> Double# -> State# s -> State# s
++   {Initialise specified index of an unboxed array.}
++   with
++   has_side_effects = True
++
++primop  InitUnboxedCharArrayOp "initUnboxedCharArray#" GenPrimOp
++   UnboxedCharArray# -> Int# -> Char# -> State# s -> State# s
++   {Initialise specified index of an unboxed array.}
++   with
++   has_side_effects = True
++
++primop  InitUnboxedAddrArrayOp "initUnboxedAddrArray#" GenPrimOp
++   UnboxedAddrArray# -> Int# -> Addr# -> State# s -> State# s
++   {Initialise specified index of an unboxed array.}
++   with
++   has_side_effects = True
++
++primop  UnboxedWordArrayInitedOp "unboxedWordArrayInited#" GenPrimOp
++   UnboxedWordArray# -> State# s -> (# State# s, UnboxedWordArray# #)
++   with
++   has_side_effects = True
++
++primop  UnboxedWord8ArrayInitedOp "unboxedWord8ArrayInited#" GenPrimOp
++   UnboxedWord8Array# -> State# s -> (# State# s, UnboxedWord8Array# #)
++   with
++   has_side_effects = True
++
++primop  UnboxedWord16ArrayInitedOp "unboxedWord16ArrayInited#" GenPrimOp
++   UnboxedWord16Array# -> State# s -> (# State# s, UnboxedWord16Array# #)
++   with
++   has_side_effects = True
++
++primop  UnboxedWord32ArrayInitedOp "unboxedWord32ArrayInited#" GenPrimOp
++   UnboxedWord32Array# -> State# s -> (# State# s, UnboxedWord32Array# #)
++   with
++   has_side_effects = True
++
++primop  UnboxedWord64ArrayInitedOp "unboxedWord64ArrayInited#" GenPrimOp
++   UnboxedWord64Array# -> State# s -> (# State# s, UnboxedWord64Array# #)
++   with
++   has_side_effects = True
++
++primop  UnboxedIntArrayInitedOp "unboxedIntArrayInited#" GenPrimOp
++   UnboxedIntArray# -> State# s -> (# State# s, UnboxedIntArray# #)
++   with
++   has_side_effects = True
++
++primop  UnboxedInt8ArrayInitedOp "unboxedInt8ArrayInited#" GenPrimOp
++   UnboxedInt8Array# -> State# s -> (# State# s, UnboxedInt8Array# #)
++   with
++   has_side_effects = True
++
++primop  UnboxedInt16ArrayInitedOp "unboxedInt16ArrayInited#" GenPrimOp
++   UnboxedInt16Array# -> State# s -> (# State# s, UnboxedInt16Array# #)
++   with
++   has_side_effects = True
++
++primop  UnboxedInt32ArrayInitedOp "unboxedInt32ArrayInited#" GenPrimOp
++   UnboxedInt32Array# -> State# s -> (# State# s, UnboxedInt32Array# #)
++   with
++   has_side_effects = True
++
++primop  UnboxedInt64ArrayInitedOp "unboxedInt64ArrayInited#" GenPrimOp
++   UnboxedInt64Array# -> State# s -> (# State# s, UnboxedInt64Array# #)
++   with
++   has_side_effects = True
++
++primop  UnboxedFloatArrayInitedOp "unboxedFloatArrayInited#" GenPrimOp
++   UnboxedFloatArray# -> State# s -> (# State# s, UnboxedFloatArray# #)
++   with
++   has_side_effects = True
++
++primop  UnboxedDoubleArrayInitedOp "unboxedDoubleArrayInited#" GenPrimOp
++   UnboxedDoubleArray# -> State# s -> (# State# s, UnboxedDoubleArray# #)
++   with
++   has_side_effects = True
++
++primop  UnboxedCharArrayInitedOp "unboxedCharArrayInited#" GenPrimOp
++   UnboxedCharArray# -> State# s -> (# State# s, UnboxedCharArray# #)
++   with
++   has_side_effects = True
++
++primop  UnboxedAddrArrayInitedOp "unboxedAddrArrayInited#" GenPrimOp
++   UnboxedAddrArray# -> State# s -> (# State# s, UnboxedAddrArray# #)
++   with
++   has_side_effects = True
++
++primop  SizeofUnboxedWordArrayOp "sizeofUnboxedWordArray#" GenPrimOp
++   UnboxedWordArray# -> Int#
++   {Return the number of elements in the unboxed immutable array.}
++
++primop  SizeofUnboxedWord8ArrayOp "sizeofUnboxedWord8Array#" GenPrimOp
++   UnboxedWord8Array# -> Int#
++   {Return the number of elements in the unboxed immutable array.}
++
++primop  SizeofUnboxedWord16ArrayOp "sizeofUnboxedWord16Array#" GenPrimOp
++   UnboxedWord16Array# -> Int#
++   {Return the number of elements in the unboxed immutable array.}
++
++primop  SizeofUnboxedWord32ArrayOp "sizeofUnboxedWord32Array#" GenPrimOp
++   UnboxedWord32Array# -> Int#
++   {Return the number of elements in the unboxed immutable array.}
++
++primop  SizeofUnboxedWord64ArrayOp "sizeofUnboxedWord64Array#" GenPrimOp
++   UnboxedWord64Array# -> Int#
++   {Return the number of elements in the unboxed immutable array.}
++
++primop  SizeofUnboxedIntArrayOp "sizeofUnboxedIntArray#" GenPrimOp
++   UnboxedIntArray# -> Int#
++   {Return the number of elements in the unboxed immutable array.}
++
++primop  SizeofUnboxedInt8ArrayOp "sizeofUnboxedInt8Array#" GenPrimOp
++   UnboxedInt8Array# -> Int#
++   {Return the number of elements in the unboxed immutable array.}
++
++primop  SizeofUnboxedInt16ArrayOp "sizeofUnboxedInt16Array#" GenPrimOp
++   UnboxedInt16Array# -> Int#
++   {Return the number of elements in the unboxed immutable array.}
++
++primop  SizeofUnboxedInt32ArrayOp "sizeofUnboxedInt32Array#" GenPrimOp
++   UnboxedInt32Array# -> Int#
++   {Return the number of elements in the unboxed immutable array.}
++
++primop  SizeofUnboxedInt64ArrayOp "sizeofUnboxedInt64Array#" GenPrimOp
++   UnboxedInt64Array# -> Int#
++   {Return the number of elements in the unboxed immutable array.}
++
++primop  SizeofUnboxedFloatArrayOp "sizeofUnboxedFloatArray#" GenPrimOp
++   UnboxedFloatArray# -> Int#
++   {Return the number of elements in the unboxed immutable array.}
++
++primop  SizeofUnboxedDoubleArrayOp "sizeofUnboxedDoubleArray#" GenPrimOp
++   UnboxedDoubleArray# -> Int#
++   {Return the number of elements in the unboxed immutable array.}
++
++primop  SizeofUnboxedCharArrayOp "sizeofUnboxedCharArray#" GenPrimOp
++   UnboxedCharArray# -> Int#
++   {Return the number of elements in the unboxed immutable array.}
++
++primop  SizeofUnboxedAddrArrayOp "sizeofUnboxedAddrArray#" GenPrimOp
++   UnboxedAddrArray# -> Int#
++   {Return the number of elements in the unboxed immutable array.}
++
++primop  IndexUnboxedWordArrayOp "indexUnboxedWordArray#" GenPrimOp
++   UnboxedWordArray# -> Int# -> Word#
++   {Read from the specific index of an unboxed array.}
++
++primop  IndexUnboxedWord8ArrayOp "indexUnboxedWord8Array#" GenPrimOp
++   UnboxedWord8Array# -> Int# -> Word#
++   {Read from the specific index of an unboxed array.}
++
++primop  IndexUnboxedWord16ArrayOp "indexUnboxedWord16Array#" GenPrimOp
++   UnboxedWord16Array# -> Int# -> Word#
++   {Read from the specific index of an unboxed array.}
++
++primop  IndexUnboxedWord32ArrayOp "indexUnboxedWord32Array#" GenPrimOp
++   UnboxedWord32Array# -> Int# -> WORD32
++   {Read from the specific index of an unboxed array.}
++
++primop  IndexUnboxedWord64ArrayOp "indexUnboxedWord64Array#" GenPrimOp
++   UnboxedWord64Array# -> Int# -> WORD64
++   {Read from the specific index of an unboxed array.}
++
++primop  IndexUnboxedIntArrayOp "indexUnboxedIntArray#" GenPrimOp
++   UnboxedIntArray# -> Int# -> Int#
++   {Read from the specific index of an unboxed array.}
++
++primop  IndexUnboxedInt8ArrayOp "indexUnboxedInt8Array#" GenPrimOp
++   UnboxedInt8Array# -> Int# -> Int#
++   {Read from the specific index of an unboxed array.}
++
++primop  IndexUnboxedInt16ArrayOp "indexUnboxedInt16Array#" GenPrimOp
++   UnboxedInt16Array# -> Int# -> Int#
++   {Read from the specific index of an unboxed array.}
++
++primop  IndexUnboxedInt32ArrayOp "indexUnboxedInt32Array#" GenPrimOp
++   UnboxedInt32Array# -> Int# -> INT32
++   {Read from the specific index of an unboxed array.}
++
++primop  IndexUnboxedInt64ArrayOp "indexUnboxedInt64Array#" GenPrimOp
++   UnboxedInt64Array# -> Int# -> INT64
++   {Read from the specific index of an unboxed array.}
++
++primop  IndexUnboxedFloatArrayOp "indexUnboxedFloatArray#" GenPrimOp
++   UnboxedFloatArray# -> Int# -> Float#
++   {Read from the specific index of an unboxed array.}
++
++primop  IndexUnboxedDoubleArrayOp "indexUnboxedDoubleArray#" GenPrimOp
++   UnboxedDoubleArray# -> Int# -> Double#
++   {Read from the specific index of an unboxed array.}
++
++primop  IndexUnboxedCharArrayOp "indexUnboxedCharArray#" GenPrimOp
++   UnboxedCharArray# -> Int# -> Char#
++   {Read from the specific index of an unboxed array.}
++
++primop  IndexUnboxedAddrArrayOp "indexUnboxedAddrArray#" GenPrimOp
++   UnboxedAddrArray# -> Int# -> Addr#
++   {Read from the specific index of an unboxed array.}
++
++------------------------------------------------------------------------
+ section "Byte Arrays"
+ 	{Operations on {\tt ByteArray\#}. A {\tt ByteArray\#} is a just a region of
+          raw memory in the garbage-collected heap, which is not
+@@ -768,6 +1263,25 @@ primtype ByteArray#
+ 
+ primtype MutableByteArray# s
+ 
++primop  NewUnboxedArrayOp_Char "newUnboxedArray#" GenPrimOp
++   Int# -> a -> State# s -> (# State# s, MutableByteArray# s #)
++   {Create a new mutable byte array of an unboxed type of specified size (in length), in
++    the specified state thread.}
++   with out_of_line = True
++        has_side_effects = True
++
++primop  NewPinnedUnboxedArrayOp_Char "newPinnedUnboxedArray#" GenPrimOp
++   Int# -> a -> State# s -> (# State# s, MutableByteArray# s #)
++   {Create a mutable byte array of an unboxed type that the GC guarantees not to move.}
++   with out_of_line = True
++        has_side_effects = True
++
++primop  NewAlignedPinnedUnboxedArrayOp_Char "newAlignedPinnedUnboxedArray#" GenPrimOp
++   Int# -> Int# -> a -> State# s -> (# State# s, MutableByteArray# s #)
++   {Create a mutable byte array of an unboxed type, aligned by the specified amount, that the GC guarantees not to move.}
++   with out_of_line = True
++        has_side_effects = True
++
+ primop  NewByteArrayOp_Char "newByteArray#" GenPrimOp
+    Int# -> State# s -> (# State# s, MutableByteArray# s #)
+    {Create a new mutable byte array of specified size (in bytes), in
+@@ -1880,6 +2394,12 @@ primop  DeRefStablePtrOp "deRefStablePtr#" GenPrimOp
+    has_side_effects = True
+    out_of_line      = True
+ 
++primop  FreeStablePtrOp "freeStablePtr#" GenPrimOp
++   StablePtr# a -> State# RealWorld -> State# RealWorld
++   with
++   has_side_effects = True
++   out_of_line      = True
++
+ primop  EqStablePtrOp "eqStablePtr#" GenPrimOp
+    StablePtr# a -> StablePtr# a -> Int#
+    with
+@@ -2208,5 +2728,15 @@ primop  TraceEventOp "traceEvent#" GenPrimOp
+ ------------------------------------------------------------------------
+ ---                                                                  ---
+ ------------------------------------------------------------------------
++primop  OffloadOp "offload#" GenPrimOp
++   Int# -> (Int# -> Int#) -> State# RealWorld -> State# RealWorld
++   {Dispatch a function to Concord runtime for execution on GPU.}
++   with
++   out_of_line = True
++   has_side_effects = True
++
++------------------------------------------------------------------------
++---                                                                  ---
++------------------------------------------------------------------------
+ 
+ thats_all_folks
+diff --git a/configure.ac b/configure.ac
+index 9388552..1986367 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -16,7 +16,7 @@ dnl
+ AC_INIT([The Glorious Glasgow Haskell Compilation System], [7.6.3], [glasgow-haskell-bugs@haskell.org], [ghc])
+ 
+ # Set this to YES for a released version, otherwise NO
+-: ${RELEASE=NO}
++: ${RELEASE=YES}
+ 
+ # The primary version (e.g. 7.5, 7.4.1) is set in the AC_INIT line
+ # above.  If this is not a released version, then we will append the
+diff --git a/distrib/prep-bin-dist-mingw-hdirect b/distrib/prep-bin-dist-mingw-hdirect
+index a8aa21c..cd6fedd 100644
+--- a/distrib/prep-bin-dist-mingw-hdirect
++++ b/distrib/prep-bin-dist-mingw-hdirect
+@@ -8,7 +8,7 @@
+ # To use:
+ #
+ #   foo$ cd <top of fptools build tree>
+-#   foo$ make binary-dist Project=Ghc 
++#   foo$ make binary-dist Project=Ghc
+ #   foo$ cd ghc-<version>
+ #   foo$ ../distrib/prep-bin-dist-mingw-hdirect <ghc-bin-dist-dir>
+ #
+@@ -24,8 +24,8 @@ if ! [ -d bin/i386-unknown-mingw32 ] ; then
+ fi;
+ 
+ echo "rejig bin/"
+-cp bin/i386-unknown-mingw32/ihc.exe $binary_dir/bin
+-strip $binary_dir/bin/ihc.exe
++cp bin/i386-unknown-mingw32/hrc.exe $binary_dir/bin
++strip $binary_dir/bin/hrc.exe
+ 
+ echo "rejig lib/"
+ cp -r lib/i386-unknown-mingw32/hslibs-imports/hdirect $binary_dir/imports
+diff --git a/ghc.mk b/ghc.mk
+index 06b1403..f154914 100644
+--- a/ghc.mk
++++ b/ghc.mk
+@@ -317,7 +317,7 @@ PKGS_THAT_ARE_DPH := \
+     dph/dph-prim-interface dph/dph-prim-seq dph/dph-prim-par \
+     dph/dph-lifted-base \
+     dph/dph-lifted-boxed dph/dph-lifted-copy dph/dph-lifted-vseg \
+-    vector primitive random
++    vector primitive random 
+ 
+ # Packages that, if present, must be built by the stage2 compiler,
+ # because they use TH and/or annotations, or depend on other stage2
+@@ -796,7 +796,7 @@ TAGS: TAGS_compiler
+ # Installation
+ 
+ install: install_libs install_packages install_libexecs \
+-         install_libexec_scripts install_bins install_topdirs
++         install_libexec_scripts install_bins install_topdirs touchup_hcrlibs
+ ifeq "$(HADDOCK_DOCS)" "YES"
+ install: install_docs
+ endif
+@@ -826,6 +826,9 @@ install_libs: $(INSTALL_LIBS)
+ 		esac; \
+ 	done
+ 
++touchup_hcrlibs: 
++	utils/hcrlibs/touchup-hcrlibs.sh $(DESTDIR)$(ghclibdir)
++
+ install_libexec_scripts: $(INSTALL_LIBEXEC_SCRIPTS)
+ ifeq "$(INSTALL_LIBEXEC_SCRIPTS)" ""
+ 	@:
+diff --git a/includes/stg/MiscClosures.h b/includes/stg/MiscClosures.h
+index c93cc31..3febe44 100644
+--- a/includes/stg/MiscClosures.h
++++ b/includes/stg/MiscClosures.h
+@@ -383,6 +383,25 @@ RTS_FUN_DECL(stg_newPinnedByteArrayzh);
+ RTS_FUN_DECL(stg_newAlignedPinnedByteArrayzh);
+ RTS_FUN_DECL(stg_newArrayzh);
+ RTS_FUN_DECL(stg_newArrayArrayzh);
++RTS_FUN_DECL(stg_newUnboxedArrayzh);
++RTS_FUN_DECL(stg_newPinnedUnboxedArrayzh);
++RTS_FUN_DECL(stg_newAlignedPinnedUnboxedArrayzh);
++RTS_FUN_DECL(stg_newImmutableArrayzh);
++RTS_FUN_DECL(stg_newStrictImmutableArrayzh);
++RTS_FUN_DECL(stg_newUnboxedWordArrayzh);
++RTS_FUN_DECL(stg_newUnboxedWord8Arrayzh);
++RTS_FUN_DECL(stg_newUnboxedWord16Arrayzh);
++RTS_FUN_DECL(stg_newUnboxedWord32Arrayzh);
++RTS_FUN_DECL(stg_newUnboxedWord64Arrayzh);
++RTS_FUN_DECL(stg_newUnboxedIntArrayzh);
++RTS_FUN_DECL(stg_newUnboxedInt8Arrayzh);
++RTS_FUN_DECL(stg_newUnboxedInt16Arrayzh);
++RTS_FUN_DECL(stg_newUnboxedInt32Arrayzh);
++RTS_FUN_DECL(stg_newUnboxedInt64Arrayzh);
++RTS_FUN_DECL(stg_newUnboxedFloatArrayzh);
++RTS_FUN_DECL(stg_newUnboxedDoubleArrayzh);
++RTS_FUN_DECL(stg_newUnboxedCharArrayzh);
++RTS_FUN_DECL(stg_newUnboxedAddrArrayzh);
+ 
+ RTS_FUN_DECL(stg_newMutVarzh);
+ RTS_FUN_DECL(stg_atomicModifyMutVarzh);
+@@ -411,6 +430,7 @@ RTS_FUN_DECL(stg_raiseIOzh);
+ RTS_FUN_DECL(stg_makeStableNamezh);
+ RTS_FUN_DECL(stg_makeStablePtrzh);
+ RTS_FUN_DECL(stg_deRefStablePtrzh);
++RTS_FUN_DECL(stg_freeStablePtrzh);
+ 
+ RTS_FUN_DECL(stg_forkzh);
+ RTS_FUN_DECL(stg_forkOnzh);
+@@ -455,6 +475,8 @@ RTS_FUN_DECL(stg_noDuplicatezh);
+ RTS_FUN_DECL(stg_traceCcszh);
+ RTS_FUN_DECL(stg_traceEventzh);
+ 
++RTS_FUN_DECL(stg_offloadzh);
++
+ /* Other misc stuff */
+ // See wiki:Commentary/Compiler/Backends/PprC#Prototypes
+ 
+diff --git a/install-sh b/install-sh
+index a5897de..d7e5583 100755
+--- a/install-sh
++++ b/install-sh
+@@ -1,4 +1,4 @@
+-#!/bin/sh
++#!/usr/bin/env bash
+ # install - install a program, script, or datafile
+ 
+ scriptversion=2006-12-25.00
+diff --git a/mk/build.mk.hrc b/mk/build.mk.hrc
+new file mode 100644
+index 0000000..f159eec
+--- /dev/null
++++ b/mk/build.mk.hrc
+@@ -0,0 +1,203 @@
++# -----------------------------------------------------------------------------
++# A Sample build.mk
++#
++# Uncomment one of the following BuildFlavour settings to get the desired
++# overall build type, and then tweak the options in the relevant section
++# below.
++
++# Uncomment one of these to select a build profile below:
++
++# Full build with max optimisation and everything enabled (very slow build)
++#BuildFlavour = perf
++
++# As above but build GHC using the LLVM backend
++#BuildFlavour = perf-llvm
++
++# Fast build with optimised libraries, no profiling (RECOMMENDED):
++BuildFlavour = quick
++
++# Even faster build.  NOT RECOMMENDED: the libraries will be
++# completely unoptimised, so any code built with this compiler
++# (including stage2) will run very slowly:
++#BuildFlavour = quickest
++
++# Profile the stage2 compiler:
++#BuildFlavour = prof
++
++# A development build, working on the stage 1 compiler:
++#BuildFlavour = devel1
++
++# A development build, working on the stage 2 compiler:
++#BuildFlavour = devel2
++
++# An unregisterised, optimised build of ghc, for porting:
++#BuildFlavour = unreg
++
++GhcLibWays = v
++
++# -------- 1. A Performance/Distribution build--------------------------------
++
++ifeq "$(BuildFlavour)" "perf"
++
++# perf matches the default settings, repeated here for comparison:
++
++SRC_HC_OPTS     = -O -H64m
++GhcStage1HcOpts = -O -fasm
++GhcStage2HcOpts = -O2 -fasm
++GhcHcOpts       = -Rghc-timing
++GhcLibHcOpts    = -O2
++GhcLibWays     += p
++
++ifeq "$(PlatformSupportsSharedLibs)" "YES"
++GhcLibWays += dyn
++endif
++
++endif
++
++# ---------------- Perf build using LLVM -------------------------------------
++
++ifeq "$(BuildFlavour)" "perf-llvm"
++
++SRC_HC_OPTS     = -O -H64m -fllvm
++GhcStage1HcOpts = -O -fllvm
++GhcStage2HcOpts = -O2 -fllvm
++GhcHcOpts       = -Rghc-timing
++GhcLibHcOpts    = -O2
++GhcLibWays     += p
++
++ifeq "$(PlatformSupportsSharedLibs)" "YES"
++GhcLibWays += dyn
++endif
++
++endif
++
++# -------- A Fast build ------------------------------------------------------
++
++ifeq "$(BuildFlavour)" "quickest"
++
++SRC_HC_OPTS        = -H64m -O0 -fasm
++GhcStage1HcOpts    = -O -fasm
++GhcStage2HcOpts    = -O0 -fasm
++GhcLibHcOpts       = -O0 -fasm
++SplitObjs          = NO
++HADDOCK_DOCS       = NO
++BUILD_DOCBOOK_HTML = NO
++BUILD_DOCBOOK_PS   = NO
++BUILD_DOCBOOK_PDF  = NO
++
++endif
++
++# -------- A Fast build with optimised libs ----------------------------------
++
++ifeq "$(BuildFlavour)" "quick"
++
++SRC_HC_OPTS        = -H64m -O0 -fasm
++GhcStage1HcOpts    = -O -fasm
++GhcStage2HcOpts    = -O0 -fasm
++GhcLibHcOpts       = -O -fasm
++SplitObjs          = NO
++HADDOCK_DOCS       = NO
++BUILD_DOCBOOK_HTML = NO
++BUILD_DOCBOOK_PS   = NO
++BUILD_DOCBOOK_PDF  = NO
++
++endif
++
++# -------- Profile the stage2 compiler ---------------------------------------
++
++ifeq "$(BuildFlavour)" "prof"
++
++SRC_HC_OPTS        = -H64m -O0 -fasm
++GhcStage1HcOpts    = -O -fasm
++GhcStage2HcOpts    = -O -fasm
++GhcLibHcOpts       = -O -fasm
++
++GhcLibWays         += p
++GhcProfiled        = YES
++
++SplitObjs          = NO
++HADDOCK_DOCS       = NO
++BUILD_DOCBOOK_HTML = NO
++BUILD_DOCBOOK_PS   = NO
++BUILD_DOCBOOK_PDF  = NO
++
++endif
++
++
++# -------- A Development build (stage 1) -------------------------------------
++
++ifeq "$(BuildFlavour)" "devel1"
++
++SRC_HC_OPTS        = -H64m -O -fasm
++GhcLibHcOpts       = -O -dcore-lint
++GhcStage1HcOpts    = -Rghc-timing -O0 -DDEBUG
++GhcStage2HcOpts    = -Rghc-timing -O -fasm
++SplitObjs          = NO
++HADDOCK_DOCS       = NO
++BUILD_DOCBOOK_HTML = NO
++BUILD_DOCBOOK_PS   = NO
++BUILD_DOCBOOK_PDF  = NO
++LAX_DEPENDENCIES   = YES
++
++endif
++
++# -------- A Development build (stage 2) -------------------------------------
++
++ifeq "$(BuildFlavour)" "devel2"
++
++SRC_HC_OPTS        = -H64m -O -fasm
++GhcLibHcOpts       = -O -dcore-lint
++GhcStage1HcOpts    = -Rghc-timing -O -fasm
++GhcStage2HcOpts    = -Rghc-timing -O0 -DDEBUG
++SplitObjs          = NO
++HADDOCK_DOCS       = NO
++BUILD_DOCBOOK_HTML = NO
++BUILD_DOCBOOK_PS   = NO
++BUILD_DOCBOOK_PDF  = NO
++LAX_DEPENDENCIES   = YES
++
++# After stage 1 and the libraries have been built, you can uncomment this line:
++
++# stage=2
++
++# Then stage 1 will not be touched by the build system, until
++# you comment the line again.  This is a useful trick for when you're
++# working on stage 2 and want to freeze stage 1 and the libraries for
++# a while.
++
++endif
++
++# -------- A Unregisterised build) -------------------------------------------
++
++ifeq "$(BuildFlavour)" "unreg"
++
++# Note that the LLVM backend works in unregisterised mode as well as
++# registerised mode. This often makes it a good choice for porting
++# GHC.
++
++GhcUnregisterised    = YES
++GhcWithNativeCodeGen = NO
++
++SRC_HC_OPTS          = -O -H64m # -fllvm
++GhcStage1HcOpts      = -O
++GhcStage2HcOpts      = -O2
++GhcHcOpts            = -Rghc-timing
++GhcLibHcOpts         = -O2
++SplitObjs            = NO
++HADDOCK_DOCS         = NO
++BUILD_DOCBOOK_HTML   = NO
++BUILD_DOCBOOK_PS     = NO
++BUILD_DOCBOOK_PDF    = NO
++
++endif
++
++INTEGER_LIBRARY = integer-simple
++GhcLibHcOpts   += -fext-core
++GhcLibWays     += hrc
++# -----------------------------------------------------------------------------
++# Other settings that might be useful
++
++# NoFib settings
++NoFibWays =
++STRIP_CMD = :
++InstallExtraPackages = YES
+diff --git a/mk/build.mk.knc b/mk/build.mk.knc
+new file mode 100644
+index 0000000..a58675c
+--- /dev/null
++++ b/mk/build.mk.knc
+@@ -0,0 +1,169 @@
++# -----------------------------------------------------------------------------
++# A Sample build.mk
++#
++# Uncomment one of the following BuildFlavour settings to get the desired
++# overall build type, and then tweak the options in the relevant section
++# below.
++
++# Uncomment one of these to select a build profile below:
++
++# Full build with max optimisation and everything enabled (very slow build)
++#BuildFlavour = perf
++
++# Fast build with optimised libraries, no profiling (RECOMMENDED):
++BuildFlavour = quick
++
++# Even faster build.  NOT RECOMMENDED: the libraries will be
++# completely unoptimised, so any code built with this compiler
++# (including stage2) will run very slowly:
++#BuildFlavour = quickest
++
++# Profile the stage2 compiler:
++#BuildFlavour = prof
++
++# A development build, working on the stage 1 compiler:
++#BuildFlavour = devel1
++
++# A development build, working on the stage 2 compiler:
++#BuildFlavour = devel2
++
++# An unregisterised, optimised build of ghc, for porting:
++#BuildFlavour = unreg
++
++GhcLibWays = v
++
++# -------- 1. A Performance/Distribution build--------------------------------
++
++ifeq "$(BuildFlavour)" "perf"
++
++# perf matches the default settings, repeated here for comparison:
++
++SRC_HC_OPTS     = -O -H64m
++GhcStage1HcOpts = -O -fasm
++GhcStage2HcOpts = -O2 -fasm
++GhcHcOpts       = -Rghc-timing
++GhcLibHcOpts    = -O2
++GhcLibWays     += p
++
++ifeq "$(PlatformSupportsSharedLibs)" "YES"
++GhcLibWays += dyn
++endif
++
++endif
++
++# -------- A Fast build ------------------------------------------------------
++
++ifeq "$(BuildFlavour)" "quickest"
++
++SRC_HC_OPTS        = -H64m -O0 -fasm
++GhcStage1HcOpts    = -O -fasm
++GhcStage2HcOpts    = -O0 -fasm
++GhcLibHcOpts       = -O0 -fasm
++SplitObjs          = NO
++HADDOCK_DOCS       = NO
++BUILD_DOCBOOK_HTML = NO
++BUILD_DOCBOOK_PS   = NO
++BUILD_DOCBOOK_PDF  = NO
++
++endif
++
++# -------- A Fast build with optimised libs ----------------------------------
++
++ifeq "$(BuildFlavour)" "quick"
++
++SRC_HC_OPTS        = -H64m -O0 -fasm
++GhcStage1HcOpts    = -O -fasm
++GhcStage2HcOpts    = -O0 -fasm
++GhcLibHcOpts       = -O -fasm
++SplitObjs          = NO
++HADDOCK_DOCS       = NO
++BUILD_DOCBOOK_HTML = NO
++BUILD_DOCBOOK_PS   = NO
++BUILD_DOCBOOK_PDF  = NO
++
++endif
++
++# -------- Profile the stage2 compiler ---------------------------------------
++
++ifeq "$(BuildFlavour)" "prof"
++
++SRC_HC_OPTS        = -H64m -O0 -fasm
++GhcStage1HcOpts    = -O -fasm
++GhcStage2HcOpts    = -O -fasm
++GhcLibHcOpts       = -O -fasm
++
++GhcLibWays         += p
++GhcProfiled        = YES
++
++SplitObjs          = NO
++HADDOCK_DOCS       = NO
++BUILD_DOCBOOK_HTML = NO
++BUILD_DOCBOOK_PS   = NO
++BUILD_DOCBOOK_PDF  = NO
++
++endif
++
++
++# -------- A Development build (stage 1) -------------------------------------
++
++ifeq "$(BuildFlavour)" "devel1"
++
++SRC_HC_OPTS        = -H64m -O -fasm
++GhcLibHcOpts       = -O -dcore-lint
++GhcStage1HcOpts    = -Rghc-timing -O0 -DDEBUG
++GhcStage2HcOpts    = -Rghc-timing -O -fasm
++SplitObjs          = NO
++HADDOCK_DOCS       = NO
++BUILD_DOCBOOK_HTML = NO
++BUILD_DOCBOOK_PS   = NO
++BUILD_DOCBOOK_PDF  = NO
++
++endif
++
++# -------- A Development build (stage 2) -------------------------------------
++
++ifeq "$(BuildFlavour)" "devel2"
++
++SRC_HC_OPTS        = -H64m -O -fasm
++GhcLibHcOpts       = -O -dcore-lint
++GhcStage1HcOpts    = -Rghc-timing -O -fasm
++GhcStage2HcOpts    = -Rghc-timing -O0 -DDEBUG
++SplitObjs          = NO
++HADDOCK_DOCS       = NO
++BUILD_DOCBOOK_HTML = NO
++BUILD_DOCBOOK_PS   = NO
++BUILD_DOCBOOK_PDF  = NO
++
++endif
++
++# -------- A Unregisterised build) -------------------------------------------
++
++ifeq "$(BuildFlavour)" "unreg"
++
++GhcUnregisterised    = YES
++GhcWithNativeCodeGen = NO
++
++SRC_HC_OPTS          = -O -H64m
++GhcStage1HcOpts      = -O
++GhcStage2HcOpts      = -O2
++GhcHcOpts            = -Rghc-timing
++GhcLibHcOpts         = -O2
++SplitObjs            = NO
++HADDOCK_DOCS         = NO
++BUILD_DOCBOOK_HTML   = NO
++BUILD_DOCBOOK_PS     = NO
++BUILD_DOCBOOK_PDF    = NO
++
++endif
++
++INTEGER_LIBRARY = integer-simple
++GhcLibHcOpts   += -fext-core
++GhcLibWays     += hrc
++WAY_knc_HC_OPTS += -pgms=icc -pgma=icc -pgmc=icc -optc-mmic -opta-mmic
++# -----------------------------------------------------------------------------
++# Other settings that might be useful
++
++# NoFib settings
++NoFibWays =
++STRIP_CMD = :
++InstallExtraPackages = YES
+diff --git a/mk/tree.mk b/mk/tree.mk
+index db14cf4..6a68692 100644
+--- a/mk/tree.mk
++++ b/mk/tree.mk
+@@ -89,9 +89,7 @@ removeHelper = $(if $(strip $4),\
+                        $(error $1: Got a star: $4),\
+                    $(if $(findstring ..,$4),\
+                        $(error $1: Got dot-dot: $4),\
+-                   $(if $(filter /%,$4),\
+-                       $(error $1: Got leading slash: $4),\
+                        $2 $3 $4\
+-                    )))\
++                    ))\
+                 )
+ 
+diff --git a/mk/ways.mk b/mk/ways.mk
+index c2dcf07..709c40b 100644
+--- a/mk/ways.mk
++++ b/mk/ways.mk
+@@ -1,6 +1,6 @@
+ #
+-# Options for compiling in different `ways'. 
+-# 
++# Options for compiling in different `ways'.
++#
+ # To configure up your own way, have a look at some of the standard ways
+ # such as profiling, and create your own set of WAY_*_OPTS defs below.
+ # After having done that, add your way string to WAYS, and after having
+@@ -10,7 +10,7 @@
+ 
+ #
+ # Definitions of the different ways:
+-#   
++#
+ #   * their name:
+ #          - tag, e.g., p
+ #          - description, e.g., profiling
+@@ -22,19 +22,23 @@
+ #
+ # The ways currently defined.
+ #
+-ALL_WAYS=v p t l s mp mg debug dyn thr thr_l debug_dyn thr_dyn thr_debug_dyn thr_p thr_debug debug_p thr_debug_p
++ALL_WAYS=v hrc p t l s mp mg debug dyn thr thr_l debug_dyn thr_dyn thr_debug_dyn thr_p thr_debug debug_p thr_debug_p
+ 
+ #
+ # The following ways currently have treated specially, p t mg,
+ # as the driver script treats these guys specially and needs to carefully be told
+ # about the options for these. Hence, we hide the required command line options
+ # for these in the driver, as this is the only place they are needed.
+-# 
++#
+ # If you want to add to these default options, fill in the variables below:
+ 
+ # Way 'v':
+ WAY_v_NAME=vanilla
+-WAY_v_HC_OPTS= 
++WAY_v_HC_OPTS=
++
++# Way 'hrc':
++WAY_hrc_NAME=hrc
++WAY_hrc_HC_OPTS= -fstub-only
+ 
+ # Way 'p':
+ WAY_p_NAME=profiling
+@@ -44,11 +48,11 @@ WAY_p_HC_OPTS= -prof
+ WAY_l_NAME=event logging
+ WAY_l_HC_OPTS= -eventlog
+ 
+-# Way `mp': 
++# Way `mp':
+ WAY_mp_NAME=parallel
+ WAY_mp_HC_OPTS=-parallel
+ 
+-# Way `mg': 
++# Way `mg':
+ WAY_mg_NAME=GranSim
+ WAY_mg_HC_OPTS=-gransim
+ 
+diff --git a/rts/Linker.c b/rts/Linker.c
+index 56003fb..5a26d86 100644
+--- a/rts/Linker.c
++++ b/rts/Linker.c
+@@ -1074,6 +1074,7 @@ typedef struct _RtsSymbolVal {
+       SymI_HasProto(stg_delayzh)                        \
+       SymI_HasProto(stg_deRefWeakzh)                    \
+       SymI_HasProto(stg_deRefStablePtrzh)               \
++      SymI_HasProto(stg_freeStablePtrzh)                \
+       SymI_HasProto(dirty_MUT_VAR)                      \
+       SymI_HasProto(stg_forkzh)                         \
+       SymI_HasProto(stg_forkOnzh)                       \
+@@ -1120,7 +1121,26 @@ typedef struct _RtsSymbolVal {
+       SymI_HasProto(stg_myThreadIdzh)                   \
+       SymI_HasProto(stg_labelThreadzh)                  \
+       SymI_HasProto(stg_newArrayzh)                     \
+-      SymI_HasProto(stg_newArrayArrayzh)                     \
++      SymI_HasProto(stg_newArrayArrayzh)                \
++      SymI_HasProto(stg_newImmutableArrayzh)            \
++      SymI_HasProto(stg_newStrictImmutableArrayzh)      \
++      SymI_HasProto(stg_newUnboxedWordArrayzh)          \
++      SymI_HasProto(stg_newUnboxedWord8Arrayzh)         \
++      SymI_HasProto(stg_newUnboxedWord16Arrayzh)        \
++      SymI_HasProto(stg_newUnboxedWord32Arrayzh)        \
++      SymI_HasProto(stg_newUnboxedWord64Arrayzh)        \
++      SymI_HasProto(stg_newUnboxedIntArrayzh)           \
++      SymI_HasProto(stg_newUnboxedInt8Arrayzh)          \
++      SymI_HasProto(stg_newUnboxedInt16Arrayzh)         \
++      SymI_HasProto(stg_newUnboxedInt32Arrayzh)         \
++      SymI_HasProto(stg_newUnboxedInt64Arrayzh)         \
++      SymI_HasProto(stg_newUnboxedFloatArrayzh)         \
++      SymI_HasProto(stg_newUnboxedDoubleArrayzh)        \
++      SymI_HasProto(stg_newUnboxedCharArrayzh)          \
++      SymI_HasProto(stg_newUnboxedAddrArrayzh)          \
++      SymI_HasProto(stg_newUnboxedArrayzh)              \
++      SymI_HasProto(stg_newPinnedUnboxedArrayzh)        \
++      SymI_HasProto(stg_newAlignedPinnedUnboxedArrayzh) \
+       SymI_HasProto(stg_newBCOzh)                       \
+       SymI_HasProto(stg_newByteArrayzh)                 \
+       SymI_HasProto_redirect(newCAF, newDynCAF)         \
+@@ -1299,6 +1319,7 @@ typedef struct _RtsSymbolVal {
+       SymI_HasProto(n_capabilities)                     \
+       SymI_HasProto(stg_traceCcszh)                     \
+       SymI_HasProto(stg_traceEventzh)                   \
++      SymI_HasProto(stg_offloadzh)                      \
+       SymI_HasProto(getMonotonicNSec)                   \
+       SymI_HasProto(lockFile)                           \
+       SymI_HasProto(unlockFile)                         \
+diff --git a/rts/PrimOps.cmm b/rts/PrimOps.cmm
+old mode 100644
+new mode 100755
+index 9cedabd..a956c2f
+--- a/rts/PrimOps.cmm
++++ b/rts/PrimOps.cmm
+@@ -141,6 +141,21 @@ stg_newAlignedPinnedByteArrayzh
+     RET_P(p);
+ }
+ 
++stg_newUnboxedArrayzh
++{
++    foreign "C" barf("newUnboxedArray# not implemented") never returns;
++}
++
++stg_newPinnedUnboxedArrayzh
++{
++    foreign "C" barf("newPinnedUnboxedArray# not implemented") never returns;
++}
++
++stg_newAlignedPinnedUnboxedArrayzh
++{
++    foreign "C" barf("newAlignedPinnedUnboxedArray# not implemented") never returns;
++}
++
+ stg_newArrayzh
+ {
+     W_ words, n, init, arr, p, size;
+@@ -181,6 +196,91 @@ stg_newArrayzh
+     RET_P(arr);
+ }
+ 
++stg_newImmutableArrayzh
++{
++  foreign "C" barf("newImmutableArray# not implemented") never returns;
++}
++
++stg_newStrictImmutableArrayzh
++{
++  foreign "C" barf("newStrictImmutableArray# not implemented") never returns;
++}
++
++stg_newUnboxedWordArrayzh
++{
++  foreign "C" barf("newUnboxedWordArray# not implemented") never returns;
++}
++
++stg_newUnboxedWord8Arrayzh
++{
++  foreign "C" barf("newUnboxedWord8Array# not implemented") never returns;
++}
++
++stg_newUnboxedWord16Arrayzh
++{
++  foreign "C" barf("newUnboxedWord16Array# not implemented") never returns;
++}
++
++stg_newUnboxedWord32Arrayzh
++{
++  foreign "C" barf("newUnboxedWord32Array# not implemented") never returns;
++}
++
++stg_newUnboxedWord64Arrayzh
++{
++  foreign "C" barf("newUnboxedWord64Array# not implemented") never returns;
++}
++
++stg_newUnboxedIntArrayzh
++{
++  foreign "C" barf("newUnboxedIntArray# not implemented") never returns;
++}
++
++stg_newUnboxedInt8Arrayzh
++{
++  foreign "C" barf("newUnboxedInt8Array# not implemented") never returns;
++}
++
++stg_newUnboxedInt16Arrayzh
++{
++  foreign "C" barf("newUnboxedInt16Array# not implemented") never returns;
++}
++
++stg_newUnboxedInt32Arrayzh
++{
++  foreign "C" barf("newUnboxedInt32Array# not implemented") never returns;
++}
++
++stg_newUnboxedInt64Arrayzh
++{
++  foreign "C" barf("newUnboxedInt64Array# not implemented") never returns;
++}
++
++stg_newUnboxedFloatArrayzh
++{
++  foreign "C" barf("newUnboxedFloatArray# not implemented") never returns;
++}
++
++stg_newUnboxedDoubleArrayzh
++{
++  foreign "C" barf("newUnboxedDoubleArray# not implemented") never returns;
++}
++
++stg_newUnboxedCharArrayzh
++{
++  foreign "C" barf("newUnboxedCharArray# not implemented") never returns;
++}
++
++stg_newUnboxedAddrArrayzh
++{
++  foreign "C" barf("newUnboxedAddrArray# not implemented") never returns;
++}
++
++stg_offloadzh
++{
++  foreign "C" barf("offload# not implemented") never returns;
++}
++
+ stg_unsafeThawArrayzh
+ {
+   // SUBTLETY TO DO WITH THE OLD GEN MUTABLE LIST
+@@ -1619,6 +1719,13 @@ stg_deRefStablePtrzh
+     RET_P(r);
+ }
+ 
++stg_freeStablePtrzh
++{
++    /* Args: R1 = the stable ptr */
++    foreign "C" freeStablePtr(R1 "ptr") [];
++    jump %ENTRY_CODE(Sp(0));
++}
++
+ /* -----------------------------------------------------------------------------
+    Bytecode object primitives
+    -------------------------------------------------------------------------  */
+diff --git a/rts/ghc.mk b/rts/ghc.mk
+index 9fdf6be..ecebdab 100644
+--- a/rts/ghc.mk
++++ b/rts/ghc.mk
+@@ -18,6 +18,7 @@ rts_dist_HC = $(GHC_STAGE1)
+ 
+ # merge GhcLibWays and GhcRTSWays but strip out duplicates
+ rts_WAYS = $(GhcLibWays) $(filter-out $(GhcLibWays),$(GhcRTSWays))
++rts_WAYS := $(filter-out hrc,$(rts_WAYS))
+ rts_dist_WAYS = $(rts_WAYS)
+ 
+ ALL_RTS_LIBS = $(foreach way,$(rts_WAYS),rts/dist/build/libHSrts$($(way)_libsuf))
+@@ -81,7 +82,7 @@ rts/libs.depend : $(GHC_PKG_INPLACE)
+ # 	These are made from rts/win32/libHS*.def which contain lists of
+ # 	all the symbols in those libraries used by the RTS.
+ #
+-ifeq "$(HostOS_CPP)" "mingw32" 
++ifeq "$(HostOS_CPP)" "mingw32"
+ 
+ ALL_RTS_DEF_LIBNAMES 	= base ghc-prim
+ ALL_RTS_DEF_LIBS	= \
+@@ -135,7 +136,7 @@ rts_dist_$1_CC_OPTS = $$(GhcRtsCcOpts)
+ endif
+ 
+ ifneq "$$(findstring dyn, $1)" ""
+-ifeq "$$(HostOS_CPP)" "mingw32" 
++ifeq "$$(HostOS_CPP)" "mingw32"
+ rts_dist_$1_CC_OPTS += -DCOMPILING_WINDOWS_DLL
+ endif
+ endif
+@@ -176,7 +177,7 @@ rts_dist_$1_CC_OPTS += -DRtsWay=\"rts_$1\"
+ 
+ # Making a shared library for the RTS.
+ ifneq "$$(findstring dyn, $1)" ""
+-ifeq "$$(HostOS_CPP)" "mingw32" 
++ifeq "$$(HostOS_CPP)" "mingw32"
+ $$(rts_$1_LIB) : $$(rts_$1_OBJS) $$(ALL_RTS_DEF_LIBS) rts/libs.depend rts/dist/build/$$(LIBFFI_DLL)
+ 	"$$(RM)" $$(RM_OPTS) $$@
+ 	"$$(rts_dist_HC)" -package-name rts -shared -dynamic -dynload deploy \
+@@ -216,15 +217,15 @@ WARNING_OPTS += -W
+ else
+ WARNING_OPTS += -Wextra
+ endif
+-WARNING_OPTS += -Wstrict-prototypes 
+-WARNING_OPTS += -Wmissing-prototypes 
++WARNING_OPTS += -Wstrict-prototypes
++WARNING_OPTS += -Wmissing-prototypes
+ WARNING_OPTS += -Wmissing-declarations
+ WARNING_OPTS += -Winline
+ WARNING_OPTS += -Waggregate-return
+ WARNING_OPTS += -Wpointer-arith
+ WARNING_OPTS += -Wmissing-noreturn
+ WARNING_OPTS += -Wnested-externs
+-WARNING_OPTS += -Wredundant-decls 
++WARNING_OPTS += -Wredundant-decls
+ 
+ # These ones are hard to avoid:
+ #WARNING_OPTS += -Wconversion
+@@ -232,7 +233,7 @@ WARNING_OPTS += -Wredundant-decls
+ #WARNING_OPTS += -Wshadow
+ #WARNING_OPTS += -Wcast-qual
+ 
+-# This one seems buggy on GCC 4.1.2, which is the only GCC version we 
++# This one seems buggy on GCC 4.1.2, which is the only GCC version we
+ # have that can bootstrap the SPARC build. We end up with lots of supurious
+ # warnings of the form "cast increases required alignment of target type".
+ # Some legitimate warnings can be fixed by adding an intermediate cast to
+@@ -269,7 +270,7 @@ rts_HC_OPTS += $(addprefix -optc, $(MACOSX_DEPLOYMENT_CC_OPTS))
+ rts_LD_OPTS += $(addprefix -optl, $(MACOSX_DEPLOYMENT_LD_OPTS))
+ 
+ # We *want* type-checking of hand-written cmm.
+-rts_HC_OPTS += -dcmm-lint 
++rts_HC_OPTS += -dcmm-lint
+ 
+ # -fno-strict-aliasing is required for the runtime, because we often
+ # use a variety of types to represent closure pointers (StgPtr,
+@@ -525,4 +526,3 @@ install_libffi_headers :
+ $(eval $(call clean-target,rts,dist,rts/dist))
+ 
+ BINDIST_EXTRAS += rts/package.conf.in
+-
+diff --git a/rules/build-package-data.mk b/rules/build-package-data.mk
+index 817128e..ad0d2ea 100644
+--- a/rules/build-package-data.mk
++++ b/rules/build-package-data.mk
+@@ -18,6 +18,10 @@ $(call profStart, build-package-data($1,$2,$3))
+ # $2 = distdir
+ # $3 = GHC stage to use (0 == bootstrapping compiler)
+ 
++ifeq "$$(filter hrc,$$($1_$2_WAYS))" "hrc"
++$1_$2_CONFIGURE_OPTS += --enable-library-hrc
++endif
++
+ ifeq "$$(filter p,$$($1_$2_WAYS))" "p"
+ $1_$2_CONFIGURE_OPTS += --enable-library-profiling
+ endif
+@@ -32,6 +36,10 @@ else
+ $1_$2_CONFIGURE_OPTS += --disable-library-for-ghci
+ endif
+ 
++ifeq "$$(GhcWithHrc)" "YES"
++$1_$2_CONFIGURE_OPTS += --enable-library-hrc
++endif
++
+ ifeq "$$(HSCOLOUR_SRCS)" "YES"
+ $1_$2_CONFIGURE_OPTS += --with-hscolour="$$(HSCOLOUR_CMD)"
+ endif
+diff --git a/rules/distdir-way-opts.mk b/rules/distdir-way-opts.mk
+index bbd37d1..5291fe1 100644
+--- a/rules/distdir-way-opts.mk
++++ b/rules/distdir-way-opts.mk
+@@ -117,7 +117,7 @@ $1_$2_$3_MOST_HC_OPTS = \
+ $1_$2_$3_ALL_HC_OPTS = \
+  $$($1_$2_$3_MOST_HC_OPTS) \
+  -odir $1/$2/build -hidir $1/$2/build -stubdir $1/$2/build \
+- -hisuf $$($3_hisuf) -osuf  $$($3_osuf) -hcsuf $$($3_hcsuf)
++ -hisuf $$($3_hisuf) -osuf  $$($3_osuf1) -hcsuf $$($3_hcsuf)
+ 
+ ifeq "$4" "0"
+ # This is a bit of a hack.
+diff --git a/rules/way-prelims.mk b/rules/way-prelims.mk
+index ae4db30..26ca841 100644
+--- a/rules/way-prelims.mk
++++ b/rules/way-prelims.mk
+@@ -18,6 +18,11 @@ else
+ $1__way  = _$1
+ $1_way_  = $1_
+ endif
++ifneq "$(findstring hrc,$1)" ""
++$1_osuf1   = o
++else
++$1_osuf1   = $$($1_way_)o
++endif
+ $1_osuf   = $$($1_way_)o
+ $1_hisuf  = $$($1_way_)hi
+ $1_hcsuf  = $$($1_way_)hc
+diff --git a/sync-all b/sync-all
+index 7ff265b..be6a876 100755
+--- a/sync-all
++++ b/sync-all
+@@ -1,4 +1,4 @@
+-#!/usr/bin/perl -w
++#!/usr/bin/env perl 
+ 
+ use strict;
+ use Cwd;
+diff --git a/utils/genprimopcode/Main.hs b/utils/genprimopcode/Main.hs
+old mode 100644
+new mode 100755
+index 4635e84..e5f276d
+--- a/utils/genprimopcode/Main.hs
++++ b/utils/genprimopcode/Main.hs
+@@ -658,6 +658,23 @@ ppType (TyApp "MutableByteArray#" [x])  = "mkMutableByteArrayPrimTy "
+ ppType (TyApp "Array#" [x])             = "mkArrayPrimTy " ++ ppType x
+ ppType (TyApp "ArrayArray#" [])         = "mkArrayArrayPrimTy"
+ 
++ppType (TyApp "ImmutableArray#" [x]) = "mkImmutableArrayPrimTy " ++ ppType x
++ppType (TyApp "StrictImmutableArray#" [x]) = "mkStrictImmutableArrayPrimTy " ++ ppType x
++ppType (TyApp "UnboxedWordArray#" []) = "unboxedWordArrayPrimTy "
++ppType (TyApp "UnboxedWord8Array#" []) = "unboxedWord8ArrayPrimTy "
++ppType (TyApp "UnboxedWord16Array#" []) = "unboxedWord16ArrayPrimTy "
++ppType (TyApp "UnboxedWord32Array#" []) = "unboxedWord32ArrayPrimTy "
++ppType (TyApp "UnboxedWord64Array#" []) = "unboxedWord64ArrayPrimTy "
++ppType (TyApp "UnboxedIntArray#" []) = "unboxedIntArrayPrimTy "
++ppType (TyApp "UnboxedInt8Array#" []) = "unboxedInt8ArrayPrimTy "
++ppType (TyApp "UnboxedInt16Array#" []) = "unboxedInt16ArrayPrimTy "
++ppType (TyApp "UnboxedInt32Array#" []) = "unboxedInt32ArrayPrimTy "
++ppType (TyApp "UnboxedInt64Array#" []) = "unboxedInt64ArrayPrimTy "
++ppType (TyApp "UnboxedFloatArray#" []) = "unboxedFloatArrayPrimTy "
++ppType (TyApp "UnboxedDoubleArray#" []) = "unboxedDoubleArrayPrimTy "
++ppType (TyApp "UnboxedCharArray#" []) = "unboxedCharArrayPrimTy "
++ppType (TyApp "UnboxedAddrArray#" []) = "unboxedAddrArrayPrimTy "
++
+ 
+ ppType (TyApp "Weak#"  [x])      = "mkWeakPrimTy " ++ ppType x
+ ppType (TyApp "StablePtr#"  [x])      = "mkStablePtrPrimTy " ++ ppType x
+diff --git a/utils/hcrlibs/touchup-hcrlibs.sh b/utils/hcrlibs/touchup-hcrlibs.sh
+new file mode 100755
+index 0000000..691bfd8
+--- /dev/null
++++ b/utils/hcrlibs/touchup-hcrlibs.sh
+@@ -0,0 +1,89 @@
++#!/usr/bin/env bash
++BASE=$1
++pushd $BASE
++echo Touching up hcr files in $BASE 
++dirs=`find . -maxdepth 1 -type d`
++for dir in $dirs; do
++    test "$dir" = . && continue
++    dir=`echo $dir|sed -e 's/^\.\///'`
++    name=`echo $dir|sed -e 's/-\([0-9]*\.\)*[0-9]$//'`
++    modname=$dir
++    test "$name" = base && modname=$name && base=$dir
++    test "$name" = integer-simple && modname=$name && simple=$dir
++    test "$name" = ghc-prim && modname=$name
++    test "$name" = Cabal && modname=$name
++    #echo $name $modname
++    hcrfiles=`find $dir -name '*Mod.hcr'`
++    for file in $hcrfiles; do
++        name=`echo $file|sed -e "s/^${dir}/${modname}/" -e 's/\//:/' -e 's/\//zi/g' -e 's/\.hcr$//' -e 's/-/zm/g' -e 's/\./zi/g'`
++        newname=`echo $name|sed -e 's/Mod$//'` 
++        newfile=`echo $file|sed -e 's/Mod\.hcr$/.hcr/'`
++        #echo $file sed "s/$mname/$newname/g" $newfile
++        cat $file | sed -e "s/$name/$newname/g" > $newfile
++    done
++done
++
++# prepare pLsr specific externs
++cat ./${base}/System/Environment.hcr \
++| sed -e 's/ccall "getProgArgv"/ccall "pLsrGetProgArgv"/' \
++| sed -e 's/ccall "setProgArgv"/ccall "pLsrSetProgArgv"/' \
++> ./${base}/System/Environment.hcr0
++mv ./${base}/System/Environment.hcr0 ./${base}/System/Environment.hcr
++
++# prepare integer-simple
++cat ${simple}/GHC/Integer/Type.hcr | sed \
++    -e 's/Intzh/Integerzh/g' \
++    > ${simple}/GHC/Integer/Type.hcr0
++mv ${simple}/GHC/Integer/Type.hcr0 ${simple}/GHC/Integer/Type.hcr 
++
++cat ${simple}/GHC/Integer/Logarithms/Internals.hcr | sed \
++    -e 's/GHCziIntegerMod/GHCziInteger/g' \
++    -e 's/GHCziIntegerziTypeMod/GHCziIntegerziType/g' \
++    > ${simple}/GHC/Integer/Logarithms/Internals.hcr0
++mv ${simple}/GHC/Integer/Logarithms/Internals.hcr0 ${simple}/GHC/Integer/Logarithms/Internals.hcr  
++
++cat ${simple}/GHC/Integer/Internals.hcr | sed \
++    -e 's/GHCziIntegerziTypeMod/GHCziIntegerziType/g' \
++    -e 's/Intzh/Integerzh/g' \
++    -e 's/zmzh/integerzmzh/g' \
++    -e 's/zpzh$/integerzpzh/g' \
++    -e 's/zpzh /integerzpzh /g' \
++    -e 's/ztzh/integerztzh/g' \
++    -e 's/zezezh/integerzezezh/g' \
++    -e 's/zszezh/integerzszezh/g' \
++    -e 's/zgzezh/integerzgzezh/g' \
++    -e 's/zgzh/integerzgzh/g' \
++    -e 's/zlzezh/integerzlzezh/g' \
++    -e 's/zlzh/integerzlzh/g' \
++    -e 's/int2Floatzh/integer2Floatzh/g' \
++    -e 's/int2Doublezh/integer2Doublezh/g' \
++    -e 's/\([^{]\)[:.0-9a-zA-Z]*shiftLIntegerzh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.integerIShiftLzh /g' \
++    -e 's/\([^{]\)[:.0-9a-zA-Z]*shiftRIntegerzh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.integerIShiftRzh /g' \
++    -e 's/\([^{]\)[:.0-9a-zA-Z]*andIntegerzh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.integerAndzh /g' \
++    -e 's/\([^{]\)[:.0-9a-zA-Z]*xorIntegerzh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.integerXorzh /g' \
++    -e 's/\([^{]\)[:.0-9a-zA-Z]*orIntegerzh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.integerOrzh /g' \
++    -e 's/\([^{]\)[:.0-9a-zA-Z]*gtInt32zh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.zgzh /g' \
++    -e 's/\([^{]\)[:.0-9a-zA-Z]*minusInt32zh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.zmzh /g' \
++    -e 's/\([^{]\)[:.0-9a-zA-Z]*plusInt32zh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.zpzh /g' \
++    -e 's/\([^{]\)[:.0-9a-zA-Z]*decodeFloatzh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.decodeFloatzuIntzh /g' \
++    -e 's/\([^{]\)[:.0-9a-zA-Z]*decodeDoublezh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.decodeDoublezu2Intzh /g' \
++    -e 's/\([^{]\)[:.0-9a-zA-Z]*int2Integerzh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.int2Integerzh /g' \
++    -e 's/\([^{]\)[:.0-9a-zA-Z]*int322Integerzh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.int2Integerzh /g' \
++    -e 's/\([^{]\)[:.0-9a-zA-Z]*int642Integerzh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.int64ToIntegerzh /g' \
++    -e 's/\([ (]\)[:.0-9a-zA-Z]*word2Integerzh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.word2Integerzh /g' \
++    -e 's/\([^{]\)[:.0-9a-zA-Z]*word642Integerzh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.word64ToIntegerzh /g' \
++    -e 's/\([^{]\)[:.0-9a-zA-Z]*integer2Int32zh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.integer2Intzh /g' \
++    -e 's/\([^{]\)[:.0-9a-zA-Z]*integer2Int64zh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.integer2Int64zh /g' \
++    -e 's/\([^{]\)[:.0-9a-zA-Z]*integer2Wordzh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.integer2Wordzh /g' \
++    -e 's/\([^{]\)[:.0-9a-zA-Z]*integer2Word64zh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.integer2Word64zh /g' \
++    -e 's/\([^{]\)[:.0-9a-zA-Z]*encodeDoublezh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.integerEncodeDoublezh /g' \
++    -e 's/\([^{]\)[:.0-9a-zA-Z]*encodeFloatzh[0-9a-zA-Z]*/\1ghczmprim:GHCziPrim.integerEncodeFloatzh /g' \
++    -e 's/Int32/Int/g' \
++    -e 's/smallInteger[0-9a-zA-Z][0-9a-zA-Z]* (/smallInteger (/' \
++    -e 's/smallInteger[0-9a-zA-Z][0-9a-zA-Z]*$/smallInteger/' \
++    -e 's/\([(-][0-9][0-9]*::ghczmprim:GHCziPrim.Int\)egerzh/\1zh/' \
++    -e 's/^  ghczmprim:GHCziPrim/  integerzmsimple:GHCziIntegerziInternals/' \
++    > ${simple}/GHC/Integer/Internals.hcr0
++mv ${simple}/GHC/Integer/Internals.hcr0 ${simple}/GHC/Integer/Internals.hcr 
++echo Done.
++popd
+diff --git a/validate b/validate
+index ecd8067..6073971 100755
+--- a/validate
++++ b/validate
+@@ -1,4 +1,4 @@
+-#!/bin/sh
++#!/usr/bin/env bash
+ 
+ # Flags:
+ #   --no-clean:       don't make clean first, just carry on from

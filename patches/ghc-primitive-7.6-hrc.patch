@@ -1,0 +1,565 @@
+diff --git a/Data/Primitive/ImmutableArray.hs b/Data/Primitive/ImmutableArray.hs
+new file mode 100644
+index 0000000..85b2edd
+--- /dev/null
++++ b/Data/Primitive/ImmutableArray.hs
+@@ -0,0 +1,87 @@
++{-# LANGUAGE MagicHash, UnboxedTuples, DeriveDataTypeable #-}
++
++-- |
++-- Module      : Data.Primitive.ImmutableArray
++-- Copyright   : (c) Roman Leshchinskiy 2009-2010
++-- License     : BSD-style
++--
++-- Maintainer  : Roman Leshchinskiy <rl@cse.unsw.edu.au>
++-- Portability : non-portable
++-- 
++-- Primitive boxed arrays
++--
++
++module Data.Primitive.ImmutableArray (
++  ImmutableArray(..),
++
++  newImmutableArray, initImmutableArray, immutableArrayInited, indexImmutableArray, indexImmutableArrayM
++) where
++
++import Control.Monad.Primitive
++
++import GHC.Base  ( Int(..) )
++import GHC.Prim
++
++import Data.Typeable ( Typeable )
++import Data.Data ( Data(..), mkNorepType )
++
++-- | Boxed arrays
++data ImmutableArray a = ImmutableArray (ImmutableArray# a) deriving ( Typeable )
++
++-- | Create a new uninitialised immutable array of the specified size.
++newImmutableArray :: PrimMonad m => Int -> m (ImmutableArray a)
++{-# INLINE newImmutableArray #-}
++newImmutableArray (I# n#) = primitive
++   (\s# -> case newImmutableArray# n# s# of
++             (# s'#, arr# #) -> (# s'#, ImmutableArray arr# #))
++
++-- | Initialise the specified element of an immutable array.
++-- Correctness: this function should be called at most once for any given element.
++initImmutableArray :: PrimMonad m => ImmutableArray a -> Int -> a -> m ()
++{-# INLINE initImmutableArray #-}
++initImmutableArray (ImmutableArray arr#) (I# i#) x = primitive_ (initImmutableArray# arr# i# x)
++
++-- | Set the immutable array as having been initialised.
++-- Correctness: must not initialise elements after calling this function.
++immutableArrayInited :: PrimMonad m => ImmutableArray a -> m (ImmutableArray a)
++{-# INLINE immutableArrayInited #-}
++immutableArrayInited (ImmutableArray arr#) = primitive
++  (\s# -> case immutableArrayInited# arr# s# of (# s'#, arr'# #) -> (# s'#, ImmutableArray arr'# #))
++
++-- | Read a value from the immutable array at the given index.
++indexImmutableArray :: ImmutableArray a -> Int -> a
++{-# INLINE indexImmutableArray #-}
++indexImmutableArray (ImmutableArray arr#) (I# i#) = case indexImmutableArray# arr# i# of (# x #) -> x
++
++-- | Monadically read a value from the immutable array at the given index.
++-- This allows us to be strict in the array while remaining lazy in the read
++-- element which is very useful for collective operations. Suppose we want to
++-- copy an array. We could do something like this:
++--
++-- > copy marr arr ... = do ...
++-- >                        writeArray marr i (indexArray arr i) ...
++-- >                        ...
++--
++-- But since primitive arrays are lazy, the calls to 'indexArray' will not be
++-- evaluated. Rather, @marr@ will be filled with thunks each of which would
++-- retain a reference to @arr@. This is definitely not what we want!
++--
++-- With 'indexArrayM', we can instead write
++--
++-- > copy marr arr ... = do ...
++-- >                        x <- indexArrayM arr i
++-- >                        writeArray marr i x
++-- >                        ...
++--
++-- Now, indexing is executed immediately although the returned element is
++-- still not evaluated.
++--
++indexImmutableArrayM :: Monad m => ImmutableArray a -> Int -> m a 
++{-# INLINE indexImmutableArrayM #-}
++indexImmutableArrayM (ImmutableArray arr#) (I# i#)
++  = case indexImmutableArray# arr# i# of (# x #) -> return x
++
++instance Typeable a => Data (ImmutableArray a) where
++  toConstr _ = error "toConstr"
++  gunfold _ _ = error "gunfold"
++  dataTypeOf _ = mkNorepType "Data.Primitive.ImmutableArray.ImmutableArray"
+diff --git a/Data/Primitive/StrictImmutableArray.hs b/Data/Primitive/StrictImmutableArray.hs
+new file mode 100644
+index 0000000..5ec2d20
+--- /dev/null
++++ b/Data/Primitive/StrictImmutableArray.hs
+@@ -0,0 +1,60 @@
++{-# LANGUAGE MagicHash, UnboxedTuples, DeriveDataTypeable #-}
++
++-- |
++-- Module      : Data.Primitive.StrictImmutableArray
++-- Copyright   : (c) Roman Leshchinskiy 2009-2010
++-- License     : BSD-style
++--
++-- Maintainer  : Roman Leshchinskiy <rl@cse.unsw.edu.au>
++-- Portability : non-portable
++-- 
++-- Primitive boxed arrays
++--
++
++module Data.Primitive.StrictImmutableArray (
++  StrictImmutableArray(..),
++
++  newStrictImmutableArray, initStrictImmutableArray, strictImmutableArrayInited, indexStrictImmutableArray
++) where
++
++import Control.Monad.Primitive
++
++import GHC.Base  ( Int(..) )
++import GHC.Prim
++
++import Data.Typeable ( Typeable )
++import Data.Data ( Data(..), mkNorepType )
++
++-- | Boxed arrays
++data StrictImmutableArray a = StrictImmutableArray (StrictImmutableArray# a) deriving ( Typeable )
++
++-- | Create a new uninitialised immutable array of the specified size.
++newStrictImmutableArray :: PrimMonad m => Int -> m (StrictImmutableArray a)
++{-# INLINE newStrictImmutableArray #-}
++newStrictImmutableArray (I# n#) = primitive
++   (\s# -> case newStrictImmutableArray# n# s# of
++             (# s'#, arr# #) -> (# s'#, StrictImmutableArray arr# #))
++
++-- | Initialise the specified element of an immutable array.
++-- Correctness: this function should be called at most once for any given element.
++initStrictImmutableArray :: PrimMonad m => StrictImmutableArray a -> Int -> a -> m ()
++{-# INLINE initStrictImmutableArray #-}
++initStrictImmutableArray (StrictImmutableArray arr#) (I# i#) x = primitive_ (initStrictImmutableArray# arr# i# x)
++
++-- | Set the immutable array as having been initialised.
++-- Correctness: must not initialise elements after calling this function.
++strictImmutableArrayInited :: PrimMonad m => StrictImmutableArray a -> m (StrictImmutableArray a)
++{-# INLINE strictImmutableArrayInited #-}
++strictImmutableArrayInited (StrictImmutableArray arr#) = primitive
++  (\s# -> case strictImmutableArrayInited# arr# s# of (# s'#, arr'# #) -> (# s'#, StrictImmutableArray arr'# #))
++
++-- | Read a value from the immutable array at the given index.
++--indexStrictImmutableArray :: StrictImmutableArray a -> Int -> a
++{-# INLINE indexStrictImmutableArray #-}
++indexStrictImmutableArray (StrictImmutableArray arr#) (I# i#) =
++  case indexStrictImmutableArray# arr# i# of (# x #) -> x
++
++instance Typeable a => Data (StrictImmutableArray a) where
++  toConstr _ = error "toConstr"
++  gunfold _ _ = error "gunfold"
++  dataTypeOf _ = mkNorepType "Data.Primitive.StrictImmutableArray.StrictImmutableArray"
+diff --git a/Data/Primitive/Types.hs b/Data/Primitive/Types.hs
+index 3206878..4c58ab5 100644
+--- a/Data/Primitive/Types.hs
++++ b/Data/Primitive/Types.hs
+@@ -1,4 +1,4 @@
+-{-# LANGUAGE UnboxedTuples, MagicHash, DeriveDataTypeable #-}
++{-# LANGUAGE UnboxedTuples, MagicHash, DeriveDataTypeable, TypeFamilies #-}
+ 
+ -- |
+ -- Module      : Data.Primitive.Types
+@@ -12,7 +12,7 @@
+ --
+ 
+ module Data.Primitive.Types (
+-  Prim(..),
++  Prim(..), UnboxedArray(..),
+ 
+   Addr(..),
+ ) where
+@@ -39,6 +39,8 @@ import Data.Typeable ( Typeable )
+ import Data.Data ( Data(..) )
+ import Data.Primitive.Internal.Compat ( mkNoRepType )
+ 
++import Data.Primitive.UnboxedArrayTypes
++
+ -- | A machine address
+ data Addr = Addr Addr# deriving ( Typeable )
+ 
+@@ -58,6 +60,9 @@ instance Data Addr where
+   dataTypeOf _ = mkNoRepType "Data.Primitive.Types.Addr"
+ 
+ 
++-- | The unboxed array corresponding to a primitive type
++type family UnboxedArray pt
++
+ -- | Class of types supporting primitive array operations
+ class Prim a where
+ 
+@@ -67,6 +72,21 @@ class Prim a where
+   -- | Alignment of values of type @a@. The argument is not used.
+   alignment# :: a -> Int#
+ 
++  -- | Create a new unboxed immutable array.
++  --   The argument of type a is ignored - it is just needed to make
++  --   type checking work.
++  newUnboxedArray# :: Int# -> a -> State# s -> (# State# s, UnboxedArray a #)
++
++  -- | Initialise an element of the unboxed immutable array.
++  initUnboxedArray# :: UnboxedArray a -> Int# -> a -> State# s -> State# s
++
++  -- | Set the unboxed immutable array as initialised.
++  --   The argument of type a is ignore - it is just needed to make type checking work.
++  unboxedArrayInited# :: a -> UnboxedArray a -> State# s -> (# State# s, UnboxedArray a #)
++
++  -- | Read a value from the unboxed immutable array.
++  indexUnboxedArray# :: UnboxedArray a -> Int# -> a
++
+   -- | Read a value from the array. The offset is in elements of type
+   -- @a@ rather than in bytes.
+   indexByteArray# :: ByteArray# -> Int# -> a
+@@ -92,63 +112,123 @@ class Prim a where
+   -- The offset is in elements of type @a@ rather than in bytes.
+   writeOffAddr# :: Addr# -> Int# -> a -> State# s -> State# s
+ 
+-#define derivePrim(ty, ctr, sz, align, idx_arr, rd_arr, wr_arr, idx_addr, rd_addr, wr_addr) \
+-instance Prim ty where {                                        \
+-  sizeOf# _ = unI# sz                                           \
+-; alignment# _ = unI# align                                     \
+-; indexByteArray# arr# i# = ctr (idx_arr arr# i#)               \
+-; readByteArray#  arr# i# s# = case rd_arr arr# i# s# of        \
+-                        { (# s1#, x# #) -> (# s1#, ctr x# #) }  \
+-; writeByteArray# arr# i# (ctr x#) s# = wr_arr arr# i# x# s#    \
+-                                                                \
+-; indexOffAddr# addr# i# = ctr (idx_addr addr# i#)              \
+-; readOffAddr#  addr# i# s# = case rd_addr addr# i# s# of       \
+-                        { (# s1#, x# #) -> (# s1#, ctr x# #) }  \
+-; writeOffAddr# addr# i# (ctr x#) s# = wr_addr addr# i# x# s#   }
++#define derivePrim(ty, ctr, ac, sz, align, new_uarr, initu_arr, inited, idxu_arr,  \
++                   idx_arr, rd_arr, wr_arr, idx_addr, rd_addr, wr_addr)    \
++instance Prim ty where {                                                   \
++  sizeOf# _ = unI# sz                                                      \
++; alignment# _ = unI# align                                                \
++; newUnboxedArray# i# _ s# =                                               \
++      case new_uarr i# s# of { (# s'#, a# #) -> (# s'#, ac a# #) }         \
++; initUnboxedArray# (ac arr#) i# (ctr x#) s# = initu_arr arr# i# x# s#     \
++; unboxedArrayInited# _ (ac arr#) s# =                                     \
++      case inited arr# s# of { (# s'#, a'# #) -> (# s'#, ac a'# #) }       \
++; indexUnboxedArray# (ac arr#) i# = ctr (idxu_arr arr# i#)                 \
++; indexByteArray# arr# i# = ctr (idx_arr arr# i#)                          \
++; readByteArray#  arr# i# s# = case rd_arr arr# i# s# of                   \
++                        { (# s1#, x# #) -> (# s1#, ctr x# #) }             \
++; writeByteArray# arr# i# (ctr x#) s# = wr_arr arr# i# x# s#               \
++; indexOffAddr# addr# i# = ctr (idx_addr addr# i#)                         \
++; readOffAddr#  addr# i# s# = case rd_addr addr# i# s# of                  \
++                        { (# s1#, x# #) -> (# s1#, ctr x# #) }             \
++; writeOffAddr# addr# i# (ctr x#) s# = wr_addr addr# i# x# s#              }
+ 
+ unI# :: Int -> Int#
+ unI# (I# n#) = n#
+ 
+-derivePrim(Word, W#, sIZEOF_WORD, aLIGNMENT_WORD,
++type instance UnboxedArray Word = UnboxedWordArray
++
++derivePrim(Word, W#, UnboxedWordArray, sIZEOF_WORD, aLIGNMENT_WORD,
++           newUnboxedWordArray#, initUnboxedWordArray#, unboxedWordArrayInited#, indexUnboxedWordArray#,
+            indexWordArray#, readWordArray#, writeWordArray#,
+            indexWordOffAddr#, readWordOffAddr#, writeWordOffAddr#)
+-derivePrim(Word8, W8#, sIZEOF_WORD8, aLIGNMENT_WORD8,
++
++type instance UnboxedArray Word8 = UnboxedWord8Array
++
++derivePrim(Word8, W8#, UnboxedWord8Array, sIZEOF_WORD8, aLIGNMENT_WORD8,
++           newUnboxedWord8Array#, initUnboxedWord8Array#, unboxedWord8ArrayInited#, indexUnboxedWord8Array#,
+            indexWord8Array#, readWord8Array#, writeWord8Array#,
+            indexWord8OffAddr#, readWord8OffAddr#, writeWord8OffAddr#)
+-derivePrim(Word16, W16#, sIZEOF_WORD16, aLIGNMENT_WORD16,
++
++type instance UnboxedArray Word16 = UnboxedWord16Array
++
++derivePrim(Word16, W16#, UnboxedWord16Array, sIZEOF_WORD16, aLIGNMENT_WORD16,
++           newUnboxedWord16Array#, initUnboxedWord16Array#, unboxedWord16ArrayInited#, indexUnboxedWord16Array#,
+            indexWord16Array#, readWord16Array#, writeWord16Array#,
+            indexWord16OffAddr#, readWord16OffAddr#, writeWord16OffAddr#)
+-derivePrim(Word32, W32#, sIZEOF_WORD32, aLIGNMENT_WORD32,
++
++type instance UnboxedArray Word32 = UnboxedWord32Array
++
++derivePrim(Word32, W32#, UnboxedWord32Array, sIZEOF_WORD32, aLIGNMENT_WORD32,
++           newUnboxedWord32Array#, initUnboxedWord32Array#, unboxedWord32ArrayInited#, indexUnboxedWord32Array#,
+            indexWord32Array#, readWord32Array#, writeWord32Array#,
+            indexWord32OffAddr#, readWord32OffAddr#, writeWord32OffAddr#)
+-derivePrim(Word64, W64#, sIZEOF_WORD64, aLIGNMENT_WORD64,
++
++type instance UnboxedArray Word64 = UnboxedWord64Array
++
++derivePrim(Word64, W64#, UnboxedWord64Array, sIZEOF_WORD64, aLIGNMENT_WORD64,
++           newUnboxedWord64Array#, initUnboxedWord64Array#, unboxedWord64ArrayInited#, indexUnboxedWord64Array#,
+            indexWord64Array#, readWord64Array#, writeWord64Array#,
+            indexWord64OffAddr#, readWord64OffAddr#, writeWord64OffAddr#)
+-derivePrim(Int, I#, sIZEOF_INT, aLIGNMENT_INT,
++
++type instance UnboxedArray Int = UnboxedIntArray
++
++derivePrim(Int, I#, UnboxedIntArray, sIZEOF_INT, aLIGNMENT_INT,
++           newUnboxedIntArray#, initUnboxedIntArray#, unboxedIntArrayInited#, indexUnboxedIntArray#,
+            indexIntArray#, readIntArray#, writeIntArray#,
+            indexIntOffAddr#, readIntOffAddr#, writeIntOffAddr#)
+-derivePrim(Int8, I8#, sIZEOF_INT8, aLIGNMENT_INT8,
++
++type instance UnboxedArray Int8 = UnboxedInt8Array
++
++derivePrim(Int8, I8#, UnboxedInt8Array, sIZEOF_INT8, aLIGNMENT_INT8,
++           newUnboxedInt8Array#, initUnboxedInt8Array#, unboxedInt8ArrayInited#, indexUnboxedInt8Array#,
+            indexInt8Array#, readInt8Array#, writeInt8Array#,
+            indexInt8OffAddr#, readInt8OffAddr#, writeInt8OffAddr#)
+-derivePrim(Int16, I16#, sIZEOF_INT16, aLIGNMENT_INT16,
++
++type instance UnboxedArray Int16 = UnboxedInt16Array
++
++derivePrim(Int16, I16#, UnboxedInt16Array, sIZEOF_INT16, aLIGNMENT_INT16,
++           newUnboxedInt16Array#, initUnboxedInt16Array#, unboxedInt16ArrayInited#, indexUnboxedInt16Array#,
+            indexInt16Array#, readInt16Array#, writeInt16Array#,
+            indexInt16OffAddr#, readInt16OffAddr#, writeInt16OffAddr#)
+-derivePrim(Int32, I32#, sIZEOF_INT32, aLIGNMENT_INT32,
++
++type instance UnboxedArray Int32 = UnboxedInt32Array
++
++derivePrim(Int32, I32#, UnboxedInt32Array, sIZEOF_INT32, aLIGNMENT_INT32,
++           newUnboxedInt32Array#, initUnboxedInt32Array#, unboxedInt32ArrayInited#, indexUnboxedInt32Array#,
+            indexInt32Array#, readInt32Array#, writeInt32Array#,
+            indexInt32OffAddr#, readInt32OffAddr#, writeInt32OffAddr#)
+-derivePrim(Int64, I64#, sIZEOF_INT64, aLIGNMENT_INT64,
++
++type instance UnboxedArray Int64 = UnboxedInt64Array
++
++derivePrim(Int64, I64#, UnboxedInt64Array, sIZEOF_INT64, aLIGNMENT_INT64,
++           newUnboxedInt64Array#, initUnboxedInt64Array#, unboxedInt64ArrayInited#, indexUnboxedInt64Array#,
+            indexInt64Array#, readInt64Array#, writeInt64Array#,
+            indexInt64OffAddr#, readInt64OffAddr#, writeInt64OffAddr#)
+-derivePrim(Float, F#, sIZEOF_FLOAT, aLIGNMENT_FLOAT,
++
++type instance UnboxedArray Float = UnboxedFloatArray
++
++derivePrim(Float, F#, UnboxedFloatArray, sIZEOF_FLOAT, aLIGNMENT_FLOAT,
++           newUnboxedFloatArray#, initUnboxedFloatArray#, unboxedFloatArrayInited#, indexUnboxedFloatArray#,
+            indexFloatArray#, readFloatArray#, writeFloatArray#,
+            indexFloatOffAddr#, readFloatOffAddr#, writeFloatOffAddr#)
+-derivePrim(Double, D#, sIZEOF_DOUBLE, aLIGNMENT_DOUBLE,
++
++type instance UnboxedArray Double = UnboxedDoubleArray
++
++derivePrim(Double, D#, UnboxedDoubleArray, sIZEOF_DOUBLE, aLIGNMENT_DOUBLE,
++           newUnboxedDoubleArray#, initUnboxedDoubleArray#,unboxedDoubleArrayInited#,  indexUnboxedDoubleArray#,
+            indexDoubleArray#, readDoubleArray#, writeDoubleArray#,
+            indexDoubleOffAddr#, readDoubleOffAddr#, writeDoubleOffAddr#)
+-derivePrim(Char, C#, sIZEOF_CHAR, aLIGNMENT_CHAR,
++
++type instance UnboxedArray Char = UnboxedCharArray
++
++derivePrim(Char, C#, UnboxedCharArray, sIZEOF_CHAR, aLIGNMENT_CHAR,
++           newUnboxedCharArray#, initUnboxedCharArray#, unboxedCharArrayInited#, indexUnboxedCharArray#,
+            indexWideCharArray#, readWideCharArray#, writeWideCharArray#,
+            indexWideCharOffAddr#, readWideCharOffAddr#, writeWideCharOffAddr#)
+-derivePrim(Addr, Addr, sIZEOF_PTR, aLIGNMENT_PTR,
++
++type instance UnboxedArray Addr = UnboxedAddrArray
++
++derivePrim(Addr, Addr, UnboxedAddrArray, sIZEOF_PTR, aLIGNMENT_PTR,
++           newUnboxedAddrArray#, initUnboxedAddrArray#, unboxedAddrArrayInited#, indexUnboxedAddrArray#,
+            indexAddrArray#, readAddrArray#, writeAddrArray#,
+            indexAddrOffAddr#, readAddrOffAddr#, writeAddrOffAddr#)
+-
+diff --git a/Data/Primitive/UnboxedArray.hs b/Data/Primitive/UnboxedArray.hs
+new file mode 100644
+index 0000000..a9901e6
+--- /dev/null
++++ b/Data/Primitive/UnboxedArray.hs
+@@ -0,0 +1,52 @@
++{-# LANGUAGE MagicHash, UnboxedTuples, DeriveDataTypeable #-}
++
++-- |
++-- Module      : Data.Primitive.UnboxedArray
++-- Copyright   : (c) Roman Leshchinskiy 2009-2010
++-- License     : BSD-style
++--
++-- Maintainer  : Roman Leshchinskiy <rl@cse.unsw.edu.au>
++-- Portability : non-portable
++-- 
++-- Primitive unboxed arrays
++--
++
++module Data.Primitive.UnboxedArray (
++
++  newUnboxedArray, initUnboxedArray, unboxedArrayInited, indexUnboxedArray
++
++) where
++
++import GHC.Prim ( Int# )
++
++import Control.Monad.Primitive
++import Data.Primitive.Types
++
++import GHC.Base  ( Int(..) )
++
++import Data.Typeable ( Typeable )
++import Data.Data ( Data(..), mkNorepType )
++
++-- | Create a new uninitialised unboxed immutable array of the specified size.
++--   The argument of type a is ignored - it is just for making the type checking work.
++newUnboxedArray :: (Prim a, PrimMonad m) => Int -> a -> m (UnboxedArray a)
++{-# INLINE newUnboxedArray #-}
++newUnboxedArray (I# n#) a = primitive (\s# -> newUnboxedArray# n# a s#)
++
++-- | Initialise the specified element of an unboxed immutable array.
++-- Correctness: this function should be called at most once for any given element.
++initUnboxedArray :: (Prim a, PrimMonad m) => UnboxedArray a -> Int -> a -> m ()
++{-# INLINE initUnboxedArray #-}
++initUnboxedArray arr (I# i#) x = primitive_ (initUnboxedArray# arr i# x)
++
++-- | Set the unboxed immutable array as having been initialised.
++-- Correctness: must not initialise elements after calling this function.
++--   The argument of type a is ignored - it is just for making the type checking work.
++unboxedArrayInited :: (Prim a, PrimMonad m) => a -> UnboxedArray a -> m (UnboxedArray a)
++{-# INLINE unboxedArrayInited #-}
++unboxedArrayInited a arr = primitive (\s# -> unboxedArrayInited# a arr s#)
++
++-- | Read a value from the unboxed immutable array at the given index.
++indexUnboxedArray :: Prim a => UnboxedArray a -> Int -> a
++{-# INLINE indexUnboxedArray #-}
++indexUnboxedArray arr (I# i#) = case indexUnboxedArray# arr i# of x -> x
+diff --git a/Data/Primitive/UnboxedArrayTypes.hs b/Data/Primitive/UnboxedArrayTypes.hs
+new file mode 100644
+index 0000000..7758c9a
+--- /dev/null
++++ b/Data/Primitive/UnboxedArrayTypes.hs
+@@ -0,0 +1,113 @@
++{-# LANGUAGE MagicHash, DeriveDataTypeable #-}
++
++-- |
++-- Module      : Data.Primitive.UnboxedArrayTypes
++-- Copyright   : (c) Roman Leshchinskiy 2009-2010
++-- License     : BSD-style
++--
++-- Maintainer  : Roman Leshchinskiy <rl@cse.unsw.edu.au>
++-- Portability : non-portable
++-- 
++-- Primitive unboxed arrays
++--
++
++module Data.Primitive.UnboxedArrayTypes (
++  UnboxedWordArray(..), UnboxedWord8Array(..), UnboxedWord16Array(..), UnboxedWord32Array(..),
++  UnboxedWord64Array(..), UnboxedIntArray(..), UnboxedInt8Array(..), UnboxedInt16Array(..),
++  UnboxedInt32Array(..), UnboxedInt64Array(..), UnboxedFloatArray(..), UnboxedDoubleArray(..),
++  UnboxedCharArray(..), UnboxedAddrArray(..),
++) where
++
++import GHC.Prim
++
++import Data.Typeable ( Typeable )
++import Data.Data ( Data(..), mkNorepType )
++
++-- | Boxed arrays
++
++data UnboxedWordArray   = UnboxedWordArray   UnboxedWordArray#   deriving ( Typeable )
++data UnboxedWord8Array  = UnboxedWord8Array  UnboxedWord8Array#  deriving ( Typeable )
++data UnboxedWord16Array = UnboxedWord16Array UnboxedWord16Array# deriving ( Typeable )
++data UnboxedWord32Array = UnboxedWord32Array UnboxedWord32Array# deriving ( Typeable )
++data UnboxedWord64Array = UnboxedWord64Array UnboxedWord64Array# deriving ( Typeable )
++data UnboxedIntArray    = UnboxedIntArray    UnboxedIntArray#    deriving ( Typeable )
++data UnboxedInt8Array   = UnboxedInt8Array   UnboxedInt8Array#   deriving ( Typeable )
++data UnboxedInt16Array  = UnboxedInt16Array  UnboxedInt16Array#  deriving ( Typeable )
++data UnboxedInt32Array  = UnboxedInt32Array  UnboxedInt32Array#  deriving ( Typeable )
++data UnboxedInt64Array  = UnboxedInt64Array  UnboxedInt64Array#  deriving ( Typeable )
++data UnboxedFloatArray  = UnboxedFloatArray  UnboxedFloatArray#  deriving ( Typeable )
++data UnboxedDoubleArray = UnboxedDoubleArray UnboxedDoubleArray# deriving ( Typeable )
++data UnboxedCharArray   = UnboxedCharArray   UnboxedCharArray#   deriving ( Typeable )
++data UnboxedAddrArray   = UnboxedAddrArray   UnboxedAddrArray#   deriving ( Typeable )
++
++-- | Data instances
++
++instance Data UnboxedWordArray where
++  toConstr _ = error "toConstr"
++  gunfold _ _ = error "gunfold"
++  dataTypeOf _ = mkNorepType "Data.Primitive.UnboxedArray.UnboxedWordArray"
++
++instance Data UnboxedWord8Array where
++  toConstr _ = error "toConstr"
++  gunfold _ _ = error "gunfold"
++  dataTypeOf _ = mkNorepType "Data.Primitive.UnboxedArray.UnboxedWord8Array"
++
++instance Data UnboxedWord16Array where
++  toConstr _ = error "toConstr"
++  gunfold _ _ = error "gunfold"
++  dataTypeOf _ = mkNorepType "Data.Primitive.UnboxedArray.UnboxedWord16Array"
++
++instance Data UnboxedWord32Array where
++  toConstr _ = error "toConstr"
++  gunfold _ _ = error "gunfold"
++  dataTypeOf _ = mkNorepType "Data.Primitive.UnboxedArray.UnboxedWord32Array"
++
++instance Data UnboxedWord64Array where
++  toConstr _ = error "toConstr"
++  gunfold _ _ = error "gunfold"
++  dataTypeOf _ = mkNorepType "Data.Primitive.UnboxedArray.UnboxedWord64Array"
++
++instance Data UnboxedIntArray where
++  toConstr _ = error "toConstr"
++  gunfold _ _ = error "gunfold"
++  dataTypeOf _ = mkNorepType "Data.Primitive.UnboxedArray.UnboxedIntArray"
++
++instance Data UnboxedInt8Array where
++  toConstr _ = error "toConstr"
++  gunfold _ _ = error "gunfold"
++  dataTypeOf _ = mkNorepType "Data.Primitive.UnboxedArray.UnboxedInt8Array"
++
++instance Data UnboxedInt16Array where
++  toConstr _ = error "toConstr"
++  gunfold _ _ = error "gunfold"
++  dataTypeOf _ = mkNorepType "Data.Primitive.UnboxedArray.UnboxedInt16Array"
++
++instance Data UnboxedInt32Array where
++  toConstr _ = error "toConstr"
++  gunfold _ _ = error "gunfold"
++  dataTypeOf _ = mkNorepType "Data.Primitive.UnboxedArray.UnboxedInt32Array"
++
++instance Data UnboxedInt64Array where
++  toConstr _ = error "toConstr"
++  gunfold _ _ = error "gunfold"
++  dataTypeOf _ = mkNorepType "Data.Primitive.UnboxedArray.UnboxedInt64Array"
++
++instance Data UnboxedFloatArray where
++  toConstr _ = error "toConstr"
++  gunfold _ _ = error "gunfold"
++  dataTypeOf _ = mkNorepType "Data.Primitive.UnboxedArray.UnboxedFloatArray"
++
++instance Data UnboxedDoubleArray where
++  toConstr _ = error "toConstr"
++  gunfold _ _ = error "gunfold"
++  dataTypeOf _ = mkNorepType "Data.Primitive.UnboxedArray.UnboxedDoubleArray"
++
++instance Data UnboxedCharArray where
++  toConstr _ = error "toConstr"
++  gunfold _ _ = error "gunfold"
++  dataTypeOf _ = mkNorepType "Data.Primitive.UnboxedArray.UnboxedCharArray"
++
++instance Data UnboxedAddrArray where
++  toConstr _ = error "toConstr"
++  gunfold _ _ = error "gunfold"
++  dataTypeOf _ = mkNorepType "Data.Primitive.UnboxedArray.UnboxedAddrArray"
+diff --git a/primitive.cabal b/primitive.cabal
+index 3e19e84..7bb8b3d 100644
+--- a/primitive.cabal
++++ b/primitive.cabal
+@@ -43,8 +43,12 @@ Library
+         Control.Monad.Primitive
+         Data.Primitive
+         Data.Primitive.MachDeps
++        Data.Primitive.UnboxedArrayTypes
+         Data.Primitive.Types
+         Data.Primitive.Array
++        Data.Primitive.ImmutableArray
++        Data.Primitive.StrictImmutableArray
++        Data.Primitive.UnboxedArray
+         Data.Primitive.ByteArray
+         Data.Primitive.Addr
+ 
