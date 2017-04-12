@@ -175,13 +175,11 @@ so, remove them and try again.
 ### Compile and run HRC benchmarks
 
 With the modified [Repa] installed, we can move on to compiling the
-benchmark programs included with FLRC source. These Haskell programs
+benchmark programs from [flrc-benchmarks]. These Haskell programs
 are discussed in detail in the [Measuring the Haskell Gap][haskellgap] paper.
 
-Assume we are in `flrc` top directory:
-
 ```
-cd benchmarks
+cd flrc-benchmarks
 PATH=${PREFIX}/bin:$PATH cabal install --dependencies-only --global --cabal-lib-version=1.16.1 --prefix=... --package-db=...
 ```
 
@@ -237,6 +235,7 @@ haskell.packages.ghc742.alex cabal-install
 [nix]: https://nixos.org/nix
 [happy]: https://hackage.haskell.org/package/happy
 [alex]: https://hackage.haskell.org/package/alex
+[repa]: https://hackage.haskell.org/package/repa
 [cabal-install]: https://hackage.haskell.org/package/cabal-install
 [haskellgap]: http://dl.acm.org/citation.cfm?doid=2620678.2620685
-
+[flrc-benchmarks]: https://github.com/IntelLabs/flrc-benchmarks
