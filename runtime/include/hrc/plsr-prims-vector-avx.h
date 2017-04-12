@@ -1153,4 +1153,4 @@ static __m256d pLsrPrimV256Float64Zero = {0.0, 0.0, 0.0, 0.0};
 
 #define pLsrPrimV256RefLoad(dest, arr, off, idx) pLsrPrimV256UInt32Load(dest, arr, off, idx)
 
-#endif _PLSR_PRIMS_VECTOR_AVX_H_
+#endif // _PLSR_PRIMS_VECTOR_AVX_H_
