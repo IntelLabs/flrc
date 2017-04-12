@@ -589,7 +589,7 @@ struct
   fun futureLibraries (config) =
       let
         val nm =
-            if synchronizeThunks config then "paralllel"
+            if synchronizeThunks config then "parallel"
               (* ifDebug (config, "paralleld", "parallel") *)
             else "sequential"
               (* ifDebug (config, "sequentiald", "sequential") *)

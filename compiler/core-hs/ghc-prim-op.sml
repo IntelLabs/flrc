@@ -467,7 +467,7 @@ sig
      *)
      (* unsafe pointer *)
     | ReallyUnsafePtrEqualityzh
-     (* paralllelism *)
+     (* parallelism *)
      (* XXX: need to add these: parzh, sparkzh, getSparkzh, numSparkszh, parGlobalzh, parLocalzh, parAtzh,
       *      parAtAbszh, parAtRelzh, parAtForNowzh, copyablezh, noFollowzh
       *)
@@ -933,7 +933,7 @@ struct
      *)
      (* unsafe pointer *)
     | ReallyUnsafePtrEqualityzh
-     (* paralllelism *)
+     (* parallelism *)
      (* XXX: need to add these: parzh, sparkzh, getSparkzh, numSparkszh, parGlobalzh, parLocalzh, parAtzh,
       *      parAtAbszh, parAtRelzh, parAtForNowzh, copyablezh, noFollowzh
       *)
