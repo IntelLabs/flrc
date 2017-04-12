@@ -5,13 +5,13 @@ compiler framework for functional languages. The only supported compiler that
 is being released is a Haskell Research Compiler (HRC). The overall compilation
 pipeline is pictured in the following diagram:
 
-[HRC and FLRC Compilation Pipeline](!doc/ihc-pipeline.png)
+![HRC and FLRC Compilation Pipeline](doc/flrc-pipeline.png)
 
 ## Installation
 
-FLRC requires [FLRC-LIB](flrc-lib) to be installed prior to its installation.
+FLRC requires [FLRC-LIB] to be installed prior to its installation.
 Other software required are autoconf/automake, pkgconfig, [the MLton
-compiler](mlton), and a C/C++ compiler. 
+compiler][mlton], and a C/C++ compiler. 
 
 All released code has only been tested to work on x86 64-bit Linux distros,
 although they were originally written for x86 32-bit Windows.
@@ -32,7 +32,7 @@ libraries can be found under the given `${PREFIX}` path.
 ## Usage
 
 To actually compile a Haskell program, we'll also need a patched version of
-GHC. See [Building and Using GHC with HRC](building-ghc.md) for more
+GHC. See [Building and Using GHC with HRC](doc/building-ghc.md) for more
 information.
 
 To get a list of compiler options, call the compiler with any invalid
