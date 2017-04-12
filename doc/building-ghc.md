@@ -32,10 +32,10 @@ Also, this guide only applies to x86 64-bit Linux installation.
 
 First of all, you'll need an even older version to bootstrap GHC 7.6.3. For
 this purpose, we used GHC 7.4.2. You can either find a distro supported binary
-package that you can install on your own, or use [Nix](nix) to get one. 
+package that you can install on your own, or use [Nix] to get one. 
 
-Besides GHC 7.4.2, we also need a working binary of [happy](happy) and
-[alex](alex).  They do not have to be older versions, or even compiled by GHC
+Besides GHC 7.4.2, we also need a working binary of [happy] and
+[alex].  They do not have to be older versions, or even compiled by GHC
 7.4.2. In theory, any working version that you can find for your distro should
 work just fine.
 
@@ -125,7 +125,7 @@ The patched GHC comes with patched Cabal support that installs
 the external core required by HRC along side the usual installation
 of a Haskell package. The most convenient way to do this is with 
 the usual `cabal` command, and any recent `cabal` binary (from
-[cabal-install](cabal-install) package) that comes with your 
+[cabal-install] package) that comes with your 
 distro should work, even those that came with newer Haskell 
 Platform or installed from Stack.
 
@@ -155,7 +155,7 @@ are not fully tested under HRC.
 PATH=${PREFIX}/bin:$PATH cabal install --global --cabal-lib-version=1.16.1 --prefix=... --package-db=... parsec-3.1.1
 ```
 
-For another example, we can install a patched [Repa](repa) library for HRC.
+For another example, we can install a patched [Repa] library for HRC.
 Assume we are in `flrc` top directory. We choose version 3.2.2.2 because later
 versions will suck in a later version of vector, breaking the required
 dependence on our patched vector library installed together with the patched
@@ -174,9 +174,9 @@ so, remove them and try again.
 
 ### Compile and run HRC benchmarks
 
-With the modified [Repa](repa) installed, we can move on to compiling the
+With the modified [Repa] installed, we can move on to compiling the
 benchmark programs included with FLRC source. These Haskell programs
-are discussed in detail in the [Measuring the Haskell Gap](haskellgap) paper.
+are discussed in detail in the [Measuring the Haskell Gap][haskellgap] paper.
 
 Assume we are in `flrc` top directory:
 
@@ -212,7 +212,7 @@ linking.
 
 ## For Nix Users
 
-If you use [Nix](nix), here is how you can spawn a sub-shell with needed tools
+If you use [Nix], here is how you can spawn a sub-shell with needed tools
 and packages to work with all (the compilation) of FLRC-LIB, FLRC and HRC:
 
 ```bash
