@@ -43,5 +43,6 @@ void stackOverflow();
 // int lockFile(int fd, uint64 dev, uint64 ino, int for_writing);
 // int unlockFile(int fd);
 uint64 getMonotonicNSec();
+unsigned int *n_capabilities;
 
 #endif
