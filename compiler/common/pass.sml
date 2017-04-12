@@ -601,6 +601,6 @@ struct
       end
 
   fun runWithSh (config, logger, cmd, args) =
-      run (config, logger, Path.fromString "sh", Config.pathToHostString (config, cmd) :: args)
+      run (config, logger, Path.fromString "bash", Config.pathToHostString (config, cmd) :: args)
 
 end;
