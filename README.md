@@ -10,7 +10,7 @@ pipeline is pictured in the following diagram:
 ## Installation
 
 FLRC requires [FLRC-LIB] to be installed prior to its installation.
-Other software required are autoconf/automake, pkgconfig, [the MLton
+Other software required are autoconf/automake, pkg-config, [the MLton
 compiler][mlton], and a C/C++ compiler. 
 
 All released code has only been tested to work on x86 64-bit Linux distros,
@@ -36,11 +36,9 @@ GHC. See [Building and Using GHC with HRC](doc/building-ghc.md) for more
 information.
 
 To get a list of compiler options, call the compiler with any invalid
-option (e.g. `-help`).
+option (e.g. `-help`).  
 
-Examples:
-
-To list the flrc options:
+For example, to list the flrc options:
 
 ```
 hrc -help

@@ -1,4 +1,4 @@
-# How to build and use a patched GHC 7.6.3 with HRC
+# How to patch, build and use GHC 7.6.3 with HRC
 
 HRC uses GHC as a frontend to compile user programs or libraries to an
 intermediate representation (IR) called external core before it translates
@@ -9,7 +9,7 @@ Moreover, GHC and its libraries have to be (slightly) patched in order to
 produce external cores that is suitable for HRC to consume, mostly to remove
 GHC-specific runtime references, and to insert additional primitives required
 for immutable array and so on . Also, HRC has runtime support for arbitrary
-precision intergers, so GHC's `integer-gmp` library is no longer compatible.
+precision integers, so GHC's `integer-gmp` library is no longer compatible.
 We've implemented a new library based on `integer-simple` to integrate GHC's
 big integer with HRC's.
 
@@ -209,6 +209,19 @@ existing integration of choosing HRC as an alternative compiler when using
 cabal. Our patched Cabal package for GHC 7.6 is only intended to install GHC's
 external core together during package install, and to help with native library
 linking.
+
+To run the benchmarks, go to each directory, and run the executables like
+this:
+
+```
+./<executable> @PPiler maxHeap 1024 -- 
+```
+
+The default settings for these benchmarks usually requires bigger memory, and
+hence we use the `@PPiler` runtime options.
+
+The benchmarks should also compile and install with regular GHC, although
+they were only tested with GHC 7.6 and older version of Repa.
 
 ## For Nix Users
 
