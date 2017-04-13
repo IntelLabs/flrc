@@ -1690,7 +1690,7 @@ index 06b1403..f154914 100644
  	done
  
 +touchup_hcrlibs: 
-+	utils/hcrlibs/touchup-hcrlibs.sh $(DESTDIR)$(ghclibdir)
++	bash utils/hcrlibs/touchup-hcrlibs.sh $(DESTDIR)$(ghclibdir)
 +
  install_libexec_scripts: $(INSTALL_LIBEXEC_SCRIPTS)
  ifeq "$(INSTALL_LIBEXEC_SCRIPTS)" ""
