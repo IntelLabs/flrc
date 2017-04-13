@@ -58,6 +58,24 @@ diff --git a/Data/Vector/Generic.hs b/Data/Vector/Generic.hs
 index b8f2e81..6ee747a 100644
 --- a/Data/Vector/Generic.hs
 +++ b/Data/Vector/Generic.hs
+@@ -8,7 +8,7 @@
+ -- Maintainer  : Roman Leshchinskiy <rl@cse.unsw.edu.au>
+ -- Stability   : experimental
+ -- Portability : non-portable
+--- 
++--
+ -- Generic interface to pure vectors.
+ --
+ 
+@@ -64,7 +64,7 @@ module Data.Vector.Generic (
+   accum, accumulate, accumulate_,
+   unsafeAccum, unsafeAccumulate, unsafeAccumulate_,
+ 
+-  -- ** Permutations 
++  -- ** Permutations
+   reverse, backpermute, unsafeBackpermute,
+ 
+   -- ** Safe destructive updates
 @@ -220,6 +220,9 @@ length v = basicLength v
  "length/unstream [Vector]" forall s.
    length (new (New.unstream s)) = Stream.length s
@@ -178,11 +196,25 @@ index b8f2e81..6ee747a 100644
  
  -- Bulk updates
  -- ------------
+@@ -853,7 +903,7 @@ accumulate_ :: (Vector v a, Vector v Int, Vector v b)
+ {-# INLINE accumulate_ #-}
+ accumulate_ f v is xs = accum_stream f v (Stream.zipWith (,) (stream is)
+                                                              (stream xs))
+-                                        
++
+ 
+ accum_stream :: Vector v a => (a -> b -> a) -> v a -> Stream (Int,b) -> v a
+ {-# INLINE accum_stream #-}
 @@ -1277,12 +1327,68 @@ partition f = partition_stream f . stream
  
  partition_stream :: Vector v a => (a -> Bool) -> Stream a -> (v a, v a)
  {-# INLINE_STREAM partition_stream #-}
 -partition_stream f s = s `seq` runST (
+-  do
+-    (mv1,mv2) <- M.partitionStream f s
+-    v1 <- unsafeFreeze mv1
+-    v2 <- unsafeFreeze mv2
+-    return (v1,v2))
 +partition_stream f s = s `seq` runST (partitionStream f s)
 +
 +partitionStream :: (PrimMonad m, Vector v a) => (a -> Bool) -> Stream a -> m (v a, v a)
@@ -206,11 +238,7 @@ index b8f2e81..6ee747a 100644
 +                            return (i+1,j)
 +
 +            | otherwise = let j' = j-1 in
-                           do
--    (mv1,mv2) <- M.partitionStream f s
--    v1 <- unsafeFreeze mv1
--    v2 <- unsafeFreeze mv2
--    return (v1,v2))
++                          do
 +                            unsafeInitElem v j' x
 +                            return (i,j')
 +
@@ -303,6 +331,24 @@ index b8f2e81..6ee747a 100644
      return (unsafeTake i v, unsafeDrop i v))
  
  {-# RULES
+@@ -1335,7 +1464,7 @@ break :: Vector v a => (a -> Bool) -> v a -> (v a, v a)
+ break f xs = case findIndex f xs of
+                Just i  -> (unsafeSlice 0 i xs, unsafeSlice i (length xs - i) xs)
+                Nothing -> (xs, empty)
+-    
++
+ 
+ -- Searching
+ -- ---------
+@@ -1658,7 +1787,7 @@ postscanl' f z = unstream . inplace (MStream.postscanl' f z) . stream
+ -- >         yi = f y(i-1) x(i-1)
+ --
+ -- Example: @scanl (+) 0 \<1,2,3,4\> = \<0,1,3,6,10\>@
+--- 
++--
+ scanl :: (Vector v a, Vector v b) => (a -> b -> a) -> a -> v b -> v a
+ {-# INLINE scanl #-}
+ scanl f z = unstream . Stream.scanl f z . stream
 @@ -1767,18 +1896,13 @@ convert = unstream . stream
  unsafeFreeze
    :: (PrimMonad m, Vector v a) => Mutable v (PrimState m) a -> m (v a)
@@ -678,18 +724,21 @@ index 7b6ece3..ac91d44 100644
    -- 'basicUnsafeWrite'.
    basicUnsafeCopy :: PrimMonad m => Mutable v (PrimState m) a -> v a -> m ()
  
-@@ -115,13 +134,35 @@ class MVector (Mutable v) a => Vector v a where
+@@ -115,12 +134,34 @@ class MVector (Mutable v) a => Vector v a where
    basicUnsafeCopy !dst !src = do_copy 0
      where
        !n = basicLength src
--
--      do_copy i | i < n = do
 +      do_copy !i | i < n = do
-                              x <- basicUnsafeIndexM src i
-                              M.basicUnsafeWrite dst i x
-                              do_copy (i+1)
-                  | otherwise = return ()
++                             x <- basicUnsafeIndexM src i
++                             M.basicUnsafeWrite dst i x
++                             do_copy (i+1)
++                 | otherwise = return ()
  
+-      do_copy i | i < n = do
+-                            x <- basicUnsafeIndexM src i
+-                            M.basicUnsafeWrite dst i x
+-                            do_copy (i+1)
+-                | otherwise = return ()
 +  -- |  /Assumed complexity: O(n)/
 +  --
 +  -- Copy an immutable vector into another immutable one. The two vectors must have
@@ -712,10 +761,9 @@ index 7b6ece3..ac91d44 100644
 +                             basicUnsafeInitElem dst i x
 +                             do_copy (i+1)
 +                 | otherwise = return ()
-+
+ 
    -- | Evaluate @a@ as far as storing it in a vector would and yield @b@.
    -- The @v a@ argument only fixes the type and is not touched. The method is
-   -- only used for optimisation purposes. Thus, it is safe for instances of
 diff --git a/Data/Vector/Primitive.hs b/Data/Vector/Primitive.hs
 index 1fe3677..a357433 100644
 --- a/Data/Vector/Primitive.hs
