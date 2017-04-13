@@ -24,9 +24,19 @@ sh bootstrap.sh
 make && make install
 ```
 
-In the process, it will also download a version of MLton compiler's source to
-extract some SML libraries, and the process should be automatic. Once the
-installation is finished, a binary command `hrc` and some runtime headers and
+If you had `flrc-lib` installed at a non-standard location, there may be
+a pkgconfig error. This can be easily fixed by setting the correct
+`PKG_CONFIG_PATH` as follows (before running the `bootstrap.sh` and
+`configure` commands again):
+
+```
+# With PREFIX already set to where flrc-lib is installed, do:
+export PKG_CONFIG_PATH=${PREFIX}/lib/pkgconfig:$PKG_CONFIG_PATH
+```
+
+In the process, it will also automatically download a version of MLton
+compiler's source to extract some SML libraries. Once the installation
+is finished, a binary command `hrc` and some runtime headers and
 libraries can be found under the given `${PREFIX}` path.
 
 ## Usage
