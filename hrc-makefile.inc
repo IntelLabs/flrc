@@ -239,7 +239,7 @@ COMPILER_SRCS = \
   compiler/mil/utils2.sml
 
 COMPILER_STD_OPTS = @MLton -- \
-	-verbose 3 -runtime 'use-mmap true' \
+	-verbose 1 -runtime 'use-mmap true' \
 	-codegen native \
 	-native-split 900000 \
 	-mlb-path-map $(PWD)/sml-lib/mlb-path-map \
