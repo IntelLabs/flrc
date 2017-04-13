@@ -141,18 +141,20 @@ a few extra flags as follows:
 ```
 
 This is because we need to instruct cabal to specifically choose a Cabal
-library version of 1.16.1, and install to the DB file of our patched GHC 7.6.3,
+library version of 1.16.1, and install to the DB files of our patched GHC 7.6.3,
 instead of to the default user location such as `${HOME}/.cabal`.  Please note
 that the file path for the `--package-db=` option might be different on your
-machine, so you need to make sure the filed `package.conf.d` it refers to
+machine, so you need to make sure the DB directory `package.conf.d` it refers to
 actually exists.
 
 For example, we can use `cabal` to install `parsec-3.1.1`. We choose this
 particular version because later parsec has a lot of extra dependencies, which
-are not fully tested under HRC.
+are not fully tested with HRC.
 
 ```
-PATH=${PREFIX}/bin:$PATH cabal install --global --cabal-lib-version=1.16.1 --prefix=... --package-db=... parsec-3.1.1
+PATH=${PREFIX}/bin:$PATH cabal install --global \
+  --cabal-lib-version=1.16.1 --prefix=... --package-db=... \
+  parsec-3.1.1
 ```
 
 For another example, we can install a patched [Repa] library for HRC.
@@ -165,12 +167,13 @@ GHC.
 curl https://hackage.haskell.org/package/repa-3.2.2.2/repa-3.2.2.2.tar.gz|tar zxf -
 cd repa-3.2.2.2 
 patch -p1 < ../patches/ghc-repa-3.2.2.2-hrc.patch
-PATH=${PREFIX}/bin:$PATH cabal install --global --cabal-lib-version=1.16.1 --prefix=... --package-db=...
+PATH=${PREFIX}/bin:$PATH cabal install --global \
+  --cabal-lib-version=1.16.1 --prefix=... --package-db=...
 ```
 
 People having trouble compiling with an existing cabal tool should double check
 if there is any cached `setup` program in `${HOME}/.cabal` directory, and if
-so, remove them and try again.
+so, please remove them and try again.
 
 ### Compile and run HRC benchmarks
 
@@ -180,7 +183,8 @@ are discussed in detail in the [Measuring the Haskell Gap][haskellgap] paper.
 
 ```
 cd flrc-benchmarks
-PATH=${PREFIX}/bin:$PATH cabal install --dependencies-only --global --cabal-lib-version=1.16.1 --prefix=... --package-db=...
+PATH=${PREFIX}/bin:$PATH cabal install --dependencies-only --global \
+  --cabal-lib-version=1.16.1 --prefix=... --package-db=...
 ```
 
 The above command only installs dependencies. To actually compile the programs
@@ -193,10 +197,10 @@ PATH=${PREFIX/bin:$PATH make
 
 The verbosity setting of compiling these benchmarks are set to be 0, which
 actually means some minimal information about the compilation process is
-outputted. The last steps in this process is to use tools `pilicl` and `pilink'
-from `flrc-lib` to compile Pillar programs to C, and then use a C/C++ compiler
-(GCC by default) to compile and link to binary. If you want to use ICC, you can
-run `make` like this:
+outputted. The last step in this compilation process is to use tools `pilicl`
+and `pilink' from `flrc-lib` to compile Pillar programs to C, and then use a
+C/C++ compiler (GCC by default) to compile and link to binary. If you want to
+use ICC, you can run `make` like this:
 
 ```
 HRC_CC=icc PATH=${PREFIX/bin:$PATH make
@@ -212,14 +216,15 @@ To run the benchmarks, go to each directory, and run the executables like
 this:
 
 ```
-./<executable> @PPiler maxHeap 1024 -- 
+./<executable> @PPiler maxHeap 1024 --
 ```
 
 The default settings for these benchmarks usually requires bigger memory, and
-hence we use the `@PPiler` runtime options.
+hence we use the `@PPiler` runtime options, and sometimes increasing the
+memory beyond 1024M also helps.
 
-The benchmarks should also compile and install with regular GHC, although
-they were only tested with GHC 7.6 and older version of Repa.
+All benchmarks should also compile and install just fine with a regular GHC, 
+although they were only tested with GHC 7.6 and older version of Repa.
 
 ## For Nix Users
 

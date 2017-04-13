@@ -66,7 +66,7 @@ conservative GC.
 ## Questions
 
 FLRC is open sourced as is. We at Intel Labs are no longer actively working on
-this compiler. Please use the issue track if you have questions.
+this compiler. Please use the issue tracker if you have questions.
 
 ## Related Publication
 
