@@ -43,7 +43,7 @@ libraries can be found under the given `${PREFIX}` path.
 
 To actually compile a Haskell program, we'll also need a patched version of
 GHC. See [Building and Using GHC with HRC](doc/building-ghc.md) for more
-information.
+information, including how to compile and run [flrc-benchmarks].
 
 To get a list of compiler options, call the compiler with any invalid
 option (e.g. `-help`).  
@@ -97,6 +97,7 @@ Leaf Petersen and Neal Glew. 2012. [GC-Safe interprocedural unboxing](http://dl.
 This software carries a BSD style license. See [LICENSE_INFO](LICENSE_INFO.txt) for more information.
  
 
+[flrc-benchmarks]: https://github.com/IntelLabs/flrc-benchmarks
 [flrc-lib]: https://github.com/IntelLabs/flrc-lib
 [mlton]: http://mlton.org
 
