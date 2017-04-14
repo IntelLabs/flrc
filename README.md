@@ -14,7 +14,8 @@ Other software required are autoconf/automake, pkg-config, [the MLton
 compiler][mlton], and a C/C++ compiler. 
 
 All released code has only been tested to work on x86 64-bit Linux distros,
-although they were originally written for x86 32-bit Windows.
+although they were originally written for x86 32-bit Windows. At least 4GB
+of free memory is advised for compiling FLRC.
 
 To install:
 
