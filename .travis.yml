@@ -19,7 +19,7 @@ before_install:
   - git clone https://github.com/IntelLabs/flrc-lib.git
 script:
   # Build flrc-lib
-  - cd ${HOME}/flrc
+  - cd ${HOME}/flrc-lib
   - sh bootstrap.sh
   - ./configure
   - make |& grep '^g++'
