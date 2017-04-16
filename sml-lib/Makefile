@@ -1,6 +1,6 @@
 MLTON_SRC_URL="https://sourceforge.net/projects/mlton/files/mlton/20130715/mlton-20130715.src.tgz/download"
 MLTON_BIN=$(shell which mlton)
-MLTON_LIBDIR=$(abspath $(dir $(MLTON_BIN))/../lib/mlton/sml)
+MLTON_LIBDIR=$(abspath $(dir $(MLTON_BIN))/../lib/sml)
 DIR_LIST=basis ckit-lib cml mllpt-lib mlnlffi-lib mlrisc-lib mlyacc-lib smlnj-lib
 
 mlb-path-map: mlton $(DIR_LIST)
