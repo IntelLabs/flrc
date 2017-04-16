@@ -1,4 +1,4 @@
-# The Functional Language Research Compiler
+# The Functional Language Research Compiler [![Build Status](https://travis-ci.org/IntelLabs/flrc.svg)](https://travis-ci.org/IntelLabs/flrc)
 
 The Functional Language Research Compiler (FLRC) was designed to be a general
 compiler framework for functional languages. The only supported compiler that

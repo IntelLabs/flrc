@@ -1,0 +1,34 @@
+dist: trusty
+sudo: required
+addons:
+  apt:
+    packages:
+    - mlton-compiler
+    - mlton-tools
+    - nasm
+before_install:
+  - date
+  # Show environment
+  - lsb_release -a
+  - ulimit -a
+  - cat /proc/cpuinfo
+  - cat /proc/meminfo
+  - g++ --version
+  # Download flrc-lib
+  - cd ${HOME}
+  - git clone https://github.com/IntelLabs/flrc-lib.git
+script:
+  # Build flrc-lib
+  - cd ${HOME}/flrc
+  - sh bootstrap.sh
+  - ./configure
+  - make |& grep '^g++'
+  - sudo make install
+  # Building flrc
+  - cd ${TRAVIS_BUILD_DIR}
+  - sh bootstrap.sh
+  - ./configure
+  - make
+  - sudo make install
+after_script:
+  - date
